@@ -25,7 +25,6 @@ export default function CompanySelect() {
     const fetchCompanies = async () => {
       try {
         const { data, error } = await supabase
-          .schema("core")
           .from("companies")
           .select("*")
           .eq("ativo", true);

@@ -16,7 +16,6 @@ export default function Empresas() {
   const fetchEmpresas = async () => {
     try {
       const { data, error } = await supabase
-        .schema("core")
         .from("companies")
         .select("*")
         .order("nome_fantasia");
