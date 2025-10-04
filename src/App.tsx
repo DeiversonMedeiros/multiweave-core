@@ -12,6 +12,7 @@ import CompanySelect from "./pages/CompanySelect";
 import Dashboard from "./pages/Dashboard";
 import CadastrosIndex from "./pages/cadastros/Index";
 import Empresas from "./pages/cadastros/Empresas";
+import Usuarios from "./pages/cadastros/Usuarios";
 import CentrosCusto from "./pages/cadastros/CentrosCusto";
 import Projetos from "./pages/cadastros/Projetos";
 import Parceiros from "./pages/cadastros/Parceiros";
@@ -43,6 +44,7 @@ function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/cadastros" element={<CadastrosIndex />} />
                 <Route path="/cadastros/empresas" element={<Empresas />} />
+                <Route path="/cadastros/usuarios" element={<Usuarios />} />
                 <Route path="/cadastros/centros-custo" element={<CentrosCusto />} />
                 <Route path="/cadastros/projetos" element={<Projetos />} />
                 <Route path="/cadastros/parceiros" element={<Parceiros />} />
