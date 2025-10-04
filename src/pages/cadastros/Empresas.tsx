@@ -3,11 +3,15 @@ import { DataTable } from "@/components/DataTable";
 import { Company } from "@/lib/supabase-types";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmpresaForm } from "@/components/forms/EmpresaForm";
 import { toast } from "sonner";
 
 export default function Empresas() {
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingEmpresa, setEditingEmpresa] = useState<Company | null>(null);
 
   useEffect(() => {
     fetchEmpresas();
@@ -59,11 +63,32 @@ export default function Empresas() {
       <DataTable
         data={empresas}
         columns={columns}
-        onNew={() => toast.info("Funcionalidade em desenvolvimento")}
+        onNew={() => {
+          setEditingEmpresa(null);
+          setIsDialogOpen(true);
+        }}
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por nome ou CNPJ..."
         newButtonLabel="Nova Empresa"
       />
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingEmpresa ? "Editar" : "Nova"} Empresa
+            </DialogTitle>
+          </DialogHeader>
+          <EmpresaForm
+            empresa={editingEmpresa || undefined}
+            onSuccess={() => {
+              setIsDialogOpen(false);
+              fetchEmpresas();
+            }}
+            onCancel={() => setIsDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
