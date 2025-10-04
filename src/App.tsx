@@ -1,3 +1,4 @@
+import React from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -19,14 +20,15 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <Toaster />
-    <Sonner />
-    <BrowserRouter>
-      <AuthProvider>
-        <CompanyProvider>
-          <Routes>
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <AuthProvider>
+          <CompanyProvider>
+            <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/company-select" element={
                 <ProtectedRoute>
@@ -39,13 +41,13 @@ const App = () => (
                 </ProtectedRoute>
               }>
                 <Route path="/" element={<Dashboard />} />
-            <Route path="/cadastros" element={<CadastrosIndex />} />
-            <Route path="/cadastros/empresas" element={<Empresas />} />
-            <Route path="/cadastros/centros-custo" element={<CentrosCusto />} />
-            <Route path="/cadastros/projetos" element={<Projetos />} />
-            <Route path="/cadastros/parceiros" element={<Parceiros />} />
-            <Route path="/cadastros/materiais" element={<Materiais />} />
-            <Route path="/financeiro" element={<div className="text-2xl font-bold">Financeiro - Em desenvolvimento</div>} />
+                <Route path="/cadastros" element={<CadastrosIndex />} />
+                <Route path="/cadastros/empresas" element={<Empresas />} />
+                <Route path="/cadastros/centros-custo" element={<CentrosCusto />} />
+                <Route path="/cadastros/projetos" element={<Projetos />} />
+                <Route path="/cadastros/parceiros" element={<Parceiros />} />
+                <Route path="/cadastros/materiais" element={<Materiais />} />
+                <Route path="/financeiro" element={<div className="text-2xl font-bold">Financeiro - Em desenvolvimento</div>} />
                 <Route path="/compras" element={<div className="text-2xl font-bold">Compras - Em desenvolvimento</div>} />
                 <Route path="/almoxarifado" element={<div className="text-2xl font-bold">Almoxarifado - Em desenvolvimento</div>} />
                 <Route path="/frota" element={<div className="text-2xl font-bold">Frota - Em desenvolvimento</div>} />
@@ -62,7 +64,8 @@ const App = () => (
           </CompanyProvider>
         </AuthProvider>
       </BrowserRouter>
-  </QueryClientProvider>
-);
+    </QueryClientProvider>
+  );
+}
 
 export default App;
