@@ -47,16 +47,16 @@ export function AccountPayableForm({ item, onSuccess }: Props) {
       };
 
       if (item) {
-        await supabase
-          .schema('financeiro')
+        const { error: updateError } = await (supabase as any)
           .from("accounts_payable")
           .update(data)
           .eq("id", item.id);
+        if (updateError) throw updateError;
       } else {
-        await supabase
-          .schema('financeiro')
+        const { error: insertError } = await (supabase as any)
           .from("accounts_payable")
           .insert(data);
+        if (insertError) throw insertError;
       }
 
       toast({ title: "Sucesso", description: "Conta salva com sucesso!" });

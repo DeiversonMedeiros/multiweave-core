@@ -9,8 +9,7 @@ export function useAccountsPayable(companyId?: string) {
     if (!companyId) return;
 
     setLoading(true);
-    const { data: result, error } = await supabase
-      .schema('financeiro')
+    const { data: result, error } = await (supabase as any)
       .from("accounts_payable")
       .select("*")
       .eq("company_id", companyId)

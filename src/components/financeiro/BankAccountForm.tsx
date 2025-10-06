@@ -44,16 +44,16 @@ export function BankAccountForm({ item, onSuccess }: Props) {
       };
 
       if (item) {
-        await supabase
-          .schema('financeiro')
+        const { error: updateError } = await (supabase as any)
           .from("bank_accounts")
           .update(data)
           .eq("id", item.id);
+        if (updateError) throw updateError;
       } else {
-        await supabase
-          .schema('financeiro')
+        const { error: insertError } = await (supabase as any)
           .from("bank_accounts")
           .insert(data);
+        if (insertError) throw insertError;
       }
 
       toast({ title: "Sucesso", description: "Conta bancária salva com sucesso!" });

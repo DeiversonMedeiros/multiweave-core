@@ -128,7 +128,41 @@ export const useMenu = () => {
       url: '/financeiro',
       icon: DollarSign,
       description: 'Gestão financeira',
-      requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+      requiresPermission: { type: 'module', name: 'financeiro', action: 'read' },
+      children: [
+        {
+          id: 'contas-pagar',
+          title: 'Contas a Pagar',
+          url: '/financeiro/contas-pagar',
+          icon: FileText,
+          description: 'Gestão de contas a pagar',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'contas-receber',
+          title: 'Contas a Receber',
+          url: '/financeiro/contas-receber',
+          icon: TrendingUp,
+          description: 'Gestão de contas a receber',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'contas-bancarias',
+          title: 'Contas Bancárias',
+          url: '/financeiro/contas-bancarias',
+          icon: Building2,
+          description: 'Gestão de contas bancárias',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'fluxo-caixa',
+          title: 'Fluxo de Caixa',
+          url: '/financeiro/fluxo-caixa',
+          icon: Calculator,
+          description: 'Controle de fluxo de caixa',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        }
+      ]
     },
     {
       id: 'compras',

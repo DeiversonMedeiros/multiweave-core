@@ -17,6 +17,10 @@ import CentrosCusto from "./pages/cadastros/CentrosCusto";
 import Projetos from "./pages/cadastros/Projetos";
 import Parceiros from "./pages/cadastros/Parceiros";
 import Materiais from "./pages/cadastros/Materiais";
+import AccountsPayable from "./pages/financeiro/AccountsPayable";
+import AccountsReceivable from "./pages/financeiro/AccountsReceivable";
+import BankAccounts from "./pages/financeiro/BankAccounts";
+import CashFlow from "./pages/financeiro/CashFlow";
 import Permissions from "./pages/Permissions";
 import { MenuTest } from "./components/MenuTest";
 import NotFound from "./pages/NotFound";
@@ -54,7 +58,10 @@ function App() {
                 <Route path="/cadastros/materiais" element={<Materiais />} />
                 <Route path="/permissoes" element={<Permissions />} />
                 <Route path="/menu-test" element={<MenuTest />} />
-                <Route path="/financeiro" element={<div className="text-2xl font-bold">Financeiro - Em desenvolvimento</div>} />
+                <Route path="/financeiro/contas-pagar" element={<AccountsPayable />} />
+                <Route path="/financeiro/contas-receber" element={<AccountsReceivable />} />
+                <Route path="/financeiro/contas-bancarias" element={<BankAccounts />} />
+                <Route path="/financeiro/fluxo-caixa" element={<CashFlow />} />
                 <Route path="/compras" element={<div className="text-2xl font-bold">Compras - Em desenvolvimento</div>} />
                 <Route path="/almoxarifado" element={<div className="text-2xl font-bold">Almoxarifado - Em desenvolvimento</div>} />
                 <Route path="/frota" element={<div className="text-2xl font-bold">Frota - Em desenvolvimento</div>} />
