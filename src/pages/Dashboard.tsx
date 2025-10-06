@@ -1,5 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, DollarSign, Package, Users, ShoppingCart } from "lucide-react";
+import { MenuDemo } from "@/components/MenuDemo";
+import { TenantIsolationDemo } from "@/components/TenantIsolationDemo";
+import { RequireModule } from "@/components/RequireAuth";
 
 const stats = [
   {
@@ -34,13 +37,20 @@ const stats = [
 
 export default function Dashboard() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
-          Visão geral das operações da empresa
-        </p>
-      </div>
+    <RequireModule moduleName="dashboard" action="read">
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground mt-1">
+            Visão geral das operações da empresa
+          </p>
+        </div>
+
+        {/* Demonstração do Menu Dinâmico */}
+        <MenuDemo />
+
+        {/* Demonstração do Isolamento Multi-tenant */}
+        <TenantIsolationDemo />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
@@ -138,6 +148,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+    </RequireModule>
   );
 }

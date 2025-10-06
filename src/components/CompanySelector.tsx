@@ -22,6 +22,20 @@ export const CompanySelector = () => {
   const [open, setOpen] = useState(false);
   const { selectedCompany, setSelectedCompany, companies } = useCompany();
 
+  const handleCompanySelect = (company: Company) => {
+    setSelectedCompany(company);
+    setOpen(false);
+  };
+
+  if (!companies || companies.length === 0) {
+    return (
+      <Button variant="outline" disabled className="w-[280px] justify-between">
+        <Building2 className="mr-2 h-4 w-4" />
+        Nenhuma empresa disponível
+      </Button>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -45,10 +59,7 @@ export const CompanySelector = () => {
                 <CommandItem
                   key={company.id}
                   value={company.nome_fantasia}
-                  onSelect={() => {
-                    setSelectedCompany(company);
-                    setOpen(false);
-                  }}
+                  onSelect={() => handleCompanySelect(company)}
                 >
                   <Check
                     className={cn(

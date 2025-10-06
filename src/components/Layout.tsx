@@ -7,6 +7,7 @@ import { Button } from "./ui/button";
 import { LogOut, User } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useCompany } from "@/lib/company-context";
+import { UserPermissionsCompact } from "./UserPermissions";
 
 export const Layout = () => {
   const { user, signOut } = useAuth();
@@ -22,6 +23,7 @@ export const Layout = () => {
             <Breadcrumbs />
             <div className="ml-auto flex items-center gap-4">
               <CompanySelector />
+              <UserPermissionsCompact />
               <div className="flex items-center gap-2 text-sm">
                 <User className="h-4 w-4" />
                 <span className="font-medium">{user?.email}</span>

@@ -337,6 +337,7 @@ export type Database = {
       users: {
         Row: {
           ativo: boolean | null
+          company_id: string | null
           created_at: string | null
           email: string
           id: string
@@ -345,6 +346,7 @@ export type Database = {
         }
         Insert: {
           ativo?: boolean | null
+          company_id?: string | null
           created_at?: string | null
           email: string
           id: string
@@ -353,13 +355,22 @@ export type Database = {
         }
         Update: {
           ativo?: boolean | null
+          company_id?: string | null
           created_at?: string | null
           email?: string
           id?: string
           nome?: string
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "users_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

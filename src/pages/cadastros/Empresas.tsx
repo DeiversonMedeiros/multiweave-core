@@ -19,6 +19,7 @@ export default function Empresas() {
 
   const fetchEmpresas = async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from("companies")
         .select("*")
@@ -27,7 +28,9 @@ export default function Empresas() {
       if (error) throw error;
       setEmpresas(data || []);
     } catch (error: any) {
+      console.error("Erro ao carregar empresas:", error);
       toast.error("Erro ao carregar empresas: " + error.message);
+      setEmpresas([]);
     } finally {
       setLoading(false);
     }

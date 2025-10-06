@@ -15,3 +15,12 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     autoRefreshToken: true,
   }
 });
+
+// Clientes específicos para diferentes schemas
+export const coreSupabase = supabase.schema('core');
+export const rhSupabase = supabase.schema('rh');
+export const financeiroSupabase = supabase.schema('financeiro');
+export const comercialSupabase = supabase.schema('comercial');
+export const comprasSupabase = supabase.schema('compras');
+export const estoqueSupabase = supabase.schema('estoque');
+export const vendasSupabase = supabase.schema('vendas');
