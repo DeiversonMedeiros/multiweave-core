@@ -91,6 +91,50 @@ export type Database = {
           },
         ]
       }
+      entity_permissions: {
+        Row: {
+          can_create: boolean | null
+          can_delete: boolean | null
+          can_edit: boolean | null
+          can_read: boolean | null
+          created_at: string | null
+          entity_name: string
+          id: string
+          profile_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          can_create?: boolean | null
+          can_delete?: boolean | null
+          can_edit?: boolean | null
+          can_read?: boolean | null
+          created_at?: string | null
+          entity_name: string
+          id?: string
+          profile_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          can_create?: boolean | null
+          can_delete?: boolean | null
+          can_edit?: boolean | null
+          can_read?: boolean | null
+          created_at?: string | null
+          entity_name?: string
+          id?: string
+          profile_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_permissions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       materials: {
         Row: {
           ativo: boolean | null
@@ -146,6 +190,50 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      module_permissions: {
+        Row: {
+          can_create: boolean | null
+          can_delete: boolean | null
+          can_edit: boolean | null
+          can_read: boolean | null
+          created_at: string | null
+          id: string
+          module_name: string
+          profile_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          can_create?: boolean | null
+          can_delete?: boolean | null
+          can_edit?: boolean | null
+          can_read?: boolean | null
+          created_at?: string | null
+          id?: string
+          module_name: string
+          profile_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          can_create?: boolean | null
+          can_delete?: boolean | null
+          can_edit?: boolean | null
+          can_read?: boolean | null
+          created_at?: string | null
+          id?: string
+          module_name?: string
+          profile_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "module_permissions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -215,6 +303,7 @@ export type Database = {
           created_at: string | null
           descricao: string | null
           id: string
+          is_active: boolean | null
           nome: string
           permissoes: Json | null
           updated_at: string | null
@@ -223,6 +312,7 @@ export type Database = {
           created_at?: string | null
           descricao?: string | null
           id?: string
+          is_active?: boolean | null
           nome: string
           permissoes?: Json | null
           updated_at?: string | null
@@ -231,6 +321,7 @@ export type Database = {
           created_at?: string | null
           descricao?: string | null
           id?: string
+          is_active?: boolean | null
           nome?: string
           permissoes?: Json | null
           updated_at?: string | null
@@ -377,12 +468,181 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      is_admin: {
-        Args: { user_id: string }
+      check_access_permission: {
+        Args: { action: string; schema_name: string; table_name: string }
         Returns: boolean
+      }
+      check_entity_permission: {
+        Args:
+          | {
+              action: string
+              schema_name: string
+              table_name: string
+              user_id: string
+            }
+          | { p_entity_name: string; p_permission: string; p_user_id: string }
+        Returns: boolean
+      }
+      check_module_permission: {
+        Args: { p_module_name: string; p_permission: string; p_user_id: string }
+        Returns: boolean
+      }
+      check_user_permission: {
+        Args: { p_module_name: string; p_permission: string }
+        Returns: boolean
+      }
+      create_calculation_log: {
+        Args: {
+          ano_referencia_param: number
+          company_id_param: string
+          descricao_processo_param?: string
+          mes_referencia_param: number
+          processo_id_param: string
+          tipo_processo_param: string
+          usuario_id_param?: string
+          usuario_nome_param?: string
+        }
+        Returns: string
+      }
+      create_entity_data: {
+        Args: {
+          company_id_param: string
+          data_param: Json
+          schema_name: string
+          table_name: string
+        }
+        Returns: Json
+      }
+      delete_entity_data: {
+        Args: {
+          company_id_param: string
+          id_param: string
+          schema_name: string
+          table_name: string
+        }
+        Returns: boolean
+      }
+      get_calculation_logs: {
+        Args: { company_id_param: string; filters?: Json }
+        Returns: {
+          ano_referencia: number
+          company_id: string
+          created_at: string
+          descricao_processo: string
+          erros_encontrados: number
+          erros_execucao: Json
+          eventos_calculados: number
+          fim_processamento: string
+          funcionarios_processados: number
+          id: string
+          inicio_processamento: string
+          logs_execucao: Json
+          mes_referencia: number
+          observacoes: string
+          processo_id: string
+          progresso: number
+          resumo_calculos: Json
+          status: string
+          tempo_execucao_segundos: number
+          tipo_processo: string
+          total_funcionarios: number
+          updated_at: string
+          usuario_id: string
+          usuario_nome: string
+        }[]
+      }
+      get_entity_data: {
+        Args: {
+          company_id_param?: string
+          filters?: Json
+          limit_param?: number
+          offset_param?: number
+          order_by?: string
+          order_direction?: string
+          schema_name: string
+          table_name: string
+        }
+        Returns: {
+          data: Json
+          id: string
+          total_count: number
+        }[]
+      }
+      get_entity_data_simple: {
+        Args: {
+          company_id_param?: string
+          filters?: Json
+          limit_param?: number
+          offset_param?: number
+          order_by?: string
+          order_direction?: string
+          schema_name: string
+          table_name: string
+        }
+        Returns: {
+          data: Json
+          id: string
+          total_count: number
+        }[]
+      }
+      get_entity_data_with_joins: {
+        Args: {
+          company_id_param?: string
+          filters?: Json
+          joins?: Json
+          limit_param?: number
+          offset_param?: number
+          schema_name: string
+          table_name: string
+        }
+        Returns: {
+          data: Json
+          id: string
+          total_count: number
+        }[]
+      }
+      get_user_companies: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
+      get_user_permissions: {
+        Args: { p_user_id?: string }
+        Returns: {
+          can_create: boolean
+          can_delete: boolean
+          can_edit: boolean
+          can_read: boolean
+          module_name: string
+        }[]
+      }
+      get_user_profile: {
+        Args: { user_id: string }
+        Returns: Json
+      }
+      is_admin: {
+        Args: { user_id?: string }
+        Returns: boolean
+      }
+      update_calculation_log: {
+        Args: { company_id_param: string; log_id_param: string; updates: Json }
+        Returns: boolean
+      }
+      update_entity_data: {
+        Args: {
+          company_id_param: string
+          data_param: Json
+          id_param: string
+          schema_name: string
+          table_name: string
+        }
+        Returns: Json
       }
       user_has_company_access: {
         Args: { company_id: string; user_id: string }
+        Returns: boolean
+      }
+      user_has_company_access_new: {
+        Args: { p_company_id: string; p_user_id: string }
         Returns: boolean
       }
     }
