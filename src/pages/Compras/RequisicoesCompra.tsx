@@ -55,6 +55,7 @@ interface RequisicaoItem {
 // Componente principal protegido por permissões
 export default function RequisicoesCompraPage() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const [showNovaSolicitacao, setShowNovaSolicitacao] = useState(false);
 
   return (
     <RequireAuth 
@@ -79,7 +80,7 @@ export default function RequisicoesCompraPage() {
               </Button>
             }
           >
-            <Button>
+            <Button onClick={() => setShowNovaSolicitacao(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Nova Solicitação
             </Button>
@@ -94,6 +95,16 @@ export default function RequisicoesCompraPage() {
             <RequisicoesList />
           </CardContent>
         </Card>
+
+        {/* Modal Nova Solicitação */}
+        <Dialog open={showNovaSolicitacao} onOpenChange={setShowNovaSolicitacao}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Nova Solicitação de Compra</DialogTitle>
+            </DialogHeader>
+            <NovaSolicitacaoForm onClose={() => setShowNovaSolicitacao(false)} />
+          </DialogContent>
+        </Dialog>
       </div>
     </RequireAuth>
   );
@@ -213,5 +224,206 @@ function RequisicoesList() {
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+// Componente do formulário de nova solicitação
+function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
+  const { toast } = useToast();
+  const [formData, setFormData] = useState({
+    data_necessidade: '',
+    prioridade: 'Normal',
+    centro_custo: '',
+    observacoes: '',
+    itens: [] as RequisicaoItem[]
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Aqui você implementaria a lógica de criação da solicitação
+    toast({
+      title: "Solicitação criada",
+      description: "A solicitação de compra foi criada com sucesso.",
+    });
+    onClose();
+  };
+
+  const addItem = () => {
+    setFormData(prev => ({
+      ...prev,
+      itens: [...prev.itens, {
+        id: Date.now().toString(),
+        material_id: '',
+        material_nome: '',
+        quantidade: 1,
+        unidade: 'UN',
+        valor_unitario: 0,
+        valor_total: 0,
+        observacoes: ''
+      }]
+    }));
+  };
+
+  const removeItem = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      itens: prev.itens.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateItem = (index: number, field: keyof RequisicaoItem, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      itens: prev.itens.map((item, i) => 
+        i === index ? { ...item, [field]: value } : item
+      )
+    }));
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor="data_necessidade">Data de Necessidade</Label>
+          <Input
+            id="data_necessidade"
+            type="date"
+            value={formData.data_necessidade}
+            onChange={(e) => setFormData(prev => ({ ...prev, data_necessidade: e.target.value }))}
+            required
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="prioridade">Prioridade</Label>
+          <Select
+            value={formData.prioridade}
+            onValueChange={(value) => setFormData(prev => ({ ...prev, prioridade: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Baixa">Baixa</SelectItem>
+              <SelectItem value="Normal">Normal</SelectItem>
+              <SelectItem value="Alta">Alta</SelectItem>
+              <SelectItem value="Urgente">Urgente</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="centro_custo">Centro de Custo</Label>
+        <Input
+          id="centro_custo"
+          value={formData.centro_custo}
+          onChange={(e) => setFormData(prev => ({ ...prev, centro_custo: e.target.value }))}
+          placeholder="Digite o centro de custo"
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="observacoes">Observações</Label>
+        <Textarea
+          id="observacoes"
+          value={formData.observacoes}
+          onChange={(e) => setFormData(prev => ({ ...prev, observacoes: e.target.value }))}
+          placeholder="Observações adicionais"
+        />
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <Label>Itens da Solicitação</Label>
+          <Button type="button" onClick={addItem} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Adicionar Item
+          </Button>
+        </div>
+
+        {formData.itens.map((item, index) => (
+          <div key={item.id} className="border rounded-lg p-4 space-y-4">
+            <div className="flex justify-between items-center">
+              <h4 className="font-medium">Item {index + 1}</h4>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => removeItem(index)}
+                className="text-red-600"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Material</Label>
+                <Input
+                  value={item.material_nome}
+                  onChange={(e) => updateItem(index, 'material_nome', e.target.value)}
+                  placeholder="Nome do material"
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Quantidade</Label>
+                <Input
+                  type="number"
+                  value={item.quantidade}
+                  onChange={(e) => updateItem(index, 'quantidade', Number(e.target.value))}
+                  min="1"
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Unidade</Label>
+                <Input
+                  value={item.unidade}
+                  onChange={(e) => updateItem(index, 'unidade', e.target.value)}
+                  placeholder="UN, KG, etc."
+                  required
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Valor Unitário</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={item.valor_unitario}
+                  onChange={(e) => updateItem(index, 'valor_unitario', Number(e.target.value))}
+                  placeholder="0.00"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Observações do Item</Label>
+                <Input
+                  value={item.observacoes}
+                  onChange={(e) => updateItem(index, 'observacoes', e.target.value)}
+                  placeholder="Observações específicas do item"
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-end gap-4">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button type="submit">
+          Criar Solicitação
+        </Button>
+      </div>
+    </form>
   );
 }
