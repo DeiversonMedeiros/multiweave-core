@@ -52,13 +52,13 @@ export default function VacationsPage() {
                 <li>Controle de saldo de férias</li>
                 <li>Integração com folha de pagamento</li>
                 <li>Relatórios de férias</li>
-              </ul>
-            </div>
+            </ul>
           </div>
-        </CardContent>
-      </Card>
-    </div>
-    </RequireModule>
-  );
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+  </RequireModule>
+);
 }
 

@@ -88,7 +88,7 @@ export const useRelatoriosEstoque = () => {
       setLoading(true);
       setError(null);
 
-      // Definir o contexto da empresa para RLS      await supabase.rpc('set_company_context', { company_id: selectedCompany.id });            let query = supabase
+      let query = supabase
         .from('almoxarifado.movimentacoes_estoque')
         .select(`
           tipo_movimentacao,
@@ -185,7 +185,7 @@ export const useRelatoriosEstoque = () => {
       setError(null);
 
       // Buscar materiais com estoque atual
-      // Definir o contexto da empresa para RLS      await supabase.rpc('set_company_context', { company_id: selectedCompany.id });            let query = supabase
+      let query = supabase
         .from('almoxarifado.materiais_equipamentos')
         .select(`
           id,

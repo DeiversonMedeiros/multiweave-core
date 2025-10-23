@@ -93,7 +93,7 @@ export const useChecklistRecebimento = (entradaId?: string) => {
       setLoading(true);
       setError(null);
 
-      // Definir o contexto da empresa para RLS      await supabase.rpc('set_company_context', { company_id: selectedCompany.id });            const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('almoxarifado.checklist_recebimento')
         .select(`
           *,

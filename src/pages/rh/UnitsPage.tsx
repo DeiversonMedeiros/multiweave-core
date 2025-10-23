@@ -142,16 +142,16 @@ export default function UnitsPage() {
             </div>
           );
         }
-        return <span className="text-sm text-muted-foreground">Sem responsável</span>;
+        return &lt;span className="text-sm text-muted-foreground"&gt;Sem responsável&lt;/span&gt;;
       },
     },
     {
       accessorKey: 'descricao',
       header: 'Descrição',
       cell: ({ row }: { row: { original: Unit } }) => (
-        <div className="text-sm text-muted-foreground max-w-xs truncate">
+        &lt;div className="text-sm text-muted-foreground max-w-xs truncate"&gt;
           {row.original.descricao || 'Sem descrição'}
-        </div>
+        &lt;/div&gt;
       ),
     },
     {
@@ -160,9 +160,9 @@ export default function UnitsPage() {
       cell: ({ row }: { row: { original: Unit } }) => {
         const isActive = row.original.is_active;
         return (
-          <Badge variant={isActive ? 'default' : 'secondary'}>
+          &lt;Badge variant={isActive ? 'default' : 'secondary'}&gt;
             {isActive ? 'Ativo' : 'Inativo'}
-          </Badge>
+          &lt;/Badge&gt;
         );
       },
     },

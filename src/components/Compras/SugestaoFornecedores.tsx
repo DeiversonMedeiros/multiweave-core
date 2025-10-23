@@ -271,7 +271,7 @@ const SugestaoFornecedores: React.FC<SugestaoFornecedoresProps> = ({
                 <SelectItem value="todos">Todas as Notas</SelectItem>
                 <SelectItem value="alta">Alta (4.5+)</SelectItem>
                 <SelectItem value="media">Média (3.5-4.4)</SelectItem>
-                <SelectItem value="baixa">Baixa (<3.5)</SelectItem>
+                <SelectItem value="baixa">Baixa (&lt;3.5)</SelectItem>
               </SelectContent>
             </Select>
             <Select value={filtroStatus} onValueChange={setFiltroStatus}>
