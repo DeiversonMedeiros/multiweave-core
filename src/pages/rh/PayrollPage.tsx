@@ -25,6 +25,9 @@ import {
 import { EnhancedDataTable } from '@/components/rh/EnhancedDataTable';
 import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 import { 
   usePayroll, 
   useDeletePayroll, 
@@ -40,6 +43,7 @@ import { useCompany } from '@/lib/company-context';
 
 export default function PayrollPage() {
   const { selectedCompany } = useCompany();
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [monthFilter, setMonthFilter] = useState(new Date().getMonth() + 1);
@@ -270,7 +274,8 @@ export default function PayrollPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="payroll" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -546,6 +551,7 @@ export default function PayrollPage() {
           )}
         </div>
       </FormModal>
-    </div>
+      </div>
+    </RequireModule>
   );
 }

@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS rh.medical_plan_pricing_history (
     valor_familia_novo DECIMAL(10,2),
     percentual_reajuste DECIMAL(5,2),
     motivo_reajuste TEXT,
-    aprovado_por UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    aprovado_por UUID ,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

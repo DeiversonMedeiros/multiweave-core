@@ -52,26 +52,22 @@ ALTER TABLE rh.absence_types ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view absence_types from their company" ON rh.absence_types
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'absence_types', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert absence_types in their company" ON rh.absence_types
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'absence_types', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update absence_types from their company" ON rh.absence_types
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'absence_types', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete absence_types from their company" ON rh.absence_types
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'absence_types', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

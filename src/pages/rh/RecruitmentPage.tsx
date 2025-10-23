@@ -3,9 +3,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { UserPlus, Plus } from 'lucide-react';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 export default function RecruitmentPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="recruitment" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -52,6 +58,7 @@ export default function RecruitmentPage() {
         </CardContent>
       </Card>
     </div>
+    </RequireEntity>
   );
 }
 

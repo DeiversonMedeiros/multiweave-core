@@ -9,13 +9,20 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Gift } from 'lucide-react';
 import AwardProductivityForm from '@/components/rh/AwardProductivityForm';
 import { useAwardProductivity, useUpdateAwardProductivity } from '@/hooks/rh/useAwardsProductivity';
-import { AwardProductivityUpdateData } from '@/integrations/supabase/rh-types';
+import { AwardProductivityUpdateData, Employee } from '@/integrations/supabase/rh-types';
+import { useRHData } from '@/hooks/generic/useEntityData';
+import { useCompany } from '@/lib/company-context';
 
 const AwardProductivityEditPage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const { selectedCompany } = useCompany();
   const { data: award, isLoading, error } = useAwardProductivity(id!);
   const updateMutation = useUpdateAwardProductivity();
+  
+  // Carregar funcionários
+  const { data: employeesData } = useRHData<Employee>('employees', selectedCompany?.id || '');
+  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
 
   const handleSubmit = async (data: AwardProductivityUpdateData) => {
     try {
@@ -28,7 +35,8 @@ const AwardProductivityEditPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
+
+    <div className="container mx-auto py-8">
         <div className="text-center">Carregando premiação...</div>
       </div>
     );
@@ -36,6 +44,7 @@ const AwardProductivityEditPage: React.FC = () => {
 
   if (error || !award) {
     return (
+      
       <div className="container mx-auto py-8">
         <div className="text-center text-red-500">
           Erro ao carregar premiação: {error?.message || 'Premiação não encontrada'}
@@ -50,7 +59,8 @@ const AwardProductivityEditPage: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button
@@ -80,13 +90,14 @@ const AwardProductivityEditPage: React.FC = () => {
         <CardContent>
           <AwardProductivityForm
             initialData={award}
+            employees={employees}
             onSubmit={handleSubmit}
             isLoading={updateMutation.isPending}
           />
         </CardContent>
       </Card>
     </div>
-  );
+    );
 };
 
 export default AwardProductivityEditPage;

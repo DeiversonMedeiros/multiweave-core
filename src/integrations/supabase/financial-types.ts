@@ -1,0 +1,990 @@
+// =====================================================
+// TIPOS DO MÓDULO FINANCEIRO
+// =====================================================
+// Data: 2025-01-15
+// Descrição: Tipos TypeScript para o módulo financeiro
+// Autor: Sistema MultiWeave Core
+
+export interface ContaPagar {
+  id: string;
+  company_id: string;
+  numero_titulo: string;
+  fornecedor_id?: string;
+  fornecedor_nome?: string;
+  fornecedor_cnpj?: string;
+  descricao: string;
+  valor_original: number;
+  valor_atual: number;
+  data_emissao: string;
+  data_vencimento: string;
+  data_pagamento?: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  departamento?: string;
+  classe_financeira?: string;
+  categoria?: string;
+  status: 'pendente' | 'aprovado' | 'pago' | 'vencido' | 'cancelado';
+  forma_pagamento?: string;
+  conta_bancaria_id?: string;
+  observacoes?: string;
+  anexos?: string[];
+  valor_desconto: number;
+  valor_juros: number;
+  valor_multa: number;
+  valor_pago: number;
+  data_aprovacao?: string;
+  aprovado_por?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContaReceber {
+  id: string;
+  company_id: string;
+  numero_titulo: string;
+  cliente_id?: string;
+  cliente_nome?: string;
+  cliente_cnpj?: string;
+  descricao: string;
+  valor_original: number;
+  valor_atual: number;
+  data_emissao: string;
+  data_vencimento: string;
+  data_recebimento?: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  departamento?: string;
+  classe_financeira?: string;
+  categoria?: string;
+  status: 'pendente' | 'confirmado' | 'recebido' | 'vencido' | 'cancelado';
+  forma_recebimento?: string;
+  conta_bancaria_id?: string;
+  observacoes?: string;
+  anexos?: string[];
+  valor_desconto: number;
+  valor_juros: number;
+  valor_multa: number;
+  valor_recebido: number;
+  data_confirmacao?: string;
+  confirmado_por?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Borderos {
+  id: string;
+  company_id: string;
+  numero_borderos: string;
+  data_geracao: string;
+  data_vencimento: string;
+  valor_total: number;
+  quantidade_titulos: number;
+  status: 'gerado' | 'enviado' | 'processado' | 'retornado';
+  banco_codigo?: string;
+  arquivo_remessa?: string;
+  arquivo_retorno?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContaBancaria {
+  id: string;
+  company_id: string;
+  banco_codigo: string;
+  banco_nome: string;
+  agencia: string;
+  conta: string;
+  tipo_conta: 'corrente' | 'poupanca' | 'investimento';
+  moeda: string;
+  saldo_atual: number;
+  saldo_disponivel: number;
+  limite_credito: number;
+  data_saldo?: string;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FluxoCaixa {
+  id: string;
+  company_id: string;
+  data_projecao: string;
+  tipo_movimento: 'entrada' | 'saida';
+  categoria: string;
+  descricao: string;
+  valor: number;
+  conta_bancaria_id?: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  status: 'previsto' | 'confirmado' | 'realizado';
+  data_confirmacao?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NFe {
+  id: string;
+  company_id: string;
+  chave_acesso: string;
+  numero_nfe: string;
+  serie: string;
+  data_emissao: string;
+  data_saida?: string;
+  valor_total: number;
+  valor_icms: number;
+  valor_ipi: number;
+  valor_pis: number;
+  valor_cofins: number;
+  status_sefaz: 'pendente' | 'autorizada' | 'rejeitada' | 'cancelada' | 'inutilizada';
+  xml_nfe?: string;
+  danfe_url?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanoContas {
+  id: string;
+  company_id: string;
+  codigo: string;
+  descricao: string;
+  tipo_conta: 'ativo' | 'passivo' | 'patrimonio' | 'receita' | 'despesa';
+  nivel: number;
+  conta_pai_id?: string;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LancamentoContabil {
+  id: string;
+  company_id: string;
+  data_lancamento: string;
+  conta_debito_id: string;
+  conta_credito_id: string;
+  valor: number;
+  historico: string;
+  documento?: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  tipo_lancamento: 'manual' | 'automatico' | 'importado';
+  origem_id?: string;
+  origem_tipo?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConfiguracaoAprovacao {
+  id: string;
+  company_id: string;
+  tipo_aprovacao: string;
+  valor_limite: number;
+  centro_custo_id?: string;
+  departamento?: string;
+  classe_financeira?: string;
+  usuario_id?: string;
+  nivel_aprovacao: number;
+  is_active: boolean;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Aprovacao {
+  id: string;
+  company_id: string;
+  entidade_tipo: string;
+  entidade_id: string;
+  nivel_aprovacao: number;
+  aprovador_id: string;
+  status: 'pendente' | 'aprovado' | 'rejeitado';
+  data_aprovacao?: string;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// =====================================================
+// TIPOS PARA FORMULÁRIOS
+// =====================================================
+
+export interface ContaPagarFormData {
+  numero_titulo?: string;
+  fornecedor_id?: string;
+  fornecedor_nome?: string;
+  fornecedor_cnpj?: string;
+  descricao: string;
+  valor_original: number;
+  data_emissao: string;
+  data_vencimento: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  departamento?: string;
+  classe_financeira?: string;
+  categoria?: string;
+  forma_pagamento?: string;
+  conta_bancaria_id?: string;
+  observacoes?: string;
+  anexos?: string[];
+}
+
+export interface ContaReceberFormData {
+  numero_titulo?: string;
+  cliente_id?: string;
+  cliente_nome?: string;
+  cliente_cnpj?: string;
+  descricao: string;
+  valor_original: number;
+  data_emissao: string;
+  data_vencimento: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  departamento?: string;
+  classe_financeira?: string;
+  categoria?: string;
+  forma_recebimento?: string;
+  conta_bancaria_id?: string;
+  observacoes?: string;
+  anexos?: string[];
+}
+
+export interface FluxoCaixaFormData {
+  data_projecao: string;
+  tipo_movimento: 'entrada' | 'saida';
+  categoria: string;
+  descricao: string;
+  valor: number;
+  conta_bancaria_id?: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  status?: 'previsto' | 'confirmado' | 'realizado';
+  observacoes?: string;
+}
+
+// =====================================================
+// TIPOS PARA FILTROS
+// =====================================================
+
+export interface ContaPagarFilters {
+  fornecedor_nome?: string;
+  status?: string;
+  data_vencimento_inicio?: string;
+  data_vencimento_fim?: string;
+  valor_minimo?: number;
+  valor_maximo?: number;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  departamento?: string;
+  classe_financeira?: string;
+}
+
+export interface ContaReceberFilters {
+  cliente_nome?: string;
+  status?: string;
+  data_vencimento_inicio?: string;
+  data_vencimento_fim?: string;
+  valor_minimo?: number;
+  valor_maximo?: number;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  departamento?: string;
+  classe_financeira?: string;
+}
+
+// =====================================================
+// TIPOS PARA RELATÓRIOS
+// =====================================================
+
+export interface AgingReport {
+  fornecedor_nome: string;
+  total_pendente: number;
+  vencido_1_30: number;
+  vencido_31_60: number;
+  vencido_61_90: number;
+  vencido_mais_90: number;
+  a_vencer_1_30: number;
+  a_vencer_31_60: number;
+  a_vencer_mais_60: number;
+}
+
+export interface KPIs {
+  dso: number;
+  dpo: number;
+  total_pagar: number;
+  total_receber: number;
+  saldo_caixa: number;
+  fluxo_previsto_30_dias: number;
+}
+
+// =====================================================
+// TIPOS PARA APROVAÇÃO
+// =====================================================
+
+export interface AprovacaoData {
+  entidade_tipo: string;
+  entidade_id: string;
+  aprovador_id: string;
+  status: 'aprovado' | 'rejeitado';
+  observacoes?: string;
+}
+
+export interface AprovacaoStatus {
+  total_aprovacoes: number;
+  aprovadas: number;
+  pendentes: number;
+  rejeitadas: number;
+  nivel_atual: number;
+  nivel_necessario: number;
+}
+
+// =====================================================
+// TIPOS PARA TESOURARIA
+// =====================================================
+
+export interface ConciliacaoBancaria {
+  id: string;
+  company_id: string;
+  conta_bancaria_id: string;
+  data_inicio: string;
+  data_fim: string;
+  saldo_inicial: number;
+  saldo_final: number;
+  total_entradas: number;
+  total_saidas: number;
+  status: 'pendente' | 'processando' | 'concluida' | 'erro';
+  arquivo_extrato?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MovimentoBancario {
+  id: string;
+  company_id: string;
+  conta_bancaria_id: string;
+  data_movimento: string;
+  data_conciliacao?: string;
+  descricao: string;
+  valor: number;
+  tipo_movimento: 'entrada' | 'saida';
+  categoria: string;
+  documento?: string;
+  conciliado: boolean;
+  conciliacao_id?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjecaoFluxoCaixa {
+  data: string;
+  entradas_previstas: number;
+  saidas_previstas: number;
+  saldo_projetado: number;
+  entradas_confirmadas: number;
+  saidas_confirmadas: number;
+  saldo_confirmado: number;
+  diferenca: number;
+}
+
+export interface RelatorioTesouraria {
+  periodo_inicio: string;
+  periodo_fim: string;
+  saldo_inicial: number;
+  saldo_final: number;
+  total_entradas: number;
+  total_saidas: number;
+  fluxo_liquido: number;
+  contas_nao_conciliadas: number;
+  valor_nao_conciliado: number;
+  projecao_30_dias: number;
+  projecao_60_dias: number;
+  projecao_90_dias: number;
+}
+
+// =====================================================
+// TIPOS PARA FORMULÁRIOS DE TESOURARIA
+// =====================================================
+
+export interface ContaBancariaFormData {
+  banco_codigo: string;
+  banco_nome: string;
+  agencia: string;
+  conta: string;
+  tipo_conta: 'corrente' | 'poupanca' | 'investimento';
+  moeda: string;
+  limite_credito?: number;
+  observacoes?: string;
+}
+
+export interface FluxoCaixaFormData {
+  data_projecao: string;
+  tipo_movimento: 'entrada' | 'saida';
+  categoria: string;
+  descricao: string;
+  valor: number;
+  conta_bancaria_id?: string;
+  centro_custo_id?: string;
+  projeto_id?: string;
+  status?: 'previsto' | 'confirmado' | 'realizado';
+  observacoes?: string;
+}
+
+export interface ConciliacaoFormData {
+  conta_bancaria_id: string;
+  data_inicio: string;
+  data_fim: string;
+  saldo_inicial: number;
+  arquivo_extrato?: File;
+  observacoes?: string;
+}
+
+// =====================================================
+// TIPOS PARA FILTROS DE TESOURARIA
+// =====================================================
+
+export interface TesourariaFilters {
+  conta_bancaria_id?: string;
+  data_inicio?: string;
+  data_fim?: string;
+  tipo_movimento?: 'entrada' | 'saida';
+  categoria?: string;
+  status?: string;
+  conciliado?: boolean;
+}
+
+// =====================================================
+// TIPOS PARA RELATÓRIOS DE TESOURARIA
+// =====================================================
+
+export interface FluxoCaixaReport {
+  data: string;
+  entradas: number;
+  saidas: number;
+  saldo_dia: number;
+  saldo_acumulado: number;
+  movimentos: number;
+}
+
+export interface ConciliacaoReport {
+  conta_nome: string;
+  periodo: string;
+  saldo_inicial: number;
+  saldo_final: number;
+  total_entradas: number;
+  total_saidas: number;
+  movimentos_conciliados: number;
+  movimentos_nao_conciliados: number;
+  valor_nao_conciliado: number;
+  status: string;
+}
+
+// =====================================================
+// TIPOS PARA MÓDULO FISCAL
+// =====================================================
+
+export interface NFSe {
+  id: string;
+  company_id: string;
+  numero_nfse: string;
+  codigo_verificacao: string;
+  data_emissao: string;
+  data_competencia: string;
+  valor_servico: number;
+  valor_deducoes: number;
+  valor_pis: number;
+  valor_cofins: number;
+  valor_inss: number;
+  valor_ir: number;
+  valor_csll: number;
+  valor_iss: number;
+  valor_liquido: number;
+  status_sefaz: 'pendente' | 'autorizada' | 'rejeitada' | 'cancelada' | 'inutilizada';
+  xml_nfse?: string;
+  danfse_url?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SefazStatus {
+  id: string;
+  company_id: string;
+  uf: string;
+  servico: string;
+  status: 'online' | 'offline' | 'indisponivel' | 'contingencia';
+  ultima_verificacao: string;
+  tempo_resposta?: number;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventoFiscal {
+  id: string;
+  company_id: string;
+  tipo_evento: 'emissao' | 'cancelamento' | 'inutilizacao' | 'correcao' | 'manifestacao';
+  documento_tipo: 'nfe' | 'nfse';
+  documento_id: string;
+  chave_acesso?: string;
+  numero_protocolo?: string;
+  data_evento: string;
+  status: 'pendente' | 'processado' | 'erro';
+  xml_evento?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConfiguracaoFiscal {
+  id: string;
+  company_id: string;
+  nome_configuracao: string;
+  uf: string;
+  tipo_documento: 'nfe' | 'nfse' | 'mdfe' | 'cte';
+  ambiente: 'producao' | 'homologacao';
+  certificado_digital?: string;
+  senha_certificado?: string;
+  data_validade_certificado?: string;
+  webservice_url: string;
+  versao_layout: string;
+  serie_numeracao: number;
+  numero_inicial: number;
+  numero_final?: number;
+  configuracao_uf?: Record<string, any>;
+  certificado_valido: boolean;
+  conectividade_ok: boolean;
+  ultima_validacao?: string;
+  erro_validacao?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConfiguracaoBancaria {
+  id: string;
+  company_id: string;
+  nome_configuracao: string;
+  banco_codigo: string;
+  banco_nome: string;
+  ambiente: 'producao' | 'sandbox' | 'homologacao';
+  client_id?: string;
+  client_secret?: string;
+  api_key?: string;
+  access_token?: string;
+  refresh_token?: string;
+  base_url: string;
+  auth_url?: string;
+  api_version: string;
+  grant_type: string;
+  scope?: string;
+  token_expires_at?: string;
+  configuracao_banco?: Record<string, any>;
+  credenciais_validas: boolean;
+  conectividade_ok: boolean;
+  ultima_validacao?: string;
+  erro_validacao?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LogValidacaoIntegracao {
+  id: string;
+  company_id: string;
+  tipo_integracao: 'sefaz' | 'bancaria';
+  configuracao_id: string;
+  status: 'sucesso' | 'erro' | 'aviso';
+  mensagem?: string;
+  detalhes?: Record<string, any>;
+  tempo_resposta_ms?: number;
+  created_by?: string;
+  created_at: string;
+}
+
+export interface ManifestacaoDestinatario {
+  id: string;
+  company_id: string;
+  chave_acesso: string;
+  cnpj_destinatario: string;
+  tipo_manifestacao: 'ciencia' | 'confirmacao' | 'desconhecimento' | 'operacao_nao_realizada';
+  justificativa?: string;
+  data_manifestacao: string;
+  status: 'pendente' | 'processado' | 'erro';
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// =====================================================
+// TIPOS PARA FORMULÁRIOS FISCAIS
+// =====================================================
+
+export interface NFeFormData {
+  numero_nfe: string;
+  serie: string;
+  data_emissao: string;
+  data_saida?: string;
+  valor_total: number;
+  valor_icms: number;
+  valor_ipi: number;
+  valor_pis: number;
+  valor_cofins: number;
+  observacoes?: string;
+}
+
+export interface NFSeFormData {
+  numero_nfse: string;
+  data_emissao: string;
+  data_competencia: string;
+  valor_servico: number;
+  valor_deducoes?: number;
+  observacoes?: string;
+}
+
+export interface ConfiguracaoFiscalFormData {
+  tipo_documento: 'nfe' | 'nfse';
+  uf: string;
+  ambiente: 'producao' | 'homologacao';
+  certificado_digital?: File;
+  senha_certificado?: string;
+  webservice_url: string;
+  versao_layout: string;
+  serie: number;
+  numero_inicial: number;
+  numero_final?: number;
+  observacoes?: string;
+}
+
+// =====================================================
+// TIPOS PARA FILTROS FISCAIS
+// =====================================================
+
+export interface FiscalFilters {
+  tipo_documento?: 'nfe' | 'nfse';
+  status_sefaz?: string;
+  data_emissao_inicio?: string;
+  data_emissao_fim?: string;
+  valor_minimo?: number;
+  valor_maximo?: number;
+  uf?: string;
+  ambiente?: 'producao' | 'homologacao';
+}
+
+// =====================================================
+// TIPOS PARA RELATÓRIOS FISCAIS
+// =====================================================
+
+export interface RelatorioFiscal {
+  periodo_inicio: string;
+  periodo_fim: string;
+  total_nfes: number;
+  total_nfses: number;
+  valor_total_nfes: number;
+  valor_total_nfses: number;
+  valor_total_impostos: number;
+  nfes_autorizadas: number;
+  nfes_canceladas: number;
+  nfes_rejeitadas: number;
+  nfses_autorizadas: number;
+  nfses_canceladas: number;
+  nfses_rejeitadas: number;
+}
+
+export interface SefazMonitorReport {
+  uf: string;
+  servicos: {
+    servico: string;
+    status: string;
+    ultima_verificacao: string;
+    tempo_resposta?: number;
+  }[];
+  disponibilidade_geral: number;
+  tempo_medio_resposta: number;
+}
+
+// =====================================================
+// TIPOS PARA MÓDULO CONTABILIDADE
+// =====================================================
+
+export interface PlanoContas {
+  id: string;
+  company_id: string;
+  codigo: string;
+  nome: string;
+  tipo: 'ativo' | 'passivo' | 'patrimonio_liquido' | 'receita' | 'despesa' | 'custos';
+  nivel: number;
+  conta_pai_id?: string;
+  aceita_lancamento: boolean;
+  saldo_inicial: number;
+  saldo_atual: number;
+  natureza: 'devedora' | 'credora';
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LancamentoContabil {
+  id: string;
+  company_id: string;
+  data_lancamento: string;
+  data_competencia: string;
+  numero_documento: string;
+  historico: string;
+  valor_total: number;
+  tipo_lancamento: 'manual' | 'automatico' | 'importado';
+  origem: 'contas_pagar' | 'contas_receber' | 'tesouraria' | 'fiscal' | 'manual';
+  origem_id?: string;
+  status: 'rascunho' | 'aprovado' | 'estornado';
+  observacoes?: string;
+  created_by?: string;
+  aprovado_by?: string;
+  aprovado_at?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ItemLancamento {
+  id: string;
+  lancamento_id: string;
+  conta_id: string;
+  centro_custo_id?: string;
+  debito: number;
+  credito: number;
+  historico: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CentroCusto {
+  id: string;
+  company_id: string;
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  tipo: 'producao' | 'administrativo' | 'comercial' | 'financeiro';
+  ativo: boolean;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RateioContabil {
+  id: string;
+  company_id: string;
+  conta_id: string;
+  centro_custo_id: string;
+  percentual: number;
+  valor: number;
+  periodo_inicio: string;
+  periodo_fim: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpedFiscal {
+  id: string;
+  company_id: string;
+  periodo: string;
+  versao_layout: string;
+  status: 'gerando' | 'gerado' | 'validado' | 'erro';
+  arquivo_url?: string;
+  data_geracao: string;
+  data_validacao?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpedContabil {
+  id: string;
+  company_id: string;
+  periodo: string;
+  versao_layout: string;
+  status: 'gerando' | 'gerado' | 'validado' | 'erro';
+  arquivo_url?: string;
+  data_geracao: string;
+  data_validacao?: string;
+  observacoes?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Balancete {
+  id: string;
+  company_id: string;
+  periodo: string;
+  conta_id: string;
+  saldo_anterior: number;
+  debito_periodo: number;
+  credito_periodo: number;
+  saldo_atual: number;
+  natureza: 'devedora' | 'credora';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DRE {
+  id: string;
+  company_id: string;
+  periodo: string;
+  conta_id: string;
+  descricao: string;
+  valor_periodo: number;
+  valor_acumulado: number;
+  nivel: number;
+  ordem: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BalancoPatrimonial {
+  id: string;
+  company_id: string;
+  periodo: string;
+  conta_id: string;
+  descricao: string;
+  valor_atual: number;
+  valor_anterior: number;
+  variacao: number;
+  percentual_variacao: number;
+  nivel: number;
+  ordem: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// =====================================================
+// TIPOS PARA FORMULÁRIOS CONTÁBEIS
+// =====================================================
+
+export interface PlanoContasFormData {
+  codigo: string;
+  nome: string;
+  tipo: 'ativo' | 'passivo' | 'patrimonio_liquido' | 'receita' | 'despesa' | 'custos';
+  nivel: number;
+  conta_pai_id?: string;
+  aceita_lancamento: boolean;
+  saldo_inicial: number;
+  natureza: 'devedora' | 'credora';
+  observacoes?: string;
+}
+
+export interface LancamentoFormData {
+  data_lancamento: string;
+  data_competencia: string;
+  numero_documento: string;
+  historico: string;
+  valor_total: number;
+  tipo_lancamento: 'manual' | 'automatico' | 'importado';
+  origem: 'contas_pagar' | 'contas_receber' | 'tesouraria' | 'fiscal' | 'manual';
+  origem_id?: string;
+  observacoes?: string;
+  itens: {
+    conta_id: string;
+    centro_custo_id?: string;
+    debito: number;
+    credito: number;
+    historico: string;
+  }[];
+}
+
+export interface CentroCustoFormData {
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  tipo: 'producao' | 'administrativo' | 'comercial' | 'financeiro';
+  ativo: boolean;
+}
+
+export interface RateioFormData {
+  conta_id: string;
+  centro_custo_id: string;
+  percentual: number;
+  valor: number;
+  periodo_inicio: string;
+  periodo_fim: string;
+  observacoes?: string;
+}
+
+// =====================================================
+// TIPOS PARA FILTROS CONTÁBEIS
+// =====================================================
+
+export interface ContabilidadeFilters {
+  periodo_inicio?: string;
+  periodo_fim?: string;
+  conta_id?: string;
+  centro_custo_id?: string;
+  tipo_lancamento?: string;
+  status?: string;
+  origem?: string;
+}
+
+// =====================================================
+// TIPOS PARA RELATÓRIOS CONTÁBEIS
+// =====================================================
+
+export interface RelatorioContabil {
+  periodo_inicio: string;
+  periodo_fim: string;
+  total_lancamentos: number;
+  total_debitos: number;
+  total_creditos: number;
+  saldo_periodo: number;
+  lancamentos_aprovados: number;
+  lancamentos_pendentes: number;
+  lancamentos_estornados: number;
+}
+
+export interface SpedReport {
+  periodo: string;
+  tipo: 'fiscal' | 'contabil';
+  status: string;
+  data_geracao: string;
+  data_validacao?: string;
+  arquivo_url?: string;
+  observacoes?: string;
+}
+

@@ -72,7 +72,7 @@ export const MenuDemo: React.FC = () => {
           <div>
             <h3 className="text-lg font-semibold mb-3">Permissões por Módulo</h3>
             <div className="grid gap-3">
-              {['dashboard', 'users', 'companies', 'projects', 'materials', 'partners', 'cost_centers'].map(module => (
+              {['dashboard', 'users', 'companies', 'projects', 'materials_equipment', 'partners', 'cost_centers'].map(module => (
                 <div key={module} className="border rounded-lg p-4">
                   <div className="font-medium text-sm mb-2 capitalize">
                     {module.replace('_', ' ')}
@@ -124,7 +124,7 @@ export const MenuDemo: React.FC = () => {
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-600">
-                {['dashboard', 'users', 'companies', 'projects', 'materials', 'partners', 'cost_centers']
+                {['dashboard', 'users', 'companies', 'projects', 'materials_equipment', 'partners', 'cost_centers']
                   .filter(module => canReadModule(module)).length}
               </div>
               <div className="text-sm text-muted-foreground">
@@ -133,7 +133,7 @@ export const MenuDemo: React.FC = () => {
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-purple-600">
-                {['dashboard', 'users', 'companies', 'projects', 'materials', 'partners', 'cost_centers']
+                {['dashboard', 'users', 'companies', 'projects', 'materials_equipment', 'partners', 'cost_centers']
                   .filter(module => canCreateModule(module)).length}
               </div>
               <div className="text-sm text-muted-foreground">

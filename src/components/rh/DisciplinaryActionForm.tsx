@@ -11,21 +11,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DisciplinaryAction, DisciplinaryActionCreateData, DisciplinaryActionUpdateData } from '@/integrations/supabase/rh-types';
-import { useEmployees } from '@/hooks/rh/useEmployees';
+import { DisciplinaryAction, DisciplinaryActionCreateData, DisciplinaryActionUpdateData, Employee } from '@/integrations/supabase/rh-types';
+import { useRHData } from '@/hooks/generic/useEntityData';
 import { useCompany } from '@/lib/company-context';
 
 interface DisciplinaryActionFormProps {
   action?: DisciplinaryAction | null;
   mode: 'create' | 'edit' | 'view';
+  employees: Employee[];
   onSave: (data: DisciplinaryActionCreateData | DisciplinaryActionUpdateData) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
 
-export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoading }: DisciplinaryActionFormProps) {
+export function DisciplinaryActionForm({ action, mode, employees, onSave, onCancel, isLoading }: DisciplinaryActionFormProps) {
   const { selectedCompany } = useCompany();
-  const { data: employeesData } = useEmployees(selectedCompany?.id || '');
   
   const [formData, setFormData] = useState({
     employee_id: '',
@@ -36,9 +36,14 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
     motivo: '',
     descricao_ocorrencia: '',
     medidas_corretivas: '',
-    status: 'ativo',
+    status: 'active',
     aplicado_por: '',
     observacoes: '',
+    duration_days: '',
+    start_date: '',
+    end_date: '',
+    documents: '',
+    is_active: true,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -57,12 +62,18 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
         status: action.status,
         aplicado_por: action.aplicado_por || '',
         observacoes: action.observacoes || '',
+        duration_days: action.duration_days?.toString() || '',
+        start_date: action.start_date?.split('T')[0] || '',
+        end_date: action.end_date?.split('T')[0] || '',
+        documents: action.documents ? JSON.stringify(action.documents) : '',
+        is_active: action.is_active,
       });
     }
   }, [action]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
+    const today = new Date().toISOString().split('T')[0];
 
     if (!formData.employee_id) {
       newErrors.employee_id = 'Funcionário é obrigatório';
@@ -74,10 +85,14 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
 
     if (!formData.data_ocorrencia) {
       newErrors.data_ocorrencia = 'Data da ocorrência é obrigatória';
+    } else if (formData.data_ocorrencia > today) {
+      newErrors.data_ocorrencia = 'Data da ocorrência não pode ser futura';
     }
 
     if (!formData.data_aplicacao) {
       newErrors.data_aplicacao = 'Data de aplicação é obrigatória';
+    } else if (formData.data_aplicacao > today) {
+      newErrors.data_aplicacao = 'Data de aplicação não pode ser futura';
     }
 
     if (!formData.gravidade) {
@@ -90,6 +105,44 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
 
     if (!formData.descricao_ocorrencia) {
       newErrors.descricao_ocorrencia = 'Descrição da ocorrência é obrigatória';
+    }
+
+    // Validações específicas para suspensões
+    if (formData.tipo_acao === 'suspensao') {
+      if (!formData.duration_days || parseInt(formData.duration_days) <= 0) {
+        newErrors.duration_days = 'Duração em dias é obrigatória para suspensões';
+      }
+      if (!formData.start_date) {
+        newErrors.start_date = 'Data de início é obrigatória para suspensões';
+      } else if (formData.start_date > today) {
+        newErrors.start_date = 'Data de início não pode ser futura';
+      }
+      if (!formData.end_date) {
+        newErrors.end_date = 'Data de fim é obrigatória para suspensões';
+      } else if (formData.end_date > today) {
+        newErrors.end_date = 'Data de fim não pode ser futura';
+      }
+      
+      // Validar se data de fim é posterior à data de início
+      if (formData.start_date && formData.end_date && formData.start_date >= formData.end_date) {
+        newErrors.end_date = 'Data de fim deve ser posterior à data de início';
+      }
+    }
+
+    // Validação de transições de status
+    if (action && action.status) {
+      const validTransitions: Record<string, string[]> = {
+        'active': ['suspended', 'expired', 'cancelled'],
+        'suspended': ['active', 'cancelled'],
+        'expired': ['cancelled'],
+        'cancelled': [] // Status final, não pode ser alterado
+      };
+
+      if (action.status === 'cancelled' && formData.status !== 'cancelled') {
+        newErrors.status = 'Ações canceladas não podem ser alteradas';
+      } else if (validTransitions[action.status] && !validTransitions[action.status].includes(formData.status)) {
+        newErrors.status = `Transição de ${action.status} para ${formData.status} não é permitida`;
+      }
     }
 
     setErrors(newErrors);
@@ -107,6 +160,8 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
       const data = {
         ...formData,
         company_id: selectedCompany?.id || '',
+        duration_days: formData.duration_days ? parseInt(formData.duration_days) : undefined,
+        documents: formData.documents ? JSON.parse(formData.documents) : undefined,
         ...(action && { id: action.id }),
       };
 
@@ -125,7 +180,8 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
 
   const isReadOnly = mode === 'view';
 
-  const employees = employeesData?.data || [];
+  // Filtrar apenas funcionários ativos
+  const activeEmployees = employees.filter(emp => emp.status === 'ativo');
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -146,9 +202,9 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
                   <SelectValue placeholder="Selecione o funcionário" />
                 </SelectTrigger>
                 <SelectContent>
-                  {employees.map((employee) => (
+                  {activeEmployees.map((employee) => (
                     <SelectItem key={employee.id} value={employee.id}>
-                      {employee.nome} - {employee.matricula}
+                      {employee.nome} - {employee.matricula || 'Sem matrícula'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -169,11 +225,10 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
                   <SelectValue placeholder="Selecione o tipo" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="advertencia">Advertência</SelectItem>
+                  <SelectItem value="advertencia_verbal">Advertência Verbal</SelectItem>
+                  <SelectItem value="advertencia_escrita">Advertência Escrita</SelectItem>
                   <SelectItem value="suspensao">Suspensão</SelectItem>
                   <SelectItem value="demissao_justa_causa">Demissão por Justa Causa</SelectItem>
-                  <SelectItem value="transferencia">Transferência</SelectItem>
-                  <SelectItem value="outros">Outros</SelectItem>
                 </SelectContent>
               </Select>
               {errors.tipo_acao && (
@@ -242,10 +297,10 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
                   <SelectValue placeholder="Selecione o status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ativo">Ativo</SelectItem>
-                  <SelectItem value="suspenso">Suspenso</SelectItem>
-                  <SelectItem value="cancelado">Cancelado</SelectItem>
-                  <SelectItem value="arquivado">Arquivado</SelectItem>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="suspended">Suspenso</SelectItem>
+                  <SelectItem value="expired">Expirado</SelectItem>
+                  <SelectItem value="cancelled">Cancelado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -302,6 +357,55 @@ export function DisciplinaryActionForm({ action, mode, onSave, onCancel, isLoadi
               disabled={isReadOnly}
             />
           </div>
+
+          {/* Campos específicos para suspensões */}
+          {formData.tipo_acao === 'suspensao' && (
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="duration_days">Duração (dias) *</Label>
+                <Input
+                  id="duration_days"
+                  type="number"
+                  min="1"
+                  value={formData.duration_days}
+                  onChange={(e) => handleInputChange('duration_days', e.target.value)}
+                  placeholder="Ex: 3"
+                  disabled={isReadOnly}
+                />
+                {errors.duration_days && (
+                  <p className="text-sm text-red-500">{errors.duration_days}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="start_date">Data de Início *</Label>
+                <Input
+                  id="start_date"
+                  type="date"
+                  value={formData.start_date}
+                  onChange={(e) => handleInputChange('start_date', e.target.value)}
+                  disabled={isReadOnly}
+                />
+                {errors.start_date && (
+                  <p className="text-sm text-red-500">{errors.start_date}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="end_date">Data de Fim *</Label>
+                <Input
+                  id="end_date"
+                  type="date"
+                  value={formData.end_date}
+                  onChange={(e) => handleInputChange('end_date', e.target.value)}
+                  disabled={isReadOnly}
+                />
+                {errors.end_date && (
+                  <p className="text-sm text-red-500">{errors.end_date}</p>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="observacoes">Observações</Label>

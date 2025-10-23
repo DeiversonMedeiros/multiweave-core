@@ -28,7 +28,8 @@ const MedicalAgreementEditPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
+
+    <div className="container mx-auto py-8">
         <div className="text-center">Carregando convênio...</div>
       </div>
     );
@@ -36,6 +37,7 @@ const MedicalAgreementEditPage: React.FC = () => {
 
   if (error || !agreement) {
     return (
+      
       <div className="container mx-auto py-8">
         <div className="text-center text-red-500">
           Erro ao carregar convênio: {error?.message || 'Convênio não encontrado'}
@@ -50,7 +52,8 @@ const MedicalAgreementEditPage: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button
@@ -86,7 +89,7 @@ const MedicalAgreementEditPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-  );
+    );
 };
 
 export default MedicalAgreementEditPage;

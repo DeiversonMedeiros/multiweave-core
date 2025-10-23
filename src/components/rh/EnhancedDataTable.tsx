@@ -1,5 +1,20 @@
 import React, { useState, useMemo } from 'react';
 import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+  ColumnFiltersState,
+  SortingState,
+  VisibilityState,
+  PaginationState,
+} from '@tanstack/react-table';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
   Table,
   TableBody,
   TableCell,
@@ -7,13 +22,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -23,354 +35,389 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  ChevronLeft,
-  ChevronRight,
-  MoreHorizontal,
   Search,
   Filter,
   Download,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Plus,
+  MoreHorizontal,
 } from 'lucide-react';
-import { ColumnDef } from '@tanstack/react-table';
 
 // =====================================================
 // INTERFACES
 // =====================================================
 
-interface ActionItem {
-  label: string;
-  icon: React.ReactNode;
-  onClick: (item: any) => void;
-  variant?: 'default' | 'destructive' | 'outline';
-  condition?: (item: any) => boolean;
-}
-
-interface DataTableProps<T> {
-  data: T[];
-  columns: ColumnDef<T>[];
-  loading?: boolean;
+interface EnhancedDataTableProps<TData, TValue> {
+  columns: ColumnDef<TData, TValue>[];
+  data: TData[];
+  isLoading?: boolean;
+  emptyMessage?: string;
+  searchPlaceholder?: string;
+  title?: string;
+  enableFilters?: boolean;
+  enablePagination?: boolean;
+  enableExport?: boolean;
+  enableSearch?: boolean;
+  pageSize?: number;
+  onAdd?: () => void;
+  onExport?: () => void;
+  actions?: React.ReactNode;
   searchable?: boolean;
   filterable?: boolean;
   pagination?: boolean;
-  actions?: ActionItem[];
-  onEdit?: (item: T) => void;
-  onDelete?: (item: T) => void;
-  onView?: (item: T) => void;
-  onAdd?: () => void;
-  onExport?: () => void;
-  searchPlaceholder?: string;
-  emptyMessage?: string;
-  pageSize?: number;
-  className?: string;
 }
 
 // =====================================================
 // COMPONENTE PRINCIPAL
 // =====================================================
 
-export function EnhancedDataTable<T>({
-  data,
+export function EnhancedDataTable<TData, TValue>({
   columns,
-  loading = false,
+  data,
+  isLoading = false,
+  emptyMessage = 'Nenhum item encontrado',
+  searchPlaceholder = 'Buscar...',
+  title,
+  enableFilters = true,
+  enablePagination = true,
+  enableExport = true,
+  enableSearch = true,
+  pageSize = 10,
+  onAdd,
+  onExport,
+  actions,
   searchable = true,
   filterable = true,
   pagination = true,
-  actions = [],
-  onEdit,
-  onDelete,
-  onView,
-  onAdd,
-  onExport,
-  searchPlaceholder = 'Buscar...',
-  emptyMessage = 'Nenhum registro encontrado',
-  pageSize = 10,
-  className = '',
-}: DataTableProps<T>) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [sortField, setSortField] = useState<string>('');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+}: EnhancedDataTableProps<TData, TValue>) {
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = useState({});
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [paginationState, setPaginationState] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: pageSize,
+  });
 
-  // Filtrar dados baseado no termo de busca
-  const filteredData = useMemo(() => {
-    if (!searchTerm) return data;
-    
-    return data.filter((item) => {
-      return Object.values(item as any).some((value) => {
-        if (typeof value === 'string') {
-          return value.toLowerCase().includes(searchTerm.toLowerCase());
-        }
-        if (typeof value === 'number') {
-          return value.toString().includes(searchTerm);
-        }
-        return false;
-      });
-    });
-  }, [data, searchTerm]);
+  // Configuração da tabela
+  const table = useReactTable({
+    data,
+    columns,
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
+    onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPaginationState,
+    state: {
+      sorting,
+      columnFilters,
+      columnVisibility,
+      rowSelection,
+      globalFilter,
+      pagination: paginationState,
+    },
+  });
 
-  // Paginação
-  const totalPages = Math.ceil(filteredData.length / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = startIndex + pageSize;
-  const paginatedData = pagination 
-    ? filteredData.slice(startIndex, endIndex)
-    : filteredData;
+  // Estatísticas
+  const totalRows = table.getFilteredRowModel().rows.length;
+  const selectedRows = table.getFilteredSelectedRowModel().rows.length;
+  const currentPage = table.getState().pagination.pageIndex + 1;
+  const totalPages = table.getPageCount();
 
-  // Ordenação
-  const sortedData = useMemo(() => {
-    if (!sortField) return paginatedData;
-    
-    return [...paginatedData].sort((a, b) => {
-      const aValue = (a as any)[sortField];
-      const bValue = (b as any)[sortField];
-      
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [paginatedData, sortField, sortDirection]);
-
-  // Handlers
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+  // Função para exportar dados
+  const handleExport = () => {
+    if (onExport) {
+      onExport();
     } else {
-      setSortField(field);
-      setSortDirection('asc');
+      // Exportação padrão para CSV
+      const selectedData = table.getFilteredSelectedRowModel().rows.map(row => row.original);
+      const dataToExport = selectedData.length > 0 ? selectedData : data;
+      
+      const csvContent = convertToCSV(dataToExport, columns);
+      downloadCSV(csvContent, `${title || 'data'}.csv`);
     }
   };
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+  // Função para converter dados para CSV
+  const convertToCSV = (data: TData[], columns: ColumnDef<TData, TValue>[]) => {
+    const headers = columns
+      .filter(col => col.id !== 'actions' && col.id !== 'select')
+      .map(col => col.header as string)
+      .join(',');
+    
+    const rows = data.map(row => {
+      return columns
+        .filter(col => col.id !== 'actions' && col.id !== 'select')
+        .map(col => {
+          const value = (row as any)[col.id as string];
+          return typeof value === 'string' ? `"${value}"` : value || '';
+        })
+        .join(',');
+    });
+    
+    return [headers, ...rows].join('\n');
   };
 
-  const handleSearch = (value: string) => {
-    setSearchTerm(value);
-    setCurrentPage(1);
+  // Função para baixar CSV
+  const downloadCSV = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
-  // Renderizar ações da tabela
-  const renderTableActions = (item: T) => {
-    const availableActions = actions.filter(action => 
-      !action.condition || action.condition(item)
-    );
-
-    if (availableActions.length === 0) return null;
-
+  if (isLoading) {
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm">
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {availableActions.map((action, index) => (
-            <DropdownMenuItem
-              key={index}
-              onClick={() => action.onClick(item)}
-              className={action.variant === 'destructive' ? 'text-red-600' : ''}
-            >
-              {action.icon}
-              <span className="ml-2">{action.label}</span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  };
-
-  // Renderizar cabeçalho da tabela
-  const renderTableHeader = () => (
-    <div className="flex items-center justify-between space-y-2">
-      <div className="flex items-center space-x-2">
-        {searchable && (
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder={searchPlaceholder}
-              value={searchTerm}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="pl-8 w-[300px]"
-            />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            Carregando...
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-4 w-full animate-pulse rounded bg-muted" />
+            ))}
           </div>
-        )}
-        {filterable && (
-          <Button variant="outline" size="sm">
-            <Filter className="h-4 w-4 mr-2" />
-            Filtros
-          </Button>
-        )}
-      </div>
-      
-      <div className="flex items-center space-x-2">
-        {onExport && (
-          <Button variant="outline" size="sm" onClick={onExport}>
-            <Download className="h-4 w-4 mr-2" />
-            Exportar
-          </Button>
-        )}
-        {onAdd && (
-          <Button size="sm" onClick={onAdd}>
-            <Plus className="h-4 w-4 mr-2" />
-            Adicionar
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-
-  // Renderizar paginação
-  const renderPagination = () => {
-    if (!pagination || totalPages <= 1) return null;
-
-    return (
-      <div className="flex items-center justify-between px-2">
-        <div className="flex-1 text-sm text-muted-foreground">
-          Mostrando {startIndex + 1} a {Math.min(endIndex, filteredData.length)} de {filteredData.length} registros
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          
-          <div className="flex items-center space-x-1">
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              const page = i + 1;
-              return (
-                <Button
-                  key={page}
-                  variant={currentPage === page ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handlePageChange(page)}
-                >
-                  {page}
-                </Button>
-              );
-            })}
-          </div>
-          
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        {renderTableHeader()}
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {columns.map((column, index) => (
-                  <TableHead key={index}>
-                    <div className="h-4 bg-muted animate-pulse rounded" />
-                  </TableHead>
-                ))}
-                {actions.length > 0 && <TableHead>Ações</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: pageSize }, (_, i) => (
-                <TableRow key={i}>
-                  {columns.map((_, colIndex) => (
-                    <TableCell key={colIndex}>
-                      <div className="h-4 bg-muted animate-pulse rounded" />
-                    </TableCell>
-                  ))}
-                  {actions.length > 0 && (
-                    <TableCell>
-                      <div className="h-4 bg-muted animate-pulse rounded" />
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className={`space-y-4 ${className}`}>
-      {renderTableHeader()}
-      
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {columns.map((column, index) => (
-                <TableHead 
-                  key={index}
-                  className={sortField === (column as any).accessorKey ? 'bg-muted' : ''}
-                >
-                  <div className="flex items-center space-x-2">
-                    <span>{(column as any).header}</span>
-                    {(column as any).accessorKey && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleSort((column as any).accessorKey)}
-                      >
-                        {sortField === (column as any).accessorKey && sortDirection === 'asc' ? '↑' : '↓'}
-                      </Button>
-                    )}
-                  </div>
-                </TableHead>
-              ))}
-              {actions.length > 0 && <TableHead>Ações</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sortedData.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columns.length + (actions.length > 0 ? 1 : 0)} className="text-center py-8">
-                  <div className="text-muted-foreground">{emptyMessage}</div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              sortedData.map((item, index) => (
-                <TableRow key={index}>
-                  {columns.map((column, colIndex) => (
-                    <TableCell key={colIndex}>
-                      {(column as any).cell ? 
-                        (column as any).cell({ row: { original: item } }) : 
-                        (item as any)[(column as any).accessorKey]
-                      }
-                    </TableCell>
-                  ))}
-                  {actions.length > 0 && (
-                    <TableCell>
-                      {renderTableActions(item)}
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))
+    <div className="space-y-4">
+      {/* Header com estatísticas e ações */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>{title || 'Dados'}</CardTitle>
+              <CardDescription>
+                {totalRows} {totalRows === 1 ? 'item' : 'itens'} encontrado{totalRows === 1 ? '' : 's'}
+                {selectedRows > 0 && ` • ${selectedRows} selecionado${selectedRows === 1 ? '' : 's'}`}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {onAdd && (
+                <Button onClick={() => {
+                  console.log('🔍 [DEBUG] Botão Adicionar clicado no EnhancedDataTable');
+                  onAdd();
+                }} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar
+                </Button>
+              )}
+              {enableExport && (
+                <Button onClick={handleExport} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar
+                </Button>
+              )}
+              {actions}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            {/* Busca global */}
+            {enableSearch && searchable && (
+              <div className="flex-1 max-w-sm">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder={searchPlaceholder}
+                    value={globalFilter}
+                    onChange={(e) => setGlobalFilter(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
             )}
-          </TableBody>
-        </Table>
-      </div>
-      
-      {renderPagination()}
+
+            {/* Filtros de coluna */}
+            {enableFilters && filterable && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Filter className="h-4 w-4 mr-2" />
+                    Colunas
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {table
+                    .getAllColumns()
+                    .filter((column) => column.getCanHide())
+                    .map((column) => {
+                      return (
+                        <DropdownMenuCheckboxItem
+                          key={column.id}
+                          className="capitalize"
+                          checked={column.getIsVisible()}
+                          onCheckedChange={(value) =>
+                            column.toggleVisibility(!!value)
+                          }
+                        >
+                          {column.id}
+                        </DropdownMenuCheckboxItem>
+                      );
+                    })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Seletor de tamanho da página */}
+            {enablePagination && pagination && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Itens por página:</span>
+                <Select
+                  value={table.getState().pagination.pageSize.toString()}
+                  onValueChange={(value) => {
+                    table.setPageSize(Number(value));
+                  }}
+                >
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[10, 20, 30, 40, 50].map((pageSize) => (
+                      <SelectItem key={pageSize} value={pageSize.toString()}>
+                        {pageSize}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabela */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
+                      <TableHead key={header.id}>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      data-state={row.getIsSelected() && 'selected'}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={columns.length}
+                      className="h-24 text-center"
+                    >
+                      {emptyMessage}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Paginação */}
+      {enablePagination && pagination && totalPages > 1 && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  ({totalRows} {totalRows === 1 ? 'item' : 'itens'} total)
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.setPageIndex(0)}
+                  disabled={!table.getCanPreviousPage()}
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                  disabled={!table.getCanNextPage()}
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
-
-export default EnhancedDataTable;

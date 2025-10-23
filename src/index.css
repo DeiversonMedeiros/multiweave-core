@@ -108,4 +108,62 @@ All colors MUST be HSL.
     content: "*";
     @apply ml-1 text-destructive;
   }
+
+  /* Custom scrollbar styles */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(150 95% 30% / 0.3) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(150 95% 30% / 0.3);
+    border-radius: 3px;
+    transition: all 0.2s ease;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(150 95% 30% / 0.5);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:active {
+    background: hsl(150 95% 30% / 0.7);
+  }
+
+  /* Sidebar specific scrollbar */
+  .sidebar-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(150 10% 85% / 0.3) transparent;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 2px;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(150 10% 85% / 0.3);
+    border-radius: 2px;
+    transition: all 0.2s ease;
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(150 10% 85% / 0.5);
+  }
+
+  .sidebar-scrollbar::-webkit-scrollbar-thumb:active {
+    background: hsl(150 10% 85% / 0.7);
+  }
 }

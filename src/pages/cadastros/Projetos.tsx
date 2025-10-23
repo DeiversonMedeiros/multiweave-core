@@ -15,6 +15,10 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 const projectSchema = z.object({
   nome: z.string().min(3, "Nome deve ter no mínimo 3 caracteres").max(100),
   codigo: z.string().min(1, "Código é obrigatório").max(50),
@@ -25,6 +29,7 @@ const projectSchema = z.object({
 type ProjectFormData = z.infer<typeof projectSchema>;
 
 export default function Projetos() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,7 +146,8 @@ export default function Projetos() {
   if (loading) return <div>Carregando...</div>;
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="projects" action="read">
+      <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Projetos</h1>
         <p className="text-muted-foreground mt-1">
@@ -156,9 +162,11 @@ export default function Projetos() {
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por código ou nome..."
         newButtonLabel="Novo Projeto"
+        showNewButton={canCreateEntity('projects')}
       />
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <PermissionGuard entity="projects" action="create">
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingProjeto ? "Editar" : "Novo"} Projeto</DialogTitle>
@@ -240,7 +248,9 @@ export default function Projetos() {
             </form>
           </Form>
         </DialogContent>
-      </Dialog>
+        </Dialog>
+      </PermissionGuard>
     </div>
+    </RequireEntity>
   );
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, cloneElement, isValidElement } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -20,11 +20,15 @@ interface FormModalProps {
   title: string;
   description?: string;
   children: React.ReactNode;
-  loading?: boolean;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
-  showCloseButton?: boolean;
+  onSubmit?: () => void;
+  onCancel?: () => void;
   submitLabel?: string;
   cancelLabel?: string;
+  loading?: boolean;
+  disabled?: boolean;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl';
+  showCloseButton?: boolean;
+  showFooter?: boolean;
   className?: string;
 }
 
@@ -38,48 +42,220 @@ export function FormModal({
   title,
   description,
   children,
-  loading = false,
-  size = 'md',
-  showCloseButton = true,
+  onSubmit,
+  onCancel,
   submitLabel = 'Salvar',
   cancelLabel = 'Cancelar',
+  loading = false,
+  disabled = false,
+  size = 'lg',
+  showCloseButton = true,
+  showFooter = true,
   className = '',
 }: FormModalProps) {
-  // Mapear tamanhos para classes CSS
-  const sizeClasses = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl',
-    full: 'max-w-7xl',
-  };
+  const formRef = useRef<HTMLFormElement>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(e);
-  };
-
-  const handleClose = () => {
-    if (!loading) {
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+    } else {
       onClose();
     }
   };
 
+  const handleSubmit = () => {
+    console.log('🔍 [DEBUG] FormModal - handleSubmit chamado');
+    console.log('🔍 [DEBUG] FormModal - formRef.current:', formRef.current);
+    console.log('🔍 [DEBUG] FormModal - onSubmit:', onSubmit);
+    
+    // Usar a função submit exposta pelo componente filho
+    if (formRef.current && typeof formRef.current.submit === 'function') {
+      console.log('🔍 [DEBUG] FormModal - Chamando submit via ref');
+      formRef.current.submit();
+    } else if (onSubmit) {
+      console.log('🔍 [DEBUG] FormModal - Chamando onSubmit diretamente');
+      onSubmit();
+    } else {
+      console.log('🔍 [DEBUG] FormModal - Nenhuma ação de submit disponível');
+    }
+  };
+
+
+  const getSizeClass = (size: string) => {
+    switch (size) {
+      case 'sm':
+        return 'max-w-sm';
+      case 'md':
+        return 'max-w-md';
+      case 'lg':
+        return 'max-w-lg';
+      case 'xl':
+        return 'max-w-xl';
+      case '2xl':
+        return 'max-w-2xl';
+      case '3xl':
+        return 'max-w-3xl';
+      case '4xl':
+        return 'max-w-4xl';
+      case '5xl':
+        return 'max-w-5xl';
+      case '6xl':
+        return 'max-w-6xl';
+      case '7xl':
+        return 'max-w-7xl';
+      default:
+        return 'max-w-lg';
+    }
+  };
+
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent 
-        className={`${sizeClasses[size]} ${className}`}
-        onPointerDownOutside={handleClose}
-        onEscapeKeyDown={handleClose}
+        className={`${getSizeClass(size)} ${className}`}
+        onPointerDownOutside={(e) => {
+          if (loading) {
+            e.preventDefault();
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          if (loading) {
+            e.preventDefault();
+          }
+        }}
       >
+        {/* Header */}
         <DialogHeader>
           <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-xl font-semibold">
+            <div className="flex-1">
+              <DialogTitle className="text-lg font-semibold">
+                {title}
+              </DialogTitle>
+              <DialogDescription className="mt-1">
+                {description || 'Preencha os campos abaixo conforme necessário.'}
+              </DialogDescription>
+            </div>
+            {showCloseButton && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCancel}
+                disabled={loading}
+                className="h-8 w-8 p-0"
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Fechar</span>
+              </Button>
+            )}
+          </div>
+        </DialogHeader>
+
+        {/* Content */}
+        <div className="space-y-4">
+          <div className="max-h-[60vh] overflow-y-auto">
+            {isValidElement(children) 
+              ? cloneElement(children, { ref: formRef })
+              : children
+            }
+          </div>
+
+          {/* Footer */}
+          {showFooter && (
+            <DialogFooter className="flex items-center justify-end gap-2 pt-4 border-t">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={loading}
+              >
+                {cancelLabel}
+              </Button>
+              {onSubmit && (
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loading || disabled}
+                  className="min-w-[100px]"
+                >
+                  {loading && (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  )}
+                  {submitLabel}
+                </Button>
+              )}
+            </DialogFooter>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// =====================================================
+// COMPONENTE DE MODAL SIMPLES
+// =====================================================
+
+interface SimpleModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl';
+  showCloseButton?: boolean;
+  className?: string;
+}
+
+export function SimpleModal({
+  isOpen,
+  onClose,
+  title,
+  description,
+  children,
+  size = 'lg',
+  showCloseButton = true,
+  className = '',
+}: SimpleModalProps) {
+  const getSizeClass = (size: string) => {
+    switch (size) {
+      case 'sm':
+        return 'max-w-sm';
+      case 'md':
+        return 'max-w-md';
+      case 'lg':
+        return 'max-w-lg';
+      case 'xl':
+        return 'max-w-xl';
+      case '2xl':
+        return 'max-w-2xl';
+      case '3xl':
+        return 'max-w-3xl';
+      case '4xl':
+        return 'max-w-4xl';
+      case '5xl':
+        return 'max-w-5xl';
+      case '6xl':
+        return 'max-w-6xl';
+      case '7xl':
+        return 'max-w-7xl';
+      default:
+        return 'max-w-lg';
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent 
+        className={`${getSizeClass(size)} ${className}`}
+      >
+        {/* Header */}
+        <DialogHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <DialogTitle className="text-lg font-semibold">
                 {title}
               </DialogTitle>
               {description && (
-                <DialogDescription className="mt-2">
+                <DialogDescription className="mt-1">
                   {description}
                 </DialogDescription>
               )}
@@ -88,40 +264,19 @@ export function FormModal({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleClose}
-                disabled={loading}
+                onClick={onClose}
                 className="h-8 w-8 p-0"
               >
                 <X className="h-4 w-4" />
+                <span className="sr-only">Fechar</span>
               </Button>
             )}
           </div>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="max-h-[60vh] overflow-y-auto">
-            {children}
-          </div>
-
-          <DialogFooter className="flex justify-end space-x-2 pt-4 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={loading}
-            >
-              {cancelLabel}
-            </Button>
-    <Button
-      type="submit"
-      form="form-modal-form"
-      disabled={loading}
-      className="min-w-[100px]"
-    >
-      {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-      {submitLabel}
-    </Button>
-          </DialogFooter>
+        {/* Content */}
+        <div className="max-h-[60vh] overflow-y-auto">
+          {children}
         </div>
       </DialogContent>
     </Dialog>
@@ -156,32 +311,28 @@ export function ConfirmModal({
   loading = false,
 }: ConfirmModalProps) {
   const handleConfirm = () => {
-    onConfirm();
-  };
-
-  const handleClose = () => {
     if (!loading) {
-      onClose();
+      onConfirm();
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold">
             {title}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="mt-1">
             {description}
           </DialogDescription>
         </DialogHeader>
 
-        <DialogFooter className="flex justify-end space-x-2">
+        <DialogFooter className="flex items-center justify-end gap-2 pt-4">
           <Button
             type="button"
             variant="outline"
-            onClick={handleClose}
+            onClick={onClose}
             disabled={loading}
           >
             {cancelLabel}
@@ -193,7 +344,9 @@ export function ConfirmModal({
             disabled={loading}
             className="min-w-[100px]"
           >
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {loading && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             {confirmLabel}
           </Button>
         </DialogFooter>
@@ -201,75 +354,3 @@ export function ConfirmModal({
     </Dialog>
   );
 }
-
-// =====================================================
-// COMPONENTE DE MODAL DE DETALHES
-// =====================================================
-
-interface DetailsModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
-  showCloseButton?: boolean;
-  className?: string;
-}
-
-export function DetailsModal({
-  isOpen,
-  onClose,
-  title,
-  children,
-  size = 'lg',
-  showCloseButton = true,
-  className = '',
-}: DetailsModalProps) {
-  const sizeClasses = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl',
-    full: 'max-w-7xl',
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent 
-        className={`${sizeClasses[size]} ${className}`}
-        onPointerDownOutside={onClose}
-        onEscapeKeyDown={onClose}
-      >
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-xl font-semibold">
-              {title}
-            </DialogTitle>
-            {showCloseButton && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClose}
-                className="h-8 w-8 p-0"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </DialogHeader>
-
-        <div className="max-h-[70vh] overflow-y-auto">
-          {children}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Fechar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export default FormModal;

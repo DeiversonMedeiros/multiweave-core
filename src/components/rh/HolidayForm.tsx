@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +23,7 @@ interface HolidayFormProps {
   isLoading?: boolean;
 }
 
-export function HolidayForm({ holiday, mode, onSave, onCancel, isLoading }: HolidayFormProps) {
+export const HolidayForm = forwardRef<HTMLFormElement, HolidayFormProps>(({ holiday, mode, onSave, onCancel, isLoading }, ref) => {
   const { selectedCompany } = useCompany();
   
   const [formData, setFormData] = useState({
@@ -97,7 +97,7 @@ export function HolidayForm({ holiday, mode, onSave, onCancel, isLoading }: Holi
   const isReadOnly = mode === 'view';
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form ref={ref} onSubmit={handleSubmit} className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Informações do Feriado</CardTitle>
@@ -208,4 +208,6 @@ export function HolidayForm({ holiday, mode, onSave, onCancel, isLoading }: Holi
       )}
     </form>
   );
-}
+});
+
+HolidayForm.displayName = 'HolidayForm';

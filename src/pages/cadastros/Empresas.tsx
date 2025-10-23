@@ -6,8 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmpresaForm } from "@/components/forms/EmpresaForm";
 import { toast } from "sonner";
+import { RequireEntity } from "@/components/RequireAuth";
+import { PermissionGuard, PermissionButton } from "@/components/PermissionGuard";
+import { usePermissions } from "@/hooks/usePermissions";
 
 export default function Empresas() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -55,7 +59,8 @@ export default function Empresas() {
   }
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="companies" action="read">
+      <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Empresas / Filiais</h1>
         <p className="text-muted-foreground mt-1">
@@ -73,9 +78,11 @@ export default function Empresas() {
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por nome ou CNPJ..."
         newButtonLabel="Nova Empresa"
+        showNewButton={canCreateEntity('companies')}
       />
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <PermissionGuard entity="companies" action="create">
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -91,7 +98,9 @@ export default function Empresas() {
             onCancel={() => setIsDialogOpen(false)}
           />
         </DialogContent>
-      </Dialog>
-    </div>
+        </Dialog>
+      </PermissionGuard>
+      </div>
+    </RequireEntity>
   );
 }

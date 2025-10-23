@@ -19,7 +19,7 @@ export const Layout = () => {
         <AppSidebar />
         <div className="flex-1 flex flex-col">
           <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6">
-            <SidebarTrigger />
+            <SidebarTrigger className="relative z-50" />
             <Breadcrumbs />
             <div className="ml-auto flex items-center gap-4">
               <CompanySelector />

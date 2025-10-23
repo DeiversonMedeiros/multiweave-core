@@ -48,26 +48,22 @@ ALTER TABLE rh.work_shifts ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view work_shifts from their company" ON rh.work_shifts
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'work_shifts', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert work_shifts in their company" ON rh.work_shifts
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'work_shifts', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update work_shifts from their company" ON rh.work_shifts
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'work_shifts', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete work_shifts from their company" ON rh.work_shifts
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'work_shifts', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

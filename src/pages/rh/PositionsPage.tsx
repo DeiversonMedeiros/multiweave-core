@@ -25,17 +25,28 @@ import { usePositions, useDeletePosition } from '@/hooks/rh/usePositions';
 import { Position } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 // =====================================================
 // COMPONENTE PRINCIPAL
 // =====================================================
 
 export default function PositionsPage() {
+  console.log('🔍 [DEBUG] PositionsPage renderizado');
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
+  
+  console.log('🔍 [DEBUG] Permissões:', { canCreateEntity, canEditEntity, canDeleteEntity });
+  console.log('🔍 [DEBUG] canCreateEntity("positions"):', canCreateEntity('positions'));
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
+
 
   // Hooks
   const { data: positions = [], isLoading } = usePositions();
@@ -64,9 +75,12 @@ export default function PositionsPage() {
   };
 
   const handleCreate = () => {
+    console.log('🔍 [DEBUG] handleCreate chamado');
+    console.log('🔍 [DEBUG] Estado antes:', { isModalOpen, modalMode, selectedPosition });
     setSelectedPosition(null);
     setModalMode('create');
     setIsModalOpen(true);
+    console.log('🔍 [DEBUG] Estado após:', { isModalOpen: true, modalMode: 'create', selectedPosition: null });
   };
 
   const handleEdit = (position: Position) => {
@@ -201,7 +215,8 @@ export default function PositionsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="positions" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -210,7 +225,10 @@ export default function PositionsPage() {
             Gerencie os cargos e posições da empresa
           </p>
         </div>
-        <Button onClick={handleCreate}>
+        <Button onClick={() => {
+          console.log('🔍 [DEBUG] Botão Novo Cargo clicado');
+          handleCreate();
+        }}>
           <Plus className="h-4 w-4 mr-2" />
           Novo Cargo
         </Button>
@@ -377,5 +395,6 @@ export default function PositionsPage() {
         </div>
       </FormModal>
     </div>
+    </RequireEntity>
   );
 }

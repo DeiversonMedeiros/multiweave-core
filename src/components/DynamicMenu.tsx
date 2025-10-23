@@ -44,7 +44,8 @@ export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
   const renderMenuItem = (item: MenuItem, level: number = 0) => {
     const hasChildren = item.children && item.children.length > 0;
     const isExpanded = expandedItems.has(item.id);
-    const indentClass = level > 0 ? `ml-${Math.min(level * 4, 16)}` : '';
+    const indentClass = level > 0 ? `ml-${Math.min(level * 6, 24)}` : '';
+    const isPortal = item.isPortal;
 
     if (hasChildren) {
       return (
@@ -55,22 +56,28 @@ export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
         >
           <SidebarMenuItem>
             <CollapsibleTrigger asChild>
-              <SidebarMenuButton className={`w-full ${indentClass}`}>
-                <item.icon className="h-4 w-4" />
+              <SidebarMenuButton 
+                className={`w-full ${indentClass} ${
+                  isPortal 
+                    ? 'bg-green-100 hover:bg-green-200 text-green-900 hover:text-green-900 border-l-4 border-green-500 font-semibold' 
+                    : ''
+                }`}
+              >
+                <item.icon className={`h-4 w-4 ${isPortal ? 'text-green-600' : ''}`} />
                 {open && (
                   <>
                     <span className="flex-1 text-left">{item.title}</span>
                     {isExpanded ? (
-                      <ChevronDown className="h-4 w-4" />
+                      <ChevronDown className={`h-4 w-4 ${isPortal ? 'text-green-600' : ''}`} />
                     ) : (
-                      <ChevronRight className="h-4 w-4" />
+                      <ChevronRight className={`h-4 w-4 ${isPortal ? 'text-green-600' : ''}`} />
                     )}
                   </>
                 )}
               </SidebarMenuButton>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <SidebarMenu>
+              <SidebarMenu className="ml-2">
                 {item.children!.map(child => renderMenuItem(child, level + 1))}
               </SidebarMenu>
             </CollapsibleContent>
@@ -101,7 +108,7 @@ export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
 
   return (
     <Sidebar collapsible="icon" className={`border-r border-sidebar-border ${className}`}>
-      <SidebarContent>
+      <SidebarContent className="sidebar-scrollbar">
         <div className="p-4 flex items-center gap-2">
           <Building2 className="h-8 w-8 text-sidebar-primary" />
           {open && (

@@ -10,7 +10,9 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Gift, Edit, Trash2, CheckCircle, DollarSign } from 'lucide-react';
 import { useAwardProductivity, useDeleteAwardProductivity, useApproveAward, useMarkAsPaid } from '@/hooks/rh/useAwardsProductivity';
 import { formatCurrency, formatDate, getAwardTypeLabel, getAwardTypeColor, getAwardStatusLabel, getAwardStatusColor } from '@/services/rh/awardsProductivityService';
-import { useEmployees } from '@/hooks/rh/useEmployees';
+import { useRHData } from '@/hooks/generic/useEntityData';
+import { Employee } from '@/integrations/supabase/rh-types';
+import { useCompany } from '@/lib/company-context';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,8 +29,12 @@ import { toast } from 'sonner';
 const AwardProductivityDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const { selectedCompany } = useCompany();
   const { data: award, isLoading, error } = useAwardProductivity(id!);
-  const { data: employees } = useEmployees();
+  
+  // Carregar funcionários usando useRHData
+  const { data: employeesData } = useRHData<Employee>('employees', selectedCompany?.id || '');
+  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
   const deleteMutation = useDeleteAwardProductivity();
   const approveMutation = useApproveAward();
   const markAsPaidMutation = useMarkAsPaid();
@@ -78,7 +84,8 @@ const AwardProductivityDetailPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
+
+    <div className="container mx-auto py-8">
         <div className="text-center">Carregando premiação...</div>
       </div>
     );
@@ -86,6 +93,7 @@ const AwardProductivityDetailPage: React.FC = () => {
 
   if (error || !award) {
     return (
+      
       <div className="container mx-auto py-8">
         <div className="text-center text-red-500">
           Erro ao carregar premiação: {error?.message || 'Premiação não encontrada'}
@@ -100,7 +108,8 @@ const AwardProductivityDetailPage: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -327,7 +336,7 @@ const AwardProductivityDetailPage: React.FC = () => {
         </Card>
       )}
     </div>
-  );
+    );
 };
 
 export default AwardProductivityDetailPage;

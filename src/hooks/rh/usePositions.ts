@@ -1,10 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PositionsService } from '@/services/rh/positionsService';
-import { 
-  Position, 
-  PositionInsert, 
-  PositionUpdate 
-} from '@/integrations/supabase/rh-types';
+import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
+import { Position } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
 // =====================================================
@@ -12,16 +8,14 @@ import { useCompany } from '@/lib/company-context';
 // =====================================================
 
 /**
- * Hook para listar cargos
+ * Hook para listar cargos/posições
  */
 export function usePositions() {
   const { selectedCompany } = useCompany();
 
   return useQuery({
     queryKey: ['rh', 'positions', selectedCompany?.id],
-    queryFn: () => PositionsService.list({ 
-      companyId: selectedCompany?.id || ''
-    }),
+    queryFn: () => useRHData('positions', selectedCompany?.id || ''),
     enabled: !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000, // 5 minutos
   });
@@ -31,10 +25,12 @@ export function usePositions() {
  * Hook para buscar cargo por ID
  */
 export function usePosition(id: string) {
+  const { selectedCompany } = useCompany();
+
   return useQuery({
     queryKey: ['rh', 'positions', id],
-    queryFn: () => PositionsService.getById(id),
-    enabled: !!id,
+    queryFn: () => useRHData('positions', selectedCompany?.id || '', { id }),
+    enabled: !!id && !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -47,7 +43,21 @@ export function useActivePositions() {
 
   return useQuery({
     queryKey: ['rh', 'positions', 'active', selectedCompany?.id],
-    queryFn: () => PositionsService.getActive(selectedCompany?.id || ''),
+    queryFn: () => useRHData('positions', selectedCompany?.id || '', { is_active: true }),
+    enabled: !!selectedCompany?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Hook para buscar cargos por nível hierárquico
+ */
+export function usePositionsByLevel(level: number) {
+  const { selectedCompany } = useCompany();
+
+  return useQuery({
+    queryKey: ['rh', 'positions', 'level', level, selectedCompany?.id],
+    queryFn: () => useRHData('positions', selectedCompany?.id || '', { nivel_hierarquico: level }),
     enabled: !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
   });
@@ -62,9 +72,11 @@ export function useActivePositions() {
  */
 export function useCreatePosition() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (position: PositionInsert) => PositionsService.create(position),
+    mutationFn: (position: Omit<Position, 'id' | 'created_at' | 'updated_at'>) => 
+      useCreateEntity('rh', 'positions')(position),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'positions'] });
     },
@@ -79,13 +91,13 @@ export function useCreatePosition() {
  */
 export function useUpdatePosition() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: ({ id, position }: { id: string; position: PositionUpdate }) => 
-      PositionsService.update(id, position),
-    onSuccess: (data, variables) => {
+    mutationFn: ({ id, data }: { id: string; data: Partial<Position> }) => 
+      useUpdateEntity('rh', 'positions')({ id, data }),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'positions'] });
-      queryClient.setQueryData(['rh', 'positions', variables.id], data);
     },
     onError: (error) => {
       console.error('Erro ao atualizar cargo:', error);
@@ -98,12 +110,13 @@ export function useUpdatePosition() {
  */
 export function useDeletePosition() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (id: string) => PositionsService.delete(id),
-    onSuccess: (_, id) => {
+    mutationFn: (id: string) => 
+      useDeleteEntity('rh', 'positions')(id),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'positions'] });
-      queryClient.removeQueries({ queryKey: ['rh', 'positions', id] });
     },
     onError: (error) => {
       console.error('Erro ao excluir cargo:', error);
@@ -112,22 +125,23 @@ export function useDeletePosition() {
 }
 
 /**
- * Hook para ativar/desativar cargo
+ * Hook para alterar status do cargo
  */
-export function useTogglePositionStatus() {
+export function useChangePositionStatus() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => 
-      PositionsService.toggleStatus(id, isActive),
-    onSuccess: (data, variables) => {
+    mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) => 
+      useUpdateEntity('rh', 'positions')({ 
+        id, 
+        data: { is_active } 
+      }),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'positions'] });
-      queryClient.setQueryData(['rh', 'positions', variables.id], data);
     },
     onError: (error) => {
       console.error('Erro ao alterar status do cargo:', error);
     },
   });
 }
-
-export default usePositions;

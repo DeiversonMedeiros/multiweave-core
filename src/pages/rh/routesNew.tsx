@@ -24,7 +24,8 @@ import FgtsConfigPage from './FgtsConfigPage';
 
 // Importar páginas - FASE 4: MOTOR DE CÁLCULO
 import PayrollCalculationPage from './PayrollCalculationPage';
-import TimeBankPage from './TimeBankPage';
+import PayrollConfigPage from './PayrollConfigPage';
+import BankHoursPage from './BankHours';
 import HolidaysPage from './HolidaysPage';
 import PeriodicExamsPage from './PeriodicExamsPage';
 import DisciplinaryActionsPage from './DisciplinaryActionsPage';
@@ -43,10 +44,46 @@ import UnionNewPage from './UnionNewPage';
 import EmployeeUnionMembershipNewPage from './EmployeeUnionMembershipNewPage';
 
 // Importar páginas - FASE 5: GESTÃO OPERACIONAL (Em desenvolvimento)
-import VacationsPage from './VacationsPage';
+import VacationsManagement from './VacationsManagement';
 import MedicalCertificatesPage from './MedicalCertificatesPage';
 import RecruitmentPage from './RecruitmentPage';
 import TrainingPage from './TrainingPage';
+import ConfiguracaoCorrecaoPontoPage from './ConfiguracaoCorrecaoPontoPage';
+import TimeRecordSignatureConfigPage from './TimeRecordSignatureConfigPage';
+
+// Importar página do Organograma
+import OrganogramaPage from './OrganogramaPage';
+
+// Importar páginas - FASE 6: PARÂMETROS E CONFIGURAÇÕES
+import DelayReasonsPage from './DelayReasonsPage';
+import CidCodesPage from './CidCodesPage';
+import AbsenceTypesPage from './AbsenceTypesPage';
+import AllowanceTypesPage from './AllowanceTypesPage';
+import DeficiencyTypesPage from './DeficiencyTypesPage';
+
+// Importar páginas - FASE 7: PROCESSAMENTO AVANÇADO
+import EventConsolidationPage from './EventConsolidationPage';
+
+// Importar páginas - FASE 8: INTEGRAÇÕES
+import EsocialIntegrationPage from './EsocialIntegrationPage';
+
+// Importar páginas - FASE 9: GESTÃO OPERACIONAL AVANÇADA
+import CompensationRequestsPage from './CompensationRequestsPage';
+import EsocialPage from './EsocialPage';
+
+// Importar páginas - FASE 10: PLANEJAMENTO AVANÇADO
+import EmployeeShiftsPage from './EmployeeShiftsPage';
+
+// Importar páginas - FASE 11: RELATÓRIOS E ANALYTICS
+import AnalyticsPage from './AnalyticsPage';
+import DependentsManagement from './DependentsManagement';
+import RecruitmentManagement from '../RecruitmentManagement';
+
+// Importar página de Vínculos Funcionário-Usuário
+import EmployeeUserLinks from './EmployeeUserLinks';
+
+// Importar página de Vínculos de Benefícios
+import EmployeeBenefitsPage from './EmployeeBenefitsPage';
 
 // =====================================================
 // ROTAS DO MÓDULO RH - NOVA ABORDAGEM
@@ -64,6 +101,15 @@ export function RHRoutesNew() {
       <Route path="/employees/:id" element={<EmployeesPageNew />} />
       <Route path="/employees/:id/edit" element={<EmployeesPageNew />} />
       
+      {/* Vínculos Funcionário-Usuário */}
+      <Route path="/employee-user-links" element={<EmployeeUserLinks />} />
+      
+      {/* Vínculos de Benefícios */}
+      <Route path="/employee-benefits" element={<EmployeeBenefitsPage />} />
+      <Route path="/employee-benefits/new" element={<EmployeeBenefitsPage />} />
+      <Route path="/employee-benefits/:id" element={<EmployeeBenefitsPage />} />
+      <Route path="/employee-benefits/:id/edit" element={<EmployeeBenefitsPage />} />
+      
       {/* Gestão de Cargos - NOVA ABORDAGEM */}
       <Route path="/positions" element={<PositionsPageNew />} />
       <Route path="/positions/new" element={<PositionsPageNew />} />
@@ -76,11 +122,29 @@ export function RHRoutesNew() {
       <Route path="/units/:id" element={<UnitsPageNew />} />
       <Route path="/units/:id/edit" element={<UnitsPageNew />} />
       
+      {/* Organograma */}
+      <Route path="/organograma" element={<OrganogramaPage />} />
+      
+      {/* Gestão de Dependentes - NOVA ABORDAGEM */}
+      <Route path="/dependents" element={<DependentsManagement />} />
+      <Route path="/dependents/new" element={<DependentsManagement />} />
+      <Route path="/dependents/:id" element={<DependentsManagement />} />
+      <Route path="/dependents/:id/edit" element={<DependentsManagement />} />
+      
+      {/* Sistema de Recrutamento */}
+      <Route path="/recruitment" element={<RecruitmentManagement />} />
+      
       {/* Controle de Ponto - NOVA ABORDAGEM */}
       <Route path="/time-records" element={<TimeRecordsPageNew />} />
       <Route path="/time-records/new" element={<TimeRecordsPageNew />} />
       <Route path="/time-records/:id" element={<TimeRecordsPageNew />} />
       <Route path="/time-records/:id/edit" element={<TimeRecordsPageNew />} />
+      
+      {/* Configuração de Correção de Ponto */}
+      <Route path="/correcao-ponto-config" element={<ConfiguracaoCorrecaoPontoPage />} />
+      
+      {/* Configuração de Assinatura de Ponto */}
+      <Route path="/assinatura-ponto-config" element={<TimeRecordSignatureConfigPage />} />
       
       {/* Sistema de Benefícios - NOVA ABORDAGEM */}
       <Route path="/benefits" element={<BenefitsPageNew />} />
@@ -140,14 +204,15 @@ export function RHRoutesNew() {
       
       {/* Motor de Cálculo */}
       <Route path="/payroll-calculation" element={<PayrollCalculationPage />} />
+      <Route path="/payroll-config" element={<PayrollConfigPage />} />
 
       {/* FASE 5: GESTÃO OPERACIONAL (Em desenvolvimento) */}
       
       {/* Férias e Licenças */}
-      <Route path="/vacations" element={<VacationsPage />} />
-      <Route path="/vacations/new" element={<VacationsPage />} />
-      <Route path="/vacations/:id" element={<VacationsPage />} />
-      <Route path="/vacations/:id/edit" element={<VacationsPage />} />
+      <Route path="/vacations" element={<VacationsManagement />} />
+      <Route path="/vacations/new" element={<VacationsManagement />} />
+      <Route path="/vacations/:id" element={<VacationsManagement />} />
+      <Route path="/vacations/:id/edit" element={<VacationsManagement />} />
       
       {/* Atestados Médicos */}
       <Route path="/medical-certificates" element={<MedicalCertificatesPage />} />
@@ -168,10 +233,11 @@ export function RHRoutesNew() {
       <Route path="/training/:id/edit" element={<TrainingPage />} />
       
       {/* FASE 5: GESTÃO OPERACIONAL */}
-      <Route path="/time-bank" element={<TimeBankPage />} />
-      <Route path="/time-bank/new" element={<TimeBankPage />} />
-      <Route path="/time-bank/:id" element={<TimeBankPage />} />
-      <Route path="/time-bank/:id/edit" element={<TimeBankPage />} />
+      
+      {/* Banco de Horas - NOVO SISTEMA */}
+      <Route path="/bank-hours" element={<BankHoursPage />} />
+      <Route path="/bank-hours/config" element={<BankHoursPage />} />
+      <Route path="/bank-hours/dashboard" element={<BankHoursPage />} />
       
       <Route path="/holidays" element={<HolidaysPage />} />
       <Route path="/holidays/new" element={<HolidaysPage />} />
@@ -214,6 +280,82 @@ export function RHRoutesNew() {
       <Route path="/employee-union-memberships/new" element={<EmployeeUnionMembershipNewPage />} />
       <Route path="/employee-union-memberships/:id" element={<UnionsPage />} />
       <Route path="/employee-union-memberships/:id/edit" element={<UnionsPage />} />
+      
+      {/* FASE 6: PARÂMETROS E CONFIGURAÇÕES */}
+      
+      {/* Motivos de Atraso */}
+      <Route path="/delay-reasons" element={<DelayReasonsPage />} />
+      <Route path="/delay-reasons/new" element={<DelayReasonsPage />} />
+      <Route path="/delay-reasons/:id" element={<DelayReasonsPage />} />
+      <Route path="/delay-reasons/:id/edit" element={<DelayReasonsPage />} />
+      
+      {/* Códigos CID */}
+      <Route path="/cid-codes" element={<CidCodesPage />} />
+      <Route path="/cid-codes/new" element={<CidCodesPage />} />
+      <Route path="/cid-codes/:id" element={<CidCodesPage />} />
+      <Route path="/cid-codes/:id/edit" element={<CidCodesPage />} />
+      
+      {/* Tipos de Afastamento */}
+      <Route path="/absence-types" element={<AbsenceTypesPage />} />
+      <Route path="/absence-types/new" element={<AbsenceTypesPage />} />
+      <Route path="/absence-types/:id" element={<AbsenceTypesPage />} />
+      <Route path="/absence-types/:id/edit" element={<AbsenceTypesPage />} />
+      
+      {/* Tipos de Adicionais */}
+      <Route path="/allowance-types" element={<AllowanceTypesPage />} />
+      <Route path="/allowance-types/new" element={<AllowanceTypesPage />} />
+      <Route path="/allowance-types/:id" element={<AllowanceTypesPage />} />
+      <Route path="/allowance-types/:id/edit" element={<AllowanceTypesPage />} />
+      
+      {/* Tipos de Deficiência */}
+      <Route path="/deficiency-types" element={<DeficiencyTypesPage />} />
+      <Route path="/deficiency-types/new" element={<DeficiencyTypesPage />} />
+      <Route path="/deficiency-types/:id" element={<DeficiencyTypesPage />} />
+      <Route path="/deficiency-types/:id/edit" element={<DeficiencyTypesPage />} />
+
+      {/* FASE 7: PROCESSAMENTO AVANÇADO */}
+      
+      {/* Consolidação de Eventos */}
+      <Route path="/event-consolidation" element={<EventConsolidationPage />} />
+      <Route path="/event-consolidation/new" element={<EventConsolidationPage />} />
+      <Route path="/event-consolidation/:id" element={<EventConsolidationPage />} />
+      <Route path="/event-consolidation/:id/edit" element={<EventConsolidationPage />} />
+
+      {/* FASE 8: INTEGRAÇÕES */}
+      
+      {/* Integração eSocial */}
+      <Route path="/esocial-integration" element={<EsocialIntegrationPage />} />
+      <Route path="/esocial-integration/new" element={<EsocialIntegrationPage />} />
+      <Route path="/esocial-integration/:id" element={<EsocialIntegrationPage />} />
+      <Route path="/esocial-integration/:id/edit" element={<EsocialIntegrationPage />} />
+
+      {/* FASE 9: GESTÃO OPERACIONAL AVANÇADA */}
+      
+      {/* Solicitações de Compensação */}
+      <Route path="/compensation-requests" element={<CompensationRequestsPage />} />
+      <Route path="/compensation-requests/new" element={<CompensationRequestsPage />} />
+      <Route path="/compensation-requests/:id" element={<CompensationRequestsPage />} />
+      <Route path="/compensation-requests/:id/edit" element={<CompensationRequestsPage />} />
+      
+      {/* eSocial */}
+      <Route path="/esocial" element={<EsocialPage />} />
+      <Route path="/esocial/new" element={<EsocialPage />} />
+      <Route path="/esocial/:id" element={<EsocialPage />} />
+      <Route path="/esocial/:id/edit" element={<EsocialPage />} />
+
+      {/* FASE 10: PLANEJAMENTO AVANÇADO */}
+      
+      {/* Turnos de Funcionários */}
+      <Route path="/employee-shifts" element={<EmployeeShiftsPage />} />
+      <Route path="/employee-shifts/new" element={<EmployeeShiftsPage />} />
+      <Route path="/employee-shifts/:id" element={<EmployeeShiftsPage />} />
+      <Route path="/employee-shifts/:id/edit" element={<EmployeeShiftsPage />} />
+      
+
+      {/* FASE 11: RELATÓRIOS E ANALYTICS */}
+      
+      {/* Analytics & Relatórios */}
+      <Route path="/analytics" element={<AnalyticsPage />} />
       
     </Routes>
   );

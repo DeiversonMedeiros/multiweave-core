@@ -1,0 +1,166 @@
+ARQUITETURA DO SISTEMA DE APROVAÇÕES UNIFICADO - VERSÃO ATUALIZADA
+================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           PORTAL DO GESTOR                                      │
+│  ┌─────────────────────────────────────────────────────────────────────────┐    │
+│  │                    CENTRAL DE APROVAÇÕES                               │    │
+│  │  ┌─────────┐ ┌─────────────┐ ┌─────────┐ ┌─────────────┐              │    │
+│  │  │   RH    │ │ FINANCEIRO  │ │ COMPRAS │ │ ALMOXARIFADO│              │    │
+│  │  │         │ │             │ │         │ │             │              │    │
+│  │  │ Férias  │ │Contas Pagar │ │Requisições│ │Transferências│             │    │
+│  │  │Compens. │ │Contas Rec.  │ │Cotações │ │Saídas Mat.  │             │    │
+│  │  │Reembols.│ │             │ │         │ │             │              │    │
+│  │  │Atestados│ │             │ │         │ │             │              │    │
+│  │  └─────────┘ └─────────────┘ └─────────┘ └─────────────┘              │    │
+│  │                                                                         │    │
+│  │  ┌─────────────────────────────────────────────────────────────────┐    │    │
+│  │  │              NOVAS FUNCIONALIDADES                             │    │    │
+│  │  │  • Transferir Aprovações  • Histórico de Edições              │    │    │
+│  │  │  • 3 Status: Aprovar/Rejeitar/Cancelar                        │    │    │
+│  │  │  • Reset Automático ao Editar                                 │    │    │
+│  │  └─────────────────────────────────────────────────────────────────┘    │    │
+│  └─────────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        CONFIGURAÇÕES DE APROVAÇÃO                              │
+│  ┌─────────────────────────────────────────────────────────────────────────┐    │
+│  │              configuracoes_aprovacao_unificada                         │    │
+│  │                                                                         │    │
+│  │ • processo_tipo (conta_pagar, requisicao_compra, etc.)                 │    │
+│  │ • centro_custo_id (opcional)                                           │    │
+│  │ • departamento (opcional)                                              │    │
+│  │ • classe_financeira (opcional)                                         │    │
+│  │ • usuario_id (opcional)                                                │    │
+│  │ • valor_limite                                                         │    │
+│  │ • nivel_aprovacao                                                      │    │
+│  │ • aprovadores (JSONB array)                                            │    │
+│  └─────────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           WORKFLOW DE APROVAÇÃO                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐    │
+│  │                    aprovacoes_unificada                                │    │
+│  │                                                                         │    │
+│  │ • processo_tipo + processo_id (identifica a solicitação)              │    │
+│  │ • nivel_aprovacao (1, 2, 3, ...)                                      │    │
+│  │ • aprovador_id (usuário responsável)                                   │    │
+│  │ • status (pendente, aprovado, rejeitado, cancelado)                   │    │
+│  │ • data_aprovacao, observacoes                                         │    │
+│  │ • aprovador_original_id (para transferências)                         │    │
+│  │ • transferido_em, transferido_por, motivo_transferencia               │    │
+│  └─────────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        HISTÓRICO DE EDIÇÕES                                    │
+│  ┌─────────────────────────────────────────────────────────────────────────┐    │
+│  │                historico_edicoes_solicitacoes                          │    │
+│  │                                                                         │    │
+│  │ • processo_tipo + processo_id                                          │    │
+│  │ • usuario_editor_id, data_edicao                                       │    │
+│  │ • campos_alterados (JSONB)                                             │    │
+│  │ • valores_anteriores, valores_novos (JSONB)                            │    │
+│  │ • aprovacoes_resetadas, data_reset                                     │    │
+│  └─────────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            PROCESSOS ESPECÍFICOS                               │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │
+│  │ CONTAS A    │ │ REQUISIÇÕES │ │ COTAÇÕES    │ │ TRANSFERÊNCIAS│             │
+│  │ PAGAR       │ │ DE COMPRA   │ │ DE COMPRA   │ │ DE MATERIAIS│             │
+│  │             │ │             │ │             │ │             │              │
+│  │• Valor      │ │• Valor Total│ │• Valor Total│ │• Valor Total│              │
+│  │• Centro Custo│ │• Centro Custo│ │• Fornecedor│ │• Almox. Orig│              │
+│  │• Departamento│ │• Solicitante│ │• Centro Custo│ │• Almox. Dest│              │
+│  │• Classe Fin.│ │• Departamento│ │• Departamento│ │• Centro Custo│              │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘              │
+│                                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐    │
+│  │                    SAÍDAS DE MATERIAIS (NOVO)                          │    │
+│  │                                                                         │    │
+│  │• Valor Total        • Funcionário Solicitante                          │    │
+│  │• Centro de Custo    • Almoxarifado                                     │    │
+│  │• Tipo de Material   • Status de Entrega                                │    │
+│  └─────────────────────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+FLUXO DE APROVAÇÃO ATUALIZADO:
+==============================
+
+1. SOLICITAÇÃO CRIADA
+   └─ Trigger detecta nova solicitação
+   └─ Função get_required_approvers() consulta configurações
+   └─ Função create_approvals_for_process() cria aprovações
+
+2. APROVAÇÃO PROCESSADA
+   └─ Usuário acessa Portal do Gestor
+   └─ Visualiza aprovações pendentes na Central
+   └─ Pode: Aprovar, Rejeitar ou Cancelar
+   └─ Pode: Transferir para outro usuário
+   └─ Função process_approval() atualiza status
+
+3. EDIÇÃO DETECTADA
+   └─ Trigger detecta alteração na solicitação
+   └─ Função reset_approvals_after_edit() reseta aprovações
+   └─ Histórico de edição é registrado
+   └─ Aprovações voltam para o primeiro nível
+
+4. WORKFLOW COMPLETO
+   └─ Verifica se todos os níveis foram aprovados
+   └─ Atualiza status da solicitação original
+   └─ Envia notificações se necessário
+   └─ Bloqueia edições se cancelado
+
+CONFIGURAÇÃO FLEXÍVEL:
+=====================
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                    CONFIGURAÇÃO DE APROVAÇÃO                                   │
+│                                                                                 │
+│ Processo: [Contas a Pagar ▼]                                                   │
+│                                                                                 │
+│ Critérios (todos opcionais):                                                    │
+│ ☐ Centro de Custo: [Selecionar ▼]                                              │
+│ ☐ Departamento: [Digite...]                                                     │
+│ ☐ Classe Financeira: [Digite...]                                                │
+│ ☐ Usuário Específico: [Selecionar ▼]                                           │
+│                                                                                 │
+│ Limites:                                                                        │
+│ Valor Limite: [R$ 0,00]                                                        │
+│ Nível: [1]                                                                      │
+│                                                                                 │
+│ Aprovadores:                                                                    │
+│ 1. [Usuário 1 ▼] ☑ Principal                                                  │
+│ 2. [Usuário 2 ▼] ☐ Principal                                                  │
+│ 3. [Usuário 3 ▼] ☐ Principal                                                  │
+│ [+ Adicionar]                                                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+VANTAGENS:
+==========
+
+✅ UNIFICAÇÃO: Interface única para todas as aprovações
+✅ FLEXIBILIDADE: Critérios opcionais e configuráveis
+✅ ESCALABILIDADE: Fácil adição de novos processos
+✅ MANUTENIBILIDADE: Código centralizado e reutilizável
+✅ AUDITORIA: Histórico completo de todas as aprovações
+✅ PERFORMANCE: Índices otimizados e consultas eficientes
+
+NOVAS FUNCIONALIDADES:
+======================
+
+✅ 3 STATUS CLAROS: Aprovar, Rejeitar, Cancelar
+✅ RESET AUTOMÁTICO: Aprovações resetam ao editar solicitações
+✅ TRANSFERÊNCIA: Aprovações podem ser transferidas entre usuários
+✅ HISTÓRICO COMPLETO: Rastreamento de todas as edições
+✅ SAÍDAS DE MATERIAIS: Novo processo para entrega de materiais
+✅ PREVENÇÃO DE EDIÇÃO: Solicitações canceladas não podem ser editadas
+✅ NOTIFICAÇÕES: Usuários são notificados de transferências e mudanças

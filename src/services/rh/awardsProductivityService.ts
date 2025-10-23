@@ -407,6 +407,94 @@ export async function getAwardImports(
   }
 }
 
+// =====================================================
+// FUNÇÕES PARA TEMPLATE CSV
+// =====================================================
+
+export function generateAwardsCSVTemplate(): string {
+  const headers = [
+    'employee_id',
+    'employee_name',
+    'tipo',
+    'nome',
+    'descricao',
+    'valor',
+    'percentual',
+    'tipo_calculo',
+    'meta_atingida',
+    'meta_estabelecida',
+    'criterios',
+    'observacoes'
+  ];
+
+  const exampleData = [
+    {
+      employee_id: 'uuid-do-funcionario-1',
+      employee_name: 'João Silva',
+      tipo: 'premiacao',
+      nome: 'Premiação por Meta Atingida',
+      descricao: 'Premiação por atingir 120% da meta de vendas',
+      valor: '500.00',
+      percentual: '15.00',
+      tipo_calculo: 'percentual_meta',
+      meta_atingida: '120000.00',
+      meta_estabelecida: '100000.00',
+      criterios: 'Meta de vendas mensal',
+      observacoes: 'Excelente desempenho no mês'
+    },
+    {
+      employee_id: 'uuid-do-funcionario-2',
+      employee_name: 'Maria Santos',
+      tipo: 'produtividade',
+      nome: 'Bônus de Produtividade',
+      descricao: 'Bônus por alta produtividade',
+      valor: '300.00',
+      percentual: '',
+      tipo_calculo: 'valor_fixo',
+      meta_atingida: '',
+      meta_estabelecida: '',
+      criterios: 'Produtividade acima de 110%',
+      observacoes: 'Funcionária exemplar'
+    }
+  ];
+
+  // Criar CSV
+  let csv = headers.join(',') + '\n';
+  
+  // Adicionar linha de exemplo
+  exampleData.forEach(row => {
+    const values = headers.map(header => {
+      const value = row[header as keyof typeof row] || '';
+      // Escapar aspas duplas e quebras de linha
+      const escapedValue = String(value).replace(/"/g, '""');
+      // Adicionar aspas se contém vírgula, aspas ou quebra de linha
+      if (escapedValue.includes(',') || escapedValue.includes('"') || escapedValue.includes('\n')) {
+        return `"${escapedValue}"`;
+      }
+      return escapedValue;
+    });
+    csv += values.join(',') + '\n';
+  });
+
+  return csv;
+}
+
+export function downloadCSVTemplate(): void {
+  const csv = generateAwardsCSVTemplate();
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'template_premiacoes.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
 export async function getAwardImportErrors(
   companyId: string,
   importId: string

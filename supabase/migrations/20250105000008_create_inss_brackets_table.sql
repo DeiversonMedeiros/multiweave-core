@@ -53,26 +53,22 @@ ALTER TABLE rh.inss_brackets ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view inss_brackets from their company" ON rh.inss_brackets
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'inss_brackets', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert inss_brackets in their company" ON rh.inss_brackets
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'inss_brackets', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update inss_brackets from their company" ON rh.inss_brackets
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'inss_brackets', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete inss_brackets from their company" ON rh.inss_brackets
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'inss_brackets', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

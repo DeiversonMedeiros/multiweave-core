@@ -24,24 +24,63 @@ import { UnitForm } from '@/components/rh/UnitForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { Unit } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { usePermissions } from '@/hooks/usePermissions';
+import { supabase } from '@/integrations/supabase/client';
+import { CostCenter } from '@/integrations/supabase/rh-types';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
 // =====================================================
 
 export default function UnitsPageNew() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
+  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [loadingCostCenters, setLoadingCostCenters] = useState(false);
 
   // Hooks usando nova abordagem genérica
-  const { data: units, isLoading, error } = useRHData<Unit>('units', selectedCompany?.id || '');
-  const createUnit = useCreateEntity<Unit>('rh', 'units');
-  const updateUnit = useUpdateEntity<Unit>('rh', 'units');
-  const deleteUnit = useDeleteEntity('rh', 'units');
+  const { data: units, isLoading, error } = useRHData<Unit>('units', selectedCompany?.id || '', filters);
+  const createUnit = useCreateEntity<Unit>('rh', 'units', selectedCompany?.id || '');
+  const updateUnit = useUpdateEntity<Unit>('rh', 'units', selectedCompany?.id || '');
+  const deleteUnit = useDeleteEntity('rh', 'units', selectedCompany?.id || '');
+
+  // Buscar centros de custo
+  React.useEffect(() => {
+    const fetchCostCenters = async () => {
+      if (!selectedCompany?.id) return;
+      
+      setLoadingCostCenters(true);
+      try {
+        const { data, error } = await supabase
+          .from('cost_centers')
+          .select('*')
+          .eq('company_id', selectedCompany.id)
+          .eq('ativo', true)
+          .order('nome');
+
+        if (error) throw error;
+        setCostCenters(data || []);
+      } catch (error) {
+        console.error('Erro ao buscar centros de custo:', error);
+      } finally {
+        setLoadingCostCenters(false);
+      }
+    };
+
+    fetchCostCenters();
+  }, [selectedCompany?.id]);
+
+  // Função para obter o nome do centro de custo
+  const getCostCenterName = (costCenterId: string | undefined) => {
+    if (!costCenterId) return '-';
+    const costCenter = costCenters.find(cc => cc.id === costCenterId);
+    return costCenter ? `${costCenter.nome} (${costCenter.codigo})` : '-';
+  };
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -135,6 +174,15 @@ export default function UnitsPageNew() {
       )
     },
     {
+      key: 'cost_center',
+      header: 'Centro de Custo',
+      render: (unit: Unit) => (
+        <div className="text-sm">
+          {getCostCenterName(unit.cost_center_id)}
+        </div>
+      )
+    },
+    {
       key: 'is_active',
       header: 'Status',
       render: (unit: Unit) => (
@@ -183,14 +231,16 @@ export default function UnitsPageNew() {
 
   if (error) {
     return (
-      <div className="p-6">
+
+    <div className="p-6">
         <div className="text-red-500">Erro ao carregar departamentos: {error.message}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -264,6 +314,7 @@ export default function UnitsPageNew() {
           modalMode === 'edit' ? 'Editar Departamento' :
           'Visualizar Departamento'
         }
+        onSubmit={handleModalSubmit}
         loading={createUnit.isPending || updateUnit.isPending}
         size="lg"
         submitLabel={modalMode === 'create' ? 'Criar Departamento' : 'Salvar Alterações'}
@@ -272,8 +323,10 @@ export default function UnitsPageNew() {
           unit={selectedUnit}
           onSubmit={handleModalSubmit}
           mode={modalMode}
+          costCenters={costCenters}
+          loadingCostCenters={loadingCostCenters}
         />
       </FormModal>
     </div>
-  );
+    );
 }

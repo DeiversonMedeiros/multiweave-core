@@ -130,11 +130,14 @@ export function getHolidayTypeColor(tipo: string): string {
 }
 
 export function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString('pt-BR');
+  // Adicionar timezone para evitar problemas de conversão
+  const dateObj = new Date(date + 'T00:00:00');
+  return dateObj.toLocaleDateString('pt-BR');
 }
 
 export function formatDateWithWeekday(date: string): string {
-  const dateObj = new Date(date);
+  // Adicionar timezone para evitar problemas de conversão
+  const dateObj = new Date(date + 'T00:00:00');
   const weekday = dateObj.toLocaleDateString('pt-BR', { weekday: 'long' });
   const dateStr = dateObj.toLocaleDateString('pt-BR');
   return `${weekday}, ${dateStr}`;

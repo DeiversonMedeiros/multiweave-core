@@ -545,9 +545,40 @@ export function getDependentParentescoLabel(parentesco: string): string {
 
 export async function getMedicalAgreementsStats(companyId: string): Promise<any> {
   try {
-    const { data, error } = await supabase.rpc('get_medical_agreements_stats', { p_company_id: companyId });
-    if (error) throw error;
-    return data;
+    // Buscar estatísticas básicas
+    const [agreementsResult, plansResult, employeePlansResult] = await Promise.all([
+      supabase
+        .from('rh.medical_agreements')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('ativo', true),
+      supabase
+        .from('rh.medical_plans')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('ativo', true),
+      supabase
+        .from('rh.employee_medical_plans')
+        .select('id, valor_mensal')
+        .eq('company_id', companyId)
+        .eq('status', 'ativo')
+    ]);
+
+    if (agreementsResult.error) throw agreementsResult.error;
+    if (plansResult.error) throw plansResult.error;
+    if (employeePlansResult.error) throw employeePlansResult.error;
+
+    const totalAgreements = agreementsResult.data?.length || 0;
+    const totalPlans = plansResult.data?.length || 0;
+    const activeEmployeePlans = employeePlansResult.data?.length || 0;
+    const totalMonthlyValue = employeePlansResult.data?.reduce((sum, plan) => sum + (plan.valor_mensal || 0), 0) || 0;
+
+    return {
+      total_agreements: totalAgreements,
+      total_plans: totalPlans,
+      active_employee_plans: activeEmployeePlans,
+      total_monthly_value: totalMonthlyValue
+    };
   } catch (error) {
     console.error('Error fetching medical agreements stats:', error);
     throw error;

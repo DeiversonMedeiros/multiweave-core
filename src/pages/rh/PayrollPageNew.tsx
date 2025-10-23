@@ -25,12 +25,14 @@ import { PayrollForm } from '@/components/rh/PayrollForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { Payroll } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
 // =====================================================
 
 export default function PayrollPageNew() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,9 +42,9 @@ export default function PayrollPageNew() {
 
   // Hooks usando nova abordagem genérica
   const { data: payrolls, isLoading, error } = useRHData<Payroll>('payroll', selectedCompany?.id || '');
-  const createPayroll = useCreateEntity<Payroll>('rh', 'payroll');
-  const updatePayroll = useUpdateEntity<Payroll>('rh', 'payroll');
-  const deletePayroll = useDeleteEntity('rh', 'payroll');
+  const createPayroll = useCreateEntity<Payroll>('rh', 'payroll', selectedCompany?.id || '');
+  const updatePayroll = useUpdateEntity<Payroll>('rh', 'payroll', selectedCompany?.id || '');
+  const deletePayroll = useDeleteEntity('rh', 'payroll', selectedCompany?.id || '');
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -214,14 +216,16 @@ export default function PayrollPageNew() {
 
   if (error) {
     return (
-      <div className="p-6">
+
+    <div className="p-6">
         <div className="text-red-500">Erro ao carregar folha de pagamento: {error.message}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -314,5 +318,5 @@ export default function PayrollPageNew() {
         />
       </FormModal>
     </div>
-  );
+    );
 }

@@ -58,26 +58,22 @@ ALTER TABLE rh.allowance_types ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view allowance_types from their company" ON rh.allowance_types
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'allowance_types', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert allowance_types in their company" ON rh.allowance_types
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'allowance_types', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update allowance_types from their company" ON rh.allowance_types
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'allowance_types', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete allowance_types from their company" ON rh.allowance_types
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'allowance_types', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

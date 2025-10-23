@@ -25,12 +25,14 @@ import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { TimeRecord } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
 // =====================================================
 
 export default function TimeRecordsPageNew() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,9 +42,9 @@ export default function TimeRecordsPageNew() {
 
   // Hooks usando nova abordagem genérica
   const { data: records, isLoading, error } = useRHData<TimeRecord>('time_records', selectedCompany?.id || '');
-  const createRecord = useCreateEntity<TimeRecord>('rh', 'time_records');
-  const updateRecord = useUpdateEntity<TimeRecord>('rh', 'time_records');
-  const deleteRecord = useDeleteEntity('rh', 'time_records');
+  const createRecord = useCreateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
+  const updateRecord = useUpdateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
+  const deleteRecord = useDeleteEntity('rh', 'time_records', selectedCompany?.id || '');
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -166,6 +168,24 @@ export default function TimeRecordsPageNew() {
       )
     },
     {
+      key: 'entrada_extra1',
+      header: 'Entrada Extra',
+      render: (record: TimeRecord) => (
+        <div className="font-mono text-sm text-purple-600">
+          {record.entrada_extra1 || '-'}
+        </div>
+      )
+    },
+    {
+      key: 'saida_extra1',
+      header: 'Saída Extra',
+      render: (record: TimeRecord) => (
+        <div className="font-mono text-sm text-purple-600">
+          {record.saida_extra1 || '-'}
+        </div>
+      )
+    },
+    {
       key: 'horas_trabalhadas',
       header: 'Horas Trabalhadas',
       render: (record: TimeRecord) => (
@@ -218,14 +238,16 @@ export default function TimeRecordsPageNew() {
 
   if (error) {
     return (
-      <div className="p-6">
+
+    <div className="p-6">
         <div className="text-red-500">Erro ao carregar registros de ponto: {error.message}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -321,5 +343,5 @@ export default function TimeRecordsPageNew() {
         />
       </FormModal>
     </div>
-  );
+    );
 }

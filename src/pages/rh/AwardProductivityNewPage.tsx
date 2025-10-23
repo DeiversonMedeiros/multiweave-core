@@ -9,11 +9,22 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Gift } from 'lucide-react';
 import AwardProductivityForm from '@/components/rh/AwardProductivityForm';
 import { useCreateAwardProductivity } from '@/hooks/rh/useAwardsProductivity';
-import { AwardProductivityCreateData } from '@/integrations/supabase/rh-types';
+import { AwardProductivityCreateData, Employee } from '@/integrations/supabase/rh-types';
+import { useRHData } from '@/hooks/generic/useEntityData';
+import { useCompany } from '@/lib/company-context';
+
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const AwardProductivityNewPage: React.FC = () => {
   const navigate = useNavigate();
+  const { selectedCompany } = useCompany();
   const createMutation = useCreateAwardProductivity();
+  
+  // Carregar funcionários
+  const { data: employeesData } = useRHData<Employee>('employees', selectedCompany?.id || '');
+  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
 
   const handleSubmit = async (data: AwardProductivityCreateData) => {
     try {
@@ -25,7 +36,8 @@ const AwardProductivityNewPage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <RequireEntity entityName="award_productivity" action="read">
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button
@@ -54,12 +66,14 @@ const AwardProductivityNewPage: React.FC = () => {
         </CardHeader>
         <CardContent>
           <AwardProductivityForm
+            employees={employees}
             onSubmit={handleSubmit}
             isLoading={createMutation.isPending}
           />
         </CardContent>
       </Card>
     </div>
+    </RequireEntity>
   );
 };
 

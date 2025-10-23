@@ -49,26 +49,22 @@ ALTER TABLE rh.deficiency_types ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view deficiency_types from their company" ON rh.deficiency_types
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'deficiency_types', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert deficiency_types in their company" ON rh.deficiency_types
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'deficiency_types', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update deficiency_types from their company" ON rh.deficiency_types
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'deficiency_types', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete deficiency_types from their company" ON rh.deficiency_types
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'deficiency_types', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

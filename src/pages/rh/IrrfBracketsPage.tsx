@@ -11,8 +11,10 @@ import { useIrrfBrackets, useDeleteIrrfBracket } from '@/hooks/rh/useIrrfBracket
 import { formatCurrency, formatTaxRate, formatDate } from '@/services/rh/irrfBracketsService';
 import { IrrfBracket } from '@/integrations/supabase/rh-types';
 import IrrfBracketForm from '@/components/rh/IrrfBracketForm';
+import { usePermissions } from '@/hooks/usePermissions';
 
 export default function IrrfBracketsPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     ano_vigencia: new Date().getFullYear(),
@@ -85,14 +87,16 @@ export default function IrrfBracketsPage() {
 
   if (!selectedCompany) {
     return (
-      <div className="flex items-center justify-center h-64">
+
+    <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">Selecione uma empresa para visualizar as faixas IRRF</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -294,5 +298,5 @@ export default function IrrfBracketsPage() {
         />
       )}
     </div>
-  );
+    );
 }

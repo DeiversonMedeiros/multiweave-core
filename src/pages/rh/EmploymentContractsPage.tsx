@@ -28,6 +28,10 @@ import { EmploymentContractForm } from '@/components/rh/EmploymentContractForm';
 import { useEmploymentContracts, useEmploymentContractMutations } from '@/hooks/rh/useEmploymentContracts';
 import { EmploymentContractWithEmployee } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 // Funções utilitárias locais
 const formatCurrency = (value: number): string => {
   return new Intl.NumberFormat('pt-BR', {
@@ -41,6 +45,7 @@ const formatDate = (date: string): string => {
 };
 
 export default function EmploymentContractsPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     status: '',
@@ -200,7 +205,8 @@ export default function EmploymentContractsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="employment_contracts" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -242,7 +248,7 @@ export default function EmploymentContractsPage() {
                   <SelectValue placeholder="Todos os status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="ativo">Ativo</SelectItem>
                   <SelectItem value="suspenso">Suspenso</SelectItem>
                   <SelectItem value="encerrado">Encerrado</SelectItem>
@@ -258,7 +264,7 @@ export default function EmploymentContractsPage() {
                   <SelectValue placeholder="Todos os tipos" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="CLT">CLT</SelectItem>
                   <SelectItem value="PJ">PJ</SelectItem>
                   <SelectItem value="Estagiário">Estagiário</SelectItem>
@@ -308,5 +314,6 @@ export default function EmploymentContractsPage() {
         />
       </FormModal>
     </div>
+    </RequireEntity>
   );
 }

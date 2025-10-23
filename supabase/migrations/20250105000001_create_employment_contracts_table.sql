@@ -59,28 +59,16 @@ ALTER TABLE rh.employment_contracts ENABLE ROW LEVEL SECURITY;
 
 -- Criar políticas RLS
 CREATE POLICY "Users can view employment_contracts from their company" ON rh.employment_contracts
-    FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'employment_contracts', 'read')
-    );
+    FOR SELECT USING (user_has_company_access(company_id));
 
 CREATE POLICY "Users can insert employment_contracts in their company" ON rh.employment_contracts
-    FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'employment_contracts', 'create')
-    );
+    FOR INSERT WITH CHECK (user_has_company_access(company_id));
 
 CREATE POLICY "Users can update employment_contracts from their company" ON rh.employment_contracts
-    FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'employment_contracts', 'edit')
-    );
+    FOR UPDATE USING (user_has_company_access(company_id));
 
 CREATE POLICY "Users can delete employment_contracts from their company" ON rh.employment_contracts
-    FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'employment_contracts', 'delete')
-    );
+    FOR DELETE USING (user_has_company_access(company_id));
 
 -- Comentários
 COMMENT ON TABLE rh.employment_contracts IS 'Tabela de contratos de trabalho';

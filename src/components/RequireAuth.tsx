@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
+import { usePermissions } from '@/hooks/usePermissions';
 
 interface RequireAuthProps {
   children: React.ReactNode;
@@ -41,34 +42,39 @@ export const RequireAuth: React.FC<RequireAuthProps> = ({
     return null;
   }
 
-  // Temporariamente permitir acesso para todos os usuários autenticados
-  // TODO: Implementar verificação de permissões quando o sistema estiver estável
-  // if (requiredPermission) {
-  //   const hasPermission = requiredPermission.type === 'module' 
-  //     ? hasModulePermission(requiredPermission.name, requiredPermission.action)
-  //     : hasModulePermission(requiredPermission.name, requiredPermission.action);
+  // Verificação de permissões habilitada
+  if (requiredPermission) {
+    const { isAdmin, hasModulePermission, hasEntityPermission } = usePermissions();
+    
+    if (isAdmin) {
+      return <>{children}</>;
+    }
 
-  //   if (!hasPermission) {
-  //     return fallback || (
-  //       <div className="flex items-center justify-center min-h-screen">
-  //         <div className="text-center">
-  //           <h1 className="text-2xl font-bold text-gray-900 mb-4">
-  //             Acesso Negado
-  //           </h1>
-  //           <p className="text-gray-600 mb-4">
-  //             Você não tem permissão para acessar esta página.
-  //           </p>
-  //           <button
-  //             onClick={() => navigate(-1)}
-  //             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-  //           >
-  //             Voltar
-  //           </button>
-  //         </div>
-  //       </div>
-  //     );
-  //   }
-  // }
+    const hasPermission = requiredPermission.type === 'module' 
+      ? hasModulePermission(requiredPermission.name, requiredPermission.action)
+      : hasEntityPermission(requiredPermission.name, requiredPermission.action);
+
+    if (!hasPermission) {
+      return fallback || (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Acesso Negado
+            </h1>
+            <p className="text-gray-600 mb-4">
+              Você não tem permissão para acessar esta página.
+            </p>
+            <button
+              onClick={() => navigate(-1)}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      );
+    }
+  }
 
   return <>{children}</>;
 };

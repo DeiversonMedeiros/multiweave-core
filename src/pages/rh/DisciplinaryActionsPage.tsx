@@ -32,7 +32,7 @@ import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
 import { DisciplinaryActionForm } from '@/components/rh/DisciplinaryActionForm';
 import { useDisciplinaryActions, useDisciplinaryActionMutations, useDisciplinaryActionStats } from '@/hooks/rh/useDisciplinaryActions';
-import { DisciplinaryAction } from '@/integrations/supabase/rh-types';
+import { DisciplinaryAction, Employee } from '@/integrations/supabase/rh-types';
 import { 
   getActionTypeColor, 
   getSeverityColor, 
@@ -43,8 +43,14 @@ import {
   formatDate
 } from '@/services/rh/disciplinaryActionsService';
 import { useCompany } from '@/lib/company-context';
+import { useRHData } from '@/hooks/generic/useEntityData';
+
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 
 export default function DisciplinaryActionsPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     employee_id: 'all',
@@ -63,6 +69,10 @@ export default function DisciplinaryActionsPage() {
   const { data: actionsData, isLoading, error, refetch } = useDisciplinaryActions(selectedCompany?.id || '', filters);
   const { data: statsData } = useDisciplinaryActionStats(selectedCompany?.id || '');
   const { createMutation, updateMutation, deleteMutation, isLoading: isMutating } = useDisciplinaryActionMutations(selectedCompany?.id || '');
+  
+  // Carregar funcionários
+  const { data: employeesData } = useRHData<Employee>('employees', selectedCompany?.id || '');
+  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
 
   // Filtrar dados por termo de busca
   const filteredData = actionsData?.data?.filter(item => 
@@ -154,8 +164,8 @@ export default function DisciplinaryActionsPage() {
           onView={() => handleView(item)}
           onEdit={() => handleEdit(item)}
           onDelete={() => handleDelete(item.id)}
-          canEdit={item.status === 'ativo'}
-          canDelete={item.status === 'ativo' || item.status === 'cancelado'}
+          canEdit={item.status === 'active'}
+          canDelete={item.status === 'active' || item.status === 'cancelled'}
         />
       ),
     },
@@ -163,14 +173,15 @@ export default function DisciplinaryActionsPage() {
 
   const stats = statsData || {
     total_actions: 0,
-    by_type: { advertencia: 0, suspensao: 0, demissao_justa_causa: 0, transferencia: 0, outros: 0 },
+    by_type: { advertencia_verbal: 0, advertencia_escrita: 0, suspensao: 0, demissao_justa_causa: 0 },
     by_severity: { leve: 0, moderada: 0, grave: 0, gravissima: 0 },
-    by_status: { ativo: 0, suspenso: 0, cancelado: 0, arquivado: 0 },
+    by_status: { active: 0, suspended: 0, expired: 0, cancelled: 0 },
     recent_actions: 0
   };
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="disciplinary_actions" action="read">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -206,7 +217,7 @@ export default function DisciplinaryActionsPage() {
             <AlertCircle className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.by_status.ativo}</div>
+            <div className="text-2xl font-bold">{stats.by_status.active}</div>
             <p className="text-xs text-muted-foreground">
               Ações em andamento
             </p>
@@ -215,8 +226,21 @@ export default function DisciplinaryActionsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Graves</CardTitle>
+            <CardTitle className="text-sm font-medium">Suspensões</CardTitle>
             <AlertTriangle className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.by_type.suspensao}</div>
+            <p className="text-xs text-muted-foreground">
+              Ações de suspensão
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Graves</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.by_severity.grave + stats.by_severity.gravissima}</div>
@@ -225,16 +249,58 @@ export default function DisciplinaryActionsPage() {
             </p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Estatísticas Detalhadas por Tipo */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Advertências Verbais</CardTitle>
+            <FileText className="h-4 w-4 text-yellow-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.by_type.advertencia_verbal}</div>
+            <p className="text-xs text-muted-foreground">
+              Repreensões verbais
+            </p>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Arquivadas</CardTitle>
-            <FileText className="h-4 w-4 text-purple-500" />
+            <CardTitle className="text-sm font-medium">Advertências Escritas</CardTitle>
+            <FileText className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.by_status.arquivado}</div>
+            <div className="text-2xl font-bold">{stats.by_type.advertencia_escrita}</div>
             <p className="text-xs text-muted-foreground">
-              Ações finalizadas
+              Repreensões por escrito
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Demissões</CardTitle>
+            <XCircle className="h-4 w-4 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.by_type.demissao_justa_causa}</div>
+            <p className="text-xs text-muted-foreground">
+              Demissões por justa causa
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Canceladas</CardTitle>
+            <XCircle className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.by_status.cancelled}</div>
+            <p className="text-xs text-muted-foreground">
+              Ações canceladas
             </p>
           </CardContent>
         </Card>
@@ -271,11 +337,10 @@ export default function DisciplinaryActionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="advertencia">Advertência</SelectItem>
+                  <SelectItem value="advertencia_verbal">Advertência Verbal</SelectItem>
+                  <SelectItem value="advertencia_escrita">Advertência Escrita</SelectItem>
                   <SelectItem value="suspensao">Suspensão</SelectItem>
                   <SelectItem value="demissao_justa_causa">Demissão por Justa Causa</SelectItem>
-                  <SelectItem value="transferencia">Transferência</SelectItem>
-                  <SelectItem value="outros">Outros</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -304,10 +369,10 @@ export default function DisciplinaryActionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="ativo">Ativo</SelectItem>
-                  <SelectItem value="suspenso">Suspenso</SelectItem>
-                  <SelectItem value="cancelado">Cancelado</SelectItem>
-                  <SelectItem value="arquivado">Arquivado</SelectItem>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="suspended">Suspenso</SelectItem>
+                  <SelectItem value="expired">Expirado</SelectItem>
+                  <SelectItem value="cancelled">Cancelado</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -367,6 +432,7 @@ export default function DisciplinaryActionsPage() {
         <DisciplinaryActionForm
           action={selectedAction}
           mode={modalMode}
+          employees={employees}
           onSave={(data) => {
             if (modalMode === 'create') {
               return createMutation.mutateAsync(data);
@@ -379,5 +445,6 @@ export default function DisciplinaryActionsPage() {
         />
       </FormModal>
     </div>
+    </RequireEntity>
   );
 }

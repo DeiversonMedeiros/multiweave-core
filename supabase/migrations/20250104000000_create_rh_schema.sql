@@ -6,7 +6,39 @@
 CREATE SCHEMA IF NOT EXISTS rh;
 
 -- =====================================================
--- 1. FUNCIONÁRIOS
+-- 1. CARGOS/POSIÇÕES (criar primeiro para referências)
+-- =====================================================
+CREATE TABLE rh.positions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  nome VARCHAR(255) NOT NULL,
+  descricao TEXT,
+  nivel_hierarquico INTEGER DEFAULT 1,
+  salario_minimo DECIMAL(10,2),
+  salario_maximo DECIMAL(10,2),
+  carga_horaria INTEGER DEFAULT 40,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- =====================================================
+-- 2. DEPARTAMENTOS/UNIDADES (criar antes de funcionários)
+-- =====================================================
+CREATE TABLE rh.units (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  nome VARCHAR(255) NOT NULL,
+  descricao TEXT,
+  codigo VARCHAR(50),
+  responsavel_id UUID,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- =====================================================
+-- 3. FUNCIONÁRIOS (criar por último para referências)
 -- =====================================================
 CREATE TABLE rh.employees (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -28,38 +60,6 @@ CREATE TABLE rh.employees (
   cidade VARCHAR(100),
   estado VARCHAR(2),
   cep VARCHAR(10),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- =====================================================
--- 2. CARGOS/POSIÇÕES
--- =====================================================
-CREATE TABLE rh.positions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  nome VARCHAR(255) NOT NULL,
-  descricao TEXT,
-  nivel_hierarquico INTEGER DEFAULT 1,
-  salario_minimo DECIMAL(10,2),
-  salario_maximo DECIMAL(10,2),
-  carga_horaria INTEGER DEFAULT 40,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- =====================================================
--- 3. DEPARTAMENTOS/UNIDADES
--- =====================================================
-CREATE TABLE rh.units (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  nome VARCHAR(255) NOT NULL,
-  descricao TEXT,
-  codigo VARCHAR(20),
-  responsavel_id UUID REFERENCES rh.employees(id),
-  is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

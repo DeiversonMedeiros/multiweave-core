@@ -26,6 +26,9 @@ import { EmployeeForm } from '@/components/rh/EmployeeForm';
 import { useEmployees, useDeleteEmployee } from '@/hooks/rh/useEmployees';
 import { Employee, EmployeeFilters } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // =====================================================
 // COMPONENTE PRINCIPAL
@@ -33,6 +36,7 @@ import { useCompany } from '@/lib/company-context';
 
 export default function EmployeesPage() {
   const { selectedCompany } = useCompany();
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const [filters, setFilters] = useState<EmployeeFilters>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -212,7 +216,8 @@ export default function EmployeesPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="employees" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -221,10 +226,12 @@ export default function EmployeesPage() {
             Gerencie os funcionários da empresa
           </p>
         </div>
-        <Button onClick={handleCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Funcionário
-        </Button>
+        <PermissionButton entity="employees" action="create">
+          <Button onClick={handleCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Funcionário
+          </Button>
+        </PermissionButton>
       </div>
 
       {/* Filtros */}
@@ -257,10 +264,12 @@ export default function EmployeesPage() {
           </SelectContent>
         </Select>
 
-        <Button variant="outline" onClick={handleExport}>
-          <Download className="h-4 w-4 mr-2" />
-          Exportar
-        </Button>
+        <PermissionButton entity="employees" action="read">
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />
+            Exportar
+          </Button>
+        </PermissionButton>
       </div>
 
       {/* Tabela */}
@@ -307,6 +316,7 @@ export default function EmployeesPage() {
           mode={modalMode}
         />
       </FormModal>
-    </div>
+      </div>
+    </RequireEntity>
   );
 }

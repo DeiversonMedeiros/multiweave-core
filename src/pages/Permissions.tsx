@@ -1,32 +1,21 @@
-import React from 'react';
-import { RequireModule } from '@/components/RequireAuth';
-import { PermissionManager } from '@/components/PermissionManager';
-import { UserPermissions } from '@/components/UserPermissions';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Permissions() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Redirecionar para a página de perfis com a aba de permissões
+    navigate('/cadastros/perfis?tab=permissoes', { replace: true });
+  }, [navigate]);
+
   return (
-    <RequireModule moduleName="configuracoes" action="read">
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Gerenciamento de Permissões</h1>
-          <p className="text-muted-foreground mt-1">
-            Configure as permissões de usuários e perfis do sistema
-          </p>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Gerenciador de Permissões */}
-          <div>
-            <PermissionManager />
-          </div>
-
-          {/* Permissões do Usuário Atual */}
-          <div>
-            <UserPermissions showDetails={true} />
-          </div>
-        </div>
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-muted-foreground">Redirecionando para a página de perfis...</p>
       </div>
-    </RequireModule>
+    </div>
   );
 }
 

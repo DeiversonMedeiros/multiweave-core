@@ -1,4 +1,4 @@
-import { rhSupabase } from '@/integrations/supabase/client';
+import { EntityService } from '@/services/generic/entityService';
 import { 
   WorkSchedule, 
   WorkScheduleInsert, 
@@ -22,63 +22,60 @@ export const WorkSchedulesService = {
     search?: string;
     isActive?: boolean;
   }) => {
-    let query = rhSupabase
-      .from('work_schedules')
-      .select('*')
-      .eq('company_id', params.companyId)
-      .order('nome');
-
-    // Aplicar filtros
-    if (params.search) {
-      query = query.ilike('nome', `%${params.search}%`);
-    }
+    const filters: any = {};
     
     if (params.isActive !== undefined) {
-      query = query.eq('is_active', params.isActive);
+      filters.is_active = params.isActive;
     }
 
-    const { data, error } = await query;
+    const result = await EntityService.list<WorkSchedule>({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId: params.companyId,
+      filters,
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
 
-    if (error) {
-      throw new Error(`Erro ao buscar escalas de trabalho: ${error.message}`);
+    let data = result.data;
+
+    // Aplicar filtro de busca no lado do cliente (já que EntityService não suporta ilike)
+    if (params.search) {
+      data = data.filter(schedule => 
+        schedule.nome?.toLowerCase().includes(params.search!.toLowerCase())
+      );
     }
 
-    return data as WorkSchedule[];
+    return data;
   },
 
   /**
    * Busca uma escala por ID
    */
-  getById: async (id: string) => {
-    const { data, error } = await rhSupabase
-      .from('work_schedules')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) {
-      throw new Error(`Erro ao buscar escala de trabalho: ${error.message}`);
+  getById: async (id: string, companyId: string) => {
+    const result = await EntityService.getById<WorkSchedule>('rh', 'work_schedules', id, companyId);
+    
+    if (!result) {
+      throw new Error('Escala de trabalho não encontrada');
     }
 
-    return data as WorkSchedule;
+    return result;
   },
 
   /**
    * Busca escalas ativas
    */
   getActive: async (companyId: string) => {
-    const { data, error } = await rhSupabase
-      .from('work_schedules')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('is_active', true)
-      .order('nome');
+    const result = await EntityService.list<WorkSchedule>({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId,
+      filters: { is_active: true },
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
 
-    if (error) {
-      throw new Error(`Erro ao buscar escalas ativas: ${error.message}`);
-    }
-
-    return data as WorkSchedule[];
+    return result.data;
   },
 
   // =====================================================
@@ -88,68 +85,57 @@ export const WorkSchedulesService = {
   /**
    * Cria uma nova escala de trabalho
    */
-  create: async (schedule: WorkScheduleInsert) => {
-    const { data, error } = await rhSupabase
-      .from('work_schedules')
-      .insert(schedule)
-      .select()
-      .single();
+  create: async (schedule: WorkScheduleInsert, companyId: string) => {
+    const result = await EntityService.create<WorkSchedule>({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId,
+      data: schedule
+    });
 
-    if (error) {
-      throw new Error(`Erro ao criar escala de trabalho: ${error.message}`);
-    }
-
-    return data as WorkSchedule;
+    return result;
   },
 
   /**
    * Atualiza uma escala de trabalho
    */
-  update: async (id: string, schedule: WorkScheduleUpdate) => {
-    const { data, error } = await rhSupabase
-      .from('work_schedules')
-      .update(schedule)
-      .eq('id', id)
-      .select()
-      .single();
+  update: async (id: string, schedule: WorkScheduleUpdate, companyId: string) => {
+    const result = await EntityService.update<WorkSchedule>({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId,
+      id,
+      data: schedule
+    });
 
-    if (error) {
-      throw new Error(`Erro ao atualizar escala de trabalho: ${error.message}`);
-    }
-
-    return data as WorkSchedule;
+    return result;
   },
 
   /**
    * Exclui uma escala de trabalho
    */
-  delete: async (id: string) => {
-    const { error } = await rhSupabase
-      .from('work_schedules')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      throw new Error(`Erro ao excluir escala de trabalho: ${error.message}`);
-    }
+  delete: async (id: string, companyId: string) => {
+    await EntityService.delete({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId,
+      id
+    });
   },
 
   /**
    * Ativa/desativa uma escala de trabalho
    */
-  toggleStatus: async (id: string, isActive: boolean) => {
-    const { data, error } = await rhSupabase
-      .from('work_schedules')
-      .update({ is_active: isActive })
-      .eq('id', id)
-      .select()
-      .single();
+  toggleStatus: async (id: string, isActive: boolean, companyId: string) => {
+    const result = await EntityService.update<WorkSchedule>({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId,
+      id,
+      data: { is_active: isActive }
+    });
 
-    if (error) {
-      throw new Error(`Erro ao alterar status da escala: ${error.message}`);
-    }
-
-    return data as WorkSchedule;
+    return result;
   },
 
   // =====================================================
@@ -160,18 +146,19 @@ export const WorkSchedulesService = {
    * Valida se o nome da escala já existe
    */
   validateName: async (name: string, companyId: string, excludeId?: string) => {
-    const { data, error } = await rhSupabase
-      .from('work_schedules')
-      .select('id')
-      .eq('nome', name)
-      .eq('company_id', companyId)
-      .neq('id', excludeId || '');
-
-    if (error) {
-      throw new Error(`Erro ao validar nome da escala: ${error.message}`);
+    const filters: any = { nome: name };
+    if (excludeId) {
+      filters.id = { neq: excludeId };
     }
 
-    return data.length === 0;
+    const result = await EntityService.list<WorkSchedule>({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId,
+      filters
+    });
+
+    return result.data.length === 0;
   },
 
   /**
@@ -216,14 +203,13 @@ export const WorkSchedulesService = {
    * Busca estatísticas das escalas
    */
   getStats: async (companyId: string) => {
-    const { data, error } = await rhSupabase
-      .from('work_schedules')
-      .select('is_active, carga_horaria_semanal, dias_trabalho')
-      .eq('company_id', companyId);
+    const result = await EntityService.list<WorkSchedule>({
+      schema: 'rh',
+      table: 'work_schedules',
+      companyId
+    });
 
-    if (error) {
-      throw new Error(`Erro ao buscar estatísticas: ${error.message}`);
-    }
+    const data = result.data;
 
     const stats = {
       total: data.length,

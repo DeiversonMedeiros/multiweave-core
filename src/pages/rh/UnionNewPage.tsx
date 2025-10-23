@@ -11,6 +11,10 @@ import UnionForm from '@/components/rh/UnionForm';
 import { useCreateUnion } from '@/hooks/rh/useUnions';
 import { UnionCreateData } from '@/integrations/supabase/rh-types';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 const UnionNewPage: React.FC = () => {
   const navigate = useNavigate();
   const createMutation = useCreateUnion();
@@ -25,7 +29,8 @@ const UnionNewPage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <RequireEntity entityName="unions" action="read">
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button
@@ -60,6 +65,7 @@ const UnionNewPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
+    </RequireEntity>
   );
 };
 

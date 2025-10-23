@@ -31,11 +31,16 @@ import { useEmployees } from '@/hooks/rh/useEmployees';
 import { TimeRecord, Employee } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 // =====================================================
 // COMPONENTE PRINCIPAL
 // =====================================================
 
 export default function TimeRecordsPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -175,7 +180,7 @@ export default function TimeRecordsPage() {
       accessorKey: 'horarios',
       header: 'Horários',
       cell: ({ row }: { row: { original: TimeRecord } }) => {
-        const { entrada, saida, entrada_almoco, saida_almoco } = row.original;
+        const { entrada, saida, entrada_almoco, saida_almoco, entrada_extra1, saida_extra1 } = row.original;
         return (
           <div className="text-sm space-y-1">
             <div className="flex gap-2">
@@ -189,6 +194,14 @@ export default function TimeRecordsPage() {
                 <span className="font-mono">{entrada_almoco || '--:--'}</span>
                 <span>-</span>
                 <span className="font-mono">{saida_almoco || '--:--'}</span>
+              </div>
+            )}
+            {(entrada_extra1 || saida_extra1) && (
+              <div className="flex gap-2 text-xs text-purple-600">
+                <span>Extra:</span>
+                <span className="font-mono">{entrada_extra1 || '--:--'}</span>
+                <span>-</span>
+                <span className="font-mono">{saida_extra1 || '--:--'}</span>
               </div>
             )}
           </div>
@@ -296,7 +309,8 @@ export default function TimeRecordsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="time_records" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -547,5 +561,6 @@ export default function TimeRecordsPage() {
         </div>
       </FormModal>
     </div>
+    </RequireEntity>
   );
 }

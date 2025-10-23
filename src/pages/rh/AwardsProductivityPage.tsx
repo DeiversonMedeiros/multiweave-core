@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PlusCircle, Edit, Trash2, Gift, DollarSign, Users, TrendingUp, Upload, Download, CheckCircle, XCircle } from 'lucide-react';
 import { useAwardsProductivity, useAwardStats, useAwardTypes, useAwardStatuses, useAwardImports, useImportAwardsFromCSV } from '@/hooks/rh/useAwardsProductivity';
 import { AwardProductivityFilters } from '@/integrations/supabase/rh-types';
-import { formatCurrency, formatDate, getAwardTypeLabel, getAwardTypeColor, getAwardStatusLabel, getAwardStatusColor } from '@/services/rh/awardsProductivityService';
+import { formatCurrency, formatDate, getAwardTypeLabel, getAwardTypeColor, getAwardStatusLabel, getAwardStatusColor, downloadCSVTemplate } from '@/services/rh/awardsProductivityService';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +28,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useDeleteAwardProductivity, useApproveAward, useMarkAsPaid } from '@/hooks/rh/useAwardsProductivity';
 import { toast } from 'sonner';
-import { useEmployees } from '@/hooks/rh/useEmployees';
+import { useRHData } from '@/hooks/generic/useEntityData';
+import { Employee } from '@/integrations/supabase/rh-types';
+import { useCompany } from '@/lib/company-context';
 
 const AwardsProductivityPage: React.FC = () => {
   const [filters, setFilters] = useState<AwardProductivityFilters>({
@@ -42,10 +44,14 @@ const AwardsProductivityPage: React.FC = () => {
     new Date().toISOString().slice(0, 7) // YYYY-MM format
   );
 
+  const { selectedCompany } = useCompany();
   const { data: awards, isLoading, error } = useAwardsProductivity(filters);
   const { data: stats } = useAwardStats();
   const { data: imports } = useAwardImports(selectedMonth);
-  const { data: employees } = useEmployees();
+  
+  // Carregar funcionários usando useRHData
+  const { data: employeesData } = useRHData<Employee>('employees', selectedCompany?.id || '');
+  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
   const awardTypes = useAwardTypes();
   const awardStatuses = useAwardStatuses();
   
@@ -128,6 +134,7 @@ const AwardsProductivityPage: React.FC = () => {
   if (error) return <div>Erro ao carregar premiações: {error.message}</div>;
 
   return (
+
     <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
@@ -141,6 +148,14 @@ const AwardsProductivityPage: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={downloadCSVTemplate}
+            title="Baixar template CSV com campos necessários"
+          >
+            <Download className="mr-2" size={16} />
+            Template CSV
+          </Button>
           <label htmlFor="csv-upload">
             <Button variant="outline" asChild>
               <span>
@@ -416,6 +431,7 @@ const AwardsProductivityPage: React.FC = () => {
                           importRecord.status === 'concluido' ? 'default' :
                           importRecord.status === 'erro' ? 'destructive' :
                           importRecord.status === 'processando' ? 'secondary' : 'outline'
+
                         }>
                           {importRecord.status}
                         </Badge>
@@ -433,7 +449,7 @@ const AwardsProductivityPage: React.FC = () => {
         </TabsContent>
       </Tabs>
     </div>
-  );
+    );
 };
 
 export default AwardsProductivityPage;

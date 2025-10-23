@@ -3,8 +3,7 @@ import { EmployeesService } from '@/services/rh/employeesService';
 import { 
   Employee, 
   EmployeeInsert, 
-  EmployeeUpdate, 
-  EmployeeFilters 
+  EmployeeUpdate 
 } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
@@ -15,17 +14,15 @@ import { useCompany } from '@/lib/company-context';
 /**
  * Hook para listar funcionários
  */
-export function useEmployees(filters?: EmployeeFilters, page?: number, pageSize?: number) {
+export function useEmployees() {
   const { selectedCompany } = useCompany();
 
   return useQuery({
-    queryKey: ['rh', 'employees', selectedCompany?.id, filters, page, pageSize],
-    queryFn: () => EmployeesService.list({ 
-      companyId: selectedCompany?.id || '', 
-      filters, 
-      page, 
-      pageSize 
-    }),
+    queryKey: ['rh', 'employees', selectedCompany?.id],
+    queryFn: async () => {
+      const data = await EmployeesService.list(selectedCompany?.id || '');
+      return { data };
+    },
     enabled: !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000, // 5 minutos
   });
@@ -36,11 +33,32 @@ export function useEmployees(filters?: EmployeeFilters, page?: number, pageSize?
  */
 export function useEmployee(id: string) {
   const { selectedCompany } = useCompany();
-  
+
   return useQuery({
     queryKey: ['rh', 'employees', id],
     queryFn: () => EmployeesService.getById(id, selectedCompany?.id || ''),
     enabled: !!id && !!selectedCompany?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Hook para buscar funcionário por user_id
+ */
+export function useEmployeeByUserId(userId: string) {
+  const { selectedCompany } = useCompany();
+
+  return useQuery({
+    queryKey: ['rh', 'employees', 'by-user', userId],
+    queryFn: async () => {
+      try {
+        return await EmployeesService.getByUserId(userId, selectedCompany?.id || '');
+      } catch (error) {
+        console.error('Erro ao buscar funcionário por user_id:', error);
+        return null;
+      }
+    },
+    enabled: !!userId && !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -66,7 +84,7 @@ export function useEmployeesByDepartment(departmentId: string) {
   const { selectedCompany } = useCompany();
 
   return useQuery({
-    queryKey: ['rh', 'employees', 'department', departmentId, selectedCompany?.id],
+    queryKey: ['rh', 'employees', 'by-department', departmentId],
     queryFn: () => EmployeesService.getByDepartment(departmentId, selectedCompany?.id || ''),
     enabled: !!departmentId && !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
@@ -80,7 +98,7 @@ export function useEmployeesByPosition(positionId: string) {
   const { selectedCompany } = useCompany();
 
   return useQuery({
-    queryKey: ['rh', 'employees', 'position', positionId, selectedCompany?.id],
+    queryKey: ['rh', 'employees', 'by-position', positionId],
     queryFn: () => EmployeesService.getByPosition(positionId, selectedCompany?.id || ''),
     enabled: !!positionId && !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
@@ -88,44 +106,29 @@ export function useEmployeesByPosition(positionId: string) {
 }
 
 /**
- * Hook para buscar funcionário por CPF
- */
-export function useEmployeeByCpf(cpf: string) {
-  const { selectedCompany } = useCompany();
-
-  return useQuery({
-    queryKey: ['rh', 'employees', 'cpf', cpf, selectedCompany?.id],
-    queryFn: () => EmployeesService.getByCpf(cpf, selectedCompany?.id || ''),
-    enabled: !!cpf && !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-/**
- * Hook para buscar funcionário por matrícula
- */
-export function useEmployeeByMatricula(matricula: string) {
-  const { selectedCompany } = useCompany();
-
-  return useQuery({
-    queryKey: ['rh', 'employees', 'matricula', matricula, selectedCompany?.id],
-    queryFn: () => EmployeesService.getByMatricula(matricula, selectedCompany?.id || ''),
-    enabled: !!matricula && !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-/**
- * Hook para buscar estatísticas dos funcionários
+ * Hook para estatísticas de funcionários
  */
 export function useEmployeeStats() {
   const { selectedCompany } = useCompany();
 
   return useQuery({
     queryKey: ['rh', 'employees', 'stats', selectedCompany?.id],
-    queryFn: () => EmployeesService.getStats(selectedCompany?.id || ''),
+    queryFn: async () => {
+      if (!selectedCompany?.id) return null;
+      
+      const [totalEmployees, activeEmployees] = await Promise.all([
+        EmployeesService.list(selectedCompany.id),
+        EmployeesService.getActive(selectedCompany.id)
+      ]);
+
+      return {
+        total: totalEmployees.length,
+        active: activeEmployees.length,
+        inactive: totalEmployees.length - activeEmployees.length
+      };
+    },
     enabled: !!selectedCompany?.id,
-    staleTime: 10 * 60 * 1000, // 10 minutos
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -138,16 +141,13 @@ export function useEmployeeStats() {
  */
 export function useCreateEmployee() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (employee: EmployeeInsert) => EmployeesService.create(employee),
-    onSuccess: (data) => {
-      // Invalidar queries relacionadas
+    mutationFn: (employee: EmployeeInsert) => 
+      EmployeesService.create(employee, selectedCompany?.id || ''),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'employees'] });
-      queryClient.invalidateQueries({ queryKey: ['rh', 'employees', 'stats'] });
-      
-      // Adicionar o novo funcionário ao cache
-      queryClient.setQueryData(['rh', 'employees', data.id], data);
     },
     onError: (error) => {
       console.error('Erro ao criar funcionário:', error);
@@ -160,16 +160,13 @@ export function useCreateEmployee() {
  */
 export function useUpdateEmployee() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
     mutationFn: ({ id, employee }: { id: string; employee: EmployeeUpdate }) => 
       EmployeesService.update(id, employee, selectedCompany?.id || ''),
     onSuccess: (data, variables) => {
-      // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['rh', 'employees'] });
-      queryClient.invalidateQueries({ queryKey: ['rh', 'employees', 'stats'] });
-      
-      // Atualizar o funcionário no cache
       queryClient.setQueryData(['rh', 'employees', variables.id], data);
     },
     onError: (error) => {
@@ -183,135 +180,18 @@ export function useUpdateEmployee() {
  */
 export function useDeleteEmployee() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (id: string) => EmployeesService.delete(id, selectedCompany?.id || ''),
+    mutationFn: (id: string) => 
+      EmployeesService.delete(id, selectedCompany?.id || ''),
     onSuccess: (_, id) => {
-      // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['rh', 'employees'] });
-      queryClient.invalidateQueries({ queryKey: ['rh', 'employees', 'stats'] });
-      
-      // Remover o funcionário do cache
       queryClient.removeQueries({ queryKey: ['rh', 'employees', id] });
     },
     onError: (error) => {
       console.error('Erro ao excluir funcionário:', error);
     },
-  });
-}
-
-/**
- * Hook para alterar status do funcionário
- */
-export function useToggleEmployeeStatus() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: 'ativo' | 'inativo' | 'afastado' | 'demitido' }) => 
-      EmployeesService.toggleStatus(id, status, selectedCompany?.id || ''),
-    onSuccess: (data, variables) => {
-      // Invalidar queries relacionadas
-      queryClient.invalidateQueries({ queryKey: ['rh', 'employees'] });
-      queryClient.invalidateQueries({ queryKey: ['rh', 'employees', 'stats'] });
-      
-      // Atualizar o funcionário no cache
-      queryClient.setQueryData(['rh', 'employees', variables.id], data);
-    },
-    onError: (error) => {
-      console.error('Erro ao alterar status do funcionário:', error);
-    },
-  });
-}
-
-// =====================================================
-// HOOKS DE VALIDAÇÃO
-// =====================================================
-
-/**
- * Hook para validar CPF
- */
-export function useValidateCpf() {
-  const { selectedCompany } = useCompany();
-
-  return useMutation({
-    mutationFn: ({ cpf, excludeId }: { cpf: string; excludeId?: string }) => 
-      EmployeesService.validateCpf(cpf, selectedCompany?.id || '', excludeId),
-    onError: (error) => {
-      console.error('Erro ao validar CPF:', error);
-    },
-  });
-}
-
-/**
- * Hook para validar matrícula
- */
-export function useValidateMatricula() {
-  const { selectedCompany } = useCompany();
-
-  return useMutation({
-    mutationFn: ({ matricula, excludeId }: { matricula: string; excludeId?: string }) => 
-      EmployeesService.validateMatricula(matricula, selectedCompany?.id || '', excludeId),
-    onError: (error) => {
-      console.error('Erro ao validar matrícula:', error);
-    },
-  });
-}
-
-/**
- * Hook para gerar próxima matrícula
- */
-export function useGenerateNextMatricula() {
-  const { selectedCompany } = useCompany();
-
-  return useQuery({
-    queryKey: ['rh', 'employees', 'next-matricula', selectedCompany?.id],
-    queryFn: () => EmployeesService.generateNextMatricula(selectedCompany?.id || ''),
-    enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-// =====================================================
-// HOOKS DE UTILIDADE
-// =====================================================
-
-/**
- * Hook para buscar funcionários com filtros em tempo real
- */
-export function useEmployeesWithFilters(filters: EmployeeFilters) {
-  const { selectedCompany } = useCompany();
-
-  return useQuery({
-    queryKey: ['rh', 'employees', 'filtered', selectedCompany?.id, filters],
-    queryFn: () => EmployeesService.list({ 
-      companyId: selectedCompany?.id || '', 
-      filters 
-    }),
-    enabled: !!selectedCompany?.id,
-    staleTime: 2 * 60 * 1000, // 2 minutos
-  });
-}
-
-/**
- * Hook para buscar funcionários com paginação
- */
-export function useEmployeesWithPagination(
-  filters?: EmployeeFilters, 
-  page: number = 1, 
-  pageSize: number = 10
-) {
-  const { selectedCompany } = useCompany();
-
-  return useQuery({
-    queryKey: ['rh', 'employees', 'paginated', selectedCompany?.id, filters, page, pageSize],
-    queryFn: () => EmployeesService.list({ 
-      companyId: selectedCompany?.id || '', 
-      filters, 
-      page, 
-      pageSize 
-    }),
-    enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
   });
 }
 

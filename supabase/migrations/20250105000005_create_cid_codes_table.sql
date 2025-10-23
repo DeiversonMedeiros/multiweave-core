@@ -46,26 +46,22 @@ ALTER TABLE rh.cid_codes ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view cid_codes from their company" ON rh.cid_codes
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'cid_codes', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert cid_codes in their company" ON rh.cid_codes
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'cid_codes', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update cid_codes from their company" ON rh.cid_codes
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'cid_codes', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete cid_codes from their company" ON rh.cid_codes
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'cid_codes', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

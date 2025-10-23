@@ -64,28 +64,16 @@ ALTER TABLE rh.rubricas ENABLE ROW LEVEL SECURITY;
 
 -- Criar políticas RLS
 CREATE POLICY "Users can view rubricas from their company" ON rh.rubricas
-    FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'rubricas', 'read')
-    );
+    FOR SELECT USING (user_has_company_access(company_id));
 
 CREATE POLICY "Users can insert rubricas in their company" ON rh.rubricas
-    FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'rubricas', 'create')
-    );
+    FOR INSERT WITH CHECK (user_has_company_access(company_id));
 
 CREATE POLICY "Users can update rubricas from their company" ON rh.rubricas
-    FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'rubricas', 'edit')
-    );
+    FOR UPDATE USING (user_has_company_access(company_id));
 
 CREATE POLICY "Users can delete rubricas from their company" ON rh.rubricas
-    FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'rubricas', 'delete')
-    );
+    FOR DELETE USING (user_has_company_access(company_id));
 
 -- Comentários
 COMMENT ON TABLE rh.rubricas IS 'Tabela de rubricas para folha de pagamento';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { WorkShift, getShiftTypes, getWeekDays } from '@/integrations/supabase/rh-types';
+import { WorkShift, getShiftTypes, getWeekDays, getScaleTypes } from '@/integrations/supabase/rh-types';
 
 interface WorkShiftFormProps {
   workShift?: WorkShift | null;
@@ -21,7 +21,7 @@ interface WorkShiftFormProps {
   isLoading?: boolean;
 }
 
-export function WorkShiftForm({ workShift, mode, onSave, isLoading = false }: WorkShiftFormProps) {
+export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { onSubmit?: () => void }>(({ workShift, mode, onSave, isLoading = false, onSubmit }, ref) => {
   const [formData, setFormData] = useState({
     nome: '',
     codigo: '',
@@ -33,12 +33,26 @@ export function WorkShiftForm({ workShift, mode, onSave, isLoading = false }: Wo
     horas_diarias: 8.0,
     dias_semana: [1, 2, 3, 4, 5],
     tipo_turno: 'normal' as 'normal' | 'noturno' | 'rotativo',
+    tipo_escala: 'fixa' as 'fixa' | 'flexivel_6x1' | 'flexivel_5x2' | 'flexivel_4x3' | 'escala_12x36' | 'escala_24x48' | 'personalizada',
+    dias_trabalho: 5,
+    dias_folga: 2,
+    ciclo_dias: 7,
+    regras_clt: {},
+    template_escala: false,
     tolerancia_entrada: 0,
     tolerancia_saida: 0,
     status: 'ativo' as 'ativo' | 'inativo',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Expor função de submit via ref
+  useImperativeHandle(ref, () => ({
+    submit: () => {
+      console.log('🔍 [DEBUG] WorkShiftForm - submit chamado via ref');
+      handleSubmit();
+    }
+  }));
 
   useEffect(() => {
     if (workShift) {
@@ -53,6 +67,12 @@ export function WorkShiftForm({ workShift, mode, onSave, isLoading = false }: Wo
         horas_diarias: workShift.horas_diarias,
         dias_semana: workShift.dias_semana,
         tipo_turno: workShift.tipo_turno,
+        tipo_escala: workShift.tipo_escala,
+        dias_trabalho: workShift.dias_trabalho,
+        dias_folga: workShift.dias_folga,
+        ciclo_dias: workShift.ciclo_dias,
+        regras_clt: workShift.regras_clt || {},
+        template_escala: workShift.template_escala,
         tolerancia_entrada: workShift.tolerancia_entrada,
         tolerancia_saida: workShift.tolerancia_saida,
         status: workShift.status,
@@ -74,6 +94,22 @@ export function WorkShiftForm({ workShift, mode, onSave, isLoading = false }: Wo
       : formData.dias_semana.filter(d => d !== dia);
     
     handleInputChange('dias_semana', newDias);
+  };
+
+  const handleTipoEscalaChange = (tipo: string) => {
+    const scaleType = getScaleTypes().find(st => st.value === tipo);
+    if (scaleType && tipo !== 'personalizada') {
+      // Configuração automática baseada no tipo
+      setFormData(prev => ({
+        ...prev,
+        tipo_escala: tipo as any,
+        dias_trabalho: scaleType.config.dias_trabalho,
+        dias_folga: scaleType.config.dias_folga,
+        ciclo_dias: scaleType.config.ciclo_dias,
+      }));
+    } else {
+      handleInputChange('tipo_escala', tipo);
+    }
   };
 
   const validateForm = () => {
@@ -103,22 +139,49 @@ export function WorkShiftForm({ workShift, mode, onSave, isLoading = false }: Wo
       newErrors.dias_semana = 'Selecione pelo menos um dia da semana';
     }
 
+    // Validações CLT
+    if (formData.dias_trabalho > 6) {
+      newErrors.dias_trabalho = 'Máximo 6 dias consecutivos de trabalho (CLT)';
+    }
+
+    if (formData.dias_trabalho < 1) {
+      newErrors.dias_trabalho = 'Mínimo 1 dia de trabalho';
+    }
+
+    if (formData.dias_folga < 1) {
+      newErrors.dias_folga = 'Mínimo 1 dia de folga por semana (CLT)';
+    }
+
+    if (formData.ciclo_dias < (formData.dias_trabalho + formData.dias_folga)) {
+      newErrors.ciclo_dias = 'Ciclo deve ser maior ou igual à soma de dias de trabalho e folga';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    // Só chama preventDefault se houver um evento (chamada via formulário)
+    if (e) {
+      e.preventDefault();
+    }
+    
+    console.log('🔍 [DEBUG] WorkShiftForm - handleSubmit chamado');
+    console.log('🔍 [DEBUG] WorkShiftForm - formData atual:', formData);
+    console.log('🔍 [DEBUG] WorkShiftForm - validateForm():', validateForm());
     
     if (validateForm()) {
+      console.log('🔍 [DEBUG] WorkShiftForm - Enviando dados para onSave:', formData);
       onSave(formData);
+    } else {
+      console.log('🔍 [DEBUG] WorkShiftForm - Validação falhou, não enviando dados');
     }
   };
 
   const isReadOnly = mode === 'view';
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form ref={ref} onSubmit={handleSubmit} className="space-y-6">
       {/* Informações Básicas */}
       <Card>
         <CardHeader>
@@ -262,6 +325,97 @@ export function WorkShiftForm({ workShift, mode, onSave, isLoading = false }: Wo
         </CardContent>
       </Card>
 
+      {/* Configurações CLT */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Configurações CLT</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="tipo_escala">Tipo de Escala</Label>
+              <Select
+                value={formData.tipo_escala}
+                onValueChange={handleTipoEscalaChange}
+                disabled={isReadOnly}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {getScaleTypes().map((tipo) => (
+                    <SelectItem key={tipo.value} value={tipo.value}>
+                      <div>
+                        <div className="font-medium">{tipo.label}</div>
+                        <div className="text-sm text-muted-foreground">{tipo.description}</div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="template_escala">Template de Escala</Label>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="template_escala"
+                  checked={formData.template_escala}
+                  onCheckedChange={(checked) => handleInputChange('template_escala', checked)}
+                  disabled={isReadOnly}
+                />
+                <Label htmlFor="template_escala">Usar como template</Label>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="dias_trabalho">Dias de Trabalho</Label>
+              <Input
+                id="dias_trabalho"
+                type="number"
+                min="1"
+                max="6"
+                value={formData.dias_trabalho}
+                onChange={(e) => handleInputChange('dias_trabalho', parseInt(e.target.value) || 1)}
+                disabled={isReadOnly || formData.tipo_escala !== 'personalizada'}
+                className={errors.dias_trabalho ? 'border-red-500' : ''}
+              />
+              {errors.dias_trabalho && <p className="text-sm text-red-500">{errors.dias_trabalho}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="dias_folga">Dias de Folga</Label>
+              <Input
+                id="dias_folga"
+                type="number"
+                min="1"
+                value={formData.dias_folga}
+                onChange={(e) => handleInputChange('dias_folga', parseInt(e.target.value) || 1)}
+                disabled={isReadOnly || formData.tipo_escala !== 'personalizada'}
+                className={errors.dias_folga ? 'border-red-500' : ''}
+              />
+              {errors.dias_folga && <p className="text-sm text-red-500">{errors.dias_folga}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ciclo_dias">Ciclo Total (dias)</Label>
+              <Input
+                id="ciclo_dias"
+                type="number"
+                min="1"
+                value={formData.ciclo_dias}
+                onChange={(e) => handleInputChange('ciclo_dias', parseInt(e.target.value) || 1)}
+                disabled={isReadOnly || formData.tipo_escala !== 'personalizada'}
+                className={errors.ciclo_dias ? 'border-red-500' : ''}
+              />
+              {errors.ciclo_dias && <p className="text-sm text-red-500">{errors.ciclo_dias}</p>}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Configurações */}
       <Card>
         <CardHeader>
@@ -333,15 +487,10 @@ export function WorkShiftForm({ workShift, mode, onSave, isLoading = false }: Wo
         </CardContent>
       </Card>
 
-      {/* Botões */}
-      {!isReadOnly && (
-        <div className="flex justify-end space-x-2">
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? 'Salvando...' : 'Salvar'}
-          </Button>
-        </div>
-      )}
+      {/* Botões - Removidos pois o modal gerencia os botões */}
     </form>
   );
-}
+});
+
+WorkShiftForm.displayName = 'WorkShiftForm';
 

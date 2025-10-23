@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UsuarioForm } from "@/components/forms/UsuarioForm";
 import { toast } from "sonner";
-import { RequireModule } from "@/components/RequireAuth";
+import { RequireEntity } from "@/components/RequireAuth";
 import { PermissionGuard, PermissionButton } from "@/components/PermissionGuard";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useMultiTenancy } from "@/hooks/useMultiTenancy";
@@ -17,7 +17,7 @@ export default function Usuarios() {
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUsuario, setEditingUsuario] = useState<User | null>(null);
-  const { canCreateModule, canEditModule, canDeleteModule } = usePermissions();
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { currentCompany, isAdmin } = useMultiTenancy();
 
   useEffect(() => {
@@ -128,7 +128,7 @@ export default function Usuarios() {
   }
 
   return (
-    <RequireModule moduleName="users" action="read">
+    <RequireEntity entityName="users" action="read">
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Usuários</h1>
@@ -152,10 +152,10 @@ export default function Usuarios() {
           onExport={() => toast.info("Exportação em desenvolvimento")}
           searchPlaceholder="Buscar por nome ou email..."
           newButtonLabel="Novo Usuário"
-          showNewButton={canCreateModule('users')}
+          showNewButton={canCreateEntity('users')}
         />
 
-        <PermissionGuard module="users" action="create">
+        <PermissionGuard entity="users" action="create">
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
@@ -165,12 +165,14 @@ export default function Usuarios() {
               </DialogHeader>
               <UsuarioForm
                 usuario={editingUsuario || undefined}
-                onSuccess={(userData) => {
+                onSuccess={() => {
                   setIsDialogOpen(false);
                   if (editingUsuario) {
-                    handleUpdate(editingUsuario.id, userData);
+                    // Para edição, recarregar a lista
+                    fetchUsuarios();
                   } else {
-                    handleCreate(userData);
+                    // Para criação, apenas recarregar a lista (usuário já foi criado pela Edge Function)
+                    fetchUsuarios();
                   }
                 }}
                 onCancel={() => setIsDialogOpen(false)}
@@ -179,6 +181,6 @@ export default function Usuarios() {
           </Dialog>
         </PermissionGuard>
       </div>
-    </RequireModule>
+    </RequireEntity>
   );
 }

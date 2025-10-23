@@ -11,6 +11,10 @@ import EmployeeMedicalPlanForm from '@/components/rh/EmployeeMedicalPlanForm';
 import { useCreateEmployeeMedicalPlan } from '@/hooks/rh/useMedicalAgreements';
 import { EmployeeMedicalPlanCreateData } from '@/integrations/supabase/rh-types';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 const EmployeeMedicalPlanNewPage: React.FC = () => {
   const navigate = useNavigate();
   const createMutation = useCreateEmployeeMedicalPlan();
@@ -25,7 +29,8 @@ const EmployeeMedicalPlanNewPage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <RequireEntity entityName="employee_medical_plan" action="read">
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button
@@ -60,6 +65,7 @@ const EmployeeMedicalPlanNewPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
+    </RequireEntity>
   );
 };
 

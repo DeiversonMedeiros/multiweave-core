@@ -48,26 +48,22 @@ ALTER TABLE rh.delay_reasons ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view delay_reasons from their company" ON rh.delay_reasons
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'delay_reasons', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert delay_reasons in their company" ON rh.delay_reasons
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'delay_reasons', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update delay_reasons from their company" ON rh.delay_reasons
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'delay_reasons', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete delay_reasons from their company" ON rh.delay_reasons
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'delay_reasons', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

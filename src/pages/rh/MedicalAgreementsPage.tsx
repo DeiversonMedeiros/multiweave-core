@@ -22,7 +22,8 @@ import {
   Heart,
   Users,
   DollarSign,
-  Calendar
+  Calendar,
+  UserPlus
 } from 'lucide-react';
 import { 
   useMedicalAgreements, 
@@ -33,6 +34,9 @@ import {
   usePlanStatuses,
   useMedicalAgreementsStats
 } from '@/hooks/rh/useMedicalAgreements';
+import { useMedicalPlanDependentsStats } from '@/hooks/rh/useMedicalPlanDependentsStats';
+import { useTestDependentsQuery } from '@/hooks/rh/useTestDependentsQuery';
+import { MedicalPlanDependentsStats } from '@/components/rh/MedicalPlanDependentsStats';
 import { 
   formatCurrency, 
   formatDate, 
@@ -56,6 +60,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useDeleteMedicalAgreement, useDeleteMedicalPlan, useDeleteEmployeeMedicalPlan } from '@/hooks/rh/useMedicalAgreements';
+import { EmployeePlanDependentsManager } from '@/components/rh/EmployeePlanDependentsManager';
 import { toast } from 'sonner';
 
 const MedicalAgreementsPage: React.FC = () => {
@@ -64,6 +69,8 @@ const MedicalAgreementsPage: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('agreements');
+  const [isDependentsModalOpen, setIsDependentsModalOpen] = useState(false);
+  const [selectedEmployeePlan, setSelectedEmployeePlan] = useState<any>(null);
 
   // Hooks para dados
   const { data: agreements, isLoading: loadingAgreements } = useMedicalAgreements({
@@ -81,6 +88,8 @@ const MedicalAgreementsPage: React.FC = () => {
   });
 
   const { data: stats } = useMedicalAgreementsStats();
+  const { data: dependentsStats, isLoading: loadingDependentsStats, error: dependentsStatsError } = useMedicalPlanDependentsStats();
+  const { data: testDependents, isLoading: loadingTest, error: testError } = useTestDependentsQuery();
   const { data: employees } = useEmployees();
   
   // Hooks utilitários
@@ -133,16 +142,28 @@ const MedicalAgreementsPage: React.FC = () => {
     }
   };
 
+  const handleViewDependents = (employeePlan: any) => {
+    setSelectedEmployeePlan(employeePlan);
+    setIsDependentsModalOpen(true);
+  };
+
+  const handleDependentsModalClose = () => {
+    setIsDependentsModalOpen(false);
+    setSelectedEmployeePlan(null);
+  };
+
   if (loadingAgreements || loadingPlans || loadingEmployeePlans) {
     return (
-      <div className="container mx-auto py-8">
+
+    <div className="container mx-auto py-8">
         <div className="text-center">Carregando convênios médicos...</div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -294,10 +315,11 @@ const MedicalAgreementsPage: React.FC = () => {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="agreements">Convênios ({agreements?.length || 0})</TabsTrigger>
           <TabsTrigger value="plans">Planos ({plans?.length || 0})</TabsTrigger>
           <TabsTrigger value="employee-plans">Adesões ({employeePlans?.length || 0})</TabsTrigger>
+          <TabsTrigger value="dependents-stats">Dependentes ({dependentsStats?.totalDependents || 0})</TabsTrigger>
         </TabsList>
 
         {/* Tab: Convênios */}
@@ -474,6 +496,7 @@ const MedicalAgreementsPage: React.FC = () => {
                     <TableHead>Data Início</TableHead>
                     <TableHead>Valor Mensal</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Dependentes</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -490,6 +513,17 @@ const MedicalAgreementsPage: React.FC = () => {
                         <Badge className={getPlanStatusColor(employeePlan.status)}>
                           {getPlanStatusLabel(employeePlan.status)}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewDependents(employeePlan)}
+                          className="flex items-center gap-1"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                          Gerenciar
+                        </Button>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -533,9 +567,82 @@ const MedicalAgreementsPage: React.FC = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Tab: Estatísticas de Dependentes */}
+        <TabsContent value="dependents-stats">
+          {/* Debug Info */}
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle className="text-sm">Debug Info</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-xs space-y-1">
+                <p>Loading Dependents Stats: {loadingDependentsStats ? 'true' : 'false'}</p>
+                <p>Dependents Stats Error: {dependentsStatsError?.message || 'none'}</p>
+                <p>Test Query Loading: {loadingTest ? 'true' : 'false'}</p>
+                <p>Test Query Error: {testError?.message || 'none'}</p>
+                <p>Test Dependents Count: {testDependents?.length || 0}</p>
+                <p>Dependents Stats Data: {dependentsStats ? 'loaded' : 'not loaded'}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {loadingDependentsStats ? (
+            <Card>
+              <CardContent className="flex items-center justify-center h-32">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground">Carregando estatísticas de dependentes...</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : dependentsStatsError ? (
+            <Card>
+              <CardContent className="flex items-center justify-center h-32">
+                <div className="text-center">
+                  <p className="text-destructive mb-2">Erro ao carregar estatísticas</p>
+                  <p className="text-sm text-muted-foreground">
+                    {dependentsStatsError.message || 'Tente novamente mais tarde'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : dependentsStats ? (
+            <MedicalPlanDependentsStats
+              totalDependents={dependentsStats.totalDependents}
+              totalValue={dependentsStats.totalValue}
+              averageValue={dependentsStats.averageValue}
+              activeDependents={dependentsStats.activeDependents}
+              suspendedDependents={dependentsStats.suspendedDependents}
+              cancelledDependents={dependentsStats.cancelledDependents}
+              dependentsByParentesco={dependentsStats.dependentsByParentesco}
+              dependentsByAge={dependentsStats.dependentsByAge}
+            />
+          ) : (
+            <Card>
+              <CardContent className="flex items-center justify-center h-32">
+                <div className="text-center">
+                  <p className="text-muted-foreground">Nenhuma estatística disponível</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* Modal de Gerenciamento de Dependentes */}
+      {isDependentsModalOpen && selectedEmployeePlan && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            <EmployeePlanDependentsManager
+              employeePlan={selectedEmployeePlan}
+              onClose={handleDependentsModalClose}
+            />
+          </div>
+        </div>
+      )}
     </div>
-  );
+    );
 };
 
 export default MedicalAgreementsPage;

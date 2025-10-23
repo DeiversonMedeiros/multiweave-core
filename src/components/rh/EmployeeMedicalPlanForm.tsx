@@ -28,6 +28,7 @@ const formSchema = z.object({
   }).default('ativo'),
   valor_mensal: z.number().min(0, 'Valor mensal deve ser maior ou igual a 0.'),
   desconto_aplicado: z.number().min(0, 'Desconto deve ser maior ou igual a 0.').max(100, 'Desconto não pode ser maior que 100%.').default(0),
+  valor_manual: z.boolean().default(false), // Flag para indicar se o valor foi editado manualmente
   motivo_suspensao: z.string().optional(),
   observacoes: z.string().optional(),
 });
@@ -66,6 +67,7 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
       status: initialData?.status || 'ativo',
       valor_mensal: initialData?.valor_mensal || 0,
       desconto_aplicado: initialData?.desconto_aplicado || 0,
+      valor_manual: false,
       motivo_suspensao: initialData?.motivo_suspensao || '',
       observacoes: initialData?.observacoes || '',
     },
@@ -73,6 +75,7 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
 
   const watchedPlanId = watch('plan_id');
   const watchedDescontoAplicado = watch('desconto_aplicado');
+  const watchedValorManual = watch('valor_manual');
 
   // Atualizar plano selecionado quando o ID muda
   useEffect(() => {
@@ -80,15 +83,25 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
       const plan = plans.find(p => p.id === watchedPlanId);
       setSelectedPlan(plan || null);
       
-      // Atualizar valor mensal baseado no plano selecionado
-      if (plan) {
+      // Atualizar valor mensal baseado no plano selecionado (apenas se não foi editado manualmente)
+      if (plan && !watchedValorManual) {
         const valorBase = plan.valor_titular;
         const desconto = watchedDescontoAplicado || 0;
         const valorFinal = valorBase * (1 - desconto / 100);
         setValue('valor_mensal', valorFinal);
       }
     }
-  }, [watchedPlanId, plans, watchedDescontoAplicado, setValue]);
+  }, [watchedPlanId, plans, watchedDescontoAplicado, watchedValorManual, setValue]);
+
+  // Recalcular valor quando desconto muda (apenas se não foi editado manualmente)
+  useEffect(() => {
+    if (selectedPlan && !watchedValorManual) {
+      const valorBase = selectedPlan.valor_titular;
+      const desconto = watchedDescontoAplicado || 0;
+      const valorFinal = valorBase * (1 - desconto / 100);
+      setValue('valor_mensal', valorFinal);
+    }
+  }, [watchedDescontoAplicado, selectedPlan, watchedValorManual, setValue]);
 
   const handleFormSubmit = (data: FormData) => {
     const submitData = {
@@ -267,29 +280,69 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
               {errors.desconto_aplicado && (
                 <p className="text-sm text-red-500">{errors.desconto_aplicado.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Desconto específico para esta adesão (além do desconto padrão do plano)
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="valor_mensal">Valor Mensal Final (R$) *</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="valor_mensal">Valor Mensal Final (R$) *</Label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="valor_manual"
+                    {...register('valor_manual')}
+                    className="rounded"
+                  />
+                  <Label htmlFor="valor_manual" className="text-xs text-muted-foreground">
+                    Editar manualmente
+                  </Label>
+                </div>
+              </div>
               <Input
                 id="valor_mensal"
                 type="number"
                 step="0.01"
                 {...register('valor_mensal', { valueAsNumber: true })}
                 min="0"
-                className={errors.valor_mensal ? 'border-red-500' : ''}
+                readOnly={!watchedValorManual}
+                className={`${errors.valor_mensal ? 'border-red-500' : ''} ${!watchedValorManual ? 'bg-gray-50' : ''}`}
               />
               {errors.valor_mensal && (
                 <p className="text-sm text-red-500">{errors.valor_mensal.message}</p>
               )}
+              {!watchedValorManual && (
+                <p className="text-xs text-muted-foreground">
+                  Calculado automaticamente baseado no plano selecionado e descontos
+                </p>
+              )}
             </div>
           </div>
 
-          {selectedPlan && watchedDescontoAplicado > 0 && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-sm text-green-700">
-                <strong>Valor com desconto:</strong> {formatCurrency(selectedPlan.valor_titular * (1 - watchedDescontoAplicado / 100))}
-              </p>
+          {selectedPlan && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h4 className="text-sm font-medium text-blue-900 mb-2">Cálculo do Valor</h4>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-blue-700">Valor base do plano:</span>
+                  <span className="font-medium">{formatCurrency(selectedPlan.valor_titular)}</span>
+                </div>
+                {watchedDescontoAplicado > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-blue-700">Desconto aplicado ({watchedDescontoAplicado}%):</span>
+                    <span className="font-medium text-red-600">
+                      -{formatCurrency(selectedPlan.valor_titular * (watchedDescontoAplicado / 100))}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-blue-200 pt-1">
+                  <span className="text-blue-900 font-medium">Valor final:</span>
+                  <span className="font-bold text-blue-900">
+                    {formatCurrency(selectedPlan.valor_titular * (1 - watchedDescontoAplicado / 100))}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

@@ -17,9 +17,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { AwardProductivity, AwardProductivityCreateData, AwardProductivityUpdateData } from '@/integrations/supabase/rh-types';
+import { AwardProductivity, AwardProductivityCreateData, AwardProductivityUpdateData, Employee } from '@/integrations/supabase/rh-types';
 import { useAwardTypes, useCalculationTypes } from '@/hooks/rh/useAwardsProductivity';
-import { useEmployees } from '@/hooks/rh/useEmployees';
 
 const formSchema = z.object({
   employee_id: z.string().uuid({ message: 'ID do funcionário inválido.' }),
@@ -42,14 +41,14 @@ const formSchema = z.object({
 
 interface AwardProductivityFormProps {
   initialData?: AwardProductivity;
+  employees: Employee[];
   onSubmit: (data: AwardProductivityCreateData | AwardProductivityUpdateData) => void;
   isLoading: boolean;
 }
 
-const AwardProductivityForm: React.FC<AwardProductivityFormProps> = ({ initialData, onSubmit, isLoading }) => {
+const AwardProductivityForm: React.FC<AwardProductivityFormProps> = ({ initialData, employees, onSubmit, isLoading }) => {
   const awardTypes = useAwardTypes();
   const calculationTypes = useCalculationTypes();
-  const { data: employees } = useEmployees();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -137,7 +136,7 @@ const AwardProductivityForm: React.FC<AwardProductivityFormProps> = ({ initialDa
                   <SelectContent>
                     {employees && employees.length > 0 ? employees.map((employee) => (
                       <SelectItem key={employee.id} value={employee.id}>
-                        {employee.nome} - {employee.matricula}
+                        {employee.nome} - {employee.matricula || 'Sem matrícula'}
                       </SelectItem>
                     )) : (
                       <SelectItem value="no-employees" disabled>

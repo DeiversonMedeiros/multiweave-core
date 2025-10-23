@@ -13,20 +13,26 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PeriodicExam, PeriodicExamCreateData, PeriodicExamUpdateData } from '@/integrations/supabase/rh-types';
-import { useEmployees } from '@/hooks/rh/useEmployees';
 import { useCompany } from '@/lib/company-context';
+import { FileUpload } from './FileUpload';
+import { X } from 'lucide-react';
+import { 
+  periodicExamSchema, 
+  safeValidatePeriodicExam,
+  type PeriodicExamFormData 
+} from '@/lib/validations/periodic-exam-validations';
 
 interface PeriodicExamFormProps {
   exam?: PeriodicExam | null;
   mode: 'create' | 'edit' | 'view';
+  employees: Employee[];
   onSave: (data: PeriodicExamCreateData | PeriodicExamUpdateData) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
 
-export function PeriodicExamForm({ exam, mode, onSave, onCancel, isLoading }: PeriodicExamFormProps) {
+export function PeriodicExamForm({ exam, mode, employees, onSave, onCancel, isLoading }: PeriodicExamFormProps) {
   const { selectedCompany } = useCompany();
-  const { data: employeesData } = useEmployees(selectedCompany?.id || '');
   
   const [formData, setFormData] = useState({
     employee_id: '',
@@ -43,6 +49,7 @@ export function PeriodicExamForm({ exam, mode, onSave, onCancel, isLoading }: Pe
     custo: '',
     pago: false,
     data_pagamento: '',
+    anexos: [] as string[],
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -64,35 +71,45 @@ export function PeriodicExamForm({ exam, mode, onSave, onCancel, isLoading }: Pe
         custo: exam.custo ? exam.custo.toString() : '',
         pago: exam.pago,
         data_pagamento: exam.data_pagamento ? exam.data_pagamento.split('T')[0] : '',
+        anexos: exam.anexos || [],
       });
     }
   }, [exam]);
 
   const validateForm = () => {
-    const newErrors: Record<string, string> = {};
+    try {
+      // Preparar dados para validação
+      const dataToValidate: PeriodicExamFormData = {
+        ...formData,
+        custo: formData.custo ? parseFloat(formData.custo) : undefined,
+        data_agendamento: formData.data_agendamento,
+        data_realizacao: formData.data_realizacao || undefined,
+        data_vencimento: formData.data_vencimento,
+        data_pagamento: formData.data_pagamento || undefined,
+      };
 
-    if (!formData.employee_id) {
-      newErrors.employee_id = 'Funcionário é obrigatório';
+      // Validar com Zod
+      const result = safeValidatePeriodicExam(dataToValidate);
+      
+      if (!result.success) {
+        const newErrors: Record<string, string> = {};
+        
+        result.error.errors.forEach((error) => {
+          const field = error.path[0] as string;
+          newErrors[field] = error.message;
+        });
+        
+        setErrors(newErrors);
+        return false;
+      }
+
+      setErrors({});
+      return true;
+    } catch (error) {
+      console.error('Erro na validação:', error);
+      setErrors({ general: 'Erro na validação do formulário' });
+      return false;
     }
-
-    if (!formData.tipo_exame) {
-      newErrors.tipo_exame = 'Tipo de exame é obrigatório';
-    }
-
-    if (!formData.data_agendamento) {
-      newErrors.data_agendamento = 'Data de agendamento é obrigatória';
-    }
-
-    if (!formData.data_vencimento) {
-      newErrors.data_vencimento = 'Data de vencimento é obrigatória';
-    }
-
-    if (formData.custo && isNaN(parseFloat(formData.custo))) {
-      newErrors.custo = 'Custo deve ser um valor numérico válido';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -127,8 +144,6 @@ export function PeriodicExamForm({ exam, mode, onSave, onCancel, isLoading }: Pe
 
   const isReadOnly = mode === 'view';
 
-  const employees = employeesData?.data || [];
-
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <Card>
@@ -139,22 +154,36 @@ export function PeriodicExamForm({ exam, mode, onSave, onCancel, isLoading }: Pe
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="employee_id">Funcionário *</Label>
-              <Select
-                value={formData.employee_id}
-                onValueChange={(value) => handleInputChange('employee_id', value)}
-                disabled={isReadOnly}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o funcionário" />
-                </SelectTrigger>
-                <SelectContent>
-                  {employees.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id}>
-                      {employee.nome} - {employee.matricula}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {mode === 'view' && exam?.employee_name ? (
+                <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md border">
+                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-blue-600 font-medium text-sm">
+                      {exam.employee_name.charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-medium">{exam.employee_name}</span>
+                    <p className="text-sm text-gray-500">ID: {exam.employee_id}</p>
+                  </div>
+                </div>
+              ) : (
+                <Select
+                  value={formData.employee_id}
+                  onValueChange={(value) => handleInputChange('employee_id', value)}
+                  disabled={isReadOnly}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o funcionário" />
+                  </SelectTrigger>
+             <SelectContent>
+               {employees.map((employee) => (
+                 <SelectItem key={employee.id} value={employee.id}>
+                   {employee.nome} - {employee.matricula || 'Sem matrícula'}
+                 </SelectItem>
+               ))}
+             </SelectContent>
+                </Select>
+              )}
               {errors.employee_id && (
                 <p className="text-sm text-red-500">{errors.employee_id}</p>
               )}
@@ -353,6 +382,65 @@ export function PeriodicExamForm({ exam, mode, onSave, onCancel, isLoading }: Pe
           </div>
         </CardContent>
       </Card>
+
+      {/* Upload de Arquivos */}
+      {!isReadOnly && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Anexos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FileUpload
+              onUpload={(url) => {
+                setFormData(prev => ({
+                  ...prev,
+                  anexos: [...prev.anexos, url]
+                }));
+              }}
+              onRemove={() => {
+                setFormData(prev => ({
+                  ...prev,
+                  anexos: prev.anexos.slice(0, -1)
+                }));
+              }}
+              currentFile={formData.anexos[formData.anexos.length - 1] || null}
+              maxSize={10}
+              acceptedTypes={['.pdf']}
+              bucket="exam-results"
+              folder="periodic-exams"
+            />
+            
+            {formData.anexos.length > 0 && (
+              <div className="mt-4">
+                <Label>Anexos Atuais</Label>
+                <div className="space-y-2 mt-2">
+                  {formData.anexos.map((anexo, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      <span className="text-sm text-gray-600">
+                        {anexo.split('/').pop()}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            anexos: prev.anexos.filter((_, i) => i !== index)
+                          }));
+                        }}
+                        disabled={isReadOnly}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!isReadOnly && (
         <div className="flex justify-end space-x-2">

@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS rh.esocial_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    employee_id UUID REFERENCES rh.employees(id) ON DELETE SET NULL,
+    employee_id UUID REFERENCES rh.employees(id),
     tipo_evento VARCHAR(50) NOT NULL CHECK (tipo_evento IN (
         'S1000', 'S1005', 'S1010', 'S1020', 'S1030', 'S1035', 'S1040', 'S1050', 
         'S1060', 'S1070', 'S1080', 'S1200', 'S1202', 'S1207', 'S1210', 'S1220', 

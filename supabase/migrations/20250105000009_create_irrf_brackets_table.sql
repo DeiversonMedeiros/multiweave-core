@@ -57,26 +57,22 @@ ALTER TABLE rh.irrf_brackets ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view irrf_brackets from their company" ON rh.irrf_brackets
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'irrf_brackets', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert irrf_brackets in their company" ON rh.irrf_brackets
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'irrf_brackets', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update irrf_brackets from their company" ON rh.irrf_brackets
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'irrf_brackets', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete irrf_brackets from their company" ON rh.irrf_brackets
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'irrf_brackets', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

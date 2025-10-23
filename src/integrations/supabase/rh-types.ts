@@ -23,6 +23,12 @@ export interface WorkShift {
   horas_diarias: number;
   dias_semana: number[]; // 1=Segunda, 2=Terça, etc.
   tipo_turno: 'normal' | 'noturno' | 'rotativo';
+  tipo_escala: 'fixa' | 'flexivel_6x1' | 'flexivel_5x2' | 'flexivel_4x3' | 'escala_12x36' | 'escala_24x48' | 'personalizada';
+  dias_trabalho: number; // Quantidade de dias de trabalho no ciclo
+  dias_folga: number; // Quantidade de dias de folga no ciclo
+  ciclo_dias: number; // Ciclo total em dias
+  regras_clt: Record<string, any>; // Regras específicas da CLT
+  template_escala: boolean; // Indica se é um template reutilizável
   tolerancia_entrada: number; // minutos
   tolerancia_saida: number; // minutos
   status: 'ativo' | 'inativo';
@@ -68,6 +74,53 @@ export function getShiftTypes(): { value: string; label: string }[] {
     { value: 'normal', label: 'Normal' },
     { value: 'noturno', label: 'Noturno' },
     { value: 'rotativo', label: 'Rotativo' },
+  ];
+}
+
+export function getScaleTypes(): { value: string; label: string; description: string; config: { dias_trabalho: number; dias_folga: number; ciclo_dias: number } }[] {
+  return [
+    { 
+      value: 'fixa', 
+      label: 'Escala Fixa', 
+      description: 'Dias fixos da semana (5x2)',
+      config: { dias_trabalho: 5, dias_folga: 2, ciclo_dias: 7 }
+    },
+    { 
+      value: 'flexivel_6x1', 
+      label: 'Flexível 6x1', 
+      description: '6 dias trabalho, 1 folga',
+      config: { dias_trabalho: 6, dias_folga: 1, ciclo_dias: 7 }
+    },
+    { 
+      value: 'flexivel_5x2', 
+      label: 'Flexível 5x2', 
+      description: '5 dias trabalho, 2 folgas',
+      config: { dias_trabalho: 5, dias_folga: 2, ciclo_dias: 7 }
+    },
+    { 
+      value: 'flexivel_4x3', 
+      label: 'Flexível 4x3', 
+      description: '4 dias trabalho, 3 folgas',
+      config: { dias_trabalho: 4, dias_folga: 3, ciclo_dias: 7 }
+    },
+    { 
+      value: 'escala_12x36', 
+      label: 'Escala 12x36', 
+      description: '12h trabalho, 36h folga',
+      config: { dias_trabalho: 1, dias_folga: 2, ciclo_dias: 3 }
+    },
+    { 
+      value: 'escala_24x48', 
+      label: 'Escala 24x48', 
+      description: '24h trabalho, 48h folga',
+      config: { dias_trabalho: 1, dias_folga: 2, ciclo_dias: 3 }
+    },
+    { 
+      value: 'personalizada', 
+      label: 'Personalizada', 
+      description: 'Configuração customizada',
+      config: { dias_trabalho: 0, dias_folga: 0, ciclo_dias: 0 }
+    },
   ];
 }
 
@@ -220,6 +273,45 @@ export interface DeficiencyType {
   beneficios_lei_13146: boolean;
   isento_contribuicao_sindical: boolean;
   ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompensationRequest {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  tipo: 'horas_extras' | 'banco_horas' | 'adicional_noturno' | 'adicional_periculosidade' | 'adicional_insalubridade' | 'dsr' | 'feriado' | 'outros';
+  descricao: string;
+  data_inicio: string;
+  data_fim: string;
+  quantidade_horas: number;
+  valor_hora?: number;
+  valor_total?: number;
+  status: 'pendente' | 'aprovado' | 'rejeitado' | 'cancelado';
+  motivo_rejeicao?: string;
+  aprovado_por?: string;
+  data_aprovacao?: string;
+  observacoes?: string;
+  anexos?: string[];
+  created_at: string;
+  updated_at: string;
+  // Relacionamentos
+  employee?: Employee;
+  aprovador?: any; // Profile
+}
+
+
+export interface Report {
+  id: string;
+  company_id: string;
+  nome: string;
+  tipo: 'funcionarios' | 'folha' | 'horas' | 'ferias' | 'licencas' | 'beneficios' | 'esocial' | 'outros';
+  periodo?: string;
+  status: 'gerado' | 'processando' | 'erro';
+  arquivo_url?: string;
+  parametros?: any;
+  data_geracao?: string;
   created_at: string;
   updated_at: string;
 }
@@ -627,18 +719,54 @@ export interface Employee {
   cargo_id?: string;
   departamento_id?: string;
   salario_base?: number;
-  status: 'ativo' | 'inativo' | 'afastado' | 'demitido';
+  status: 'ativo' | 'inativo' | 'afastado' | 'demitido' | 'aposentado' | 'licenca';
   telefone?: string;
   email?: string;
   endereco?: string;
   cidade?: string;
   estado?: string;
   cep?: string;
+  estado_civil?: string;
+  nacionalidade?: string;
+  naturalidade?: string;
+  nome_mae?: string;
+  nome_pai?: string;
+  work_shift_id?: string;
+  cost_center_id?: string;
+  gestor_imediato_id?: string;
+  user_id?: string;
+  
+  // Documentos pessoais
+  certidao_nascimento?: string;
+  certidao_casamento?: string;
+  titulo_eleitor?: string;
+  ctps?: string;
+  pis_pasep?: string;
+  certificado_reservista?: string;
+  comprovante_endereco?: string;
+  foto_funcionario?: string;
+  escolaridade?: string;
+  tipo_cnh?: 'A' | 'B' | 'C' | 'D' | 'E';
+  cartao_sus?: string;
+  registros_profissionais?: Record<string, string>; // CREA, CRM, OAB, Coren, etc.
+  outros_vinculos_empregaticios?: boolean;
+  detalhes_outros_vinculos?: string;
+  
+  // Dados bancários
+  banco_nome?: string;
+  banco_agencia?: string;
+  banco_conta?: string;
+  banco_tipo_conta?: 'corrente' | 'poupanca' | 'salario';
+  banco_pix?: string;
+  
   created_at: string;
   updated_at: string;
   // Relacionamentos
   cargo?: Position;
   departamento?: Unit;
+  work_shift?: WorkShift;
+  cost_center?: CostCenter;
+  gestor_imediato?: Employee;
 }
 
 export interface Position {
@@ -662,11 +790,63 @@ export interface Unit {
   descricao?: string;
   codigo?: string;
   responsavel_id?: string;
+  cost_center_id?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   // Relacionamentos
   responsavel?: Employee;
+  cost_center?: CostCenter;
+}
+
+export interface WorkShift {
+  id: string;
+  company_id: string;
+  nome: string;
+  codigo?: string;
+  descricao?: string;
+  hora_inicio: string;
+  hora_fim: string;
+  intervalo_inicio?: string;
+  intervalo_fim?: string;
+  horas_diarias: number;
+  dias_semana: number[];
+  tipo_turno: 'normal' | 'noturno' | 'rotativo';
+  tolerancia_entrada: number;
+  tolerancia_saida: number;
+  status: 'ativo' | 'inativo';
+  created_at: string;
+  updated_at: string;
+}
+
+// Tipos para operações CRUD de WorkShift
+export type WorkShiftInsert = Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>;
+
+export type WorkShiftUpdate = Partial<Omit<WorkShift, 'id' | 'company_id' | 'created_at' | 'updated_at'>>;
+
+export interface CostCenter {
+  id: string;
+  company_id: string;
+  nome: string;
+  codigo: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Tipos para operações CRUD
+export type EmployeeInsert = Omit<Employee, 'id' | 'created_at' | 'updated_at' | 'cargo' | 'departamento' | 'work_shift' | 'cost_center' | 'manager'>;
+
+export type EmployeeUpdate = Partial<Omit<Employee, 'id' | 'company_id' | 'created_at' | 'updated_at' | 'cargo' | 'departamento' | 'work_shift' | 'cost_center' | 'manager'>>;
+
+export interface EmployeeFilters {
+  search?: string;
+  status?: string;
+  cargo_id?: string;
+  departamento_id?: string;
+  work_shift_id?: string;
+  cost_center_id?: string;
+  manager_id?: string;
 }
 
 export interface TimeRecord {
@@ -678,6 +858,8 @@ export interface TimeRecord {
   saida?: string;
   entrada_almoco?: string;
   saida_almoco?: string;
+  entrada_extra1?: string;
+  saida_extra1?: string;
   horas_trabalhadas: number;
   horas_extras: number;
   horas_faltas: number;
@@ -722,6 +904,24 @@ export interface EmployeeSchedule {
   // Relacionamentos
   employee?: Employee;
   schedule?: WorkSchedule;
+}
+
+export interface EmployeeShift {
+  id: string;
+  company_id: string;
+  funcionario_id: string;
+  turno_id: string;
+  data_inicio: string;
+  data_fim?: string;
+  ativo: boolean;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+  // Relacionamentos
+  funcionario?: Employee;
+  turno?: WorkShift;
+  funcionario_nome?: string;
+  turno_nome?: string;
 }
 
 // =====================================================
@@ -820,18 +1020,36 @@ export interface MedicalCertificate {
   data_inicio: string;
   data_fim: string;
   dias_afastamento: number;
+  tipo_atestado: 'medico' | 'odontologico' | 'psicologico';
+  medico_nome: string;
+  crm_crmo: string;
+  especialidade?: string;
   cid_codigo?: string;
   cid_descricao?: string;
+  valor_beneficio: number;
   observacoes?: string;
   anexo_url?: string;
-  status: 'pendente' | 'aprovado' | 'rejeitado';
+  status: 'pendente' | 'aprovado' | 'rejeitado' | 'em_andamento' | 'concluido';
   aprovado_por?: string;
   aprovado_em?: string;
+  data_aprovacao?: string;
   created_at: string;
   updated_at: string;
   // Relacionamentos
   employee?: Employee;
   aprovador?: any; // Profile
+  attachments?: MedicalCertificateAttachment[];
+}
+
+export interface MedicalCertificateAttachment {
+  id: string;
+  certificate_id: string;
+  file_name: string;
+  file_url: string;
+  file_type?: string;
+  file_size?: number;
+  uploaded_by?: string;
+  created_at: string;
 }
 
 // =====================================================
@@ -848,6 +1066,9 @@ export interface Payroll {
   horas_trabalhadas: number;
   horas_extras: number;
   valor_horas_extras: number;
+  total_beneficios_tradicionais?: number;
+  total_beneficios_convenios_medicos?: number;
+  total_descontos_convenios_medicos?: number;
   total_vencimentos: number;
   total_descontos: number;
   salario_liquido: number;
@@ -980,53 +1201,11 @@ export interface PayrollStats {
 }
 
 // =====================================================
-// BANCO DE HORAS
+// BANCO DE HORAS - SISTEMA ANTIGO (MANTIDO PARA COMPATIBILIDADE)
 // =====================================================
-
-export interface TimeBank {
-  id: string;
-  company_id: string;
-  employee_id: string;
-  data_registro: string;
-  tipo_hora: 'extra' | 'compensatoria' | 'sobreaviso' | 'adicional_noturno';
-  quantidade_horas: number;
-  motivo?: string;
-  status: 'pendente' | 'aprovado' | 'negado' | 'utilizado' | 'expirado';
-  aprovado_por?: string;
-  data_aprovacao?: string;
-  data_expiracao?: string;
-  utilizado_em?: string;
-  observacoes?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TimeBankCreateData {
-  company_id: string;
-  employee_id: string;
-  data_registro: string;
-  tipo_hora: 'extra' | 'compensatoria' | 'sobreaviso' | 'adicional_noturno';
-  quantidade_horas: number;
-  motivo?: string;
-  status?: 'pendente' | 'aprovado' | 'negado' | 'utilizado' | 'expirado';
-  aprovado_por?: string;
-  data_aprovacao?: string;
-  data_expiracao?: string;
-  utilizado_em?: string;
-  observacoes?: string;
-}
-
-export interface TimeBankUpdateData extends Partial<TimeBankCreateData> {
-  id: string;
-}
-
-export interface TimeBankFilters {
-  employee_id?: string;
-  tipo_hora?: string;
-  status?: string;
-  data_inicio?: string;
-  data_fim?: string;
-}
+// Nota: O sistema antigo de banco de horas foi substituído pelo sistema novo
+// com tabelas bank_hours_*. Os tipos abaixo são mantidos apenas para 
+// compatibilidade com migrações existentes.
 
 // =====================================================
 // FERIADOS
@@ -1071,6 +1250,7 @@ export interface PeriodicExam {
   id: string;
   company_id: string;
   employee_id: string;
+  employee_name?: string;
   tipo_exame: 'admissional' | 'periodico' | 'demissional' | 'retorno_trabalho' | 'mudanca_funcao' | 'ambiental';
   data_agendamento: string;
   data_realizacao?: string;
@@ -1130,14 +1310,14 @@ export interface DisciplinaryAction {
   id: string;
   company_id: string;
   employee_id: string;
-  tipo_acao: 'advertencia' | 'suspensao' | 'demissao_justa_causa' | 'transferencia' | 'outros';
+  tipo_acao: 'advertencia_verbal' | 'advertencia_escrita' | 'suspensao' | 'demissao_justa_causa';
   data_ocorrencia: string;
   data_aplicacao: string;
   gravidade: 'leve' | 'moderada' | 'grave' | 'gravissima';
   motivo: string;
   descricao_ocorrencia: string;
   medidas_corretivas?: string;
-  status: 'ativo' | 'suspenso' | 'cancelado' | 'arquivado';
+  status: 'active' | 'suspended' | 'expired' | 'cancelled';
   aplicado_por?: string;
   aprovado_por?: string;
   data_aprovacao?: string;
@@ -1145,6 +1325,12 @@ export interface DisciplinaryAction {
   anexos?: string[];
   data_arquivamento?: string;
   motivo_arquivamento?: string;
+  // Novos campos conforme documentação
+  duration_days?: number;
+  start_date?: string;
+  end_date?: string;
+  documents?: Record<string, any>;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1152,14 +1338,14 @@ export interface DisciplinaryAction {
 export interface DisciplinaryActionCreateData {
   company_id: string;
   employee_id: string;
-  tipo_acao: 'advertencia' | 'suspensao' | 'demissao_justa_causa' | 'transferencia' | 'outros';
+  tipo_acao: 'advertencia_verbal' | 'advertencia_escrita' | 'suspensao' | 'demissao_justa_causa';
   data_ocorrencia: string;
   data_aplicacao: string;
   gravidade: 'leve' | 'moderada' | 'grave' | 'gravissima';
   motivo: string;
   descricao_ocorrencia: string;
   medidas_corretivas?: string;
-  status?: 'ativo' | 'suspenso' | 'cancelado' | 'arquivado';
+  status?: 'active' | 'suspended' | 'expired' | 'cancelled';
   aplicado_por?: string;
   aprovado_por?: string;
   data_aprovacao?: string;
@@ -1167,6 +1353,12 @@ export interface DisciplinaryActionCreateData {
   anexos?: string[];
   data_arquivamento?: string;
   motivo_arquivamento?: string;
+  // Novos campos conforme documentação
+  duration_days?: number;
+  start_date?: string;
+  end_date?: string;
+  documents?: Record<string, any>;
+  is_active?: boolean;
 }
 
 export interface DisciplinaryActionUpdateData extends Partial<DisciplinaryActionCreateData> {
@@ -1308,6 +1500,49 @@ export interface ESocialLogFilters {
 }
 
 // =====================================================
+// INTEGRAÇÃO eSOCIAL
+// =====================================================
+
+export interface EsocialIntegration {
+  id: string;
+  company_id: string;
+  tipo_evento: string;
+  codigo_evento: string;
+  descricao?: string;
+  status: 'pendente' | 'enviado' | 'processado' | 'erro' | 'rejeitado';
+  data_envio?: string;
+  data_processamento?: string;
+  protocolo?: string;
+  funcionario_id?: string;
+  observacoes?: string;
+  arquivo_retorno?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EsocialIntegrationCreateData {
+  tipo_evento: string;
+  codigo_evento: string;
+  descricao?: string;
+  status?: 'pendente' | 'enviado' | 'processado' | 'erro' | 'rejeitado';
+  funcionario_id?: string;
+  observacoes?: string;
+  arquivo_retorno?: string;
+}
+
+export interface EsocialIntegrationUpdateData extends Partial<EsocialIntegrationCreateData> {
+  id: string;
+}
+
+export interface EsocialIntegrationFilters {
+  tipo_evento?: string;
+  status?: string;
+  funcionario_id?: string;
+  data_inicio?: string;
+  data_fim?: string;
+}
+
+// =====================================================
 // BENEFÍCIOS
 // =====================================================
 
@@ -1331,6 +1566,7 @@ export interface Benefit {
   categoria: 'geral' | 'executivo' | 'operacional' | 'terceirizado';
   regras_aplicacao?: string;
   observacoes?: string;
+  entra_no_calculo_folha: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1354,6 +1590,7 @@ export interface BenefitCreateData {
   categoria?: 'geral' | 'executivo' | 'operacional' | 'terceirizado';
   regras_aplicacao?: string;
   observacoes?: string;
+  entra_no_calculo_folha?: boolean;
 }
 
 export interface BenefitUpdateData extends Partial<BenefitCreateData> {
@@ -1853,6 +2090,294 @@ export interface MedicalPlanPricingHistoryFilters {
   data_inicio?: string;
   data_fim?: string;
   aprovado_por?: string;
+}
+
+// =====================================================
+// DEPENDENTES
+// =====================================================
+
+export interface Dependent {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  nome: string;
+  cpf?: string;
+  rg?: string;
+  data_nascimento?: string;
+  parentesco: 'conjuge' | 'companheiro' | 'filho' | 'filha' | 'pai' | 'mae' | 'sogro' | 'sogra' | 'neto' | 'neta' | 'irmao' | 'irma' | 'tio' | 'tia' | 'sobrinho' | 'sobrinha' | 'outros';
+  sexo?: 'masculino' | 'feminino' | 'outro';
+  estado_civil?: string;
+  nacionalidade?: string;
+  naturalidade?: string;
+  nome_mae?: string;
+  nome_pai?: string;
+  cpf_mae?: string;
+  cpf_pai?: string;
+  telefone?: string;
+  email?: string;
+  endereco?: string;
+  cidade?: string;
+  estado?: string;
+  cep?: string;
+  // Campos específicos para diferentes tipos de parentesco
+  data_casamento?: string;
+  data_uniao_estavel?: string;
+  data_separacao?: string;
+  data_obito?: string;
+  // Campos para filhos
+  data_nascimento_mae?: string;
+  escolaridade?: string;
+  instituicao_ensino?: string;
+  // Campos para benefícios
+  possui_deficiencia: boolean;
+  tipo_deficiencia?: string;
+  grau_deficiencia?: string;
+  necessita_cuidados_especiais: boolean;
+  // Campos para documentação
+  certidao_nascimento?: string;
+  certidao_casamento?: string;
+  certidao_uniao_estavel?: string;
+  comprovante_residencia?: string;
+  // Status e controle
+  status: 'ativo' | 'inativo' | 'suspenso' | 'excluido';
+  data_inclusao: string;
+  data_exclusao?: string;
+  motivo_exclusao?: string;
+  observacoes?: string;
+  // Campos de auditoria
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+  updated_by?: string;
+  // Relacionamentos
+  employee?: Employee;
+}
+
+export interface DependentWithEmployee extends Dependent {
+  funcionario_nome: string;
+  funcionario_matricula?: string;
+  funcionario_cpf: string;
+}
+
+export interface DependentCreateData {
+  company_id: string;
+  employee_id: string;
+  nome: string;
+  cpf?: string;
+  rg?: string;
+  data_nascimento?: string;
+  parentesco: 'conjuge' | 'companheiro' | 'filho' | 'filha' | 'pai' | 'mae' | 'sogro' | 'sogra' | 'neto' | 'neta' | 'irmao' | 'irma' | 'tio' | 'tia' | 'sobrinho' | 'sobrinha' | 'outros';
+  sexo?: 'masculino' | 'feminino' | 'outro';
+  estado_civil?: string;
+  nacionalidade?: string;
+  naturalidade?: string;
+  nome_mae?: string;
+  nome_pai?: string;
+  cpf_mae?: string;
+  cpf_pai?: string;
+  telefone?: string;
+  email?: string;
+  endereco?: string;
+  cidade?: string;
+  estado?: string;
+  cep?: string;
+  data_casamento?: string;
+  data_uniao_estavel?: string;
+  data_separacao?: string;
+  data_obito?: string;
+  data_nascimento_mae?: string;
+  escolaridade?: string;
+  instituicao_ensino?: string;
+  possui_deficiencia?: boolean;
+  tipo_deficiencia?: string;
+  grau_deficiencia?: string;
+  necessita_cuidados_especiais?: boolean;
+  certidao_nascimento?: string;
+  certidao_casamento?: string;
+  certidao_uniao_estavel?: string;
+  comprovante_residencia?: string;
+  status?: 'ativo' | 'inativo' | 'suspenso' | 'excluido';
+  data_inclusao?: string;
+  data_exclusao?: string;
+  motivo_exclusao?: string;
+  observacoes?: string;
+}
+
+export interface DependentUpdateData extends Partial<Omit<DependentCreateData, 'company_id' | 'employee_id'>> {
+  id: string;
+}
+
+export interface DependentFilters {
+  employee_id?: string;
+  parentesco?: string;
+  status?: string;
+  sexo?: string;
+  possui_deficiencia?: boolean;
+  data_nascimento_inicio?: string;
+  data_nascimento_fim?: string;
+  search?: string;
+}
+
+// Funções utilitárias para dependentes
+export function getParentescoTypes(): { value: string; label: string }[] {
+  return [
+    { value: 'conjuge', label: 'Cônjuge' },
+    { value: 'companheiro', label: 'Companheiro(a)' },
+    { value: 'filho', label: 'Filho' },
+    { value: 'filha', label: 'Filha' },
+    { value: 'pai', label: 'Pai' },
+    { value: 'mae', label: 'Mãe' },
+    { value: 'sogro', label: 'Sogro' },
+    { value: 'sogra', label: 'Sogra' },
+    { value: 'neto', label: 'Neto' },
+    { value: 'neta', label: 'Neta' },
+    { value: 'irmao', label: 'Irmão' },
+    { value: 'irma', label: 'Irmã' },
+    { value: 'tio', label: 'Tio' },
+    { value: 'tia', label: 'Tia' },
+    { value: 'sobrinho', label: 'Sobrinho' },
+    { value: 'sobrinha', label: 'Sobrinha' },
+    { value: 'outros', label: 'Outros' },
+  ];
+}
+
+export function getSexoTypes(): { value: string; label: string }[] {
+  return [
+    { value: 'masculino', label: 'Masculino' },
+    { value: 'feminino', label: 'Feminino' },
+    { value: 'outro', label: 'Outro' },
+  ];
+}
+
+export function getDeficienciaTypes(): { value: string; label: string }[] {
+  return [
+    { value: 'fisica', label: 'Física' },
+    { value: 'visual', label: 'Visual' },
+    { value: 'auditiva', label: 'Auditiva' },
+    { value: 'intelectual', label: 'Intelectual' },
+    { value: 'mental', label: 'Mental' },
+    { value: 'multipla', label: 'Múltipla' },
+    { value: 'outra', label: 'Outra' },
+  ];
+}
+
+export function getDeficienciaGraus(): { value: string; label: string }[] {
+  return [
+    { value: 'leve', label: 'Leve' },
+    { value: 'moderada', label: 'Moderada' },
+    { value: 'severa', label: 'Severa' },
+    { value: 'profunda', label: 'Profunda' },
+  ];
+}
+
+export function getEscolaridadeTypes(): { value: string; label: string }[] {
+  return [
+    { value: 'fundamental_incompleto', label: 'Fundamental Incompleto' },
+    { value: 'fundamental_completo', label: 'Fundamental Completo' },
+    { value: 'medio_incompleto', label: 'Médio Incompleto' },
+    { value: 'medio_completo', label: 'Médio Completo' },
+    { value: 'superior_incompleto', label: 'Superior Incompleto' },
+    { value: 'superior_completo', label: 'Superior Completo' },
+    { value: 'pos_graduacao', label: 'Pós-Graduação' },
+    { value: 'mestrado', label: 'Mestrado' },
+    { value: 'doutorado', label: 'Doutorado' },
+    { value: 'nao_informado', label: 'Não Informado' },
+  ];
+}
+
+export function getEstadoCivilTypes(): { value: string; label: string }[] {
+  return [
+    { value: 'solteiro', label: 'Solteiro(a)' },
+    { value: 'casado', label: 'Casado(a)' },
+    { value: 'divorciado', label: 'Divorciado(a)' },
+    { value: 'viuvo', label: 'Viúvo(a)' },
+    { value: 'uniao_estavel', label: 'União Estável' },
+    { value: 'separado', label: 'Separado(a)' },
+  ];
+}
+
+// Função para calcular idade baseada na data de nascimento
+export function calculateAge(birthDate: string): number {
+  const today = new Date();
+  const birth = new Date(birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  
+  return age;
+}
+
+// Função para validar se é dependente válido para IRRF
+export function isValidDependentForIrrf(dependent: Dependent): boolean {
+  const age = dependent.data_nascimento ? calculateAge(dependent.data_nascimento) : 0;
+  
+  // Regras para dependentes do IRRF
+  switch (dependent.parentesco) {
+    case 'conjuge':
+    case 'companheiro':
+      return true; // Sem limite de idade
+    case 'filho':
+    case 'filha':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'pai':
+    case 'mae':
+      return true; // Sem limite de idade
+    case 'sogro':
+    case 'sogra':
+      return true; // Sem limite de idade
+    case 'neto':
+    case 'neta':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'irmao':
+    case 'irma':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'tio':
+    case 'tia':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'sobrinho':
+    case 'sobrinha':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    default:
+      return false;
+  }
+}
+
+// Função para validar se é dependente válido para benefícios
+export function isValidDependentForBenefits(dependent: Dependent): boolean {
+  const age = dependent.data_nascimento ? calculateAge(dependent.data_nascimento) : 0;
+  
+  // Regras para dependentes de benefícios (mais restritivas)
+  switch (dependent.parentesco) {
+    case 'conjuge':
+    case 'companheiro':
+      return true; // Sem limite de idade
+    case 'filho':
+    case 'filha':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'pai':
+    case 'mae':
+      return true; // Sem limite de idade
+    case 'sogro':
+    case 'sogra':
+      return true; // Sem limite de idade
+    case 'neto':
+    case 'neta':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'irmao':
+    case 'irma':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'tio':
+    case 'tia':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    case 'sobrinho':
+    case 'sobrinha':
+      return age <= 21 || (age <= 24 && dependent.escolaridade); // Até 21 anos ou até 24 se estudante
+    default:
+      return false;
+  }
 }
 
 // =====================================================

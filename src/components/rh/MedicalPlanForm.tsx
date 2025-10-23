@@ -278,12 +278,18 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
       {/* Valores */}
       <Card>
         <CardHeader>
-          <CardTitle>Valores do Plano</CardTitle>
+          <CardTitle>Valores Base do Plano</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-700">
+              <strong>Importante:</strong> Estes são os valores base do plano. Os valores finais para cada funcionário serão calculados automaticamente considerando os descontos aplicados.
+            </p>
+          </div>
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="valor_titular">Valor Titular (R$) *</Label>
+              <Label htmlFor="valor_titular">Valor Base Titular (R$) *</Label>
               <Input
                 id="valor_titular"
                 type="number"
@@ -295,10 +301,13 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
               {errors.valor_titular && (
                 <p className="text-sm text-red-500">{errors.valor_titular.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Valor mensal para o funcionário titular
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="valor_dependente">Valor Dependente (R$) *</Label>
+              <Label htmlFor="valor_dependente">Valor Base Dependente (R$) *</Label>
               <Input
                 id="valor_dependente"
                 type="number"
@@ -310,6 +319,9 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
               {errors.valor_dependente && (
                 <p className="text-sm text-red-500">{errors.valor_dependente.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Valor mensal para cada dependente
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -325,6 +337,9 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
               {errors.valor_familia && (
                 <p className="text-sm text-red-500">{errors.valor_familia.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Valor mensal para família completa (opcional)
+              </p>
             </div>
           </div>
         </CardContent>
@@ -333,12 +348,18 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
       {/* Descontos */}
       <Card>
         <CardHeader>
-          <CardTitle>Descontos para Funcionários</CardTitle>
+          <CardTitle>Descontos Padrão do Plano</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-700">
+              <strong>Nota:</strong> Estes são descontos padrão aplicados automaticamente a todos os funcionários que aderirem a este plano. Descontos adicionais podem ser aplicados individualmente na adesão.
+            </p>
+          </div>
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="desconto_funcionario">Desconto Funcionário (%)</Label>
+              <Label htmlFor="desconto_funcionario">Desconto Padrão Titular (%)</Label>
               <Input
                 id="desconto_funcionario"
                 type="number"
@@ -350,15 +371,18 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
               {errors.desconto_funcionario && (
                 <p className="text-sm text-red-500">{errors.desconto_funcionario.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Desconto padrão aplicado ao valor do titular
+              </p>
               {watchedDescontoFuncionario > 0 && (
                 <p className="text-sm text-green-600">
-                  Valor final: R$ {valorTitularComDesconto.toFixed(2)}
+                  Valor final titular: R$ {valorTitularComDesconto.toFixed(2)}
                 </p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="desconto_dependente">Desconto Dependente (%)</Label>
+              <Label htmlFor="desconto_dependente">Desconto Padrão Dependente (%)</Label>
               <Input
                 id="desconto_dependente"
                 type="number"
@@ -370,9 +394,12 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
               {errors.desconto_dependente && (
                 <p className="text-sm text-red-500">{errors.desconto_dependente.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Desconto padrão aplicado ao valor dos dependentes
+              </p>
               {watchedDescontoDependente > 0 && (
                 <p className="text-sm text-green-600">
-                  Valor final: R$ {valorDependenteComDesconto.toFixed(2)}
+                  Valor final dependente: R$ {valorDependenteComDesconto.toFixed(2)}
                 </p>
               )}
             </div>

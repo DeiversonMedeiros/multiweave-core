@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Create User</title>
+</head>
+<body>
+    <h1>Test Create User Function</h1>
+    <button onclick="testCreateUser()">Test Create User</button>
+    <div id="result"></div>
+
+    <script>
+        async function testCreateUser() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                // Simular dados de teste
+                const requestData = {
+                    nome: 'Teste Técnico 2',
+                    email: 'testetecnico2@estrategicengenharia.com.br',
+                    password: '123456',
+                    company_id: 'a9784891-9d58-4cc4-8404-18032105c335',
+                    profile_id: '3ce71d8d-c9eb-4b18-9fd4-a72720421441'
+                };
+
+                const response = await fetch(
+                    'https://wmtftyaqucwfsnnjepiy.supabase.co/functions/v1/create-user',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer YOUR_ACCESS_TOKEN_HERE' // Substitua pelo token real
+                        },
+                        body: JSON.stringify(requestData)
+                    }
+                );
+
+                const result = await response.text();
+                resultDiv.innerHTML = `
+                    <h3>Response Status: ${response.status}</h3>
+                    <h3>Response:</h3>
+                    <pre>${result}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<h3>Error:</h3><pre>${error.message}</pre>`;
+            }
+        }
+    </script>
+</body>
+</html>

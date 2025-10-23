@@ -2,7 +2,7 @@
 // SERVIÇO DE TURNOS DE TRABALHO (WORK SHIFTS)
 // =====================================================
 
-import { supabase } from '@/integrations/supabase/client';
+import { EntityService } from '@/services/generic/entityService';
 import { WorkShift } from '@/integrations/supabase/rh-types';
 
 export interface WorkShiftFilters {
@@ -23,6 +23,12 @@ export interface WorkShiftCreateData {
   horas_diarias?: number;
   dias_semana?: number[];
   tipo_turno?: 'normal' | 'noturno' | 'rotativo';
+  tipo_escala?: 'fixa' | 'flexivel_6x1' | 'flexivel_5x2' | 'flexivel_4x3' | 'escala_12x36' | 'escala_24x48' | 'personalizada';
+  dias_trabalho?: number;
+  dias_folga?: number;
+  ciclo_dias?: number;
+  regras_clt?: Record<string, any>;
+  template_escala?: boolean;
   tolerancia_entrada?: number;
   tolerancia_saida?: number;
   status?: 'ativo' | 'inativo';
@@ -41,31 +47,21 @@ export async function getWorkShifts(
   filters: WorkShiftFilters = {}
 ): Promise<{ data: WorkShift[]; totalCount: number }> {
   try {
-    let query = supabase
-      .from('work_shifts')
-      .select('*', { count: 'exact' })
-      .eq('company_id', companyId)
-      .order('nome');
-
-    // Aplicar filtros
-    if (filters.status) {
-      query = query.eq('status', filters.status);
-    }
-
-    if (filters.tipo_turno) {
-      query = query.eq('tipo_turno', filters.tipo_turno);
-    }
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      console.error('Erro ao buscar turnos de trabalho:', error);
-      throw new Error(`Erro ao buscar turnos de trabalho: ${error.message}`);
-    }
+    const result = await EntityService.list<WorkShift>({
+      schema: 'rh',
+      table: 'work_shifts',
+      companyId,
+      filters: {
+        status: filters.status,
+        tipo_turno: filters.tipo_turno
+      },
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
 
     return {
-      data: data || [],
-      totalCount: count || 0,
+      data: result.data,
+      totalCount: result.totalCount,
     };
   } catch (error) {
     console.error('Erro no serviço de turnos de trabalho:', error);
@@ -78,22 +74,7 @@ export async function getWorkShiftById(
   companyId: string
 ): Promise<WorkShift | null> {
   try {
-    const { data, error } = await supabase
-      .from('work_shifts')
-      .select('*')
-      .eq('id', id)
-      .eq('company_id', companyId)
-      .single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return null; // Não encontrado
-      }
-      console.error('Erro ao buscar turno de trabalho:', error);
-      throw new Error(`Erro ao buscar turno de trabalho: ${error.message}`);
-    }
-
-    return data;
+    return await EntityService.getById<WorkShift>('rh', 'work_shifts', id, companyId);
   } catch (error) {
     console.error('Erro no serviço de turno de trabalho:', error);
     throw error;
@@ -104,18 +85,13 @@ export async function createWorkShift(
   workShiftData: WorkShiftCreateData
 ): Promise<WorkShift> {
   try {
-    const { data, error } = await supabase
-      .from('work_shifts')
-      .insert([workShiftData])
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Erro ao criar turno de trabalho:', error);
-      throw new Error(`Erro ao criar turno de trabalho: ${error.message}`);
-    }
-
-    return data;
+    const { company_id, ...data } = workShiftData;
+    return await EntityService.create<WorkShift>({
+      schema: 'rh',
+      table: 'work_shifts',
+      companyId: company_id,
+      data
+    });
   } catch (error) {
     console.error('Erro no serviço de criação de turno:', error);
     throw error;
@@ -126,21 +102,15 @@ export async function updateWorkShift(
   workShiftData: WorkShiftUpdateData
 ): Promise<WorkShift> {
   try {
-    const { id, ...updateData } = workShiftData;
-
-    const { data, error } = await supabase
-      .from('work_shifts')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Erro ao atualizar turno de trabalho:', error);
-      throw new Error(`Erro ao atualizar turno de trabalho: ${error.message}`);
-    }
-
-    return data;
+    const { id, company_id, ...updateData } = workShiftData;
+    
+    return await EntityService.update<WorkShift>({
+      schema: 'rh',
+      table: 'work_shifts',
+      companyId: company_id || '',
+      id,
+      data: updateData
+    });
   } catch (error) {
     console.error('Erro no serviço de atualização de turno:', error);
     throw error;
@@ -152,16 +122,12 @@ export async function deleteWorkShift(
   companyId: string
 ): Promise<void> {
   try {
-    const { error } = await supabase
-      .from('work_shifts')
-      .delete()
-      .eq('id', id)
-      .eq('company_id', companyId);
-
-    if (error) {
-      console.error('Erro ao excluir turno de trabalho:', error);
-      throw new Error(`Erro ao excluir turno de trabalho: ${error.message}`);
-    }
+    await EntityService.delete({
+      schema: 'rh',
+      table: 'work_shifts',
+      companyId,
+      id
+    });
   } catch (error) {
     console.error('Erro no serviço de exclusão de turno:', error);
     throw error;
@@ -174,19 +140,16 @@ export async function deleteWorkShift(
 
 export async function getActiveWorkShifts(companyId: string): Promise<WorkShift[]> {
   try {
-    const { data, error } = await supabase
-      .from('work_shifts')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('status', 'ativo')
-      .order('nome');
+    const result = await EntityService.list<WorkShift>({
+      schema: 'rh',
+      table: 'work_shifts',
+      companyId,
+      filters: { status: 'ativo' },
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
 
-    if (error) {
-      console.error('Erro ao buscar turnos ativos:', error);
-      throw new Error(`Erro ao buscar turnos ativos: ${error.message}`);
-    }
-
-    return data || [];
+    return result.data;
   } catch (error) {
     console.error('Erro no serviço de turnos ativos:', error);
     throw error;
@@ -198,20 +161,19 @@ export async function getWorkShiftsByType(
   tipoTurno: string
 ): Promise<WorkShift[]> {
   try {
-    const { data, error } = await supabase
-      .from('work_shifts')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('tipo_turno', tipoTurno)
-      .eq('status', 'ativo')
-      .order('nome');
+    const result = await EntityService.list<WorkShift>({
+      schema: 'rh',
+      table: 'work_shifts',
+      companyId,
+      filters: { 
+        tipo_turno: tipoTurno,
+        status: 'ativo'
+      },
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
 
-    if (error) {
-      console.error('Erro ao buscar turnos por tipo:', error);
-      throw new Error(`Erro ao buscar turnos por tipo: ${error.message}`);
-    }
-
-    return data || [];
+    return result.data;
   } catch (error) {
     console.error('Erro no serviço de turnos por tipo:', error);
     throw error;

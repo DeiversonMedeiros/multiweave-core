@@ -1,356 +1,431 @@
-// =====================================================
-// HOOK PARA RUBRICAS
-// =====================================================
-
-import { useState, useEffect } from 'react';
-import { 
-  getRubricas, 
-  getRubricaById, 
-  createRubrica, 
-  updateRubrica, 
-  deleteRubrica,
-  getActiveRubricas,
-  getRubricasByType,
-  getRubricasByCategoria,
-  RubricaFilters 
-} from '@/services/rh/rubricasService';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCompany } from '@/lib/company-context';
+import { supabase } from '@/integrations/supabase/client';
 import { Rubrica } from '@/integrations/supabase/rh-types';
+import { toast } from 'sonner';
+import { EntityService } from '@/services/generic/entityService';
 
 // =====================================================
-// HOOK PRINCIPAL
+// TIPOS E INTERFACES
 // =====================================================
 
+export interface RubricaCreateData {
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  tipo: 'provento' | 'desconto' | 'base_calculo' | 'informacao';
+  categoria?: string;
+  natureza: 'normal' | 'eventual' | 'fixo' | 'variavel';
+  calculo_automatico: boolean;
+  formula_calculo?: string;
+  valor_fixo?: number;
+  percentual?: number;
+  base_calculo: string;
+  incidencia_ir: boolean;
+  incidencia_inss: boolean;
+  incidencia_fgts: boolean;
+  incidencia_contribuicao_sindical: boolean;
+  ordem_exibicao: number;
+  obrigatorio: boolean;
+  ativo: boolean;
+}
+
+export interface RubricaUpdateData extends Partial<RubricaCreateData> {
+  id: string;
+}
+
+export interface RubricaFilters {
+  tipo?: string;
+  categoria?: string;
+  ativo?: boolean;
+  search?: string;
+}
+
+// =====================================================
+// HOOKS PARA RUBRICAS
+// =====================================================
+
+/**
+ * Hook para buscar rubricas
+ */
 export function useRubricas(companyId: string, filters: RubricaFilters = {}) {
-  const [rubricas, setRubricas] = useState<Rubrica[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  return useQuery({
+    queryKey: ['rubricas', companyId, filters],
+    queryFn: async () => {
+      if (!companyId) return [];
 
-  const fetchRubricas = async () => {
-    if (!companyId) return;
+      const result = await EntityService.list({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: companyId,
+        filters: filters,
+        orderBy: 'ordem_exibicao',
+        orderDirection: 'asc'
+      });
 
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getRubricas(companyId, filters);
-      setRubricas(result.data);
-      setTotalCount(result.totalCount);
-    } catch (err) {
-      console.error('Erro ao buscar rubricas:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      if (result.error) {
+        throw new Error(`Erro ao buscar rubricas: ${result.error.message}`);
+      }
 
-  useEffect(() => {
-    fetchRubricas();
-  }, [companyId, JSON.stringify(filters)]);
-
-  const refetch = () => {
-    fetchRubricas();
-  };
-
-  return {
-    rubricas,
-    totalCount,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA RUBRICA ESPECÍFICA
-// =====================================================
-
-export function useRubrica(id: string, companyId: string) {
-  const [rubrica, setRubrica] = useState<Rubrica | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchRubrica = async () => {
-    if (!id || !companyId) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getRubricaById(id, companyId);
-      setRubrica(result);
-    } catch (err) {
-      console.error('Erro ao buscar rubrica:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRubrica();
-  }, [id, companyId]);
-
-  const refetch = () => {
-    fetchRubrica();
-  };
-
-  return {
-    rubrica,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA MUTAÇÕES
-// =====================================================
-
-export function useRubricaMutations(companyId: string) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const createMutation = async (data: Parameters<typeof createRubrica>[0]) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await createRubrica(data);
-      return result;
-    } catch (err) {
-      console.error('Erro ao criar rubrica:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const updateMutation = async (data: Parameters<typeof updateRubrica>[0]) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await updateRubrica(data);
-      return result;
-    } catch (err) {
-      console.error('Erro ao atualizar rubrica:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const deleteMutation = async (id: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await deleteRubrica(id, companyId);
-    } catch (err) {
-      console.error('Erro ao excluir rubrica:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return {
-    createMutation,
-    updateMutation,
-    deleteMutation,
-    isLoading,
-    error,
-  };
-}
-
-// =====================================================
-// HOOK PARA RUBRICAS ATIVAS
-// =====================================================
-
-export function useActiveRubricas(companyId: string) {
-  const [activeRubricas, setActiveRubricas] = useState<Rubrica[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchActiveRubricas = async () => {
-    if (!companyId) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getActiveRubricas(companyId);
-      setActiveRubricas(result);
-    } catch (err) {
-      console.error('Erro ao buscar rubricas ativas:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchActiveRubricas();
-  }, [companyId]);
-
-  const refetch = () => {
-    fetchActiveRubricas();
-  };
-
-  return {
-    activeRubricas,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA RUBRICAS POR TIPO
-// =====================================================
-
-export function useRubricasByType(companyId: string, tipo: string) {
-  const [rubricas, setRubricas] = useState<Rubrica[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchRubricasByType = async () => {
-    if (!companyId || !tipo) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getRubricasByType(companyId, tipo);
-      setRubricas(result);
-    } catch (err) {
-      console.error('Erro ao buscar rubricas por tipo:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRubricasByType();
-  }, [companyId, tipo]);
-
-  const refetch = () => {
-    fetchRubricasByType();
-  };
-
-  return {
-    rubricas,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA RUBRICAS POR CATEGORIA
-// =====================================================
-
-export function useRubricasByCategoria(companyId: string, categoria: string) {
-  const [rubricas, setRubricas] = useState<Rubrica[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchRubricasByCategoria = async () => {
-    if (!companyId || !categoria) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getRubricasByCategoria(companyId, categoria);
-      setRubricas(result);
-    } catch (err) {
-      console.error('Erro ao buscar rubricas por categoria:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRubricasByCategoria();
-  }, [companyId, categoria]);
-
-  const refetch = () => {
-    fetchRubricasByCategoria();
-  };
-
-  return {
-    rubricas,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA ESTATÍSTICAS
-// =====================================================
-
-export function useRubricaStats(companyId: string) {
-  const [stats, setStats] = useState({
-    total: 0,
-    ativas: 0,
-    inativas: 0,
-    por_tipo: {} as Record<string, number>,
-    por_natureza: {} as Record<string, number>,
-    por_categoria: {} as Record<string, number>,
+      return result.data as Rubrica[];
+    },
+    enabled: !!companyId,
+    staleTime: 1000 * 60 * 5, // 5 minutos
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+}
 
-  const fetchStats = async () => {
-    if (!companyId) return;
+/**
+ * Hook para buscar rubrica por ID
+ */
+export function useRubricaById(id: string, companyId: string) {
+  return useQuery({
+    queryKey: ['rubrica', id, companyId],
+    queryFn: async () => {
+      if (!id || !companyId) return null;
 
-    try {
-      setIsLoading(true);
-      setError(null);
+      const result = await EntityService.getById({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: companyId,
+        id: id
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao buscar rubrica: ${result.error.message}`);
+      }
+
+      return result.data as Rubrica;
+    },
+    enabled: !!id && !!companyId,
+    staleTime: 1000 * 60 * 5, // 5 minutos
+  });
+}
+
+/**
+ * Hook para criar rubrica
+ */
+export function useCreateRubrica() {
+  const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: RubricaCreateData) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+
+      const result = await EntityService.create({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: selectedCompany.id,
+        data: {
+          ...data,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao criar rubrica: ${result.error.message}`);
+      }
+
+      return result.data as Rubrica;
+    },
+    onSuccess: () => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: ['rubricas'] });
+      toast.success('Rubrica criada com sucesso');
+    },
+    onError: (error) => {
+      console.error('Erro ao criar rubrica:', error);
+      toast.error('Erro ao criar rubrica');
+    }
+  });
+}
+
+/**
+ * Hook para atualizar rubrica
+ */
+export function useUpdateRubrica() {
+  const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: RubricaUpdateData) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+
+      const result = await EntityService.update({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: selectedCompany.id,
+        id: id,
+        data: {
+          ...data,
+          updated_at: new Date().toISOString()
+        }
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao atualizar rubrica: ${result.error.message}`);
+      }
+
+      return result.data as Rubrica;
+    },
+    onSuccess: () => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: ['rubricas'] });
+      toast.success('Rubrica atualizada com sucesso');
+    },
+    onError: (error) => {
+      console.error('Erro ao atualizar rubrica:', error);
+      toast.error('Erro ao atualizar rubrica');
+    }
+  });
+}
+
+/**
+ * Hook para deletar rubrica
+ */
+export function useDeleteRubrica() {
+  const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+
+      const result = await EntityService.delete({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: selectedCompany.id,
+        id: id
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao deletar rubrica: ${result.error.message}`);
+      }
+    },
+    onSuccess: () => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: ['rubricas'] });
+      toast.success('Rubrica excluída com sucesso');
+    },
+    onError: (error) => {
+      console.error('Erro ao deletar rubrica:', error);
+      toast.error('Erro ao excluir rubrica');
+    }
+  });
+}
+
+/**
+ * Hook para duplicar rubrica
+ */
+export function useDuplicateRubrica() {
+  const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+
+      // Buscar rubrica original
+      const originalResult = await EntityService.getById({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: selectedCompany.id,
+        id: id
+      });
+
+      if (originalResult.error) {
+        throw new Error(`Erro ao buscar rubrica: ${originalResult.error.message}`);
+      }
+
+      const original = originalResult.data as Rubrica;
+
+      // Criar cópia
+      const result = await EntityService.create({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: selectedCompany.id,
+        data: {
+          ...original,
+          id: undefined, // Deixar o banco gerar novo ID
+          codigo: `${original.codigo}_COPY`,
+          nome: `${original.nome} (Cópia)`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao duplicar rubrica: ${result.error.message}`);
+      }
+
+      return result.data as Rubrica;
+    },
+    onSuccess: () => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: ['rubricas'] });
+      toast.success('Rubrica duplicada com sucesso');
+    },
+    onError: (error) => {
+      console.error('Erro ao duplicar rubrica:', error);
+      toast.error('Erro ao duplicar rubrica');
+    }
+  });
+}
+
+/**
+ * Hook para reordenar rubricas
+ */
+export function useReorderRubricas() {
+  const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (rubricas: { id: string; ordem_exibicao: number }[]) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+
+      // Atualizar ordem de todas as rubricas
+      const updates = rubricas.map(rubrica => 
+        EntityService.update({
+          schema: 'rh',
+          table: 'rubricas',
+          companyId: selectedCompany.id,
+          id: rubrica.id,
+          data: { 
+            ordem_exibicao: rubrica.ordem_exibicao,
+            updated_at: new Date().toISOString()
+          }
+        })
+      );
+
+      const results = await Promise.all(updates);
       
-      const { data: allRubricas } = await getRubricas(companyId);
-      
+      // Verificar se houve erro em alguma atualização
+      const errors = results.filter(result => result.error);
+      if (errors.length > 0) {
+        throw new Error(`Erro ao reordenar rubricas: ${errors[0].error?.message}`);
+      }
+    },
+    onSuccess: () => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: ['rubricas'] });
+      toast.success('Ordem das rubricas atualizada com sucesso');
+    },
+    onError: (error) => {
+      console.error('Erro ao reordenar rubricas:', error);
+      toast.error('Erro ao reordenar rubricas');
+    }
+  });
+}
+
+/**
+ * Hook para buscar rubricas por tipo
+ */
+export function useRubricasByType(tipo: string, companyId: string) {
+  return useQuery({
+    queryKey: ['rubricas-by-type', tipo, companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+
+      const result = await EntityService.list({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: companyId,
+        filters: { tipo: tipo, ativo: true },
+        orderBy: 'ordem_exibicao',
+        orderDirection: 'asc'
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao buscar rubricas por tipo: ${result.error.message}`);
+      }
+
+      return result.data as Rubrica[];
+    },
+    enabled: !!companyId && !!tipo,
+    staleTime: 1000 * 60 * 5, // 5 minutos
+  });
+}
+
+/**
+ * Hook para buscar rubricas ativas
+ */
+export function useActiveRubricas(companyId: string) {
+  return useQuery({
+    queryKey: ['active-rubricas', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+
+      const result = await EntityService.list({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: companyId,
+        filters: { ativo: true },
+        orderBy: 'ordem_exibicao',
+        orderDirection: 'asc'
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao buscar rubricas ativas: ${result.error.message}`);
+      }
+
+      return result.data as Rubrica[];
+    },
+    enabled: !!companyId,
+    staleTime: 1000 * 60 * 5, // 5 minutos
+  });
+}
+
+/**
+ * Hook para estatísticas de rubricas
+ */
+export function useRubricasStats(companyId: string) {
+  return useQuery({
+    queryKey: ['rubricas-stats', companyId],
+    queryFn: async () => {
+      if (!companyId) return null;
+
+      const result = await EntityService.list({
+        schema: 'rh',
+        table: 'rubricas',
+        companyId: companyId,
+        select: 'tipo, ativo, categoria'
+      });
+
+      if (result.error) {
+        throw new Error(`Erro ao buscar estatísticas: ${result.error.message}`);
+      }
+
+      const data = result.data as any[];
+
       const stats = {
-        total: allRubricas.length,
-        ativas: allRubricas.filter(r => r.ativo).length,
-        inativas: allRubricas.filter(r => !r.ativo).length,
-        por_tipo: allRubricas.reduce((acc, r) => {
-          acc[r.tipo] = (acc[r.tipo] || 0) + 1;
+        total: data?.length || 0,
+        ativas: data?.filter(r => r.ativo).length || 0,
+        inativas: data?.filter(r => !r.ativo).length || 0,
+        proventos: data?.filter(r => r.tipo === 'provento').length || 0,
+        descontos: data?.filter(r => r.tipo === 'desconto').length || 0,
+        baseCalculo: data?.filter(r => r.tipo === 'base_calculo').length || 0,
+        informacoes: data?.filter(r => r.tipo === 'informacao').length || 0,
+        porCategoria: data?.reduce((acc, r) => {
+          const cat = r.categoria || 'outros';
+          acc[cat] = (acc[cat] || 0) + 1;
           return acc;
-        }, {} as Record<string, number>),
-        por_natureza: allRubricas.reduce((acc, r) => {
-          acc[r.natureza] = (acc[r.natureza] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        por_categoria: allRubricas.reduce((acc, r) => {
-          const categoria = r.categoria || 'Sem categoria';
-          acc[categoria] = (acc[categoria] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
+        }, {} as Record<string, number>) || {}
       };
 
-      setStats(stats);
-    } catch (err) {
-      console.error('Erro ao buscar estatísticas de rubricas:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStats();
-  }, [companyId]);
-
-  const refetch = () => {
-    fetchStats();
-  };
-
-  return {
-    stats,
-    isLoading,
-    error,
-    refetch,
-  };
+      return stats;
+    },
+    enabled: !!companyId,
+    staleTime: 1000 * 60 * 5, // 5 minutos
+  });
 }
-

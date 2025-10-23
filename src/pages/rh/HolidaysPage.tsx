@@ -39,7 +39,12 @@ import {
 } from '@/services/rh/holidaysService';
 import { useCompany } from '@/lib/company-context';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 export default function HolidaysPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     tipo: 'all',
@@ -162,7 +167,8 @@ export default function HolidaysPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="holidays" action="read">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -370,5 +376,6 @@ export default function HolidaysPage() {
         />
       </FormModal>
     </div>
+    </RequireEntity>
   );
 }

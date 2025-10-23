@@ -11,8 +11,10 @@ import { useFgtsConfigs, useDeleteFgtsConfig } from '@/hooks/rh/useFgtsConfig';
 import { formatCurrency, formatPercent, formatDate } from '@/services/rh/fgtsConfigService';
 import { FgtsConfig } from '@/integrations/supabase/rh-types';
 import FgtsConfigForm from '@/components/rh/FgtsConfigForm';
+import { usePermissions } from '@/hooks/usePermissions';
 
 export default function FgtsConfigPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     ano_vigencia: new Date().getFullYear(),
@@ -84,14 +86,16 @@ export default function FgtsConfigPage() {
 
   if (!selectedCompany) {
     return (
-      <div className="flex items-center justify-center h-64">
+
+    <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">Selecione uma empresa para visualizar as configurações FGTS</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -291,5 +295,5 @@ export default function FgtsConfigPage() {
         />
       )}
     </div>
-  );
+    );
 }

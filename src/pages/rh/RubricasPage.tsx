@@ -25,12 +25,17 @@ import { SimpleDataTable } from '@/components/rh/SimpleDataTable';
 import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
 import { RubricaForm } from '@/components/rh/RubricaForm';
-import { useRubricas, useRubricaMutations } from '@/hooks/rh/useRubricas';
+import { useRubricas, useCreateRubrica, useUpdateRubrica, useDeleteRubrica } from '@/hooks/rh/useRubricas';
 import { Rubrica } from '@/integrations/supabase/rh-types';
 import { getRubricaTypeColor, getRubricaNatureColor, formatCurrency, formatPercent } from '@/services/rh/rubricasService';
 import { useCompany } from '@/lib/company-context';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 export default function RubricasPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     tipo: 'all',
@@ -45,10 +50,13 @@ export default function RubricasPage() {
 
   // Hooks
   const { rubricas, isLoading, error, refetch } = useRubricas(selectedCompany?.id || '', filters);
-  const { createMutation, updateMutation, deleteMutation, isLoading: isMutating } = useRubricaMutations(selectedCompany?.id || '');
+  const createMutation = useCreateRubrica();
+  const updateMutation = useUpdateRubrica();
+  const deleteMutation = useDeleteRubrica();
+  const isMutating = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
   // Filtrar dados por termo de busca
-  const filteredRubricas = rubricas.filter(rubrica =>
+  const filteredRubricas = (rubricas || []).filter(rubrica =>
     rubrica.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
     rubrica.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
     rubrica.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -205,7 +213,8 @@ export default function RubricasPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="rubricas" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -325,5 +334,6 @@ export default function RubricasPage() {
         />
       </FormModal>
     </div>
+    </RequireEntity>
   );
 }

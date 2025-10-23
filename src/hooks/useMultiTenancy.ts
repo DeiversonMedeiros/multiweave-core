@@ -33,7 +33,7 @@ export const useMultiTenancy = () => {
 
       // Verificar se é admin primeiro
       const { data: adminData, error: adminError } = await supabase
-        .rpc('is_admin', { user_id: user.id });
+        .rpc('is_admin_simple', { p_user_id: user.id });
       
       if (adminError) {
         console.error('Erro ao verificar admin:', adminError);

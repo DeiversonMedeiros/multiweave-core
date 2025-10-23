@@ -58,6 +58,10 @@ export function SimpleDataTable<T>({
   pageSize = 10,
   className = "",
 }: SimpleDataTableProps<T>) {
+  console.log('🔍 [SimpleDataTable] data:', data);
+  console.log('🔍 [SimpleDataTable] data length:', data?.length);
+  console.log('🔍 [SimpleDataTable] columns:', columns);
+  console.log('🔍 [SimpleDataTable] loading:', loading);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -73,12 +77,18 @@ export function SimpleDataTable<T>({
       return false;
     });
   });
+  
+  console.log('🔍 [SimpleDataTable] filteredData:', filteredData);
+  console.log('🔍 [SimpleDataTable] filteredData length:', filteredData.length);
 
   // Paginação
   const totalPages = Math.ceil(filteredData.length / pageSize);
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
   const paginatedData = filteredData.slice(startIndex, endIndex);
+  
+  console.log('🔍 [SimpleDataTable] paginatedData:', paginatedData);
+  console.log('🔍 [SimpleDataTable] paginatedData length:', paginatedData.length);
 
   // Handlers
   const handleSearchChange = (value: string) => {
@@ -141,7 +151,7 @@ export function SimpleDataTable<T>({
             </Button>
           )}
           {onAdd && (
-            <Button onClick={onAdd}>
+                <Button onClick={onAdd}>
               <Plus className="h-4 w-4 mr-2" />
               Adicionar
             </Button>

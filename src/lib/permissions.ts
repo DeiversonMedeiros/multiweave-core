@@ -6,21 +6,87 @@ export const PERMISSION_CONFIG = {
     'users': ['users'],
     'companies': ['companies'],
     'projects': ['projects'],
-    'materials': ['materials'],
+    'materials_equipment': ['materiais_equipamentos'],
     'partners': ['partners'],
     'cost_centers': ['cost_centers'],
+    'cadastros': ['cadastros'],
     'configuracoes': ['configuracoes'],
+    'portal_colaborador': ['portal_colaborador'],
+    'portal_gestor': ['portal_gestor'],
+    'financeiro': ['financeiro'],
+    'compras': ['compras'],
+    'almoxarifado': ['almoxarifado'],
+    'frota': ['frota'],
+    'logistica': ['logistica'],
+    'rh': ['rh'],
+    'recruitment': ['recruitment'],
+    'treinamento': ['treinamento'],
+    'combustivel': ['combustivel'],
+    'metalurgica': ['metalurgica'],
+    'comercial': ['comercial'],
+    'implantacao': ['implantacao']
   },
   
   // Ações disponíveis para cada entidade
   ENTITY_ACTIONS: {
-    'users': ['read', 'create', 'edit', 'delete'],
-    'companies': ['read', 'create', 'edit', 'delete'],
-    'profiles': ['read', 'create', 'edit', 'delete'],
-    'projects': ['read', 'create', 'edit', 'delete'],
-    'materials': ['read', 'create', 'edit', 'delete'],
-    'partners': ['read', 'create', 'edit', 'delete'],
-    'cost_centers': ['read', 'create', 'edit', 'delete'],
+    // Entidades básicas
+    'usuarios': ['read', 'create', 'edit', 'delete'],
+    'empresas': ['read', 'create', 'edit', 'delete'],
+    'perfis': ['read', 'create', 'edit', 'delete'],
+    'projetos': ['read', 'create', 'edit', 'delete'],
+    'materiais_equipamentos': ['read', 'create', 'edit', 'delete'],
+    'parceiros': ['read', 'create', 'edit', 'delete'],
+    'centros_custo': ['read', 'create', 'edit', 'delete'],
+    'unidades': ['read', 'create', 'edit', 'delete'],
+    
+    // Entidades RH
+    'funcionarios': ['read', 'create', 'edit', 'delete'],
+    'cargos': ['read', 'create', 'edit', 'delete'],
+    'registros_ponto': ['read', 'create', 'edit', 'delete'],
+    'ferias': ['read', 'create', 'edit', 'delete'],
+    'reembolsos': ['read', 'create', 'edit', 'delete'],
+    'exames_periodicos': ['read', 'create', 'edit', 'delete'],
+    'acoes_disciplinares': ['read', 'create', 'edit', 'delete'],
+    'treinamentos': ['read', 'create', 'edit', 'delete'],
+    
+    // Entidades Financeiras
+    'contas_pagar': ['read', 'create', 'edit', 'delete'],
+    'contas_receber': ['read', 'create', 'edit', 'delete'],
+    'borderos': ['read', 'create', 'edit', 'delete'],
+    'remessas_bancarias': ['read', 'create', 'edit', 'delete'],
+    'retornos_bancarios': ['read', 'create', 'edit', 'delete'],
+    'contas_bancarias': ['read', 'create', 'edit', 'delete'],
+    'conciliacoes_bancarias': ['read', 'create', 'edit', 'delete'],
+    'fluxo_caixa': ['read', 'create', 'edit', 'delete'],
+    'nfe': ['read', 'create', 'edit', 'delete'],
+    'nfse': ['read', 'create', 'edit', 'delete'],
+    'plano_contas': ['read', 'create', 'edit', 'delete'],
+    'lancamentos_contabeis': ['read', 'create', 'edit', 'delete'],
+    'configuracoes_aprovacao': ['read', 'create', 'edit', 'delete'],
+    'aprovacoes': ['read', 'create', 'edit', 'delete'],
+    
+    // Entidades Almoxarifado
+    'estoque_atual': ['read', 'create', 'edit', 'delete'],
+    'movimentacoes_estoque': ['read', 'create', 'edit', 'delete'],
+    'entradas_materiais': ['read', 'create', 'edit', 'delete'],
+    'entrada_itens': ['read', 'create', 'edit', 'delete'],
+    'checklist_recebimento': ['read', 'create', 'edit', 'delete'],
+    'transferencias': ['read', 'create', 'edit', 'delete'],
+    'transferencia_itens': ['read', 'create', 'edit', 'delete'],
+    'inventarios': ['read', 'create', 'edit', 'delete'],
+    'inventario_itens': ['read', 'create', 'edit', 'delete'],
+    'almoxarifados': ['read', 'create', 'edit', 'delete'],
+    'materiais_equipamentos': ['read', 'create', 'edit', 'delete'],
+    
+    // Entidades do Processo de Compras
+    'solicitacoes_compra': ['read', 'create', 'edit', 'delete'],
+    'cotacoes': ['read', 'create', 'edit', 'delete'],
+    'pedidos_compra': ['read', 'create', 'edit', 'delete'],
+    'aprovacoes_compra': ['read', 'create', 'edit', 'delete'],
+    'fornecedores': ['read', 'create', 'edit', 'delete'],
+    'contratos_compra': ['read', 'create', 'edit', 'delete'],
+    'historico_compras': ['read', 'create', 'edit', 'delete'],
+    'avaliacao_fornecedores': ['read', 'create', 'edit', 'delete']
   },
   
   // Perfis especiais e suas permissões
@@ -30,14 +96,19 @@ export const PERMISSION_CONFIG = {
       description: 'Acesso total ao sistema'
     },
     'Administrador': {
-      modules: ['dashboard', 'users', 'companies', 'projects', 'materials', 'partners', 'cost_centers', 'configuracoes'],
-      entities: ['users', 'companies', 'profiles', 'projects', 'materials', 'partners', 'cost_centers'],
+      modules: ['dashboard', 'users', 'companies', 'projects', 'materials_equipment', 'partners', 'cost_centers', 'configuracoes'],
+      entities: ['users', 'companies', 'profiles', 'projects', 'materials_equipment', 'partners', 'cost_centers'],
       description: 'Acesso administrativo completo'
     },
     'Usuário': {
       modules: ['dashboard'],
       entities: [],
       description: 'Acesso básico ao sistema'
+    },
+    'Colaborador': {
+      modules: ['portal_colaborador'],
+      entities: ['employees', 'time_records', 'vacations', 'reimbursements'],
+      description: 'Acesso ao portal do colaborador'
     },
   },
   
@@ -67,11 +138,11 @@ export const PERMISSION_CONFIG = {
       icon: 'Folder',
       path: '/cadastros/projetos'
     },
-    'materials': {
-      name: 'Materiais',
-      description: 'Gestão de materiais',
+    'materials_equipment': {
+      name: 'Materiais e Equipamentos',
+      description: 'Gestão de materiais e equipamentos do almoxarifado',
       icon: 'Package',
-      path: '/cadastros/materiais'
+      path: '/almoxarifado/materiais'
     },
     'partners': {
       name: 'Parceiros',
@@ -85,50 +156,109 @@ export const PERMISSION_CONFIG = {
       icon: 'DollarSign',
       path: '/cadastros/centros-custo'
     },
+    'cadastros': {
+      name: 'Cadastros',
+      description: 'Módulo de cadastros gerais',
+      icon: 'FileText',
+      path: '/cadastros'
+    },
     'configuracoes': {
       name: 'Configurações',
       description: 'Configurações do sistema e permissões',
       icon: 'Settings',
       path: '/permissoes'
     },
+    'portal_colaborador': {
+      name: 'Portal do Colaborador',
+      description: 'Portal para colaboradores',
+      icon: 'User',
+      path: '/portal-colaborador'
+    },
   },
   
   // Entidades do sistema
   ENTITIES: {
-    'users': {
+    'usuarios': {
       name: 'Usuários',
       description: 'Entidade de usuários',
       table: 'users'
     },
-    'companies': {
+    'empresas': {
       name: 'Empresas',
       description: 'Entidade de empresas',
       table: 'companies'
     },
-    'profiles': {
+    'perfis': {
       name: 'Perfis',
       description: 'Entidade de perfis de acesso',
       table: 'profiles'
     },
-    'projects': {
+    'projetos': {
       name: 'Projetos',
       description: 'Entidade de projetos',
       table: 'projects'
     },
-    'materials': {
-      name: 'Materiais',
-      description: 'Entidade de materiais',
-      table: 'materials'
+    'materiais_equipamentos': {
+      name: 'Materiais e Equipamentos',
+      description: 'Entidade de materiais e equipamentos do almoxarifado',
+      table: 'materiais_equipamentos'
     },
-    'partners': {
+    'parceiros': {
       name: 'Parceiros',
       description: 'Entidade de parceiros',
       table: 'partners'
     },
-    'cost_centers': {
+    'centros_custo': {
       name: 'Centros de Custo',
       description: 'Entidade de centros de custo',
       table: 'cost_centers'
+    },
+    'unidades': {
+      name: 'Departamentos',
+      description: 'Entidade de departamentos/unidades',
+      table: 'units'
+    },
+    
+    // Entidades do Processo de Compras
+    'solicitacoes_compra': {
+      name: 'Solicitações de Compra',
+      description: 'Entidade de solicitações de compra',
+      table: 'solicitacoes_compra'
+    },
+    'cotacoes': {
+      name: 'Cotações',
+      description: 'Entidade de cotações de preços',
+      table: 'cotacoes'
+    },
+    'pedidos_compra': {
+      name: 'Pedidos de Compra',
+      description: 'Entidade de pedidos de compra',
+      table: 'pedidos_compra'
+    },
+    'aprovacoes_compra': {
+      name: 'Aprovações de Compra',
+      description: 'Entidade de aprovações de compra',
+      table: 'aprovacoes_compra'
+    },
+    'fornecedores': {
+      name: 'Fornecedores',
+      description: 'Entidade de fornecedores',
+      table: 'fornecedores'
+    },
+    'contratos_compra': {
+      name: 'Contratos de Compra',
+      description: 'Entidade de contratos de compra',
+      table: 'contratos_compra'
+    },
+    'historico_compras': {
+      name: 'Histórico de Compras',
+      description: 'Entidade de histórico de compras',
+      table: 'historico_compras'
+    },
+    'avaliacao_fornecedores': {
+      name: 'Avaliação de Fornecedores',
+      description: 'Entidade de avaliação de fornecedores',
+      table: 'avaliacao_fornecedores'
     },
   },
   

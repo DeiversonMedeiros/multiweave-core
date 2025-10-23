@@ -57,26 +57,22 @@ ALTER TABLE rh.fgts_config ENABLE ROW LEVEL SECURITY;
 -- Criar políticas RLS
 CREATE POLICY "Users can view fgts_config from their company" ON rh.fgts_config
     FOR SELECT USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'fgts_config', 'read')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can insert fgts_config in their company" ON rh.fgts_config
     FOR INSERT WITH CHECK (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'fgts_config', 'create')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can update fgts_config from their company" ON rh.fgts_config
     FOR UPDATE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'fgts_config', 'edit')
+        user_has_company_access(company_id)
     );
 
 CREATE POLICY "Users can delete fgts_config from their company" ON rh.fgts_config
     FOR DELETE USING (
-        company_id = ANY(get_user_companies()) AND 
-        check_access_permission('rh', 'fgts_config', 'delete')
+        user_has_company_access(company_id)
     );
 
 -- Comentários

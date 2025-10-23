@@ -26,11 +26,16 @@ import { useUnits, useDeleteUnit } from '@/hooks/rh/useUnits';
 import { Unit } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 // =====================================================
 // COMPONENTE PRINCIPAL
 // =====================================================
 
 export default function UnitsPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -130,7 +135,8 @@ export default function UnitsPage() {
         const responsavel = row.original.responsavel;
         if (responsavel) {
           return (
-            <div className="flex items-center gap-2">
+            <RequireEntity entityName="units" action="read">
+      <div className="flex items-center gap-2">
               <User className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm">{responsavel.nome}</span>
             </div>
@@ -361,5 +367,6 @@ export default function UnitsPage() {
         </div>
       </FormModal>
     </div>
+    </RequireEntity>
   );
 }

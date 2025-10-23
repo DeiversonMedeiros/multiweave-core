@@ -109,22 +109,20 @@ export async function deleteDisciplinaryAction(
 
 export function getActionTypeLabel(tipo: string): string {
   const tipos = {
-    advertencia: 'Advertência',
+    advertencia_verbal: 'Advertência Verbal',
+    advertencia_escrita: 'Advertência Escrita',
     suspensao: 'Suspensão',
-    demissao_justa_causa: 'Demissão por Justa Causa',
-    transferencia: 'Transferência',
-    outros: 'Outros'
+    demissao_justa_causa: 'Demissão por Justa Causa'
   };
   return tipos[tipo as keyof typeof tipos] || tipo;
 }
 
 export function getActionTypeColor(tipo: string): string {
   const cores = {
-    advertencia: 'bg-yellow-100 text-yellow-800',
-    suspensao: 'bg-orange-100 text-orange-800',
-    demissao_justa_causa: 'bg-red-100 text-red-800',
-    transferencia: 'bg-blue-100 text-blue-800',
-    outros: 'bg-gray-100 text-gray-800'
+    advertencia_verbal: 'bg-yellow-100 text-yellow-800',
+    advertencia_escrita: 'bg-orange-100 text-orange-800',
+    suspensao: 'bg-red-100 text-red-800',
+    demissao_justa_causa: 'bg-red-200 text-red-900'
   };
   return cores[tipo as keyof typeof cores] || 'bg-gray-100 text-gray-800';
 }
@@ -151,20 +149,20 @@ export function getSeverityColor(gravidade: string): string {
 
 export function getActionStatusLabel(status: string): string {
   const statusMap = {
-    ativo: 'Ativo',
-    suspenso: 'Suspenso',
-    cancelado: 'Cancelado',
-    arquivado: 'Arquivado'
+    active: 'Ativo',
+    suspended: 'Suspenso',
+    expired: 'Expirado',
+    cancelled: 'Cancelado'
   };
   return statusMap[status as keyof typeof statusMap] || status;
 }
 
 export function getActionStatusColor(status: string): string {
   const cores = {
-    ativo: 'bg-blue-100 text-blue-800',
-    suspenso: 'bg-yellow-100 text-yellow-800',
-    cancelado: 'bg-gray-100 text-gray-800',
-    arquivado: 'bg-purple-100 text-purple-800'
+    active: 'bg-blue-100 text-blue-800',
+    suspended: 'bg-yellow-100 text-yellow-800',
+    expired: 'bg-orange-100 text-orange-800',
+    cancelled: 'bg-gray-100 text-gray-800'
   };
   return cores[status as keyof typeof cores] || 'bg-gray-100 text-gray-800';
 }
@@ -301,11 +299,10 @@ export async function getDisciplinaryActionStats(companyId: string) {
     const stats = {
       total_actions: actions.length,
       by_type: {
-        advertencia: actions.filter(action => action.tipo_acao === 'advertencia').length,
+        advertencia_verbal: actions.filter(action => action.tipo_acao === 'advertencia_verbal').length,
+        advertencia_escrita: actions.filter(action => action.tipo_acao === 'advertencia_escrita').length,
         suspensao: actions.filter(action => action.tipo_acao === 'suspensao').length,
-        demissao_justa_causa: actions.filter(action => action.tipo_acao === 'demissao_justa_causa').length,
-        transferencia: actions.filter(action => action.tipo_acao === 'transferencia').length,
-        outros: actions.filter(action => action.tipo_acao === 'outros').length
+        demissao_justa_causa: actions.filter(action => action.tipo_acao === 'demissao_justa_causa').length
       },
       by_severity: {
         leve: actions.filter(action => action.gravidade === 'leve').length,
@@ -314,10 +311,10 @@ export async function getDisciplinaryActionStats(companyId: string) {
         gravissima: actions.filter(action => action.gravidade === 'gravissima').length
       },
       by_status: {
-        ativo: actions.filter(action => action.status === 'ativo').length,
-        suspenso: actions.filter(action => action.status === 'suspenso').length,
-        cancelado: actions.filter(action => action.status === 'cancelado').length,
-        arquivado: actions.filter(action => action.status === 'arquivado').length
+        active: actions.filter(action => action.status === 'active').length,
+        suspended: actions.filter(action => action.status === 'suspended').length,
+        expired: actions.filter(action => action.status === 'expired').length,
+        cancelled: actions.filter(action => action.status === 'cancelled').length
       },
       recent_actions: actions.filter(action => {
         const actionDate = new Date(action.data_ocorrencia);
@@ -330,6 +327,77 @@ export async function getDisciplinaryActionStats(companyId: string) {
     return stats;
   } catch (error) {
     console.error('Erro ao buscar estatísticas das ações disciplinares:', error);
+    throw error;
+  }
+}
+
+// Função para rejeitar ação disciplinar
+export async function rejectDisciplinaryAction(
+  id: string,
+  companyId: string,
+  motivoRejeicao: string
+): Promise<DisciplinaryAction> {
+  try {
+    return await EntityService.update<DisciplinaryAction>({
+      schema: 'rh',
+      table: 'disciplinary_actions',
+      companyId: companyId,
+      id: id,
+      data: {
+        status: 'cancelled',
+        observacoes: motivoRejeicao,
+        data_arquivamento: new Date().toISOString(),
+        motivo_arquivamento: 'Rejeitada na aprovação'
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao rejeitar ação disciplinar:', error);
+    throw error;
+  }
+}
+
+// Função para suspender ação disciplinar
+export async function suspendDisciplinaryAction(
+  id: string,
+  companyId: string,
+  motivoSuspensao: string
+): Promise<DisciplinaryAction> {
+  try {
+    return await EntityService.update<DisciplinaryAction>({
+      schema: 'rh',
+      table: 'disciplinary_actions',
+      companyId: companyId,
+      id: id,
+      data: {
+        status: 'suspended',
+        observacoes: motivoSuspensao
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao suspender ação disciplinar:', error);
+    throw error;
+  }
+}
+
+// Função para reativar ação disciplinar
+export async function reactivateDisciplinaryAction(
+  id: string,
+  companyId: string,
+  motivoReativacao: string
+): Promise<DisciplinaryAction> {
+  try {
+    return await EntityService.update<DisciplinaryAction>({
+      schema: 'rh',
+      table: 'disciplinary_actions',
+      companyId: companyId,
+      id: id,
+      data: {
+        status: 'active',
+        observacoes: motivoReativacao
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao reativar ação disciplinar:', error);
     throw error;
   }
 }

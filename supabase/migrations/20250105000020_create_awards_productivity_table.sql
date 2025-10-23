@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS rh.awards_productivity (
     criterios TEXT, -- Critérios para concessão da premiação
     status VARCHAR(20) NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'aprovado', 'pago', 'cancelado')),
     data_aprovacao DATE,
-    aprovado_por UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    aprovado_por UUID,
     data_pagamento DATE,
     observacoes TEXT,
     anexos TEXT[], -- Array de URLs ou nomes de arquivos
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS rh.award_imports (
     registros_com_erro INTEGER DEFAULT 0,
     status VARCHAR(20) NOT NULL DEFAULT 'processando' CHECK (status IN ('processando', 'concluido', 'erro', 'cancelado')),
     erro_detalhes TEXT,
-    importado_por UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    importado_por UUID,
     data_inicio TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     data_fim TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

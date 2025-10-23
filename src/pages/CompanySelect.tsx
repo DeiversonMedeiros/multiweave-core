@@ -24,15 +24,57 @@ export default function CompanySelect() {
 
     const fetchCompanies = async () => {
       try {
-        const { data, error } = await supabase
-          .from("companies")
-          .select("*")
-          .eq("ativo", true);
+        // Primeiro, verificar se o usuário é admin
+        const { data: adminData, error: adminError } = await supabase
+          .rpc('is_admin_simple', { p_user_id: user?.id });
+        
+        if (adminError) {
+          console.error('Erro ao verificar admin:', adminError);
+        }
 
-        if (error) throw error;
+        // Se for admin, carrega todas as empresas
+        if (adminData) {
+          const { data, error } = await supabase
+            .from("companies")
+            .select("*")
+            .eq("ativo", true);
 
-        setCompanies(data || []);
-        setContextCompanies(data || []);
+          if (error) throw error;
+
+          setCompanies(data || []);
+          setContextCompanies(data || []);
+          return;
+        }
+
+        // Para usuários normais, carrega apenas empresas com acesso
+        const { data: userCompanyData, error: userError } = await supabase
+          .from('user_companies')
+          .select(`
+            company_id,
+            companies (
+              id,
+              razao_social,
+              nome_fantasia,
+              cnpj,
+              inscricao_estadual,
+              endereco,
+              contato,
+              ativo,
+              created_at,
+              updated_at
+            )
+          `)
+          .eq('user_id', user?.id)
+          .eq('ativo', true);
+
+        if (userError) throw userError;
+
+        const companies = userCompanyData
+          ?.map(uc => uc.companies)
+          .filter(Boolean) as Company[] || [];
+
+        setCompanies(companies);
+        setContextCompanies(companies);
       } catch (error: any) {
         toast.error("Erro ao carregar empresas: " + error.message);
       } finally {

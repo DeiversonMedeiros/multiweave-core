@@ -1,483 +1,631 @@
-// =====================================================
-// SERVIÇO DE eSOCIAL
-// =====================================================
-
-import { supabase } from '@/integrations/supabase/client';
+import { ESocialEvent } from '@/integrations/supabase/rh-types';
 import { 
-  ESocialEvent, 
-  ESocialEventCreateData, 
-  ESocialEventUpdateData, 
-  ESocialEventFilters,
-  ESocialConfig,
-  ESocialConfigCreateData,
-  ESocialConfigUpdateData,
-  ESocialLog,
-  ESocialLogFilters
-} from '@/integrations/supabase/rh-types';
-import { EntityService } from '@/services/generic/entityService';
+  ESocialXMLService, 
+  ESocialXMLConfig, 
+  ESocialEventData 
+} from './eSocialXMLService';
+import { 
+  ESocialValidationService, 
+  ValidationResult, 
+  EmployeeData, 
+  CompanyData 
+} from './eSocialValidationService';
+import { 
+  ESocialSendService, 
+  ESocialConfig, 
+  SendResult, 
+  BatchSendResult, 
+  EventSendResult 
+} from './eSocialSendService';
+import { 
+  ESocialReturnService, 
+  ReturnData, 
+  BatchReturnData, 
+  ReturnProcessingResult 
+} from './eSocialReturnService';
+import { 
+  ESocialAuditService, 
+  AuditLog, 
+  AuditFilter, 
+  AuditStatistics, 
+  SystemHealth 
+} from './eSocialAuditService';
 
 // =====================================================
-// FUNÇÕES DE CRUD - EVENTOS eSOCIAL
+// SERVIÇO PRINCIPAL INTEGRADO eSOCIAL
 // =====================================================
 
-export async function getESocialEvents(
-  companyId: string,
-  filters: ESocialEventFilters = {}
-): Promise<{ data: ESocialEvent[]; totalCount: number }> {
-  try {
-    const result = await EntityService.list<ESocialEvent>({
-      schema: 'rh',
-      table: 'esocial_events',
-      companyId,
-      filters,
-      orderBy: 'created_at',
-      orderDirection: 'DESC'
-    });
+export interface ESocialServiceConfig {
+  xml: ESocialXMLConfig;
+  send: ESocialConfig;
+}
 
-    return {
-      data: result.data,
-      totalCount: result.totalCount,
-    };
-  } catch (error) {
-    console.error('Erro no serviço de eventos eSocial:', error);
-    throw error;
+export interface ProcessEventResult {
+  success: boolean;
+  event: ESocialEvent;
+  xml?: string;
+  protocolNumber?: string;
+  message: string;
+  errors?: string[];
+  warnings?: string[];
+}
+
+export interface ProcessBatchResult {
+  success: boolean;
+  batchId: string;
+  totalEvents: number;
+  processedEvents: number;
+  successfulEvents: number;
+  failedEvents: number;
+  results: ProcessEventResult[];
+  message: string;
+}
+
+export interface ESocialStatistics {
+  totalEvents: number;
+  pendingEvents: number;
+  sentEvents: number;
+  acceptedEvents: number;
+  rejectedEvents: number;
+  errorEvents: number;
+  successRate: number;
+  averageProcessingTime: number;
+  lastProcessedAt?: string;
+}
+
+export class ESocialService {
+  private xmlService: ESocialXMLService;
+  private validationService: ESocialValidationService;
+  private sendService: ESocialSendService;
+  private returnService: ESocialReturnService;
+  private auditService: ESocialAuditService;
+
+  constructor(config: ESocialServiceConfig) {
+    this.xmlService = new ESocialXMLService(config.xml);
+    this.validationService = new ESocialValidationService();
+    this.sendService = new ESocialSendService(config.xml, config.send);
+    this.returnService = new ESocialReturnService();
+    this.auditService = new ESocialAuditService();
   }
-}
 
-export async function getESocialEventById(
-  id: string,
-  companyId: string
-): Promise<ESocialEvent | null> {
-  try {
-    return await EntityService.getById<ESocialEvent>({
-      schema: 'rh',
-      table: 'esocial_events',
-      companyId,
-      id
-    });
-  } catch (error) {
-    console.error('Erro no serviço de eventos eSocial:', error);
-    throw error;
+  // =====================================================
+  // PROCESSAMENTO DE EVENTO INDIVIDUAL
+  // =====================================================
+
+  async processEvent(
+    event: ESocialEvent,
+    employeeData?: EmployeeData,
+    companyData?: CompanyData,
+    userId: string = 'SYSTEM',
+    userName: string = 'System'
+  ): Promise<ProcessEventResult> {
+    try {
+      // 1. Log de início do processamento
+      await this.auditService.logEvent(
+        event.id,
+        'PROCESS_EVENT_START',
+        `Iniciando processamento do evento ${event.tipo_evento}`,
+        userId,
+        userName,
+        { eventType: event.tipo_evento, eventCode: event.codigo_evento },
+        'info',
+        'event'
+      );
+
+      // 2. Validar dados do evento
+      const validationResult = await this.validationService.validateEvent(event, employeeData, companyData);
+      
+      if (!validationResult.isValid) {
+        await this.auditService.logEvent(
+          event.id,
+          'PROCESS_EVENT_VALIDATION_FAILED',
+          `Validação falhou para evento ${event.tipo_evento}`,
+          userId,
+          userName,
+          { errors: validationResult.errors },
+          'error',
+          'event'
+        );
+
+        return {
+          success: false,
+          event,
+          message: 'Evento não passou na validação',
+          errors: validationResult.errors.map(e => e.message),
+          warnings: validationResult.warnings.map(w => w.warning)
+        };
+      }
+
+      // 3. Gerar XML do evento
+      const eventData: ESocialEventData = {
+        event,
+        employee: employeeData,
+        company: companyData
+      };
+
+      const xml = await this.xmlService.generateEventXML(eventData);
+
+      // 4. Validar XML
+      const xmlValidation = await this.xmlService.validateXML(xml);
+      if (!xmlValidation.isValid) {
+        await this.auditService.logEvent(
+          event.id,
+          'PROCESS_EVENT_XML_VALIDATION_FAILED',
+          `XML inválido para evento ${event.tipo_evento}`,
+          userId,
+          userName,
+          { errors: xmlValidation.errors },
+          'error',
+          'event'
+        );
+
+        return {
+          success: false,
+          event,
+          message: 'XML inválido',
+          errors: xmlValidation.errors
+        };
+      }
+
+      // 5. Enviar para eSocial
+      const sendResult = await this.sendService.sendEvent(event, employeeData, companyData);
+
+      if (sendResult.success) {
+        await this.auditService.logEvent(
+          event.id,
+          'PROCESS_EVENT_SUCCESS',
+          `Evento ${event.tipo_evento} processado com sucesso`,
+          userId,
+          userName,
+          { protocolNumber: sendResult.protocolNumber },
+          'info',
+          'event'
+        );
+
+        return {
+          success: true,
+          event: {
+            ...event,
+            status: 'sent',
+            numero_recibo: sendResult.protocolNumber,
+            data_envio: new Date().toISOString()
+          },
+          xml,
+          protocolNumber: sendResult.protocolNumber,
+          message: 'Evento processado com sucesso'
+        };
+      } else {
+        await this.auditService.logEvent(
+          event.id,
+          'PROCESS_EVENT_SEND_FAILED',
+          `Falha no envio do evento ${event.tipo_evento}`,
+          userId,
+          userName,
+          { errors: sendResult.errors },
+          'error',
+          'event'
+        );
+
+        return {
+          success: false,
+          event: {
+            ...event,
+            status: 'error',
+            error_message: sendResult.message
+          },
+          xml,
+          message: sendResult.message,
+          errors: sendResult.errors
+        };
+      }
+    } catch (error) {
+      await this.auditService.logSystemError(
+        error as Error,
+        `Processamento do evento ${event.id}`,
+        userId,
+        userName
+      );
+
+      return {
+        success: false,
+        event: {
+          ...event,
+          status: 'error',
+          error_message: (error as Error).message
+        },
+        message: 'Erro interno no processamento',
+        errors: [(error as Error).message]
+      };
+    }
   }
-}
 
-export async function createESocialEvent(
-  eventData: ESocialEventCreateData
-): Promise<ESocialEvent> {
-  try {
-    return await EntityService.create<ESocialEvent>({
-      schema: 'rh',
-      table: 'esocial_events',
-      companyId: eventData.company_id,
-      data: eventData
-    });
-  } catch (error) {
-    console.error('Erro no serviço de eventos eSocial:', error);
-    throw error;
+  // =====================================================
+  // PROCESSAMENTO DE LOTE
+  // =====================================================
+
+  async processBatch(
+    events: ESocialEvent[],
+    employeeDataMap?: Map<string, EmployeeData>,
+    companyData?: CompanyData,
+    userId: string = 'SYSTEM',
+    userName: string = 'System'
+  ): Promise<ProcessBatchResult> {
+    const batchId = this.generateBatchId();
+    const results: ProcessEventResult[] = [];
+    let processedEvents = 0;
+    let successfulEvents = 0;
+    let failedEvents = 0;
+
+    try {
+      // 1. Log de início do processamento do lote
+      await this.auditService.logBatchCreation(batchId, events.length, userId, userName);
+
+      // 2. Validar lote
+      const validationResult = await this.validationService.validateBatch(events, employeeDataMap, companyData);
+      
+      if (!validationResult.isValid) {
+        await this.auditService.logEvent(
+          batchId,
+          'PROCESS_BATCH_VALIDATION_FAILED',
+          `Validação do lote falhou`,
+          userId,
+          userName,
+          { errors: validationResult.errors },
+          'error',
+          'batch'
+        );
+
+        return {
+          success: false,
+          batchId,
+          totalEvents: events.length,
+          processedEvents: 0,
+          successfulEvents: 0,
+          failedEvents: events.length,
+          results: events.map(event => ({
+            success: false,
+            event,
+            message: 'Lote não passou na validação',
+            errors: validationResult.errors.map(e => e.message)
+          })),
+          message: 'Lote não passou na validação'
+        };
+      }
+
+      // 3. Processar cada evento individualmente
+      for (const event of events) {
+        const employeeData = employeeDataMap?.get(event.employee_id || '');
+        const result = await this.processEvent(event, employeeData, companyData, userId, userName);
+        
+        results.push(result);
+        processedEvents++;
+
+        if (result.success) {
+          successfulEvents++;
+        } else {
+          failedEvents++;
+        }
+      }
+
+      // 4. Log do resultado do lote
+      await this.auditService.logBatchProcessing(
+        batchId,
+        'completed',
+        userId,
+        userName,
+        {
+          totalEvents: events.length,
+          successfulEvents,
+          failedEvents
+        }
+      );
+
+      return {
+        success: failedEvents === 0,
+        batchId,
+        totalEvents: events.length,
+        processedEvents,
+        successfulEvents,
+        failedEvents,
+        results,
+        message: `Lote processado: ${successfulEvents} sucessos, ${failedEvents} falhas`
+      };
+    } catch (error) {
+      await this.auditService.logSystemError(
+        error as Error,
+        `Processamento do lote ${batchId}`,
+        userId,
+        userName
+      );
+
+      return {
+        success: false,
+        batchId,
+        totalEvents: events.length,
+        processedEvents,
+        successfulEvents,
+        failedEvents,
+        results,
+        message: 'Erro interno no processamento do lote'
+      };
+    }
   }
-}
 
-export async function updateESocialEvent(
-  eventData: ESocialEventUpdateData
-): Promise<ESocialEvent> {
-  try {
-    const { id, company_id, ...updateData } = eventData;
+  // =====================================================
+  // PROCESSAMENTO DE RETORNOS
+  // =====================================================
 
-    return await EntityService.update<ESocialEvent>({
-      schema: 'rh',
-      table: 'esocial_events',
-      companyId: company_id,
-      id: id,
-      data: updateData
-    });
-  } catch (error) {
-    console.error('Erro no serviço de eventos eSocial:', error);
-    throw error;
+  async processReturns(events: ESocialEvent[], userId: string = 'SYSTEM', userName: string = 'System'): Promise<ReturnProcessingResult> {
+    try {
+      const results: ReturnProcessingResult = {
+        success: true,
+        processedEvents: 0,
+        updatedEvents: 0,
+        errors: [],
+        warnings: []
+      };
+
+      for (const event of events) {
+        if (event.numero_recibo) {
+          try {
+            // Simular retorno do eSocial
+            const returnData = await this.returnService.simulateReturn(event.numero_recibo);
+            
+            // Processar retorno
+            const processResult = await this.returnService.processEventReturn(event, returnData);
+            
+            if (processResult.success) {
+              results.updatedEvents++;
+              
+              // Log do retorno processado
+              await this.auditService.logEvent(
+                event.id,
+                'PROCESS_RETURN_SUCCESS',
+                `Retorno processado para evento ${event.tipo_evento}`,
+                userId,
+                userName,
+                { 
+                  protocolNumber: returnData.protocolNumber,
+                  status: returnData.status 
+                },
+                'info',
+                'integration'
+              );
+            } else {
+              results.errors.push(...processResult.errors);
+              results.warnings.push(...processResult.warnings);
+            }
+            
+            results.processedEvents++;
+          } catch (error) {
+            results.errors.push({
+              eventId: event.id,
+              error: (error as Error).message,
+              code: 'RETURN_PROCESSING_ERROR',
+              severity: 'error'
+            });
+          }
+        }
+      }
+
+      results.success = results.errors.length === 0;
+
+      return results;
+    } catch (error) {
+      await this.auditService.logSystemError(
+        error as Error,
+        'Processamento de retornos',
+        userId,
+        userName
+      );
+
+      return {
+        success: false,
+        processedEvents: 0,
+        updatedEvents: 0,
+        errors: [{
+          eventId: 'BATCH',
+          error: (error as Error).message,
+          code: 'BATCH_RETURN_ERROR',
+          severity: 'error'
+        }],
+        warnings: []
+      };
+    }
   }
-}
 
-export async function deleteESocialEvent(
-  id: string,
-  companyId: string
-): Promise<void> {
-  try {
-    await EntityService.delete({
-      schema: 'rh',
-      table: 'esocial_events',
-      companyId: companyId,
-      id: id
-    });
-  } catch (error) {
-    console.error('Erro no serviço de eventos eSocial:', error);
-    throw error;
-  }
-}
+  // =====================================================
+  // ESTATÍSTICAS E RELATÓRIOS
+  // =====================================================
 
-// =====================================================
-// FUNÇÕES DE CRUD - CONFIGURAÇÃO eSOCIAL
-// =====================================================
-
-export async function getESocialConfig(
-  companyId: string
-): Promise<ESocialConfig | null> {
-  try {
-    const { data, error } = await supabase
-      .from('rh.esocial_config')
-      .select('*')
-      .eq('company_id', companyId)
-      .single();
-
-    if (error && error.code !== 'PGRST116') {
-      console.error('Erro ao buscar configuração eSocial:', error);
-      throw error;
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Erro no serviço de configuração eSocial:', error);
-    throw error;
-  }
-}
-
-export async function createESocialConfig(
-  configData: ESocialConfigCreateData
-): Promise<ESocialConfig> {
-  try {
-    const { data, error } = await supabase
-      .from('rh.esocial_config')
-      .insert(configData)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Erro ao criar configuração eSocial:', error);
-      throw error;
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Erro no serviço de configuração eSocial:', error);
-    throw error;
-  }
-}
-
-export async function updateESocialConfig(
-  configData: ESocialConfigUpdateData
-): Promise<ESocialConfig> {
-  try {
-    const { id, company_id, ...updateData } = configData;
-
-    const { data, error } = await supabase
-      .from('rh.esocial_config')
-      .update(updateData)
-      .eq('id', id)
-      .eq('company_id', company_id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Erro ao atualizar configuração eSocial:', error);
-      throw error;
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Erro no serviço de configuração eSocial:', error);
-    throw error;
-  }
-}
-
-// =====================================================
-// FUNÇÕES DE CRUD - LOGS eSOCIAL
-// =====================================================
-
-export async function getESocialLogs(
-  companyId: string,
-  filters: ESocialLogFilters = {}
-): Promise<{ data: ESocialLog[]; totalCount: number }> {
-  try {
-    let query = supabase
-      .from('rh.esocial_logs')
-      .select('*')
-      .eq('company_id', companyId)
-      .order('created_at', { ascending: false });
-
-    // Aplicar filtros
-    if (filters.event_id) {
-      query = query.eq('event_id', filters.event_id);
-    }
-    if (filters.tipo_operacao) {
-      query = query.eq('tipo_operacao', filters.tipo_operacao);
-    }
-    if (filters.status) {
-      query = query.eq('status', filters.status);
-    }
-    if (filters.data_inicio) {
-      query = query.gte('created_at', filters.data_inicio);
-    }
-    if (filters.data_fim) {
-      query = query.lte('created_at', filters.data_fim);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('Erro ao buscar logs eSocial:', error);
-      throw error;
-    }
-
-    return {
-      data: data || [],
-      totalCount: data?.length || 0,
-    };
-  } catch (error) {
-    console.error('Erro no serviço de logs eSocial:', error);
-    throw error;
-  }
-}
-
-// =====================================================
-// FUNÇÕES AUXILIARES
-// =====================================================
-
-export function getEventTypeLabel(tipo: string): string {
-  const tipos: Record<string, string> = {
-    'S1000': 'Informações do Empregador/Contribuinte/Órgão Público',
-    'S1005': 'Tabela de Estabelecimentos, Obras ou Unidades de Órgãos Públicos',
-    'S1010': 'Tabela de Rubricas',
-    'S1020': 'Tabela de Lotações Tributárias',
-    'S1030': 'Tabela de Cargos/Empregos Públicos',
-    'S1035': 'Tabela de Carreiras Públicas',
-    'S1040': 'Tabela de Funções/Cargos em Comissão',
-    'S1050': 'Tabela de Horários/Turnos de Trabalho',
-    'S1060': 'Tabela de Ambientes de Trabalho',
-    'S1070': 'Tabela de Processos Administrativos/Judiciais',
-    'S1080': 'Tabela de Operadores Portuários',
-    'S1200': 'Remuneração de trabalhador vinculado ao Regime Geral de Previdência Social',
-    'S1202': 'Remuneração de servidor vinculado a Regime Próprio de Previdência Social',
-    'S1207': 'Benefícios previdenciários - RPPS',
-    'S1210': 'Pensionista - RPPS',
-    'S1220': 'Férias - RPPS',
-    'S1250': 'Aprendizagem - RPPS',
-    'S1260': 'Comercialização da Produção Rural Pessoa Física - Segurado Especial',
-    'S1270': 'Contratação de Trabalhadores Avulsos Não Portuários',
-    'S1280': 'Excesso de Horário em Atividades de Exploração de Recursos Naturais',
-    'S1295': 'Solicitação de Totalização de Tempo de Contribuição',
-    'S1298': 'Reabertura dos Eventos Periódicos',
-    'S1299': 'Fechamento dos Eventos Periódicos',
-    'S1300': 'Contribuições devidas à Previdência Social e Outras Informações',
-    'S2190': 'Admissão de Trabalhador - Registro Preliminar',
-    'S2200': 'Cadastramento Inicial do Vínculo e Admissão/Ingresso de Trabalhador',
-    'S2205': 'Alteração de Dados Cadastrais do Trabalhador',
-    'S2206': 'Alteração de Contrato de Trabalho',
-    'S2210': 'Comunicação de Acidente de Trabalho',
-    'S2220': 'Afastamento Temporário',
-    'S2221': 'Exame Médico - Órgão Competente',
-    'S2230': 'Afastamento para Exercício em Mandato Eletivo',
-    'S2231': 'Cessão/Exercício em Órgão de Direção Sindical',
-    'S2240': 'Condições Ambientais do Trabalho - Agentes Nocivos',
-    'S2241': 'Insalubridade, Periculosidade e Aposentadoria Especial',
-    'S2245': 'Treinamentos, Capacitações, Exercícios Simulados e Outras Anotações',
-    'S2250': 'Aviso Prévio',
-    'S2260': 'Convocação para Trabalho Intermitente',
-    'S2298': 'Reintegração',
-    'S2299': 'Desligamento',
-    'S2300': 'Trabalhador Sem Vínculo de Emprego/Estatutário - Início',
-    'S2306': 'Trabalhador Sem Vínculo de Emprego/Estatutário - Alteração Contratual',
-    'S2399': 'Trabalhador Sem Vínculo de Emprego/Estatutário - Término',
-    'S2400': 'Cadastro de Benefícios por Incapacidade',
-    'S2405': 'Benefício - Cessação',
-    'S2410': 'Cadastro de Benefício - Entes Públicos',
-    'S2416': 'Benefício - Entes Públicos - Cessação',
-    'S2418': 'Reativação de Benefício',
-    'S2420': 'Cadastro de Benefício - Entes Públicos - Pagamento',
-    'S3000': 'Exclusão de eventos',
-    'S5001': 'Informações das contribuições sociais por trabalhador',
-    'S5002': 'Imposto de Renda Retido na Fonte por Trabalhador',
-    'S5003': 'Informações relativas à contribuição previdenciária sobre a remuneração',
-    'S5011': 'Informações das contribuições sociais consolidadas por contribuinte',
-    'S5012': 'Informações do Imposto de Renda Retido na Fonte consolidadas por contribuinte',
-    'S5013': 'Informações relativas à contribuição previdenciária consolidadas por contribuinte'
-  };
-  return tipos[tipo] || tipo;
-}
-
-export function getEventStatusLabel(status: string): string {
-  const statusMap = {
-    pendente: 'Pendente',
-    enviado: 'Enviado',
-    processado: 'Processado',
-    rejeitado: 'Rejeitado',
-    erro: 'Erro'
-  };
-  return statusMap[status as keyof typeof statusMap] || status;
-}
-
-export function getEventStatusColor(status: string): string {
-  const cores = {
-    pendente: 'bg-yellow-100 text-yellow-800',
-    enviado: 'bg-blue-100 text-blue-800',
-    processado: 'bg-green-100 text-green-800',
-    rejeitado: 'bg-red-100 text-red-800',
-    erro: 'bg-red-100 text-red-800'
-  };
-  return cores[status as keyof typeof cores] || 'bg-gray-100 text-gray-800';
-}
-
-export function getOperationTypeLabel(tipo: string): string {
-  const tipos = {
-    envio: 'Envio',
-    consulta: 'Consulta',
-    download: 'Download',
-    erro: 'Erro'
-  };
-  return tipos[tipo as keyof typeof tipos] || tipo;
-}
-
-export function getLogStatusLabel(status: string): string {
-  const statusMap = {
-    sucesso: 'Sucesso',
-    erro: 'Erro',
-    aviso: 'Aviso'
-  };
-  return statusMap[status as keyof typeof statusMap] || status;
-}
-
-export function getLogStatusColor(status: string): string {
-  const cores = {
-    sucesso: 'bg-green-100 text-green-800',
-    erro: 'bg-red-100 text-red-800',
-    aviso: 'bg-yellow-100 text-yellow-800'
-  };
-  return cores[status as keyof typeof cores] || 'bg-gray-100 text-gray-800';
-}
-
-export function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString('pt-BR');
-}
-
-export function formatDateTime(date: string): string {
-  return new Date(date).toLocaleString('pt-BR');
-}
-
-// =====================================================
-// FUNÇÕES ESPECÍFICAS DO eSOCIAL
-// =====================================================
-
-export async function getESocialEventStats(companyId: string) {
-  try {
-    const { data: events } = await getESocialEvents(companyId);
-    
+  async getStatistics(events: ESocialEvent[]): Promise<ESocialStatistics> {
     const stats = {
-      total_events: events.length,
-      by_status: {
-        pendente: events.filter(event => event.status === 'pendente').length,
-        enviado: events.filter(event => event.status === 'enviado').length,
-        processado: events.filter(event => event.status === 'processado').length,
-        rejeitado: events.filter(event => event.status === 'rejeitado').length,
-        erro: events.filter(event => event.status === 'erro').length
-      },
-      by_type: events.reduce((acc, event) => {
-        acc[event.tipo_evento] = (acc[event.tipo_evento] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>),
-      pending_events: events.filter(event => event.status === 'pendente').length,
-      error_events: events.filter(event => event.status === 'erro').length,
-      recent_events: events.filter(event => {
-        const eventDate = new Date(event.created_at);
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        return eventDate >= sevenDaysAgo;
-      }).length
+      totalEvents: events.length,
+      pendingEvents: 0,
+      sentEvents: 0,
+      acceptedEvents: 0,
+      rejectedEvents: 0,
+      errorEvents: 0,
+      successRate: 0,
+      averageProcessingTime: 0,
+      lastProcessedAt: undefined as string | undefined
     };
 
-    return stats;
-  } catch (error) {
-    console.error('Erro ao buscar estatísticas dos eventos eSocial:', error);
-    throw error;
-  }
-}
+    let totalProcessingTime = 0;
+    let processedCount = 0;
 
-export async function retryESocialEvent(
-  id: string,
-  companyId: string
-): Promise<ESocialEvent> {
-  try {
-    return await EntityService.update<ESocialEvent>({
-      schema: 'rh',
-      table: 'esocial_events',
-      companyId: companyId,
-      id: id,
-      data: {
-        status: 'pendente',
-        data_proximo_envio: new Date().toISOString(),
-        ultimo_erro: null
+    events.forEach(event => {
+      switch (event.status) {
+        case 'pending':
+          stats.pendingEvents++;
+          break;
+        case 'sent':
+          stats.sentEvents++;
+          break;
+        case 'accepted':
+          stats.acceptedEvents++;
+          break;
+        case 'rejected':
+          stats.rejectedEvents++;
+          break;
+        case 'error':
+          stats.errorEvents++;
+          break;
+      }
+
+      // Calcular tempo de processamento (simulado)
+      if (event.data_envio && event.created_at) {
+        const created = new Date(event.created_at);
+        const sent = new Date(event.data_envio);
+        const processingTime = sent.getTime() - created.getTime();
+        totalProcessingTime += processingTime;
+        processedCount++;
+      }
+
+      // Último processamento
+      if (event.data_envio && (!stats.lastProcessedAt || event.data_envio > stats.lastProcessedAt)) {
+        stats.lastProcessedAt = event.data_envio;
       }
     });
-  } catch (error) {
-    console.error('Erro ao tentar reenviar evento eSocial:', error);
-    throw error;
-  }
-}
 
-export async function validateESocialConfig(config: ESocialConfigCreateData): Promise<{ valid: boolean; errors: string[] }> {
-  const errors: string[] = [];
+    stats.successRate = stats.totalEvents > 0 ? (stats.acceptedEvents / stats.totalEvents) * 100 : 0;
+    stats.averageProcessingTime = processedCount > 0 ? totalProcessingTime / processedCount : 0;
 
-  if (!config.cnpj_empregador || config.cnpj_empregador.length !== 14) {
-    errors.push('CNPJ do empregador deve ter 14 dígitos');
+    return stats;
   }
 
-  if (!config.razao_social || config.razao_social.trim().length === 0) {
-    errors.push('Razão social é obrigatória');
+  async getAuditStatistics(): Promise<AuditStatistics> {
+    return await this.auditService.getAuditStatistics();
   }
 
-  if (!config.certificado_digital) {
-    errors.push('Certificado digital é obrigatório');
+  async getSystemHealth(): Promise<SystemHealth> {
+    return await this.auditService.getSystemHealth();
   }
 
-  if (!config.senha_certificado) {
-    errors.push('Senha do certificado é obrigatória');
+  // =====================================================
+  // CONSULTA DE LOGS
+  // =====================================================
+
+  async getAuditLogs(filter: AuditFilter = {}): Promise<AuditLog[]> {
+    return await this.auditService.getLogs(filter);
   }
 
-  if (config.timeout && (config.timeout < 30 || config.timeout > 600)) {
-    errors.push('Timeout deve estar entre 30 e 600 segundos');
+  async exportAuditLogs(filter: AuditFilter = {}): Promise<string> {
+    return await this.auditService.exportLogs(filter);
   }
 
-  return {
-    valid: errors.length === 0,
-    errors
-  };
-}
+  async exportAuditLogsAsCSV(filter: AuditFilter = {}): Promise<string> {
+    return await this.auditService.exportLogsAsCSV(filter);
+  }
 
-export async function testESocialConnection(companyId: string): Promise<{ success: boolean; message: string }> {
-  try {
-    const config = await getESocialConfig(companyId);
-    
-    if (!config) {
-      return {
-        success: false,
-        message: 'Configuração eSocial não encontrada'
-      };
+  // =====================================================
+  // MÉTODOS DE UTILIDADE
+  // =====================================================
+
+  async testConnection(): Promise<boolean> {
+    try {
+      return await this.sendService.testConnection();
+    } catch (error) {
+      await this.auditService.logSystemError(
+        error as Error,
+        'Teste de conexão',
+        'SYSTEM',
+        'System'
+      );
+      return false;
     }
+  }
 
-    if (!config.ativo) {
-      return {
-        success: false,
-        message: 'Configuração eSocial está inativa'
-      };
-    }
+  async getAvailableEventTypes(): Promise<string[]> {
+    return await this.sendService.getAvailableEvents();
+  }
 
-    // Aqui seria feita a validação real da conexão com o eSocial
-    // Por enquanto, simulamos uma validação básica
-    return {
-      success: true,
-      message: 'Conexão com eSocial testada com sucesso'
+  async validateEventData(event: ESocialEvent, employeeData?: EmployeeData, companyData?: CompanyData): Promise<ValidationResult> {
+    return await this.validationService.validateEvent(event, employeeData, companyData);
+  }
+
+  async generateEventXML(event: ESocialEvent, employeeData?: EmployeeData, companyData?: CompanyData): Promise<string> {
+    const eventData: ESocialEventData = {
+      event,
+      employee: employeeData,
+      company: companyData
     };
-  } catch (error) {
-    console.error('Erro ao testar conexão eSocial:', error);
+
+    return await this.xmlService.generateEventXML(eventData);
+  }
+
+  // =====================================================
+  // MÉTODOS AUXILIARES
+  // =====================================================
+
+  private generateBatchId(): string {
+    const now = new Date();
+    const timestamp = now.getTime().toString();
+    const random = Math.random().toString(36).substring(2, 8);
+    return `BATCH_${timestamp}_${random}`.toUpperCase();
+  }
+
+  // =====================================================
+  // CONFIGURAÇÃO E INICIALIZAÇÃO
+  // =====================================================
+
+  updateConfig(newConfig: Partial<ESocialServiceConfig>): void {
+    if (newConfig.xml) {
+      this.xmlService = new ESocialXMLService(newConfig.xml);
+    }
+    if (newConfig.send) {
+      this.sendService.updateConfig(newConfig.send);
+    }
+  }
+
+  getConfig(): ESocialServiceConfig {
     return {
-      success: false,
-      message: 'Erro ao testar conexão: ' + (error instanceof Error ? error.message : 'Erro desconhecido')
+      xml: this.xmlService['config'],
+      send: this.sendService.getConfig()
     };
   }
 }
+
+// =====================================================
+// INSTÂNCIA SINGLETON DO SERVIÇO
+// =====================================================
+
+let eSocialServiceInstance: ESocialService | null = null;
+
+export function getESocialService(config?: ESocialServiceConfig): ESocialService {
+  if (!eSocialServiceInstance && config) {
+    eSocialServiceInstance = new ESocialService(config);
+  }
+  
+  if (!eSocialServiceInstance) {
+    throw new Error('ESocialService não foi inicializado. Forneça a configuração necessária.');
+  }
+  
+  return eSocialServiceInstance;
+}
+
+export function initializeESocialService(config: ESocialServiceConfig): ESocialService {
+  eSocialServiceInstance = new ESocialService(config);
+  return eSocialServiceInstance;
+}
+
+// =====================================================
+// CONFIGURAÇÃO PADRÃO
+// =====================================================
+
+export const defaultESocialConfig: ESocialServiceConfig = {
+  xml: {
+    companyId: '',
+    cnpj: '',
+    companyName: '',
+    environment: 'testing',
+    version: '1.0.0'
+  },
+  send: {
+    environment: 'testing',
+    apiUrl: 'https://api.esocial.gov.br',
+    timeout: 30000,
+    retryAttempts: 3,
+    retryDelay: 1000
+  }
+};

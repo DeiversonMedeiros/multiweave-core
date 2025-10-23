@@ -23,6 +23,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
+import { RequireModule } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 const MedicalAgreementDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -43,7 +47,8 @@ const MedicalAgreementDetailPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
+
+    <div className="container mx-auto py-8">
         <div className="text-center">Carregando convênio...</div>
       </div>
     );
@@ -65,7 +70,8 @@ const MedicalAgreementDetailPage: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -295,7 +301,7 @@ const MedicalAgreementDetailPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-  );
+    );
 };
 
 export default MedicalAgreementDetailPage;

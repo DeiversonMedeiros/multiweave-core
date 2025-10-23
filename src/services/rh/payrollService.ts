@@ -157,24 +157,56 @@ export const PayrollService = {
         return sum + (record.horas_extras || 0);
       }, 0) || 0;
 
-      // Buscar benefícios ativos
-      const { data: benefits } = await supabase.rpc('get_employee_benefit_assignments_simple', {
-        company_id_param: params.companyId
+      // Buscar benefícios que entram no cálculo da folha
+      const { data: payrollBenefits } = await supabase.rpc('get_employee_payroll_benefits', {
+        company_id_param: params.companyId,
+        employee_id_param: params.employeeId
       });
       
-      const activeBenefits = (benefits as EmployeeBenefitAssignment[])?.filter(benefit => 
-        benefit.employee_id === params.employeeId && benefit.is_active
-      );
+      const activeBenefits = payrollBenefits || [];
+
+      // Buscar descontos de convênios médicos
+      const { data: medicalPlanDiscounts } = await supabase.rpc('get_employee_medical_plan_discounts_only', {
+        company_id_param: params.companyId,
+        employee_id_param: params.employeeId
+      });
+      
+      const activeMedicalDiscounts = medicalPlanDiscounts || [];
+
+      // Buscar benefícios de convênios médicos (proventos)
+      const { data: medicalPlanBenefits } = await supabase.rpc('get_employee_medical_plan_discounts', {
+        company_id_param: params.companyId,
+        employee_id_param: params.employeeId
+      });
+      
+      const activeMedicalBenefits = (medicalPlanBenefits || []).filter(benefit => benefit.discount_type === 'provento');
 
       // Calcular salário base
       const baseSalary = emp.salario_base || 0;
       const overtimeValue = overtimeHours * (baseSalary / 160); // 160h = 1 mês
-      const totalEarnings = baseSalary + overtimeValue;
       
-      // Calcular descontos (INSS, IRRF, etc.)
+      // Calcular total de benefícios que entram na folha (benefícios tradicionais + convênios médicos)
+      const traditionalBenefitsTotal = activeBenefits.reduce((sum, benefit) => {
+        return sum + (benefit.custom_value || 0);
+      }, 0);
+
+      const medicalBenefitsTotal = activeMedicalBenefits.reduce((sum, benefit) => {
+        return sum + (benefit.final_value || 0);
+      }, 0);
+
+      const benefitsTotal = traditionalBenefitsTotal + medicalBenefitsTotal;
+
+      // Calcular total de descontos de convênios médicos
+      const medicalDiscountsTotal = activeMedicalDiscounts.reduce((sum, discount) => {
+        return sum + (discount.final_value || 0);
+      }, 0);
+      
+      const totalEarnings = baseSalary + overtimeValue + benefitsTotal;
+      
+      // Calcular descontos (INSS, IRRF, convênios médicos, etc.)
       const inssDiscount = this.calculateINSS(totalEarnings);
       const irrfDiscount = this.calculateIRRF(totalEarnings - inssDiscount);
-      const totalDiscounts = inssDiscount + irrfDiscount;
+      const totalDiscounts = inssDiscount + irrfDiscount + medicalDiscountsTotal;
       
       const netSalary = totalEarnings - totalDiscounts;
 
@@ -187,6 +219,9 @@ export const PayrollService = {
         horas_trabalhadas: totalHours,
         horas_extras: overtimeHours,
         valor_horas_extras: overtimeValue,
+        total_beneficios_tradicionais: traditionalBenefitsTotal,
+        total_beneficios_convenios_medicos: medicalBenefitsTotal,
+        total_descontos_convenios_medicos: medicalDiscountsTotal,
         total_vencimentos: totalEarnings,
         total_descontos: totalDiscounts,
         salario_liquido: netSalary,

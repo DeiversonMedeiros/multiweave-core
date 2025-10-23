@@ -230,5 +230,94 @@ export const TimeRecordsService = {
     }
 
     return data;
-  }
+  },
+
+  /**
+   * Registra entrada de almoço
+   */
+  clockInLunch: async (employeeId: string, timestamp: Date): Promise<TimeRecord> => {
+    const today = timestamp.toISOString().split('T')[0];
+    
+    const { data, error } = await supabase
+      .from('time_records')
+      .update({ entrada_almoco: timestamp.toTimeString().split(' ')[0] })
+      .eq('employee_id', employeeId)
+      .eq('data_registro', today)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao registrar entrada do almoço:', error);
+      throw error;
+    }
+
+    return data;
+  },
+
+  /**
+   * Registra saída de almoço
+   */
+  clockOutLunch: async (employeeId: string, timestamp: Date): Promise<TimeRecord> => {
+    const today = timestamp.toISOString().split('T')[0];
+    
+    const { data, error } = await supabase
+      .from('time_records')
+      .update({ saida_almoco: timestamp.toTimeString().split(' ')[0] })
+      .eq('employee_id', employeeId)
+      .eq('data_registro', today)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao registrar saída do almoço:', error);
+      throw error;
+    }
+
+    return data;
+  },
+
+  /**
+   * Registra primeira entrada de horas extras
+   */
+  clockInExtra1: async (employeeId: string, timestamp: Date): Promise<TimeRecord> => {
+    const today = timestamp.toISOString().split('T')[0];
+    
+    const { data, error } = await supabase
+      .from('time_records')
+      .update({ entrada_extra1: timestamp.toTimeString().split(' ')[0] })
+      .eq('employee_id', employeeId)
+      .eq('data_registro', today)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao registrar entrada extra 1:', error);
+      throw error;
+    }
+
+    return data;
+  },
+
+  /**
+   * Registra primeira saída de horas extras
+   */
+  clockOutExtra1: async (employeeId: string, timestamp: Date): Promise<TimeRecord> => {
+    const today = timestamp.toISOString().split('T')[0];
+    
+    const { data, error } = await supabase
+      .from('time_records')
+      .update({ saida_extra1: timestamp.toTimeString().split(' ')[0] })
+      .eq('employee_id', employeeId)
+      .eq('data_registro', today)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Erro ao registrar saída extra 1:', error);
+      throw error;
+    }
+
+    return data;
+  },
+
 };

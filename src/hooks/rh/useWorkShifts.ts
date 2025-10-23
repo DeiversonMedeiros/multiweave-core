@@ -1,303 +1,232 @@
-// =====================================================
-// HOOK PARA TURNOS DE TRABALHO (WORK SHIFTS)
-// =====================================================
-
-import { useState, useEffect } from 'react';
-import { 
-  getWorkShifts, 
-  getWorkShiftById, 
-  createWorkShift, 
-  updateWorkShift, 
-  deleteWorkShift,
-  getActiveWorkShifts,
-  getWorkShiftsByType,
-  WorkShiftFilters 
-} from '@/services/rh/workShiftsService';
-import { WorkShift } from '@/integrations/supabase/rh-types';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
+import { EntityService } from '@/services/generic/entityService';
+import { WorkShift, WorkShiftInsert, WorkShiftUpdate } from '@/integrations/supabase/rh-types';
+import { useCompany } from '@/lib/company-context';
 
 // =====================================================
-// HOOK PRINCIPAL
+// HOOKS DE CONSULTA
 // =====================================================
 
-export function useWorkShifts(companyId: string, filters: WorkShiftFilters = {}) {
-  const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+/**
+ * Hook para listar turnos de trabalho
+ */
+export function useWorkShifts(companyId?: string) {
+  const { selectedCompany } = useCompany();
+  const id = companyId || selectedCompany?.id;
 
-  const fetchWorkShifts = async () => {
-    if (!companyId) return;
+  console.log('🔍 [DEBUG] useWorkShifts - companyId recebido:', companyId);
+  console.log('🔍 [DEBUG] useWorkShifts - selectedCompany?.id:', selectedCompany?.id);
+  console.log('🔍 [DEBUG] useWorkShifts - id final:', id);
 
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getWorkShifts(companyId, filters);
-      setWorkShifts(result.data);
-      setTotalCount(result.totalCount);
-    } catch (err) {
-      console.error('Erro ao buscar turnos de trabalho:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchWorkShifts();
-  }, [companyId, JSON.stringify(filters)]);
-
-  const refetch = () => {
-    fetchWorkShifts();
-  };
-
-  return {
-    workShifts,
-    totalCount,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA TURNO ESPECÍFICO
-// =====================================================
-
-export function useWorkShift(id: string, companyId: string) {
-  const [workShift, setWorkShift] = useState<WorkShift | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchWorkShift = async () => {
-    if (!id || !companyId) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getWorkShiftById(id, companyId);
-      setWorkShift(result);
-    } catch (err) {
-      console.error('Erro ao buscar turno de trabalho:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchWorkShift();
-  }, [id, companyId]);
-
-  const refetch = () => {
-    fetchWorkShift();
-  };
-
-  return {
-    workShift,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA MUTAÇÕES
-// =====================================================
-
-export function useWorkShiftMutations(companyId: string) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const createMutation = async (data: Parameters<typeof createWorkShift>[0]) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await createWorkShift(data);
+  const query = useQuery({
+    queryKey: ['rh', 'work_shifts', id],
+    queryFn: async () => {
+      console.log('🔍 [DEBUG] useWorkShifts - queryFn chamado para companyId:', id);
+      console.log('🔍 [DEBUG] useWorkShifts - queryFn - chamando EntityService.list diretamente');
+      
+      // Chamar EntityService.list diretamente para evitar problemas com hooks dentro de hooks
+      const result = await EntityService.list({
+        schema: 'rh',
+        table: 'work_shifts',
+        companyId: id || '',
+        filters: {},
+        page: 1,
+        pageSize: 100,
+        orderBy: 'created_at',
+        orderDirection: 'DESC'
+      });
+      
+      console.log('🔍 [DEBUG] useWorkShifts - queryFn - EntityService.list retornou:', result);
       return result;
-    } catch (err) {
-      console.error('Erro ao criar turno de trabalho:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const updateMutation = async (data: Parameters<typeof updateWorkShift>[0]) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await updateWorkShift(data);
-      return result;
-    } catch (err) {
-      console.error('Erro ao atualizar turno de trabalho:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const deleteMutation = async (id: string) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      await deleteWorkShift(id, companyId);
-    } catch (err) {
-      console.error('Erro ao excluir turno de trabalho:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return {
-    createMutation,
-    updateMutation,
-    deleteMutation,
-    isLoading,
-    error,
-  };
-}
-
-// =====================================================
-// HOOK PARA TURNOS ATIVOS
-// =====================================================
-
-export function useActiveWorkShifts(companyId: string) {
-  const [activeWorkShifts, setActiveWorkShifts] = useState<WorkShift[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchActiveWorkShifts = async () => {
-    if (!companyId) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getActiveWorkShifts(companyId);
-      setActiveWorkShifts(result);
-    } catch (err) {
-      console.error('Erro ao buscar turnos ativos:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchActiveWorkShifts();
-  }, [companyId]);
-
-  const refetch = () => {
-    fetchActiveWorkShifts();
-  };
-
-  return {
-    activeWorkShifts,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA TURNOS POR TIPO
-// =====================================================
-
-export function useWorkShiftsByType(companyId: string, tipoTurno: string) {
-  const [workShifts, setWorkShifts] = useState<WorkShift[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchWorkShiftsByType = async () => {
-    if (!companyId || !tipoTurno) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      const result = await getWorkShiftsByType(companyId, tipoTurno);
-      setWorkShifts(result);
-    } catch (err) {
-      console.error('Erro ao buscar turnos por tipo:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchWorkShiftsByType();
-  }, [companyId, tipoTurno]);
-
-  const refetch = () => {
-    fetchWorkShiftsByType();
-  };
-
-  return {
-    workShifts,
-    isLoading,
-    error,
-    refetch,
-  };
-}
-
-// =====================================================
-// HOOK PARA ESTATÍSTICAS
-// =====================================================
-
-export function useWorkShiftStats(companyId: string) {
-  const [stats, setStats] = useState({
-    total: 0,
-    ativos: 0,
-    inativos: 0,
-    por_tipo: {} as Record<string, number>,
+    },
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 minutos
   });
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const fetchStats = async () => {
-    if (!companyId) return;
+  console.log('🔍 [DEBUG] useWorkShifts - query.status:', query.status);
+  console.log('🔍 [DEBUG] useWorkShifts - query.isLoading:', query.isLoading);
+  console.log('🔍 [DEBUG] useWorkShifts - query.isFetching:', query.isFetching);
+  console.log('🔍 [DEBUG] useWorkShifts - query.isEnabled:', !!id);
 
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const { data: allWorkShifts } = await getWorkShifts(companyId);
-      
-      const stats = {
-        total: allWorkShifts.length,
-        ativos: allWorkShifts.filter(ws => ws.status === 'ativo').length,
-        inativos: allWorkShifts.filter(ws => ws.status === 'inativo').length,
-        por_tipo: allWorkShifts.reduce((acc, ws) => {
-          acc[ws.tipo_turno] = (acc[ws.tipo_turno] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-      };
+  console.log('🔍 [DEBUG] useWorkShifts - query.data:', query.data);
+  console.log('🔍 [DEBUG] useWorkShifts - workShifts:', query.data?.data || []);
 
-      setStats(stats);
-    } catch (err) {
-      console.error('Erro ao buscar estatísticas de turnos:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStats();
-  }, [companyId]);
-
-  const refetch = () => {
-    fetchStats();
-  };
-
+  // Retornar no formato esperado pelo WorkShiftsPage
   return {
-    stats,
-    isLoading,
-    error,
-    refetch,
+    workShifts: query.data?.data || [],
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+    ...query
   };
 }
 
+/**
+ * Hook para buscar turno por ID
+ */
+export function useWorkShift(id: string) {
+  const { selectedCompany } = useCompany();
+
+  return useQuery({
+    queryKey: ['rh', 'work_shifts', id],
+    queryFn: () => useRHData('work_shifts', selectedCompany?.id || '', { id }),
+    enabled: !!id && !!selectedCompany?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Hook para buscar turnos ativos
+ */
+export function useActiveWorkShifts() {
+  const { selectedCompany } = useCompany();
+
+  return useQuery({
+    queryKey: ['rh', 'work_shifts', 'active', selectedCompany?.id],
+    queryFn: () => useRHData('work_shifts', selectedCompany?.id || '', { status: 'ativo' }),
+    enabled: !!selectedCompany?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// =====================================================
+// HOOKS DE MUTAÇÃO
+// =====================================================
+
+/**
+ * Hook para criar turno de trabalho
+ */
+export function useCreateWorkShift() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: async (workShift: Omit<WorkShift, 'id' | 'created_at' | 'updated_at'>) => {
+      console.log('🔍 [DEBUG] Dados do workShift recebidos:', workShift);
+      console.log('🔍 [DEBUG] selectedCompany?.id:', selectedCompany?.id);
+      
+      const { EntityService } = await import('@/services/generic/entityService');
+      return EntityService.create({
+        schema: 'rh',
+        table: 'work_shifts',
+        companyId: selectedCompany?.id || '',
+        data: workShift
+      });
+    },
+    onSuccess: () => {
+      console.log('🔍 [DEBUG] useCreateWorkShift - onSuccess chamado');
+      console.log('🔍 [DEBUG] useCreateWorkShift - invalidando queries');
+      queryClient.invalidateQueries({ queryKey: ['rh', 'work_shifts'] });
+      console.log('🔍 [DEBUG] useCreateWorkShift - queries invalidadas');
+    },
+    onError: (error) => {
+      console.error('Erro ao criar turno de trabalho:', error);
+    },
+  });
+}
+
+/**
+ * Hook para atualizar turno de trabalho
+ */
+export function useUpdateWorkShift() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<WorkShift> }) => {
+      const { EntityService } = await import('@/services/generic/entityService');
+      return EntityService.update({
+        schema: 'rh',
+        table: 'work_shifts',
+        companyId: selectedCompany?.id || '',
+        id,
+        data
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rh', 'work_shifts'] });
+    },
+    onError: (error) => {
+      console.error('Erro ao atualizar turno de trabalho:', error);
+    },
+  });
+}
+
+/**
+ * Hook para excluir turno de trabalho
+ */
+export function useDeleteWorkShift() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { EntityService } = await import('@/services/generic/entityService');
+      return EntityService.delete({
+        schema: 'rh',
+        table: 'work_shifts',
+        companyId: selectedCompany?.id || '',
+        id
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rh', 'work_shifts'] });
+    },
+    onError: (error) => {
+      console.error('Erro ao excluir turno de trabalho:', error);
+    },
+  });
+}
+
+/**
+ * Hook para alterar status do turno
+ */
+export function useChangeWorkShiftStatus() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'ativo' | 'inativo' }) => {
+      const { EntityService } = await import('@/services/generic/entityService');
+      return EntityService.update({
+        schema: 'rh',
+        table: 'work_shifts',
+        companyId: selectedCompany?.id || '',
+        id,
+        data: { status }
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rh', 'work_shifts'] });
+    },
+    onError: (error) => {
+      console.error('Erro ao alterar status do turno:', error);
+    },
+  });
+}
+
+// =====================================================
+// HOOK DE MUTAÇÕES COMBINADO (COMPATIBILIDADE)
+// =====================================================
+
+/**
+ * Hook que combina todas as mutações para compatibilidade com WorkShiftsPage
+ */
+export function useWorkShiftMutations(companyId?: string) {
+  const { selectedCompany } = useCompany();
+  const id = companyId || selectedCompany?.id;
+  
+  const createMutation = useCreateWorkShift();
+  const updateMutation = useUpdateWorkShift();
+  const deleteMutation = useDeleteWorkShift();
+  const changeStatusMutation = useChangeWorkShiftStatus();
+
+  return {
+    createMutation: createMutation.mutateAsync,
+    updateMutation: updateMutation.mutateAsync,
+    deleteMutation: deleteMutation.mutateAsync,
+    changeStatusMutation: changeStatusMutation.mutateAsync,
+    isLoading: createMutation.isPending || updateMutation.isPending || deleteMutation.isPending || changeStatusMutation.isPending,
+  };
+}

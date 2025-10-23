@@ -1,12 +1,12 @@
 -- Função para verificar se um usuário é super admin
-CREATE OR REPLACE FUNCTION is_admin(user_id UUID DEFAULT auth.uid())
+CREATE OR REPLACE FUNCTION is_admin_new(p_user_id UUID DEFAULT auth.uid())
 RETURNS BOOLEAN AS $$
 BEGIN
   RETURN EXISTS (
     SELECT 1 
     FROM user_companies uc
     JOIN profiles p ON uc.profile_id = p.id
-    WHERE uc.user_id = user_id 
+    WHERE uc.user_id = p_user_id 
     AND p.nome = 'Super Admin'
     AND uc.ativo = true
   );
@@ -24,7 +24,7 @@ DECLARE
   has_permission BOOLEAN := FALSE;
 BEGIN
   -- Verificar se é super admin
-  IF is_admin(p_user_id) THEN
+  IF is_admin_new(p_user_id) THEN
     RETURN TRUE;
   END IF;
   
@@ -67,7 +67,7 @@ DECLARE
   has_permission BOOLEAN := FALSE;
 BEGIN
   -- Verificar se é super admin
-  IF is_admin(p_user_id) THEN
+  IF is_admin_new(p_user_id) THEN
     RETURN TRUE;
   END IF;
   
@@ -110,7 +110,7 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
   -- Se for super admin, retorna todas as permissões
-  IF is_admin(p_user_id) THEN
+  IF is_admin_new(p_user_id) THEN
     RETURN QUERY
     SELECT DISTINCT
       mp.module_name,
@@ -138,7 +138,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Função para verificar acesso a empresa
-CREATE OR REPLACE FUNCTION user_has_company_access(
+CREATE OR REPLACE FUNCTION user_has_company_access_new(
   p_user_id UUID,
   p_company_id UUID
 ) RETURNS BOOLEAN AS $$

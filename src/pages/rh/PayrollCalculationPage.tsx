@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Play, Pause, Square, RotateCcw, Settings, BarChart3, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,9 +13,12 @@ import { useCompany } from '@/lib/company-context';
 import { usePayrollCalculation, useCalculationLogs, useCalculationProgress, usePayrollSummary } from '@/hooks/rh/usePayrollCalculation';
 import { formatCurrency, formatDate } from '@/services/rh/payrollCalculationService';
 import { toast } from 'sonner';
+import { usePermissions } from '@/hooks/usePermissions';
 
 export default function PayrollCalculationPage() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
+  const navigate = useNavigate();
   const [mesReferencia, setMesReferencia] = useState(new Date().getMonth() + 1);
   const [anoReferencia, setAnoReferencia] = useState(new Date().getFullYear());
   const [processoAtivo, setProcessoAtivo] = useState<string | undefined>();
@@ -65,6 +69,10 @@ export default function PayrollCalculationPage() {
     toast.info('Recálculo será implementado em breve');
   };
 
+  const handleOpenSettings = () => {
+    navigate('/rh/payroll-config');
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'iniciado':
@@ -97,14 +105,16 @@ export default function PayrollCalculationPage() {
 
   if (!selectedCompany) {
     return (
-      <div className="flex items-center justify-center h-64">
+
+    <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">Selecione uma empresa para acessar o motor de cálculo</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -114,7 +124,7 @@ export default function PayrollCalculationPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleOpenSettings}>
             <Settings className="h-4 w-4 mr-2" />
             Configurações
           </Button>
@@ -327,5 +337,5 @@ export default function PayrollCalculationPage() {
         </CardContent>
       </Card>
     </div>
-  );
+    );
 }

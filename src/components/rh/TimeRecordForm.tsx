@@ -17,6 +17,8 @@ const timeRecordFormSchema = z.object({
   saida: z.string().optional(),
   entrada_almoco: z.string().optional(),
   saida_almoco: z.string().optional(),
+  entrada_extra1: z.string().optional(),
+  saida_extra1: z.string().optional(),
   horas_trabalhadas: z.number().optional(),
   horas_extras: z.number().optional(),
   status: z.enum(['pendente', 'aprovado', 'rejeitado']).default('pendente'),
@@ -132,6 +134,32 @@ export function TimeRecordForm({ timeRecord, onSubmit, mode }: TimeRecordFormPro
             type="time"
             disabled={mode === 'view'}
             {...register('saida_almoco')}
+          />
+        </div>
+      </div>
+
+      {/* Horários de Horas Extras */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label htmlFor="entrada_extra1" className="text-sm font-medium text-purple-600">
+            Entrada Extra
+          </label>
+          <Input
+            id="entrada_extra1"
+            type="time"
+            disabled={mode === 'view'}
+            {...register('entrada_extra1')}
+          />
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="saida_extra1" className="text-sm font-medium text-purple-600">
+            Saída Extra
+          </label>
+          <Input
+            id="saida_extra1"
+            type="time"
+            disabled={mode === 'view'}
+            {...register('saida_extra1')}
           />
         </div>
       </div>

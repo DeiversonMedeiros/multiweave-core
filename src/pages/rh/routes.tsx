@@ -4,6 +4,8 @@ import { Routes, Route } from 'react-router-dom';
 // Importar páginas
 import RHDashboard from './RHDashboard';
 import EmployeesPage from './EmployeesPage';
+import EmployeeManagement from './EmployeeManagement';
+import TestModal from './TestModal';
 import PositionsPage from './PositionsPage';
 import UnitsPage from './UnitsPage';
 import TimeRecordsPage from './TimeRecordsPage';
@@ -39,10 +41,12 @@ export function RHRoutes() {
       <Route path="/" element={<RHDashboard />} />
       
       {/* Gestão de Funcionários */}
-      <Route path="/employees" element={<EmployeesPage />} />
-      <Route path="/employees/new" element={<EmployeesPage />} />
-      <Route path="/employees/:id" element={<EmployeesPage />} />
-      <Route path="/employees/:id/edit" element={<EmployeesPage />} />
+      <Route path="/employees" element={<EmployeeManagement />} />
+      <Route path="/employees/test" element={<TestModal />} />
+      <Route path="/employees/legacy" element={<EmployeesPage />} />
+      <Route path="/employees/new" element={<EmployeeManagement />} />
+      <Route path="/employees/:id" element={<EmployeeManagement />} />
+      <Route path="/employees/:id/edit" element={<EmployeeManagement />} />
       
       {/* Gestão de Cargos */}
       <Route path="/positions" element={<PositionsPage />} />

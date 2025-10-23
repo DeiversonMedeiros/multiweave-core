@@ -23,24 +23,37 @@ import { TableActions } from '@/components/rh/TableActions';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { Position } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
 // =====================================================
 
 export default function PositionsPageNew() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
+  
+  // Estado do formulário
+  const [formData, setFormData] = useState({
+    nome: '',
+    descricao: '',
+    nivel_hierarquico: 1,
+    carga_horaria: 40,
+    is_active: true
+  });
 
   // Hooks usando nova abordagem genérica
   const { data: positionsData, isLoading, error } = useRHData<Position>('positions', selectedCompany?.id || '', filters);
-  const createPosition = useCreateEntity<Position>('rh', 'positions');
-  const updatePosition = useUpdateEntity<Position>('rh', 'positions');
-  const deletePosition = useDeleteEntity('rh', 'positions');
+  const createPosition = useCreateEntity<Position>('rh', 'positions', selectedCompany?.id || '');
+  const updatePosition = useUpdateEntity<Position>('rh', 'positions', selectedCompany?.id || '');
+  const deletePosition = useDeleteEntity('rh', 'positions', selectedCompany?.id || '');
 
   // Dados
   const positions = positionsData?.data || [];
@@ -62,18 +75,39 @@ export default function PositionsPageNew() {
   const handleCreate = () => {
     setSelectedPosition(null);
     setModalMode('create');
+    setFormData({
+      nome: '',
+      descricao: '',
+      nivel_hierarquico: 1,
+      carga_horaria: 40,
+      is_active: true
+    });
     setIsModalOpen(true);
   };
 
   const handleEdit = (position: Position) => {
     setSelectedPosition(position);
     setModalMode('edit');
+    setFormData({
+      nome: position.nome || '',
+      descricao: position.descricao || '',
+      nivel_hierarquico: position.nivel_hierarquico || 1,
+      carga_horaria: position.carga_horaria || 40,
+      is_active: position.is_active ?? true
+    });
     setIsModalOpen(true);
   };
 
   const handleView = (position: Position) => {
     setSelectedPosition(position);
     setModalMode('view');
+    setFormData({
+      nome: position.nome || '',
+      descricao: position.descricao || '',
+      nivel_hierarquico: position.nivel_hierarquico || 1,
+      carga_horaria: position.carga_horaria || 40,
+      is_active: position.is_active ?? true
+    });
     setIsModalOpen(true);
   };
 
@@ -87,23 +121,79 @@ export default function PositionsPageNew() {
     }
   };
 
-  const handleModalSubmit = async (data: Partial<Position>) => {
+  const handleModalSubmit = async () => {
     try {
+      console.log('🔍 [DEBUG] Dados do formulário:', formData);
+      console.log('🔍 [DEBUG] Tipos dos dados:', {
+        nome: typeof formData.nome,
+        descricao: typeof formData.descricao,
+        nivel_hierarquico: typeof formData.nivel_hierarquico,
+        carga_horaria: typeof formData.carga_horaria,
+        is_active: typeof formData.is_active
+      });
+
       if (modalMode === 'create') {
-        await createPosition.mutateAsync({
-          ...data,
-          company_id: selectedCompany?.id
+        // Limpar dados para evitar referências circulares e garantir tipos corretos
+        const cleanData = {
+          nome: formData.nome || '',
+          descricao: formData.descricao || '',
+          nivel_hierarquico: Number(formData.nivel_hierarquico) || 1,
+          carga_horaria: Number(formData.carga_horaria) || 40,
+          is_active: Boolean(formData.is_active),
+          // Não incluir company_id aqui pois já é passado no hook
+        };
+        
+        console.log('🔍 [DEBUG] Dados limpos para criação:', cleanData);
+        console.log('🔍 [DEBUG] Tipos dos dados limpos:', {
+          nome: typeof cleanData.nome,
+          descricao: typeof cleanData.descricao,
+          nivel_hierarquico: typeof cleanData.nivel_hierarquico,
+          carga_horaria: typeof cleanData.carga_horaria,
+          is_active: typeof cleanData.is_active
         });
+        
+        await createPosition.mutateAsync(cleanData);
       } else if (modalMode === 'edit' && selectedPosition) {
+        // Limpar dados para evitar referências circulares e garantir tipos corretos
+        const cleanData = {
+          nome: formData.nome || '',
+          descricao: formData.descricao || '',
+          nivel_hierarquico: Number(formData.nivel_hierarquico) || 1,
+          carga_horaria: Number(formData.carga_horaria) || 40,
+          is_active: Boolean(formData.is_active),
+        };
+        
+        console.log('🔍 [DEBUG] Dados limpos para edição:', cleanData);
+        console.log('🔍 [DEBUG] Tipos dos dados limpos:', {
+          nome: typeof cleanData.nome,
+          descricao: typeof cleanData.descricao,
+          nivel_hierarquico: typeof cleanData.nivel_hierarquico,
+          carga_horaria: typeof cleanData.carga_horaria,
+          is_active: typeof cleanData.is_active
+        });
+        
         await updatePosition.mutateAsync({
           id: selectedPosition.id,
-          data
+          data: cleanData
         });
       }
       setIsModalOpen(false);
     } catch (error) {
-      console.error('Erro ao salvar cargo:', error);
+      console.error('❌ [ERROR] Erro ao salvar cargo:', error);
+      console.error('❌ [ERROR] Detalhes do erro:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
     }
+  };
+
+  const handleInputChange = (field: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   const handleExportCsv = () => {
@@ -182,14 +272,16 @@ export default function PositionsPageNew() {
 
   if (error) {
     return (
-      <div className="p-6">
+
+    <div className="p-6">
         <div className="text-red-500">Erro ao carregar cargos: {error.message}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <RequireEntity entityName="positions" action="read">
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -269,40 +361,52 @@ export default function PositionsPageNew() {
       >
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium">Nome do Cargo</label>
+            <label htmlFor="nome" className="text-sm font-medium">Nome do Cargo *</label>
             <Input
+              id="nome"
+              value={formData.nome}
+              onChange={(e) => handleInputChange('nome', e.target.value)}
               placeholder="Ex: Desenvolvedor Senior"
-              defaultValue={selectedPosition?.nome || ''}
               disabled={modalMode === 'view'}
+              required
             />
           </div>
           <div>
-            <label className="text-sm font-medium">Descrição</label>
+            <label htmlFor="descricao" className="text-sm font-medium">Descrição</label>
             <textarea
+              id="descricao"
+              value={formData.descricao}
+              onChange={(e) => handleInputChange('descricao', e.target.value)}
               className="w-full p-2 border rounded-md"
               placeholder="Descrição do cargo..."
-              defaultValue={selectedPosition?.descricao || ''}
               disabled={modalMode === 'view'}
               rows={3}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium">Nível Hierárquico</label>
+              <label htmlFor="nivel_hierarquico" className="text-sm font-medium">Nível Hierárquico</label>
               <Input
+                id="nivel_hierarquico"
                 type="number"
+                value={formData.nivel_hierarquico}
+                onChange={(e) => handleInputChange('nivel_hierarquico', parseInt(e.target.value) || 1)}
                 placeholder="1"
-                defaultValue={selectedPosition?.nivel_hierarquico || ''}
                 disabled={modalMode === 'view'}
+                min="1"
               />
             </div>
             <div>
-              <label className="text-sm font-medium">Carga Horária (h/semana)</label>
+              <label htmlFor="carga_horaria" className="text-sm font-medium">Carga Horária (h/semana)</label>
               <Input
+                id="carga_horaria"
                 type="number"
+                value={formData.carga_horaria}
+                onChange={(e) => handleInputChange('carga_horaria', parseInt(e.target.value) || 40)}
                 placeholder="40"
-                defaultValue={selectedPosition?.carga_horaria || ''}
                 disabled={modalMode === 'view'}
+                min="1"
+                max="60"
               />
             </div>
           </div>
@@ -310,7 +414,8 @@ export default function PositionsPageNew() {
             <input
               type="checkbox"
               id="is_active"
-              defaultChecked={selectedPosition?.is_active ?? true}
+              checked={formData.is_active}
+              onChange={(e) => handleInputChange('is_active', e.target.checked)}
               disabled={modalMode === 'view'}
               className="rounded"
             />
@@ -320,6 +425,7 @@ export default function PositionsPageNew() {
           </div>
         </div>
       </FormModal>
-    </div>
+      </div>
+    </RequireEntity>
   );
 }

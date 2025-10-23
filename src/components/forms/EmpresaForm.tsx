@@ -22,6 +22,7 @@ const empresaSchema = z.object({
   nome_fantasia: z.string().min(3, "Nome fantasia deve ter no mínimo 3 caracteres").max(200),
   cnpj: z.string().regex(/^\d{14}$/, "CNPJ deve ter 14 dígitos"),
   inscricao_estadual: z.string().optional(),
+  numero_empresa: z.string().optional(),
   ativo: z.boolean().default(true),
   endereco_logradouro: z.string().optional(),
   endereco_numero: z.string().optional(),
@@ -50,6 +51,7 @@ export function EmpresaForm({ empresa, onSuccess, onCancel }: EmpresaFormProps) 
       nome_fantasia: empresa?.nome_fantasia || "",
       cnpj: empresa?.cnpj || "",
       inscricao_estadual: empresa?.inscricao_estadual || "",
+      numero_empresa: empresa?.numero_empresa || "",
       ativo: empresa?.ativo ?? true,
       endereco_logradouro: (empresa?.endereco as any)?.logradouro || "",
       endereco_numero: (empresa?.endereco as any)?.numero || "",
@@ -70,6 +72,7 @@ export function EmpresaForm({ empresa, onSuccess, onCancel }: EmpresaFormProps) 
         nome_fantasia: data.nome_fantasia,
         cnpj: data.cnpj.replace(/\D/g, ""),
         inscricao_estadual: data.inscricao_estadual,
+        numero_empresa: data.numero_empresa || null, // Se vazio, será gerado automaticamente pelo trigger
         ativo: data.ativo,
         endereco: {
           logradouro: data.endereco_logradouro,
@@ -161,6 +164,20 @@ export function EmpresaForm({ empresa, onSuccess, onCancel }: EmpresaFormProps) 
                 <FormLabel>Inscrição Estadual</FormLabel>
                 <FormControl>
                   <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="numero_empresa"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Número da Empresa</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder="Deixe em branco para gerar automaticamente" />
                 </FormControl>
                 <FormMessage />
               </FormItem>

@@ -41,12 +41,40 @@ const queryKeys = {
 // =====================================================
 
 export function usePeriodicExams(companyId: string, filters: PeriodicExamFilters = {}) {
-  return useQuery({
+  console.log('🔍 [usePeriodicExams] companyId:', companyId);
+  console.log('🔍 [usePeriodicExams] filters:', filters);
+  console.log('🔍 [usePeriodicExams] enabled:', !!companyId);
+  
+  const result = useQuery({
     queryKey: queryKeys.list(companyId, filters),
-    queryFn: () => getPeriodicExams(companyId, filters),
+    queryFn: async () => {
+      console.log('🔍 [usePeriodicExams] queryFn executando...');
+      try {
+        const data = await getPeriodicExams(companyId, filters);
+        console.log('✅ [usePeriodicExams] queryFn retornou:', data);
+        return data;
+      } catch (error) {
+        console.error('❌ [usePeriodicExams] queryFn erro:', error);
+        throw error;
+      }
+    },
     enabled: !!companyId,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
+    staleTime: 0,
+    cacheTime: 0,
+    retry: 1,
   });
+  
+  console.log('🔍 [usePeriodicExams] result:', result);
+  console.log('🔍 [usePeriodicExams] result.status:', result.status);
+  console.log('🔍 [usePeriodicExams] result.fetchStatus:', result.fetchStatus);
+  console.log('🔍 [usePeriodicExams] result.data:', result.data);
+  console.log('🔍 [usePeriodicExams] result.error:', result.error);
+  console.log('🔍 [usePeriodicExams] result.isLoading:', result.isLoading);
+  console.log('🔍 [usePeriodicExams] result.isFetching:', result.isFetching);
+  
+  return result;
 }
 
 export function usePeriodicExam(id: string, companyId: string) {

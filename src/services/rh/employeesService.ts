@@ -1,11 +1,9 @@
-import { supabase } from '@/integrations/supabase/client';
+import { EntityService } from '@/services/generic/entityService';
 import { 
   Employee, 
   EmployeeInsert, 
-  EmployeeUpdate, 
-  EmployeeFilters 
+  EmployeeUpdate 
 } from '@/integrations/supabase/rh-types';
-import { EntityService } from '@/services/generic/entityService';
 
 // =====================================================
 // SERVIÇO DE FUNCIONÁRIOS
@@ -15,29 +13,21 @@ export const EmployeesService = {
   /**
    * Lista todos os funcionários de uma empresa
    */
-  list: async (params: { 
-    companyId: string; 
-    filters?: EmployeeFilters;
-    page?: number;
-    pageSize?: number;
-  }) => {
+  list: async (companyId: string) => {
     try {
       const result = await EntityService.list<Employee>({
         schema: 'rh',
         table: 'employees',
-        companyId: params.companyId,
-        filters: params.filters || {},
+        companyId,
+        filters: { status: 'ativo' }, // Restaurando filtro de status
         orderBy: 'nome',
         orderDirection: 'ASC'
       });
 
-      return {
-        data: result.data,
-        totalCount: result.totalCount
-      };
+      return result.data;
     } catch (error) {
-      console.error('Erro ao buscar funcionários:', error);
-      throw error;
+      console.error('❌ Erro ao buscar funcionários:', error);
+      return [];
     }
   },
 
@@ -45,295 +35,115 @@ export const EmployeesService = {
    * Busca um funcionário por ID
    */
   getById: async (id: string, companyId: string): Promise<Employee | null> => {
+    return await EntityService.getById<Employee>('rh', 'employees', id, companyId);
+  },
+
+  /**
+   * Busca funcionário por user_id
+   */
+  getByUserId: async (userId: string, companyId: string): Promise<Employee | null> => {
     try {
-      return await EntityService.getById<Employee>({
+      if (!userId || !companyId) {
+        console.warn('User ID ou Company ID não fornecidos para buscar funcionário');
+        return null;
+      }
+
+      const result = await EntityService.list<Employee>({
         schema: 'rh',
         table: 'employees',
-        companyId: companyId,
-        id: id
+        companyId,
+        filters: { user_id: userId }
       });
+
+      return result.data.length > 0 ? result.data[0] : null;
     } catch (error) {
-      console.error('Erro ao buscar funcionário:', error);
-      throw error;
+      console.error('Erro ao buscar funcionário por user_id:', error);
+      return null;
     }
   },
 
   /**
    * Cria um novo funcionário
    */
-  create: async (employee: EmployeeInsert): Promise<Employee> => {
-    try {
-      return await EntityService.create<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: employee.company_id,
-        data: employee
-      });
-    } catch (error) {
-      console.error('Erro ao criar funcionário:', error);
-      throw error;
-    }
+  create: async (employee: EmployeeInsert, companyId: string): Promise<Employee> => {
+    return await EntityService.create<Employee>({
+      schema: 'rh',
+      table: 'employees',
+      companyId,
+      data: employee
+    });
   },
 
   /**
    * Atualiza um funcionário
    */
   update: async (id: string, employee: EmployeeUpdate, companyId: string): Promise<Employee> => {
-    try {
-      return await EntityService.update<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        id: id,
-        data: employee
-      });
-    } catch (error) {
-      console.error('Erro ao atualizar funcionário:', error);
-      throw error;
-    }
+    return await EntityService.update<Employee>({
+      schema: 'rh',
+      table: 'employees',
+      companyId,
+      id,
+      data: employee
+    });
   },
 
   /**
    * Remove um funcionário
    */
   delete: async (id: string, companyId: string): Promise<void> => {
-    try {
-      await EntityService.delete({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        id: id
-      });
-    } catch (error) {
-      console.error('Erro ao remover funcionário:', error);
-      throw error;
-    }
+    return await EntityService.delete({
+      schema: 'rh',
+      table: 'employees',
+      companyId,
+      id
+    });
   },
 
   /**
    * Busca funcionários ativos
    */
-  getActive: async (companyId: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: { status: 'ativo' },
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-      return result.data;
-    } catch (error) {
-      console.error('Erro ao buscar funcionários ativos:', error);
-      throw error;
-    }
+  getActive: async (companyId: string): Promise<Employee[]> => {
+    const result = await EntityService.list<Employee>({
+      schema: 'rh',
+      table: 'employees',
+      companyId,
+      filters: { status: 'ativo' },
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
+
+    return result.data;
   },
 
   /**
    * Busca funcionários por departamento
    */
-  getByDepartment: async (departmentId: string, companyId: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: { departamento_id: departmentId },
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-      return result.data;
-    } catch (error) {
-      console.error('Erro ao buscar funcionários por departamento:', error);
-      throw error;
-    }
+  getByDepartment: async (departmentId: string, companyId: string): Promise<Employee[]> => {
+    const result = await EntityService.list<Employee>({
+      schema: 'rh',
+      table: 'employees',
+      companyId,
+      filters: { departamento_id: departmentId },
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
+
+    return result.data;
   },
 
   /**
    * Busca funcionários por cargo
    */
-  getByPosition: async (positionId: string, companyId: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: { cargo_id: positionId },
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-      return result.data;
-    } catch (error) {
-      console.error('Erro ao buscar funcionários por cargo:', error);
-      throw error;
-    }
-  },
+  getByPosition: async (positionId: string, companyId: string): Promise<Employee[]> => {
+    const result = await EntityService.list<Employee>({
+      schema: 'rh',
+      table: 'employees',
+      companyId,
+      filters: { cargo_id: positionId },
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
 
-  /**
-   * Busca funcionário por CPF
-   */
-  getByCpf: async (cpf: string, companyId: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: { cpf: cpf },
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-      return result.data[0] || null;
-    } catch (error) {
-      console.error('Erro ao buscar funcionário por CPF:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Busca funcionário por matrícula
-   */
-  getByMatricula: async (matricula: string, companyId: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: { matricula: matricula },
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-      return result.data[0] || null;
-    } catch (error) {
-      console.error('Erro ao buscar funcionário por matrícula:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Estatísticas dos funcionários
-   */
-  getStats: async (companyId: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: {},
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-
-      const employees = result.data;
-      const stats = {
-        total: employees.length,
-        ativos: employees.filter(emp => emp.status === 'ativo').length,
-        inativos: employees.filter(emp => emp.status === 'inativo').length,
-        por_departamento: employees.reduce((acc, emp) => {
-          acc[emp.departamento_id || 'sem_departamento'] = (acc[emp.departamento_id || 'sem_departamento'] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>),
-        por_cargo: employees.reduce((acc, emp) => {
-          acc[emp.cargo_id || 'sem_cargo'] = (acc[emp.cargo_id || 'sem_cargo'] || 0) + 1;
-          return acc;
-        }, {} as Record<string, number>)
-      };
-
-      return stats;
-    } catch (error) {
-      console.error('Erro ao buscar estatísticas:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Alterna status do funcionário
-   */
-  toggleStatus: async (id: string, status: 'ativo' | 'inativo', companyId: string) => {
-    try {
-      return await EntityService.update<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        id: id,
-        data: { status }
-      });
-    } catch (error) {
-      console.error('Erro ao alterar status:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Valida CPF único
-   */
-  validateCpf: async (cpf: string, companyId: string, excludeId?: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: { cpf: cpf },
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-
-      const employee = result.data.find(emp => emp.id !== excludeId);
-      return !employee; // Retorna true se não encontrou (CPF válido)
-    } catch (error) {
-      console.error('Erro ao validar CPF:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Valida matrícula única
-   */
-  validateMatricula: async (matricula: string, companyId: string, excludeId?: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: { matricula: matricula },
-        orderBy: 'nome',
-        orderDirection: 'ASC'
-      });
-
-      const employee = result.data.find(emp => emp.id !== excludeId);
-      return !employee; // Retorna true se não encontrou (matrícula válida)
-    } catch (error) {
-      console.error('Erro ao validar matrícula:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Gera próxima matrícula
-   */
-  generateNextMatricula: async (companyId: string) => {
-    try {
-      const result = await EntityService.list<Employee>({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId,
-        filters: {},
-        orderBy: 'matricula',
-        orderDirection: 'DESC'
-      });
-
-      const employees = result.data;
-      const lastMatricula = employees[0]?.matricula;
-      
-      if (!lastMatricula) {
-        return '001';
-      }
-
-      const nextNumber = parseInt(lastMatricula) + 1;
-      return nextNumber.toString().padStart(3, '0');
-    } catch (error) {
-      console.error('Erro ao gerar próxima matrícula:', error);
-      throw error;
-    }
+    return result.data;
   }
 };

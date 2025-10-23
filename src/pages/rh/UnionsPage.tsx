@@ -14,6 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useUnions, useEmployeeUnionMemberships, useUnionContributions, useCollectiveAgreements, useUnionNegotiations, useUnionRepresentatives, useUnionsStats, useUnionTypes, useMembershipStatuses, useContributionStatuses, useNegotiationStatuses } from '@/hooks/rh/useUnions';
 import { getUnionTypeLabel, getUnionTypeColor, getMembershipStatusLabel, getMembershipStatusColor, getContributionStatusLabel, getContributionStatusColor, getNegotiationStatusLabel, getNegotiationStatusColor, formatCurrency, formatDate } from '@/services/rh/unionsService';
 
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+
 const UnionsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -69,7 +73,8 @@ const UnionsPage: React.FC = () => {
   );
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <RequireEntity entityName="unions" action="read">
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -522,6 +527,7 @@ const UnionsPage: React.FC = () => {
         </TabsContent>
       </Tabs>
     </div>
+    </RequireEntity>
   );
 };
 

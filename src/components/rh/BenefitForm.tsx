@@ -18,36 +18,31 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Benefit, BenefitCreateData, BenefitUpdateData } from '@/integrations/supabase/rh-types';
+import { BenefitConfiguration, BenefitConfigurationInsert, BenefitConfigurationUpdate } from '@/integrations/supabase/rh-types';
 import { useBenefitTypes, useBenefitCalculationTypes, useBenefitCategories } from '@/hooks/rh/useBenefits';
 
 const formSchema = z.object({
-  nome: z.string().min(1, { message: 'Nome é obrigatório.' }),
-  tipo: z.enum(['vale_alimentacao', 'vale_refeicao', 'vale_transporte', 'plano_saude', 'plano_odonto', 'seguro_vida', 'auxilio_creche', 'auxilio_educacao', 'gympass', 'outros'], {
+  name: z.string().min(1, { message: 'Nome é obrigatório.' }),
+  benefit_type: z.enum(['vr_va', 'transporte', 'equipment_rental', 'premiacao', 'outros'], {
     required_error: 'Tipo é obrigatório.'
   }),
-  descricao: z.string().optional(),
-  valor_mensal: z.coerce.number().min(0).optional(),
-  valor_percentual: z.coerce.number().min(0).max(100).optional(),
-  tipo_calculo: z.enum(['valor_fixo', 'percentual_salario', 'tabela_faixas'], {
+  description: z.string().optional(),
+  base_value: z.coerce.number().min(0).optional(),
+  percentage_value: z.coerce.number().min(0).max(100).optional(),
+  calculation_type: z.enum(['fixed_value', 'daily_value', 'percentage', 'work_days'], {
     required_error: 'Tipo de cálculo é obrigatório.'
   }),
-  desconto_ir: z.boolean().default(false),
-  desconto_inss: z.boolean().default(false),
-  desconto_fgts: z.boolean().default(false),
-  limite_mensal: z.coerce.number().min(0).optional(),
-  data_inicio_vigencia: z.date().optional(),
-  data_fim_vigencia: z.date().optional(),
-  ativo: z.boolean().default(true),
-  obrigatorio: z.boolean().default(false),
-  categoria: z.enum(['geral', 'executivo', 'operacional', 'terceirizado']).default('geral'),
-  regras_aplicacao: z.string().optional(),
-  observacoes: z.string().optional(),
+  min_value: z.coerce.number().min(0).optional(),
+  max_value: z.coerce.number().min(0).optional(),
+  daily_calculation_base: z.coerce.number().min(1).default(30),
+  requires_approval: z.boolean().default(false),
+  is_active: z.boolean().default(true),
+  entra_no_calculo_folha: z.boolean().default(true),
 });
 
 interface BenefitFormProps {
-  initialData?: Benefit;
-  onSubmit: (data: BenefitCreateData | BenefitUpdateData) => void;
+  initialData?: BenefitConfiguration;
+  onSubmit: (data: BenefitConfigurationInsert | BenefitConfigurationUpdate) => void;
   isLoading: boolean;
 }
 
@@ -59,46 +54,36 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      nome: initialData?.nome || '',
-      tipo: initialData?.tipo || 'vale_alimentacao',
-      descricao: initialData?.descricao || '',
-      valor_mensal: initialData?.valor_mensal || 0,
-      valor_percentual: initialData?.valor_percentual || 0,
-      tipo_calculo: initialData?.tipo_calculo || 'valor_fixo',
-      desconto_ir: initialData?.desconto_ir || false,
-      desconto_inss: initialData?.desconto_inss || false,
-      desconto_fgts: initialData?.desconto_fgts || false,
-      limite_mensal: initialData?.limite_mensal || 0,
-      data_inicio_vigencia: initialData?.data_inicio_vigencia ? new Date(initialData.data_inicio_vigencia) : undefined,
-      data_fim_vigencia: initialData?.data_fim_vigencia ? new Date(initialData.data_fim_vigencia) : undefined,
-      ativo: initialData?.ativo ?? true,
-      obrigatorio: initialData?.obrigatorio || false,
-      categoria: initialData?.categoria || 'geral',
-      regras_aplicacao: initialData?.regras_aplicacao || '',
-      observacoes: initialData?.observacoes || '',
+      name: initialData?.name || '',
+      benefit_type: initialData?.benefit_type || 'vr_va',
+      description: initialData?.description || '',
+      base_value: initialData?.base_value || 0,
+      percentage_value: initialData?.percentage_value || 0,
+      calculation_type: initialData?.calculation_type || 'fixed_value',
+      min_value: initialData?.min_value || 0,
+      max_value: initialData?.max_value || 0,
+      daily_calculation_base: initialData?.daily_calculation_base || 30,
+      requires_approval: initialData?.requires_approval || false,
+      is_active: initialData?.is_active ?? true,
+      entra_no_calculo_folha: initialData?.entra_no_calculo_folha ?? true,
     },
   });
 
   useEffect(() => {
     if (initialData) {
       form.reset({
-        nome: initialData.nome,
-        tipo: initialData.tipo,
-        descricao: initialData.descricao || '',
-        valor_mensal: initialData.valor_mensal || 0,
-        valor_percentual: initialData.valor_percentual || 0,
-        tipo_calculo: initialData.tipo_calculo,
-        desconto_ir: initialData.desconto_ir,
-        desconto_inss: initialData.desconto_inss,
-        desconto_fgts: initialData.desconto_fgts,
-        limite_mensal: initialData.limite_mensal || 0,
-        data_inicio_vigencia: initialData.data_inicio_vigencia ? new Date(initialData.data_inicio_vigencia) : undefined,
-        data_fim_vigencia: initialData.data_fim_vigencia ? new Date(initialData.data_fim_vigencia) : undefined,
-        ativo: initialData.ativo,
-        obrigatorio: initialData.obrigatorio,
-        categoria: initialData.categoria,
-        regras_aplicacao: initialData.regras_aplicacao || '',
-        observacoes: initialData.observacoes || '',
+        name: initialData.name,
+        benefit_type: initialData.benefit_type,
+        description: initialData.description || '',
+        base_value: initialData.base_value || 0,
+        percentage_value: initialData.percentage_value || 0,
+        calculation_type: initialData.calculation_type,
+        min_value: initialData.min_value || 0,
+        max_value: initialData.max_value || 0,
+        daily_calculation_base: initialData.daily_calculation_base || 30,
+        requires_approval: initialData.requires_approval,
+        is_active: initialData.is_active,
+        entra_no_calculo_folha: initialData.entra_no_calculo_folha,
       });
     }
   }, [initialData, form]);
@@ -106,11 +91,10 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
   const handleSubmit = (values: z.infer<typeof formSchema>) => {
     const dataToSubmit = {
       ...values,
-      data_inicio_vigencia: values.data_inicio_vigencia ? format(values.data_inicio_vigencia, 'yyyy-MM-dd') : undefined,
-      data_fim_vigencia: values.data_fim_vigencia ? format(values.data_fim_vigencia, 'yyyy-MM-dd') : undefined,
-      valor_mensal: values.valor_mensal && values.valor_mensal > 0 ? parseFloat(values.valor_mensal.toFixed(2)) : undefined,
-      valor_percentual: values.valor_percentual && values.valor_percentual > 0 ? parseFloat(values.valor_percentual.toFixed(2)) : undefined,
-      limite_mensal: values.limite_mensal && values.limite_mensal > 0 ? parseFloat(values.limite_mensal.toFixed(2)) : undefined,
+      base_value: values.base_value && values.base_value > 0 ? parseFloat(values.base_value.toFixed(2)) : undefined,
+      percentage_value: values.percentage_value && values.percentage_value > 0 ? parseFloat(values.percentage_value.toFixed(2)) : undefined,
+      min_value: values.min_value && values.min_value > 0 ? parseFloat(values.min_value.toFixed(2)) : undefined,
+      max_value: values.max_value && values.max_value > 0 ? parseFloat(values.max_value.toFixed(2)) : undefined,
     };
 
     if (initialData) {
@@ -120,7 +104,7 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
     }
   };
 
-  const watchTipoCalculo = form.watch('tipo_calculo');
+  const watchCalculationType = form.watch('calculation_type');
 
   return (
     <Form {...form}>
@@ -129,7 +113,7 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
           {/* Nome */}
           <FormField
             control={form.control}
-            name="nome"
+            name="name"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Nome do Benefício *</FormLabel>
@@ -144,7 +128,7 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
           {/* Tipo */}
           <FormField
             control={form.control}
-            name="tipo"
+            name="benefit_type"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Tipo de Benefício *</FormLabel>
@@ -155,37 +139,11 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {benefitTypes.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          {/* Categoria */}
-          <FormField
-            control={form.control}
-            name="categoria"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Categoria *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isLoading}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione a categoria" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {benefitCategories.map((category) => (
-                      <SelectItem key={category.value} value={category.value}>
-                        {category.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="vr_va">Vale Refeição/Alimentação</SelectItem>
+                    <SelectItem value="transporte">Vale Transporte</SelectItem>
+                    <SelectItem value="equipment_rental">Aluguel de Equipamentos</SelectItem>
+                    <SelectItem value="premiacao">Premiação</SelectItem>
+                    <SelectItem value="outros">Outros</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -196,7 +154,7 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
           {/* Tipo de Cálculo */}
           <FormField
             control={form.control}
-            name="tipo_calculo"
+            name="calculation_type"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Tipo de Cálculo *</FormLabel>
@@ -207,11 +165,10 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {benefitCalculationTypes.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="fixed_value">Valor Fixo</SelectItem>
+                    <SelectItem value="daily_value">Valor Diário</SelectItem>
+                    <SelectItem value="percentage">Percentual</SelectItem>
+                    <SelectItem value="work_days">Dias Trabalhados</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -219,14 +176,14 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
             )}
           />
 
-          {/* Valor Mensal (se tipo_calculo for valor_fixo) */}
-          {watchTipoCalculo === 'valor_fixo' && (
+          {/* Valor Base (se calculation_type for fixed_value) */}
+          {watchCalculationType === 'fixed_value' && (
             <FormField
               control={form.control}
-              name="valor_mensal"
+              name="base_value"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Valor Mensal (R$)</FormLabel>
+                  <FormLabel>Valor Base (R$)</FormLabel>
                   <FormControl>
                     <Input 
                       type="number" 
@@ -242,14 +199,14 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
             />
           )}
 
-          {/* Valor Percentual (se tipo_calculo for percentual_salario) */}
-          {watchTipoCalculo === 'percentual_salario' && (
+          {/* Valor Percentual (se calculation_type for percentage) */}
+          {watchCalculationType === 'percentage' && (
             <FormField
               control={form.control}
-              name="valor_percentual"
+              name="percentage_value"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Percentual do Salário (%)</FormLabel>
+                  <FormLabel>Percentual (%)</FormLabel>
                   <FormControl>
                     <Input 
                       type="number" 
@@ -265,13 +222,36 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
             />
           )}
 
-          {/* Limite Mensal */}
+          {/* Valor Diário (se calculation_type for daily_value) */}
+          {watchCalculationType === 'daily_value' && (
+            <FormField
+              control={form.control}
+              name="base_value"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Valor Diário (R$)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      step="0.01" 
+                      {...field} 
+                      disabled={isLoading}
+                      placeholder="0,00"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
+
+          {/* Valor Mínimo */}
           <FormField
             control={form.control}
-            name="limite_mensal"
+            name="min_value"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Limite Mensal (R$)</FormLabel>
+                <FormLabel>Valor Mínimo (R$)</FormLabel>
                 <FormControl>
                   <Input 
                     type="number" 
@@ -282,92 +262,56 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
                   />
                 </FormControl>
                 <FormDescription>
-                  Limite máximo que pode ser descontado por mês
+                  Valor mínimo do benefício
                 </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {/* Data de Início da Vigência */}
+          {/* Valor Máximo */}
           <FormField
             control={form.control}
-            name="data_inicio_vigencia"
+            name="max_value"
             render={({ field }) => (
-              <FormItem className="flex flex-col">
-                <FormLabel>Data de Início da Vigência</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        variant={'outline'}
-                        className={cn(
-                          'w-full pl-3 text-left font-normal',
-                          !field.value && 'text-muted-foreground'
-                        )}
-                      >
-                        {field.value ? (
-                          format(field.value, 'PPP', { locale: ptBR })
-                        ) : (
-                          <span>Selecione uma data</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={field.value}
-                      onSelect={field.onChange}
-                      disabled={isLoading}
-                      initialFocus
-                      locale={ptBR}
-                    />
-                  </PopoverContent>
-                </Popover>
+              <FormItem>
+                <FormLabel>Valor Máximo (R$)</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    step="0.01" 
+                    {...field} 
+                    disabled={isLoading}
+                    placeholder="0,00"
+                  />
+                </FormControl>
+                <FormDescription>
+                  Valor máximo do benefício
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          {/* Data de Fim da Vigência */}
+          {/* Base de Cálculo Diário */}
           <FormField
             control={form.control}
-            name="data_fim_vigencia"
+            name="daily_calculation_base"
             render={({ field }) => (
-              <FormItem className="flex flex-col">
-                <FormLabel>Data de Fim da Vigência</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        variant={'outline'}
-                        className={cn(
-                          'w-full pl-3 text-left font-normal',
-                          !field.value && 'text-muted-foreground'
-                        )}
-                      >
-                        {field.value ? (
-                          format(field.value, 'PPP', { locale: ptBR })
-                        ) : (
-                          <span>Selecione uma data</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={field.value}
-                      onSelect={field.onChange}
-                      disabled={isLoading}
-                      initialFocus
-                      locale={ptBR}
-                    />
-                  </PopoverContent>
-                </Popover>
+              <FormItem>
+                <FormLabel>Base de Cálculo Diário</FormLabel>
+                <FormControl>
+                  <Input 
+                    type="number" 
+                    step="1" 
+                    {...field} 
+                    disabled={isLoading}
+                    placeholder="30"
+                  />
+                </FormControl>
+                <FormDescription>
+                  Número de dias para cálculo mensal (padrão: 30)
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -378,7 +322,7 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField
             control={form.control}
-            name="desconto_ir"
+            name="requires_approval"
             render={({ field }) => (
               <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                 <FormControl>
@@ -389,9 +333,9 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
                   />
                 </FormControl>
                 <div className="space-y-1 leading-none">
-                  <FormLabel>Desconta IR</FormLabel>
+                  <FormLabel>Requer Aprovação</FormLabel>
                   <FormDescription>
-                    Se o benefício deve ser descontado do Imposto de Renda
+                    Se o benefício requer aprovação antes de ser atribuído
                   </FormDescription>
                 </div>
                 <FormMessage />
@@ -401,76 +345,7 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
 
           <FormField
             control={form.control}
-            name="desconto_inss"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    disabled={isLoading}
-                  />
-                </FormControl>
-                <div className="space-y-1 leading-none">
-                  <FormLabel>Desconta INSS</FormLabel>
-                  <FormDescription>
-                    Se o benefício deve ser descontado do INSS
-                  </FormDescription>
-                </div>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="desconto_fgts"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    disabled={isLoading}
-                  />
-                </FormControl>
-                <div className="space-y-1 leading-none">
-                  <FormLabel>Desconta FGTS</FormLabel>
-                  <FormDescription>
-                    Se o benefício deve ser descontado do FGTS
-                  </FormDescription>
-                </div>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="obrigatorio"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    disabled={isLoading}
-                  />
-                </FormControl>
-                <div className="space-y-1 leading-none">
-                  <FormLabel>Obrigatório</FormLabel>
-                  <FormDescription>
-                    Se o benefício é obrigatório para todos os funcionários
-                  </FormDescription>
-                </div>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="ativo"
+            name="is_active"
             render={({ field }) => (
               <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
                 <FormControl>
@@ -490,50 +365,40 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
               </FormItem>
             )}
           />
+
+          <FormField
+            control={form.control}
+            name="entra_no_calculo_folha"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={isLoading}
+                  />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>Entra no Cálculo da Folha de Pagamento</FormLabel>
+                  <FormDescription>
+                    Se o benefício deve ser incluído no cálculo da folha de pagamento
+                  </FormDescription>
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
         {/* Descrição */}
         <FormField
           control={form.control}
-          name="descricao"
+          name="description"
           render={({ field }) => (
             <FormItem>
               <FormLabel>Descrição</FormLabel>
               <FormControl>
                 <Textarea {...field} disabled={isLoading} placeholder="Descreva o benefício..." />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Regras de Aplicação */}
-        <FormField
-          control={form.control}
-          name="regras_aplicacao"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Regras de Aplicação</FormLabel>
-              <FormControl>
-                <Textarea {...field} disabled={isLoading} placeholder="Descreva as regras para aplicação do benefício..." />
-              </FormControl>
-              <FormDescription>
-                Ex: Funcionários com mais de 6 meses de empresa, apenas para funcionários CLT, etc.
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {/* Observações */}
-        <FormField
-          control={form.control}
-          name="observacoes"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Observações</FormLabel>
-              <FormControl>
-                <Textarea {...field} disabled={isLoading} placeholder="Observações adicionais..." />
               </FormControl>
               <FormMessage />
             </FormItem>

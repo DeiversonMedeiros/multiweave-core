@@ -12,9 +12,22 @@ export interface UserPermission {
   can_delete: boolean;
 }
 
+export interface EntityPermission {
+  id: string;
+  profile_id: string;
+  entity_name: string;
+  can_read: boolean;
+  can_create: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export const useAuthorization = () => {
   const { user } = useAuth();
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
+  const [entityPermissions, setEntityPermissions] = useState<EntityPermission[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -22,6 +35,7 @@ export const useAuthorization = () => {
   const loadPermissions = useCallback(async () => {
     if (!user) {
       setPermissions([]);
+      setEntityPermissions([]);
       setIsAdmin(false);
       setLoading(false);
       return;
@@ -32,7 +46,7 @@ export const useAuthorization = () => {
       
       // Verificar se é admin
       const { data: adminData, error: adminError } = await supabase
-        .rpc('is_admin', { user_id: user.id });
+        .rpc('is_admin_simple', { p_user_id: user.id });
       
       if (adminError) {
         console.error('Erro ao verificar admin:', adminError);
@@ -41,19 +55,50 @@ export const useAuthorization = () => {
         setIsAdmin(adminData || false);
       }
 
-      // Carregar permissões específicas do usuário (mesmo para admins)
+      // Carregar permissões de módulo
       const { data: permissionsData, error: permissionsError } = await supabase
-        .rpc('get_user_permissions', { p_user_id: user.id });
+        .rpc('get_user_permissions_simple', { p_user_id: user.id });
 
       if (permissionsError) {
-        console.error('Erro ao carregar permissões:', permissionsError);
+        console.error('Erro ao carregar permissões de módulo:', permissionsError);
         setPermissions([]);
       } else {
         setPermissions(permissionsData || []);
       }
+
+      // Carregar permissões de entidade através do perfil do usuário
+      // Primeiro, buscar o perfil do usuário
+      const { data: userCompanyData, error: userCompanyError } = await supabase
+        .from('user_companies')
+        .select('profile_id')
+        .eq('user_id', user.id)
+        .eq('ativo', true)
+        .single();
+
+      if (userCompanyError) {
+        console.error('Erro ao buscar perfil do usuário:', userCompanyError);
+        setEntityPermissions([]);
+      } else if (userCompanyData?.profile_id) {
+        // Agora buscar as permissões de entidade para esse perfil
+        const { data: entityPermissionsData, error: entityPermissionsError } = await supabase
+          .from('entity_permissions')
+          .select('*')
+          .eq('profile_id', userCompanyData.profile_id);
+
+        if (entityPermissionsError) {
+          console.error('Erro ao carregar permissões de entidade:', entityPermissionsError);
+          setEntityPermissions([]);
+        } else {
+          console.log('✅ Permissões de entidade carregadas:', entityPermissionsData?.length || 0, 'registros');
+          setEntityPermissions(entityPermissionsData || []);
+        }
+      } else {
+        setEntityPermissions([]);
+      }
     } catch (error) {
       console.error('Erro ao carregar permissões:', error);
       setPermissions([]);
+      setEntityPermissions([]);
     } finally {
       setLoading(false);
     }
@@ -77,7 +122,7 @@ export const useAuthorization = () => {
         .rpc('check_module_permission', {
           p_user_id: user.id,
           p_module_name: moduleName,
-          p_permission: action
+          p_action: action
         });
 
       if (error) {
@@ -94,28 +139,70 @@ export const useAuthorization = () => {
 
   // Verificar permissão de entidade
   const checkEntityPermission = useCallback(async (
-    entityName: string, 
+    entityName: string,
     action: PermissionAction
   ): Promise<boolean> => {
     if (!user) return false;
     if (isAdmin) return true;
+    
+    // Verificar se os parâmetros são válidos
+    if (!entityName || !action) {
+      console.warn('⚠️ [WARNING] Parâmetros inválidos para verificação de permissão:', {
+        entityName,
+        action,
+        userId: user.id
+      });
+      return false;
+    }
 
     try {
+      const params = {
+        p_user_id: user.id,
+        p_entity_name: entityName,
+        p_action: action
+      };
+      
+      console.log('🔍 [DEBUG] Verificando permissão de entidade:', {
+        entityName,
+        action,
+        userId: user.id,
+        params
+      });
+
       const { data, error } = await supabase
-        .rpc('check_entity_permission', {
-          p_user_id: user.id,
-          p_entity_name: entityName,
-          p_permission: action
-        });
+        .rpc('check_entity_permission_v2', params);
+
+      console.log('🔍 [DEBUG] Resposta da função check_entity_permission:', {
+        data,
+        error,
+        hasError: !!error
+      });
 
       if (error) {
-        console.error('Erro ao verificar permissão de entidade:', error);
+        console.error('❌ Erro ao verificar permissão de entidade:', {
+          error,
+          entityName,
+          action,
+          userId: user.id,
+          params
+        });
         return false;
       }
 
+      console.log('✅ Permissão verificada com sucesso:', {
+        entityName,
+        action,
+        hasPermission: data || false
+      });
+
       return data || false;
     } catch (error) {
-      console.error('Erro ao verificar permissão de entidade:', error);
+      console.error('❌ Exceção ao verificar permissão de entidade:', {
+        error,
+        entityName,
+        action,
+        userId: user.id
+      });
       return false;
     }
   }, [user, isAdmin]);
@@ -183,6 +270,7 @@ export const useAuthorization = () => {
   return {
     // Estado
     permissions,
+    entityPermissions,
     loading,
     isAdmin,
     

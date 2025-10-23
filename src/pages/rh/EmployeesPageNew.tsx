@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -17,37 +17,45 @@ import {
   Eye,
   Edit,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  Gift
 } from 'lucide-react';
 import { SimpleDataTable } from '@/components/rh/SimpleDataTable';
 import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
-import { EmployeeForm } from '@/components/rh/EmployeeForm';
+import { EmployeeForm, EmployeeFormRef } from '@/components/rh/EmployeeForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { Employee, EmployeeFilters } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useNavigate } from 'react-router-dom';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
 // =====================================================
 
 export default function EmployeesPageNew() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<EmployeeFilters>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
+  const formRef = useRef<EmployeeFormRef>(null);
 
   // Hooks usando nova abordagem genérica
   const { data: employeesData, isLoading, error } = useRHData<Employee>('employees', selectedCompany?.id || '', filters);
-  const createEmployee = useCreateEntity<Employee>('rh', 'employees');
-  const updateEmployee = useUpdateEntity<Employee>('rh', 'employees');
-  const deleteEmployee = useDeleteEntity('rh', 'employees');
+  const createEmployee = useCreateEntity<Employee>('rh', 'employees', selectedCompany?.id || '');
+  const updateEmployee = useUpdateEntity<Employee>('rh', 'employees', selectedCompany?.id || '');
+  const deleteEmployee = useDeleteEntity('rh', 'employees', selectedCompany?.id || '');
 
   // Dados
-  const employees = employeesData?.data || [];
-  const totalCount = employeesData?.totalCount || 0;
+  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
+  const totalCount = Array.isArray(employeesData) ? employeesData.length : employeesData?.totalCount || 0;
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -90,7 +98,13 @@ export default function EmployeesPageNew() {
     }
   };
 
-  const handleModalSubmit = async (data: Partial<Employee>) => {
+  const handleModalSubmit = async () => {
+    if (formRef.current) {
+      formRef.current.submit();
+    }
+  };
+
+  const handleFormSubmit = async (data: Partial<Employee>) => {
     try {
       if (modalMode === 'create') {
         await createEmployee.mutateAsync({
@@ -112,6 +126,10 @@ export default function EmployeesPageNew() {
   const handleExportCsv = () => {
     // TODO: Implementar exportação CSV
     console.log('Exportando funcionários para CSV...');
+  };
+
+  const handleManageBenefits = (employee: Employee) => {
+    navigate(`/rh/employee-benefits?employee_id=${employee.id}`);
   };
 
   // Colunas da tabela - formato simplificado para dados diretos
@@ -171,6 +189,11 @@ export default function EmployeesPageNew() {
               onClick: () => handleEdit(employee)
             },
             {
+              label: 'Gerenciar Benefícios',
+              icon: <Gift className="h-4 w-4" />,
+              onClick: () => handleManageBenefits(employee)
+            },
+            {
               label: 'Excluir',
               icon: <Trash2 className="h-4 w-4" />,
               onClick: () => handleDelete(employee),
@@ -185,14 +208,16 @@ export default function EmployeesPageNew() {
 
   if (error) {
     return (
-      <div className="p-6">
+
+    <div className="p-6">
         <div className="text-red-500">Erro ao carregar funcionários: {error.message}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <RequireEntity entityName="employees" action="read">
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -268,16 +293,21 @@ export default function EmployeesPageNew() {
           modalMode === 'edit' ? 'Editar Funcionário' :
           'Visualizar Funcionário'
         }
+        description="Preencha os dados do funcionário"
+        onSubmit={handleModalSubmit}
         loading={createEmployee.isPending || updateEmployee.isPending}
-        size="xl"
+        size="6xl"
         submitLabel={modalMode === 'create' ? 'Criar Funcionário' : 'Salvar Alterações'}
+        cancelLabel="Fechar"
       >
         <EmployeeForm
+          ref={formRef}
           employee={selectedEmployee}
           mode={modalMode}
-          onSubmit={handleModalSubmit}
+          onSubmit={handleFormSubmit}
         />
       </FormModal>
-    </div>
+      </div>
+    </RequireEntity>
   );
 }

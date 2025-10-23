@@ -16,12 +16,16 @@ import {
 } from 'lucide-react';
 import { useEmployeeStats } from '@/hooks/rh/useEmployees';
 import { useCompany } from '@/lib/company-context';
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 
 // =====================================================
 // COMPONENTE PRINCIPAL
 // =====================================================
 
 export default function RHDashboard() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const { data: stats, isLoading: statsLoading } = useEmployeeStats();
 
@@ -125,7 +129,8 @@ export default function RHDashboard() {
 
   if (statsLoading) {
     return (
-      <div className="space-y-6">
+
+    <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Dashboard RH</h1>
@@ -156,7 +161,8 @@ export default function RHDashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="employees" action="read">
+      <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
         <div>
@@ -343,6 +349,7 @@ export default function RHDashboard() {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </RequireEntity>
   );
 }

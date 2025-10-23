@@ -5,16 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { User } from "@/lib/supabase-types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { User, Profile } from "@/lib/supabase-types";
 import { supabase } from "@/integrations/supabase/client";
+import { useCompany } from "@/lib/company-context";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const usuarioSchema = z.object({
   nome: z.string().min(3, "Nome deve ter no mínimo 3 caracteres").max(100),
   email: z.string().email("Email inválido").max(255),
   senha: z.string().min(6, "Senha deve ter no mínimo 6 caracteres").optional(),
   ativo: z.boolean().default(true),
+  profile_id: z.string().min(1, "Perfil é obrigatório"),
 });
 
 type UsuarioFormData = z.infer<typeof usuarioSchema>;
@@ -27,6 +30,8 @@ interface UsuarioFormProps {
 
 export function UsuarioForm({ usuario, onSuccess, onCancel }: UsuarioFormProps) {
   const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const { selectedCompany } = useCompany();
 
   const form = useForm<UsuarioFormData>({
     resolver: zodResolver(usuarioSchema),
@@ -35,8 +40,28 @@ export function UsuarioForm({ usuario, onSuccess, onCancel }: UsuarioFormProps) 
       email: usuario?.email || "",
       senha: "",
       ativo: usuario?.ativo ?? true,
+      profile_id: "",
     },
   });
+
+  // Carregar perfis disponíveis
+  useEffect(() => {
+    const loadProfiles = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("nome");
+
+      if (error) {
+        console.error("Erro ao carregar perfis:", error);
+        toast.error("Erro ao carregar perfis");
+      } else {
+        setProfiles(data || []);
+      }
+    };
+
+    loadProfiles();
+  }, []);
 
   const onSubmit = async (data: UsuarioFormData) => {
     setLoading(true);
@@ -62,6 +87,21 @@ export function UsuarioForm({ usuario, onSuccess, onCancel }: UsuarioFormProps) 
           throw new Error("Sessão não encontrada");
         }
 
+        if (!selectedCompany) {
+          throw new Error("Empresa não selecionada");
+        }
+
+        const requestData = {
+          nome: data.nome,
+          email: data.email,
+          password: data.senha,
+          company_id: selectedCompany.id,
+          profile_id: data.profile_id,
+        };
+
+        console.log('UsuarioForm: Dados enviados para create-user:', requestData);
+        console.log('UsuarioForm: selectedCompany:', selectedCompany);
+
         const response = await fetch(
           `https://wmtftyaqucwfsnnjepiy.supabase.co/functions/v1/create-user`,
           {
@@ -70,19 +110,31 @@ export function UsuarioForm({ usuario, onSuccess, onCancel }: UsuarioFormProps) 
               "Content-Type": "application/json",
               "Authorization": `Bearer ${session.access_token}`,
             },
-            body: JSON.stringify({
-              nome: data.nome,
-              email: data.email,
-              senha: data.senha,
-              ativo: data.ativo,
-            }),
+            body: JSON.stringify(requestData),
           }
         );
 
+        console.log('UsuarioForm: Response status:', response.status);
+        console.log('UsuarioForm: Response headers:', Object.fromEntries(response.headers.entries()));
+
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || "Erro ao criar usuário");
+          const errorText = await response.text();
+          console.error('UsuarioForm: Error response text:', errorText);
+          
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+            console.error('UsuarioForm: Error data:', errorData);
+          } catch (e) {
+            console.error('UsuarioForm: Could not parse error response as JSON');
+            errorData = { error: errorText };
+          }
+          
+          throw new Error(errorData.error || `Erro ${response.status}: ${errorText}`);
         }
+
+        const responseData = await response.json();
+        console.log('UsuarioForm: Success response:', responseData);
 
         toast.success("Usuário criado com sucesso!");
       }
@@ -136,6 +188,33 @@ export function UsuarioForm({ usuario, onSuccess, onCancel }: UsuarioFormProps) 
                 <FormControl>
                   <Input {...field} type="password" placeholder="******" />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
+        {!usuario && (
+          <FormField
+            control={form.control}
+            name="profile_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Perfil *</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um perfil" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {profiles.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )}

@@ -15,7 +15,8 @@ import {
   Download,
   Eye,
   Edit,
-  Trash2
+  Trash2,
+  Users
 } from 'lucide-react';
 import { SimpleDataTable } from '@/components/rh/SimpleDataTable';
 import { FormModal } from '@/components/rh/FormModal';
@@ -24,13 +25,17 @@ import BenefitForm from '@/components/rh/BenefitForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { BenefitConfiguration } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useNavigate } from 'react-router-dom';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
 // =====================================================
 
 export default function BenefitsPageNew() {
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
+  const navigate = useNavigate();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -39,9 +44,9 @@ export default function BenefitsPageNew() {
 
   // Hooks usando nova abordagem genérica
   const { data: benefits, isLoading, error } = useRHData<BenefitConfiguration>('benefit_configurations', selectedCompany?.id || '');
-  const createBenefit = useCreateEntity<BenefitConfiguration>('rh', 'benefit_configurations');
-  const updateBenefit = useUpdateEntity<BenefitConfiguration>('rh', 'benefit_configurations');
-  const deleteBenefit = useDeleteEntity('rh', 'benefit_configurations');
+  const createBenefit = useCreateEntity<BenefitConfiguration>('rh', 'benefit_configurations', selectedCompany?.id || '');
+  const updateBenefit = useUpdateEntity<BenefitConfiguration>('rh', 'benefit_configurations', selectedCompany?.id || '');
+  const deleteBenefit = useDeleteEntity('rh', 'benefit_configurations', selectedCompany?.id || '');
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -107,6 +112,10 @@ export default function BenefitsPageNew() {
     console.log('Exportando benefícios para CSV...');
   };
 
+  const handleManageAssignments = (benefit: BenefitConfiguration) => {
+    navigate(`/rh/employee-benefits?benefit_config_id=${benefit.id}`);
+  };
+
   // Colunas da tabela - formato simplificado para dados diretos
   const columns = [
     {
@@ -140,7 +149,8 @@ export default function BenefitsPageNew() {
           percentage: 'Percentual'
         };
         return (
-          <div className="text-sm">
+
+    <div className="text-sm">
             {typeConfig[benefit.calculation_type as keyof typeof typeConfig] || benefit.calculation_type}
           </div>
         );
@@ -181,6 +191,11 @@ export default function BenefitsPageNew() {
               onClick: () => handleEdit(benefit)
             },
             {
+              label: 'Gerenciar Funcionários',
+              icon: <Users className="h-4 w-4" />,
+              onClick: () => handleManageAssignments(benefit)
+            },
+            {
               label: 'Excluir',
               icon: <Trash2 className="h-4 w-4" />,
               onClick: () => handleDelete(benefit),
@@ -195,6 +210,7 @@ export default function BenefitsPageNew() {
 
   if (error) {
     return (
+      
       <div className="p-6">
         <div className="text-red-500">Erro ao carregar benefícios: {error.message}</div>
       </div>
@@ -202,7 +218,8 @@ export default function BenefitsPageNew() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    
+      <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -303,5 +320,5 @@ export default function BenefitsPageNew() {
         />
       </FormModal>
     </div>
-  );
+    );
 }

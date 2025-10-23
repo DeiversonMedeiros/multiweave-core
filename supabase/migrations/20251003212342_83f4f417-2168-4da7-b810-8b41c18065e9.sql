@@ -45,7 +45,7 @@ CREATE TABLE public.users (
 -- User-Company relationship (multiempresa)
 CREATE TABLE public.user_companies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id UUID  ON DELETE CASCADE,
   company_id UUID REFERENCES public.companies(id) ON DELETE CASCADE,
   profile_id UUID REFERENCES public.profiles(id),
   ativo BOOLEAN DEFAULT true,
