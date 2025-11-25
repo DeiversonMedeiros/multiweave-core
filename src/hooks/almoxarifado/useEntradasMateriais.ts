@@ -105,7 +105,7 @@ export const useEntradasMateriais = () => {
       setLoading(true);
       setError(null);
 
-      // Definir o contexto da empresa para RLS      await supabase.rpc('set_company_context', { company_id: selectedCompany.id });            let query = supabase
+      let query = supabase
         .from('almoxarifado.entradas_materiais')
         .select(`
           *,
