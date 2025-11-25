@@ -23,7 +23,6 @@ import {
   FileText
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface Cotacao {
@@ -42,7 +41,6 @@ interface Cotacao {
 // Componente principal protegido por permissões
 export default function CotacoesPage() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
-  const [showNovaCotacao, setShowNovaCotacao] = useState(false);
 
   return (
     <RequireAuth 
@@ -55,23 +53,6 @@ export default function CotacoesPage() {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">Cotações de Preços</h1>
-          
-          {/* Botão de criar protegido por permissão */}
-          <PermissionGuard 
-            entity="cotacoes" 
-            action="create"
-            fallback={
-              <Button disabled variant="outline">
-                <Plus className="h-4 w-4 mr-2" />
-                Criar Cotação
-              </Button>
-            }
-          >
-            <Button onClick={() => setShowNovaCotacao(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Nova Cotação
-            </Button>
-          </PermissionGuard>
         </div>
 
         <Card>
@@ -82,16 +63,6 @@ export default function CotacoesPage() {
             <CotacoesList />
           </CardContent>
         </Card>
-
-        {/* Modal Nova Cotação */}
-        <Dialog open={showNovaCotacao} onOpenChange={setShowNovaCotacao}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Nova Cotação de Preços</DialogTitle>
-            </DialogHeader>
-            <NovaCotacaoForm onClose={() => setShowNovaCotacao(false)} />
-          </DialogContent>
-        </Dialog>
       </div>
     </RequireAuth>
   );

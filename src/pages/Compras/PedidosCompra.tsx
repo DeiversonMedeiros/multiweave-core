@@ -23,7 +23,6 @@ import {
   ShoppingCart
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface PedidoCompra {
@@ -42,7 +41,6 @@ interface PedidoCompra {
 // Componente principal protegido por permissões
 export default function PedidosCompraPage() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
-  const [showNovoPedido, setShowNovoPedido] = useState(false);
 
   return (
     <RequireAuth 
@@ -55,23 +53,6 @@ export default function PedidosCompraPage() {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">Pedidos de Compra</h1>
-          
-          {/* Botão de criar protegido por permissão */}
-          <PermissionGuard 
-            entity="pedidos_compra" 
-            action="create"
-            fallback={
-              <Button disabled variant="outline">
-                <Plus className="h-4 w-4 mr-2" />
-                Criar Pedido
-              </Button>
-            }
-          >
-            <Button onClick={() => setShowNovoPedido(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Pedido
-            </Button>
-          </PermissionGuard>
         </div>
 
         <Card>
@@ -82,16 +63,6 @@ export default function PedidosCompraPage() {
             <PedidosList />
           </CardContent>
         </Card>
-
-        {/* Modal Novo Pedido */}
-        <Dialog open={showNovoPedido} onOpenChange={setShowNovoPedido}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>Novo Pedido de Compra</DialogTitle>
-            </DialogHeader>
-            <NovoPedidoForm onClose={() => setShowNovoPedido(false)} />
-          </DialogContent>
-        </Dialog>
       </div>
     </RequireAuth>
   );
