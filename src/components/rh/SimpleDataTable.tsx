@@ -172,7 +172,19 @@ export function SimpleDataTable<T>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedData.length === 0 ? (
+            {loading ? (
+              <TableRow>
+                <TableCell 
+                  colSpan={columns.length} 
+                  className="h-24 text-center text-muted-foreground"
+                >
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mr-2"></div>
+                    Carregando...
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : paginatedData.length === 0 ? (
               <TableRow>
                 <TableCell 
                   colSpan={columns.length} 
@@ -182,15 +194,35 @@ export function SimpleDataTable<T>({
                 </TableCell>
               </TableRow>
             ) : (
-              paginatedData.map((item: any, index: number) => (
-                <TableRow key={item.id || index}>
-                  {columns.map((column) => (
-                    <TableCell key={column.key}>
-                      {column.render(item)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              paginatedData.map((item: any, index: number) => {
+                console.log(`🔍 [SimpleDataTable] Renderizando linha ${index}:`, {
+                  itemId: item?.id,
+                  itemKeys: item ? Object.keys(item) : null,
+                  columnsCount: columns.length
+                });
+                return (
+                  <TableRow key={item?.id || `row-${index}`}>
+                    {columns.map((column) => {
+                      try {
+                        const rendered = column.render(item);
+                        console.log(`  ↳ Coluna ${column.key}:`, typeof rendered);
+                        return (
+                          <TableCell key={column.key}>
+                            {rendered}
+                          </TableCell>
+                        );
+                      } catch (error) {
+                        console.error(`❌ [SimpleDataTable] Erro ao renderizar coluna ${column.key}:`, error);
+                        return (
+                          <TableCell key={column.key}>
+                            <span className="text-red-500">Erro</span>
+                          </TableCell>
+                        );
+                      }
+                    })}
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

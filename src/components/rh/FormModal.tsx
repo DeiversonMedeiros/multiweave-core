@@ -53,7 +53,7 @@ export function FormModal({
   showFooter = true,
   className = '',
 }: FormModalProps) {
-  const formRef = useRef<HTMLFormElement>(null);
+  const formRef = useRef<{ submit?: () => void } | HTMLFormElement | null>(null);
 
   const handleCancel = () => {
     if (onCancel) {
@@ -152,7 +152,7 @@ export function FormModal({
         {/* Content */}
         <div className="space-y-4">
           <div className="max-h-[60vh] overflow-y-auto">
-            {isValidElement(children) 
+            {isValidElement(children) && showFooter && onSubmit
               ? cloneElement(children, { ref: formRef })
               : children
             }

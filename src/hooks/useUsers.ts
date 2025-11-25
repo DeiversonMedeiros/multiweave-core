@@ -5,6 +5,7 @@ export interface User {
   id: string;
   nome: string;
   email: string;
+  username: string | null;
   ativo: boolean;
   created_at: string;
 }

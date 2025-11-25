@@ -36,6 +36,7 @@ export interface VacationYear {
   dias_restantes: number;
   status: string;
   data_vencimento: string;
+  data_fim_periodo?: string; // Data de término do período aquisitivo (para validação de data de início)
 }
 
 export class VacationCalculationService {
@@ -49,17 +50,31 @@ export class VacationCalculationService {
         return [];
       }
 
-      const { data, error } = await supabase.rpc('buscar_anos_ferias_disponiveis', {
+      // Usar função do schema public (acessível via REST API)
+      console.log('[VacationCalculationService] Buscando anos de férias para employeeId:', employeeId);
+      
+      const { data, error } = await (supabase as any).rpc('buscar_anos_ferias_disponiveis', {
         employee_id_param: employeeId
       });
 
       if (error) {
-        console.error('Erro ao buscar anos de férias:', error);
+        console.error('[VacationCalculationService] Erro ao buscar anos de férias:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          employeeId
+        });
         // Retornar array vazio em caso de erro para não quebrar a interface
         return [];
       }
 
-      return data || [];
+      console.log('[VacationCalculationService] Anos de férias encontrados:', {
+        count: data?.length || 0,
+        data: data
+      });
+
+      return (data || []) as VacationYear[];
     } catch (error) {
       console.error('Erro ao buscar anos de férias disponíveis:', error);
       // Retornar array vazio em caso de erro para não quebrar a interface

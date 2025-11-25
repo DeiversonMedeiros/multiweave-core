@@ -19,9 +19,7 @@ export function useUnits() {
 
   return useQuery({
     queryKey: ['rh', 'units', selectedCompany?.id],
-    queryFn: () => UnitsService.list({ 
-      companyId: selectedCompany?.id || ''
-    }),
+    queryFn: () => UnitsService.list(selectedCompany?.id || ''),
     enabled: !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000, // 5 minutos
   });
@@ -31,10 +29,12 @@ export function useUnits() {
  * Hook para buscar departamento por ID
  */
 export function useUnit(id: string) {
+  const { selectedCompany } = useCompany();
+
   return useQuery({
-    queryKey: ['rh', 'units', id],
-    queryFn: () => UnitsService.getById(id),
-    enabled: !!id,
+    queryKey: ['rh', 'units', id, selectedCompany?.id],
+    queryFn: () => UnitsService.getById(id, selectedCompany?.id || ''),
+    enabled: !!id && !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -98,9 +98,10 @@ export function useUpdateUnit() {
  */
 export function useDeleteUnit() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (id: string) => UnitsService.delete(id),
+    mutationFn: (id: string) => UnitsService.delete(id, selectedCompany?.id || ''),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'units'] });
       queryClient.removeQueries({ queryKey: ['rh', 'units', id] });
@@ -116,10 +117,11 @@ export function useDeleteUnit() {
  */
 export function useToggleUnitStatus() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => 
-      UnitsService.toggleStatus(id, isActive),
+      UnitsService.toggleStatus(id, isActive, selectedCompany?.id || ''),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'units'] });
       queryClient.setQueryData(['rh', 'units', variables.id], data);

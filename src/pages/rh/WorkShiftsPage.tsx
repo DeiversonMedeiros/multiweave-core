@@ -25,8 +25,7 @@ export default function WorkShiftsPage() {
   const deleteEmployeeShiftMutation = useDeleteEmployeeShift();
   
   // Hook para buscar funcionários reais
-  const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
-  const employees = employeesData?.data || [];
+  const { data: employees = [], isLoading: isLoadingEmployees } = useEmployees();
 
   // Handlers
   const handleWorkShiftCreate = async (data: any) => {
@@ -47,7 +46,10 @@ export default function WorkShiftsPage() {
 
   const handleWorkShiftEdit = async (id: string, data: any) => {
     try {
-      await updateMutation({ id, ...data });
+      // Garantir que id não está no data e limpar campos desnecessários
+      const { id: _, company_id: __, created_at: ___, updated_at: ____, ...cleanData } = data;
+      console.log('🔍 [DEBUG] WorkShiftsPage - handleWorkShiftEdit - cleanData:', cleanData);
+      await updateMutation({ id, data: cleanData });
       refetch();
     } catch (error) {
       console.error('Erro ao editar turno:', error);

@@ -75,24 +75,38 @@ export default function VacationsManagement() {
   const [selectedVacation, setSelectedVacation] = useState<PendingVacation | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  // Buscar férias pendentes
+  // Buscar férias (todas ou filtradas por status)
   const { data: pendingVacations, isLoading: isLoadingPending } = useQuery({
-    queryKey: ['pending-vacations', selectedCompany?.id],
+    queryKey: ['pending-vacations', selectedCompany?.id, statusFilter],
     queryFn: async (): Promise<PendingVacation[]> => {
       if (!selectedCompany?.id) return [];
       
       try {
-        // Buscar férias pendentes usando EntityService
+        // Preparar filtros baseado no statusFilter
+        const filters: any = {};
+        if (statusFilter !== 'all') {
+          filters.status = statusFilter;
+        }
+        
+        // Buscar férias usando EntityService
         const result = await EntityService.list({
           schema: 'rh',
           table: 'vacations',
           companyId: selectedCompany.id,
-          filters: { status: 'pendente' },
+          filters,
           orderBy: 'created_at',
           orderDirection: 'DESC'
         });
 
-        // Buscar dados dos funcionários para cada férias
+        // Buscar períodos aquisitivos
+        const entitlementsResult = await EntityService.list({
+          schema: 'rh',
+          table: 'vacation_entitlements',
+          companyId: selectedCompany.id,
+          filters: {}
+        });
+
+        // Buscar dados dos funcionários e períodos aquisitivos para cada férias
         const vacationsWithEmployees = await Promise.all(
           result.data.map(async (vacation) => {
             try {
@@ -103,9 +117,67 @@ export default function VacationsManagement() {
                 selectedCompany.id
               );
               
+              // Buscar período aquisitivo relacionado às férias
+              let periodoAquisitivo: any = null;
+              if (vacation.data_inicio) {
+                const employeeEntitlements = entitlementsResult.data?.filter((ent: any) => 
+                  ent.employee_id === vacation.employee_id
+                ) || [];
+                
+                // Se a férias já foi aprovada, buscar o período que tem dias_gozados correspondentes
+                if (vacation.status === 'aprovado' && vacation.aprovado_em) {
+                  // Buscar período que tem dias_gozados >= dias_solicitados (indicando que foi usado)
+                  const periodosComDiasGozados = employeeEntitlements.filter((ent: any) => 
+                    ent.dias_gozados > 0
+                  );
+                  
+                  if (periodosComDiasGozados.length > 0) {
+                    // Ordenar por updated_at mais recente (mais provável de ser o período usado)
+                    periodosComDiasGozados.sort((a: any, b: any) => {
+                      const dateA = new Date(a.updated_at || 0).getTime();
+                      const dateB = new Date(b.updated_at || 0).getTime();
+                      return dateB - dateA;
+                    });
+                    
+                    // Verificar se algum período tem dias_gozados que corresponde aos dias solicitados
+                    const periodoCorrespondente = periodosComDiasGozados.find((ent: any) => 
+                      ent.dias_gozados >= vacation.dias_solicitados
+                    );
+                    
+                    if (periodoCorrespondente) {
+                      periodoAquisitivo = periodoCorrespondente;
+                    } else {
+                      // Se não encontrou correspondência exata, usar o mais recente com dias gozados
+                      periodoAquisitivo = periodosComDiasGozados[0];
+                    }
+                  }
+                }
+                
+                // Se ainda não encontrou, buscar período que contém a data de início
+                if (!periodoAquisitivo) {
+                  const matchingEntitlements = employeeEntitlements.filter((ent: any) => 
+                    ent.data_inicio_periodo <= vacation.data_inicio &&
+                    ent.data_fim_periodo >= vacation.data_inicio
+                  );
+                  
+                  if (matchingEntitlements.length > 0) {
+                    periodoAquisitivo = matchingEntitlements[0];
+                  }
+                }
+                
+                // Se ainda não encontrou, buscar o período mais recente do funcionário
+                if (!periodoAquisitivo && employeeEntitlements.length > 0) {
+                  employeeEntitlements.sort((a: any, b: any) => b.ano_aquisitivo - a.ano_aquisitivo);
+                  periodoAquisitivo = employeeEntitlements[0];
+                }
+              }
+              
               return {
                 ...vacation,
-                employee_nome: employeeResult?.nome || 'Funcionário não encontrado'
+                employee_nome: employeeResult?.nome || 'Funcionário não encontrado',
+                ano_aquisitivo: periodoAquisitivo?.ano_aquisitivo,
+                periodo_aquisitivo_inicio: periodoAquisitivo?.data_inicio_periodo,
+                periodo_aquisitivo_fim: periodoAquisitivo?.data_fim_periodo
               };
             } catch (error) {
               console.error('Erro ao buscar funcionário:', error);
@@ -189,8 +261,12 @@ export default function VacationsManagement() {
       if (error) throw error;
     },
     onSuccess: () => {
+      // Invalidar todas as queries relacionadas, incluindo diferentes statusFilters
       queryClient.invalidateQueries({ queryKey: ['pending-vacations'] });
       queryClient.invalidateQueries({ queryKey: ['vacation-stats'] });
+      // Forçar refetch imediato
+      queryClient.refetchQueries({ queryKey: ['pending-vacations'] });
+      queryClient.refetchQueries({ queryKey: ['vacation-stats'] });
       toast({
         title: 'Férias aprovada',
         description: 'A solicitação de férias foi aprovada com sucesso.',
@@ -268,6 +344,13 @@ export default function VacationsManagement() {
   };
 
   const formatDate = (dateString: string) => {
+    if (!dateString) return '-';
+    // Corrigir problema de timezone - tratar como data local
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return date.toLocaleDateString('pt-BR');
+    }
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
@@ -389,15 +472,25 @@ export default function VacationsManagement() {
         </CardContent>
       </Card>
 
-      {/* Lista de Férias Pendentes */}
+      {/* Lista de Férias */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 text-yellow-600" />
-            Solicitações Pendentes
+            <AlertCircle className={`h-5 w-5 ${
+              statusFilter === 'aprovado' ? 'text-green-600' :
+              statusFilter === 'rejeitado' ? 'text-red-600' :
+              'text-yellow-600'
+            }`} />
+            {statusFilter === 'all' ? 'Todas as Solicitações' :
+             statusFilter === 'aprovado' ? 'Solicitações Aprovadas' :
+             statusFilter === 'rejeitado' ? 'Solicitações Rejeitadas' :
+             'Solicitações Pendentes'}
           </CardTitle>
           <CardDescription>
-            {filteredVacations.length} solicitação(ões) aguardando aprovação
+            {filteredVacations.length} solicitação(ões) {statusFilter === 'all' ? 'encontrada(s)' :
+             statusFilter === 'aprovado' ? 'aprovada(s)' :
+             statusFilter === 'rejeitado' ? 'rejeitada(s)' :
+             'aguardando aprovação'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -419,8 +512,12 @@ export default function VacationsManagement() {
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <h4 className="font-medium">{vacation.employee_nome}</h4>
-                        <Badge className={getStatusColor('pendente')}>
-                          Pendente
+                        <Badge className={getStatusColor(vacation.status || 'pendente')}>
+                          {vacation.status === 'aprovado' ? 'Aprovado' : 
+                           vacation.status === 'rejeitado' ? 'Rejeitado' : 
+                           vacation.status === 'em_andamento' ? 'Em Andamento' :
+                           vacation.status === 'concluido' ? 'Concluído' :
+                           'Pendente'}
                         </Badge>
                       </div>
                       
@@ -442,6 +539,16 @@ export default function VacationsManagement() {
                           <p>{formatDate(vacation.created_at)}</p>
                         </div>
                       </div>
+                      {vacation.ano_aquisitivo && (
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          <span className="font-medium">Ano de Referência:</span> {vacation.ano_aquisitivo}
+                          {vacation.periodo_aquisitivo_inicio && vacation.periodo_aquisitivo_fim && (
+                            <span className="ml-2 text-xs">
+                              (Período: {formatDate(vacation.periodo_aquisitivo_inicio)} - {formatDate(vacation.periodo_aquisitivo_fim)})
+                            </span>
+                          )}
+                        </div>
+                      )}
                       
                       {vacation.observacoes && (
                         <div className="mt-2">

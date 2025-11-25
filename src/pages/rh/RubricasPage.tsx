@@ -49,7 +49,39 @@ export default function RubricasPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
 
   // Hooks
-  const { rubricas, isLoading, error, refetch } = useRubricas(selectedCompany?.id || '', filters);
+  console.log('🔍 [RubricasPage] Renderizando com:', { 
+    companyId: selectedCompany?.id, 
+    hasCompany: !!selectedCompany,
+    companyName: selectedCompany?.nome_fantasia,
+    filters 
+  });
+  
+  const rubricasQuery = useRubricas(selectedCompany?.id || '', filters);
+  
+  console.log('🔍 [RubricasPage] Hook retornou:', {
+    hasData: !!rubricasQuery.data,
+    dataType: typeof rubricasQuery.data,
+    isArray: Array.isArray(rubricasQuery.data),
+    dataLength: rubricasQuery.data?.length || 0,
+    isLoading: rubricasQuery.isLoading,
+    isError: rubricasQuery.isError,
+    error: rubricasQuery.error?.message,
+    status: rubricasQuery.status,
+    queryKey: rubricasQuery.dataUpdatedAt
+  });
+  
+  const rubricas = rubricasQuery.data || [];
+  const isLoading = rubricasQuery.isLoading;
+  const error = rubricasQuery.error;
+  const refetch = rubricasQuery.refetch;
+  
+  console.log('📊 [RubricasPage] Estado após processamento:', {
+    rubricasLength: rubricas.length,
+    firstRubrica: rubricas[0] ? { id: rubricas[0].id, codigo: rubricas[0].codigo, nome: rubricas[0].nome } : null,
+    isLoading,
+    hasError: !!error,
+    error: error?.message
+  });
   const createMutation = useCreateRubrica();
   const updateMutation = useUpdateRubrica();
   const deleteMutation = useDeleteRubrica();

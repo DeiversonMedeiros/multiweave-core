@@ -113,20 +113,20 @@ const GestorDashboard: React.FC = () => {
     <RequireEntity entityName="manager_dashboard" action="read">
       <div className="space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Portal do Gestor</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Portal do Gestor</h1>
+          <p className="text-sm sm:text-base text-muted-foreground mt-2">
             Gerencie aprovações e acompanhe sua equipe
           </p>
         </div>
-        <Button onClick={() => navigate('/portal-gestor/aprovacoes')}>
+        <Button onClick={() => navigate('/portal-gestor/aprovacoes')} className="w-fit">
           Ver Todas as Aprovações
         </Button>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="text-sm font-medium">Total de Funcionários</CardTitle>
@@ -181,7 +181,7 @@ const GestorDashboard: React.FC = () => {
       </div>
 
       {/* Detailed Stats */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="text-sm font-medium">Atestados</CardTitle>
@@ -280,7 +280,7 @@ const GestorDashboard: React.FC = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <Button 
               variant="outline" 
               className="h-24 flex flex-col space-y-3 p-6"

@@ -6,6 +6,7 @@ import {
   EmployeeUpdate 
 } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { queryConfig } from '@/lib/react-query-config';
 
 // =====================================================
 // HOOKS DE CONSULTA
@@ -21,10 +22,10 @@ export function useEmployees() {
     queryKey: ['rh', 'employees', selectedCompany?.id],
     queryFn: async () => {
       const data = await EmployeesService.list(selectedCompany?.id || '');
-      return { data };
+      return data || [];
     },
     enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -38,7 +39,7 @@ export function useEmployee(id: string) {
     queryKey: ['rh', 'employees', id],
     queryFn: () => EmployeesService.getById(id, selectedCompany?.id || ''),
     enabled: !!id && !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -59,7 +60,7 @@ export function useEmployeeByUserId(userId: string) {
       }
     },
     enabled: !!userId && !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -73,7 +74,7 @@ export function useActiveEmployees() {
     queryKey: ['rh', 'employees', 'active', selectedCompany?.id],
     queryFn: () => EmployeesService.getActive(selectedCompany?.id || ''),
     enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -87,7 +88,7 @@ export function useEmployeesByDepartment(departmentId: string) {
     queryKey: ['rh', 'employees', 'by-department', departmentId],
     queryFn: () => EmployeesService.getByDepartment(departmentId, selectedCompany?.id || ''),
     enabled: !!departmentId && !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -101,7 +102,7 @@ export function useEmployeesByPosition(positionId: string) {
     queryKey: ['rh', 'employees', 'by-position', positionId],
     queryFn: () => EmployeesService.getByPosition(positionId, selectedCompany?.id || ''),
     enabled: !!positionId && !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -128,7 +129,7 @@ export function useEmployeeStats() {
       };
     },
     enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.dashboard,
   });
 }
 

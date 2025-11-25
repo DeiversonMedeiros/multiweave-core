@@ -47,6 +47,7 @@ import { LancamentoForm } from './LancamentoForm';
 import { SpedGenerator } from './SpedGenerator';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useToast } from '@/hooks/use-toast';
 
 interface ContabilidadePageProps {
   className?: string;
@@ -109,7 +110,7 @@ export function ContabilidadePage({ className }: ContabilidadePageProps) {
   };
 
   const handleDeletePlanoContas = async (conta: PlanoContas) => {
-    if (window.confirm(`Tem certeza que deseja excluir a conta "${conta.nome}"?`)) {
+    if (window.confirm(`Tem certeza que deseja excluir a conta "${conta.descricao}"?`)) {
       try {
         await deletePlanoContas(conta.id);
       } catch (error) {
@@ -151,10 +152,25 @@ export function ContabilidadePage({ className }: ContabilidadePageProps) {
 
   const handleSavePlanoContas = async (data: any) => {
     try {
+      // Mapear campos do formulário para o formato do banco
+      const planoContasData: Partial<PlanoContas> = {
+        codigo: data.codigo,
+        descricao: data.nome || data.descricao, // Suporta ambos os formatos
+        tipo_conta: data.tipo === 'patrimonio_liquido' ? 'patrimonio' : data.tipo,
+        nivel: data.nivel,
+        conta_pai_id: data.conta_pai_id || undefined,
+        aceita_lancamento: data.aceita_lancamento,
+        saldo_inicial: data.saldo_inicial,
+        saldo_atual: data.saldo_inicial || 0,
+        natureza: data.natureza,
+        observacoes: data.observacoes,
+        is_active: true,
+      };
+      
       if (editingPlanoContas) {
-        await updatePlanoContas(editingPlanoContas.id, data);
+        await updatePlanoContas(editingPlanoContas.id, planoContasData);
       } else {
-        await createPlanoContas(data);
+        await createPlanoContas(planoContasData);
       }
       setShowPlanoContasForm(false);
       setEditingPlanoContas(null);
@@ -455,8 +471,8 @@ export function ContabilidadePage({ className }: ContabilidadePageProps) {
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{conta.codigo}</span>
                           <span className="text-muted-foreground">-</span>
-                          <span className="font-medium">{conta.nome}</span>
-                          {getTipoBadge(conta.tipo)}
+                          <span className="font-medium">{conta.descricao}</span>
+                          {getTipoBadge(conta.tipo_conta)}
                         </div>
                         <div className="text-sm text-muted-foreground">
                           Nível: {conta.nivel} | Natureza: {conta.natureza} | 

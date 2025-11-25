@@ -427,7 +427,7 @@ export default function DisciplinaryActionsPage() {
           modalMode === 'edit' ? 'Editar Ação' :
           'Visualizar Ação'
         }
-        mode={modalMode}
+        showFooter={false}
       >
         <DisciplinaryActionForm
           action={selectedAction}

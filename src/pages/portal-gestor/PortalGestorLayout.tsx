@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useGestorDashboard } from '@/hooks/portal-gestor/useGestorDashboard';
 import { 
   Sheet, 
   SheetContent, 
@@ -31,7 +32,8 @@ import {
   AlertTriangle,
   Settings,
   Package,
-  ArrowRight
+  ArrowRight,
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -46,57 +48,61 @@ const menuItems = [
     title: 'Central de Aprovações',
     href: '/portal-gestor/aprovacoes',
     icon: FileText,
-    description: 'Todas as solicitações pendentes',
-    badge: '12' // Mock - em produção virá do contexto
+    description: 'Todas as solicitações pendentes'
   },
   {
     title: 'Aprovações RH',
     href: '/portal-gestor/aprovacoes/rh',
     icon: UserCog,
-    description: 'Aprovações específicas do RH',
-    badge: '8'
+    description: 'Aprovações específicas do RH'
   },
   {
     title: 'Aprovação de Férias',
     href: '/portal-gestor/aprovacoes/ferias',
     icon: Calendar,
-    description: 'Gerencie solicitações de férias',
-    badge: '3'
+    description: 'Gerencie solicitações de férias'
   },
   {
     title: 'Aprovação de Compensações',
     href: '/portal-gestor/aprovacoes/compensacoes',
     icon: Clock,
-    description: 'Banco de horas e compensações',
-    badge: '2'
+    description: 'Banco de horas e compensações'
   },
   {
     title: 'Aprovação de Reembolsos',
     href: '/portal-gestor/aprovacoes/reembolsos',
     icon: DollarSign,
-    description: 'Solicitações de reembolso',
-    badge: '4'
+    description: 'Solicitações de reembolso'
   },
   {
     title: 'Aprovação de Atestados',
     href: '/portal-gestor/aprovacoes/atestados',
     icon: Stethoscope,
-    description: 'Atestados médicos',
-    badge: '1'
+    description: 'Atestados médicos'
   },
   {
     title: 'Aprovação de Equipamentos',
     href: '/portal-gestor/aprovacoes/equipamentos',
     icon: Laptop,
-    description: 'Solicitações de equipamentos',
-    badge: '1'
+    description: 'Solicitações de equipamentos'
   },
   {
     title: 'Correções de Ponto',
     href: '/portal-gestor/aprovacoes/correcoes-ponto',
     icon: Edit,
-    description: 'Correções de registros',
-    badge: '1'
+    description: 'Correções de registros'
+  },
+  {
+    title: 'Aprovação de Horas Extras',
+    href: '/portal-gestor/aprovacoes/horas-extras',
+    icon: TrendingUp,
+    description: 'Aprovar registros com hora extra'
+  },
+  {
+    title: 'Aprovação de Assinaturas de Ponto',
+    href: '/portal-gestor/aprovacoes/assinaturas-ponto',
+    icon: FileText,
+    description: 'Aprovar assinaturas de folha de ponto'
   },
   {
     title: 'Acompanhamento de Ponto',
@@ -118,6 +124,7 @@ export default function PortalGestorLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { selectedCompany } = useCompany();
+  const { stats } = useGestorDashboard();
 
   const handleLogout = async () => {
     await logout();
@@ -131,10 +138,37 @@ export default function PortalGestorLayout() {
     return location.pathname.startsWith(href);
   };
 
+  // Buscar badges reais do dashboard
+  const getBadgeForRoute = (href: string): string | undefined => {
+    const statsData = stats?.data;
+    if (!statsData) return undefined;
+
+    switch (href) {
+      case '/portal-gestor/aprovacoes':
+        return statsData.solicitacoes_pendentes > 0 ? String(statsData.solicitacoes_pendentes) : undefined;
+      case '/portal-gestor/aprovacoes/ferias':
+        return statsData.ferias_pendentes > 0 ? String(statsData.ferias_pendentes) : undefined;
+      case '/portal-gestor/aprovacoes/compensacoes':
+        return statsData.compensacoes_pendentes > 0 ? String(statsData.compensacoes_pendentes) : undefined;
+      case '/portal-gestor/aprovacoes/atestados':
+        return statsData.atestados_pendentes > 0 ? String(statsData.atestados_pendentes) : undefined;
+      case '/portal-gestor/aprovacoes/reembolsos':
+        return statsData.reembolsos_pendentes > 0 ? String(statsData.reembolsos_pendentes) : undefined;
+      case '/portal-gestor/aprovacoes/equipamentos':
+        return statsData.equipamentos_pendentes > 0 ? String(statsData.equipamentos_pendentes) : undefined;
+      case '/portal-gestor/aprovacoes/correcoes-ponto':
+        return statsData.correcoes_pendentes > 0 ? String(statsData.correcoes_pendentes) : undefined;
+      default:
+        return undefined;
+    }
+  };
+
   const getTotalPending = () => {
-    return menuItems
-      .filter(item => item.badge)
-      .reduce((total, item) => total + parseInt(item.badge || '0'), 0);
+    const statsData = stats?.data;
+    if (statsData) {
+      return statsData.solicitacoes_pendentes || 0;
+    }
+    return 0;
   };
 
   return (
@@ -143,7 +177,7 @@ export default function PortalGestorLayout() {
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent 
           side="left" 
-          className="w-80 p-0"
+          className="w-[85vw] max-w-80 p-0"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
           }}
@@ -186,6 +220,7 @@ export default function PortalGestorLayout() {
             <nav className="flex-1 p-4 space-y-3 overflow-y-auto">
               {menuItems.map((item) => {
                 const Icon = item.icon;
+                const badge = getBadgeForRoute(item.href);
                 return (
                   <Button
                     key={item.href}
@@ -203,9 +238,9 @@ export default function PortalGestorLayout() {
                     <div className="text-left flex-1">
                       <div className="font-medium flex items-center justify-between">
                         <span>{item.title}</span>
-                        {item.badge && (
+                        {badge && (
                           <Badge variant="secondary" className="ml-2 text-xs">
-                            {item.badge}
+                            {badge}
                           </Badge>
                         )}
                       </div>
@@ -263,6 +298,7 @@ export default function PortalGestorLayout() {
             >
               {menuItems.map((item) => {
                 const Icon = item.icon;
+                const badge = getBadgeForRoute(item.href);
                 return (
                   <Button
                     key={item.href}
@@ -277,9 +313,9 @@ export default function PortalGestorLayout() {
                     <div className="text-left flex-1">
                       <div className="font-medium flex items-center justify-between">
                         <span>{item.title}</span>
-                        {item.badge && (
+                        {badge && (
                           <Badge variant="secondary" className="ml-2 text-xs">
-                            {item.badge}
+                            {badge}
                           </Badge>
                         )}
                       </div>
@@ -307,7 +343,7 @@ export default function PortalGestorLayout() {
         {/* Main content */}
         <div className="lg:pl-80 flex flex-col flex-1">
           {/* Mobile header */}
-          <div className="lg:hidden flex items-center justify-between p-6 bg-white border-b">
+          <div className="lg:hidden flex items-center justify-between px-3 py-3 sm:px-4 sm:py-5 bg-white border-b">
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="sm">
@@ -316,7 +352,7 @@ export default function PortalGestorLayout() {
               </SheetTrigger>
               <SheetContent 
                 side="left" 
-                className="w-80 p-0"
+                className="w-[85vw] max-w-80 p-0"
                 onOpenAutoFocus={(e) => {
                   e.preventDefault();
                 }}
@@ -353,6 +389,7 @@ export default function PortalGestorLayout() {
                       {menuItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = location.pathname === item.href;
+                        const badge = getBadgeForRoute(item.href);
                         
                         return (
                           <Button
@@ -368,9 +405,9 @@ export default function PortalGestorLayout() {
                             <div className="flex flex-col items-start flex-1">
                               <div className="flex items-center justify-between w-full">
                                 <span className="font-medium">{item.title}</span>
-                                {item.badge && (
+                                {badge && (
                                   <Badge variant="secondary" className="ml-2 text-xs">
-                                    {item.badge}
+                                    {badge}
                                   </Badge>
                                 )}
                               </div>
@@ -415,7 +452,7 @@ export default function PortalGestorLayout() {
           </div>
 
           {/* Page content */}
-          <main className="flex-1 overflow-y-auto p-6">
+          <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
             <Outlet />
           </main>
         </div>

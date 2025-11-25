@@ -3,6 +3,7 @@ import { useCompany } from '@/lib/company-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { EntityService } from '@/services/generic/entityService';
 import { CorrectionSettingsService, CorrectionSettings, EmployeePermission } from '@/services/rh/correctionSettingsService';
+import { useAuth } from '@/lib/auth-context';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -39,6 +40,26 @@ export default function ConfiguracaoCorrecaoPontoPage() {
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  
+  // Buscar dados do usuário na empresa atual
+  const { data: userCompanyData } = useQuery({
+    queryKey: ['user-company-data', selectedCompany?.id, user?.id],
+    queryFn: async () => {
+      if (!user?.id || !selectedCompany?.id) return null;
+      
+      const result = await EntityService.list({
+        schema: 'public',
+        table: 'user_companies',
+        companyId: selectedCompany.id,
+        filters: { user_id: user.id, company_id: selectedCompany.id },
+        pageSize: 1
+      });
+      
+      return result.data?.[0] || null;
+    },
+    enabled: !!user?.id && !!selectedCompany?.id
+  });
   
   // Estados locais
   const [isPermissionsDialogOpen, setIsPermissionsDialogOpen] = useState(false);
@@ -128,7 +149,10 @@ export default function ConfiguracaoCorrecaoPontoPage() {
       return await CorrectionSettingsService.savePermissions(permissionsData);
     },
     onSuccess: () => {
+      // Invalidar todas as queries relacionadas a correção de ponto
       queryClient.invalidateQueries({ queryKey: ['employee-permissions'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-correction-status'] });
+      queryClient.invalidateQueries({ queryKey: ['monthly-time-records'] });
       toast({
         title: "Permissões salvas!",
         description: "As permissões de correção foram atualizadas com sucesso.",
@@ -210,7 +234,12 @@ export default function ConfiguracaoCorrecaoPontoPage() {
   const togglePermission = (employeeId: string) => {
     setPermissions(prev => prev.map(p => 
       p.employee_id === employeeId 
-        ? { ...p, liberado: !p.liberado, liberado_em: new Date().toISOString() }
+        ? { 
+            ...p, 
+            liberado: !p.liberado, 
+            liberado_em: !p.liberado ? new Date().toISOString() : undefined,
+            liberado_por: !p.liberado ? userCompanyData?.profile_id : undefined
+          }
         : p
     ));
   };
@@ -227,7 +256,8 @@ export default function ConfiguracaoCorrecaoPontoPage() {
     setPermissions(prev => prev.map(p => ({
       ...p,
       liberado,
-      liberado_em: liberado ? new Date().toISOString() : undefined
+      liberado_em: liberado ? new Date().toISOString() : undefined,
+      liberado_por: liberado ? userCompanyData?.profile_id : undefined
     })));
   };
 

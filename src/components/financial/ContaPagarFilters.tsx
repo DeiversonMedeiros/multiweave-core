@@ -11,9 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { X, Filter, RotateCcw } from 'lucide-react';
 import { ContaPagarFilters as ContaPagarFiltersType } from '@/integrations/supabase/financial-types';
 import { useCostCenters } from '@/hooks/useCostCenters';
+import { useProjects } from '@/hooks/useProjects';
+import { useTesouraria } from '@/hooks/financial/useTesouraria';
 
 interface ContaPagarFiltersProps {
   filters: ContaPagarFiltersType;
@@ -23,6 +26,8 @@ interface ContaPagarFiltersProps {
 
 export function ContaPagarFilters({ filters, onFiltersChange, onClose }: ContaPagarFiltersProps) {
   const { data: costCentersData, isLoading: loadingCostCenters } = useCostCenters();
+  const { data: projectsData, isLoading: loadingProjects } = useProjects();
+  const { contasBancarias } = useTesouraria();
 
   const handleFilterChange = (key: keyof ContaPagarFiltersType, value: any) => {
     // Clean up special values
@@ -43,8 +48,8 @@ export function ContaPagarFilters({ filters, onFiltersChange, onClose }: ContaPa
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-2xl">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+      <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -63,6 +68,17 @@ export function ContaPagarFilters({ filters, onFiltersChange, onClose }: ContaPa
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Número do Título */}
+            <div>
+              <Label htmlFor="numero_titulo">Número do Título</Label>
+              <Input
+                id="numero_titulo"
+                placeholder="Número do título"
+                value={filters.numero_titulo || ''}
+                onChange={(e) => handleFilterChange('numero_titulo', e.target.value || undefined)}
+              />
+            </div>
+
             {/* Fornecedor */}
             <div>
               <Label htmlFor="fornecedor">Fornecedor</Label>
@@ -70,7 +86,18 @@ export function ContaPagarFilters({ filters, onFiltersChange, onClose }: ContaPa
                 id="fornecedor"
                 placeholder="Nome do fornecedor"
                 value={filters.fornecedor_nome || ''}
-                onChange={(e) => handleFilterChange('fornecedor_nome', e.target.value)}
+                onChange={(e) => handleFilterChange('fornecedor_nome', e.target.value || undefined)}
+              />
+            </div>
+
+            {/* CNPJ do Fornecedor */}
+            <div>
+              <Label htmlFor="fornecedor_cnpj">CNPJ do Fornecedor</Label>
+              <Input
+                id="fornecedor_cnpj"
+                placeholder="CNPJ do fornecedor"
+                value={filters.fornecedor_cnpj || ''}
+                onChange={(e) => handleFilterChange('fornecedor_cnpj', e.target.value || undefined)}
               />
             </div>
 
@@ -188,6 +215,130 @@ export function ContaPagarFilters({ filters, onFiltersChange, onClose }: ContaPa
                 value={filters.classe_financeira || ''}
                 onChange={(e) => handleFilterChange('classe_financeira', e.target.value || undefined)}
               />
+            </div>
+
+            {/* Categoria */}
+            <div>
+              <Label htmlFor="categoria">Categoria</Label>
+              <Input
+                id="categoria"
+                placeholder="Categoria"
+                value={filters.categoria || ''}
+                onChange={(e) => handleFilterChange('categoria', e.target.value || undefined)}
+              />
+            </div>
+
+            {/* Forma de Pagamento */}
+            <div>
+              <Label htmlFor="forma_pagamento">Forma de Pagamento</Label>
+              <Input
+                id="forma_pagamento"
+                placeholder="Forma de pagamento"
+                value={filters.forma_pagamento || ''}
+                onChange={(e) => handleFilterChange('forma_pagamento', e.target.value || undefined)}
+              />
+            </div>
+
+            {/* Projeto */}
+            <div>
+              <Label htmlFor="projeto">Projeto</Label>
+              <Select
+                value={filters.projeto_id || ''}
+                onValueChange={(value) => handleFilterChange('projeto_id', value || undefined)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o projeto" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {loadingProjects ? (
+                    <SelectItem value="loading" disabled>Carregando...</SelectItem>
+                  ) : (
+                    (projectsData?.data || []).map((projeto) => (
+                      <SelectItem key={projeto.id} value={projeto.id}>
+                        {projeto.nome}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Conta Bancária */}
+            <div>
+              <Label htmlFor="conta_bancaria">Conta Bancária</Label>
+              <Select
+                value={filters.conta_bancaria_id || ''}
+                onValueChange={(value) => handleFilterChange('conta_bancaria_id', value || undefined)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a conta bancária" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {contasBancarias.map((conta) => (
+                    <SelectItem key={conta.id} value={conta.id}>
+                      {conta.banco_nome} - {conta.agencia}/{conta.conta}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Data de Emissão - Início */}
+            <div>
+              <Label htmlFor="data_emissao_inicio">Data de Emissão - Início</Label>
+              <Input
+                id="data_emissao_inicio"
+                type="date"
+                value={filters.data_emissao_inicio || ''}
+                onChange={(e) => handleFilterChange('data_emissao_inicio', e.target.value || undefined)}
+              />
+            </div>
+
+            {/* Data de Emissão - Fim */}
+            <div>
+              <Label htmlFor="data_emissao_fim">Data de Emissão - Fim</Label>
+              <Input
+                id="data_emissao_fim"
+                type="date"
+                value={filters.data_emissao_fim || ''}
+                onChange={(e) => handleFilterChange('data_emissao_fim', e.target.value || undefined)}
+              />
+            </div>
+
+            {/* Data de Pagamento - Início */}
+            <div>
+              <Label htmlFor="data_pagamento_inicio">Data de Pagamento - Início</Label>
+              <Input
+                id="data_pagamento_inicio"
+                type="date"
+                value={filters.data_pagamento_inicio || ''}
+                onChange={(e) => handleFilterChange('data_pagamento_inicio', e.target.value || undefined)}
+              />
+            </div>
+
+            {/* Data de Pagamento - Fim */}
+            <div>
+              <Label htmlFor="data_pagamento_fim">Data de Pagamento - Fim</Label>
+              <Input
+                id="data_pagamento_fim"
+                type="date"
+                value={filters.data_pagamento_fim || ''}
+                onChange={(e) => handleFilterChange('data_pagamento_fim', e.target.value || undefined)}
+              />
+            </div>
+
+            {/* Parcelada */}
+            <div className="flex items-center space-x-2 pt-6">
+              <Checkbox
+                id="is_parcelada"
+                checked={filters.is_parcelada === true}
+                onCheckedChange={(checked) => handleFilterChange('is_parcelada', checked === true ? true : undefined)}
+              />
+              <Label htmlFor="is_parcelada" className="cursor-pointer">
+                Apenas contas parceladas
+              </Label>
             </div>
           </div>
 

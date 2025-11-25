@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import { useContasReceber } from '@/hooks/financial/useContasReceber';
 import { ContaReceberFormData } from '@/integrations/supabase/financial-types';
+import { ContaReceberFilters } from './ContaReceberFilters';
+import { ContaReceberForm } from './ContaReceberForm';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -388,23 +390,17 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
         </CardContent>
       </Card>
 
-      {/* Modais - Placeholder para futuras implementações */}
+      {/* Modal de Formulário */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-2xl">
-            <CardHeader>
-              <CardTitle>Formulário de Conta a Receber</CardTitle>
-              <CardDescription>
-                Em desenvolvimento...
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => setShowForm(false)}>
-                Fechar
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        <ContaReceberForm
+          conta={editingConta}
+          onSave={handleSave}
+          onCancel={() => {
+            setShowForm(false);
+            setEditingConta(null);
+          }}
+          loading={loading}
+        />
       )}
 
       {showDetails && selectedConta && (
@@ -426,21 +422,11 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
       )}
 
       {showFilters && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-2xl">
-            <CardHeader>
-              <CardTitle>Filtros de Contas a Receber</CardTitle>
-              <CardDescription>
-                Em desenvolvimento...
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => setShowFilters(false)}>
-                Fechar
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+        <ContaReceberFilters
+          filters={filters}
+          onFiltersChange={setFilters}
+          onClose={() => setShowFilters(false)}
+        />
       )}
     </div>
   );

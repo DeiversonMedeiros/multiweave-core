@@ -4,7 +4,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,7 +22,6 @@ const formSchema = z.object({
   end_date: z.date().optional(),
   custom_value: z.coerce.number().min(0).optional(),
   is_active: z.boolean().default(true),
-  observacoes: z.string().optional(),
 });
 
 interface EmployeeBenefitAssignmentFormProps {
@@ -50,7 +48,6 @@ export const EmployeeBenefitAssignmentForm: React.FC<EmployeeBenefitAssignmentFo
       end_date: assignment?.end_date ? new Date(assignment.end_date) : undefined,
       custom_value: assignment?.custom_value || 0,
       is_active: assignment?.is_active ?? true,
-      observacoes: '',
     },
   });
 
@@ -63,7 +60,6 @@ export const EmployeeBenefitAssignmentForm: React.FC<EmployeeBenefitAssignmentFo
         end_date: assignment.end_date ? new Date(assignment.end_date) : undefined,
         custom_value: assignment.custom_value || 0,
         is_active: assignment.is_active,
-        observacoes: '',
       });
     }
   }, [assignment, form]);
@@ -96,18 +92,28 @@ export const EmployeeBenefitAssignmentForm: React.FC<EmployeeBenefitAssignmentFo
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Funcionário *</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isReadOnly}>
+                <Select 
+                  onValueChange={field.onChange} 
+                  value={field.value || ''} 
+                  disabled={isReadOnly}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Selecione o funcionário" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {employees.map((employee) => (
-                      <SelectItem key={employee.id} value={employee.id}>
-                        {employee.nome} - {employee.matricula || 'Sem matrícula'}
+                    {employees.length > 0 ? (
+                      employees.map((employee) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.nome} - {employee.matricula || 'Sem matrícula'}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-employees" disabled>
+                        Nenhum funcionário encontrado
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -278,25 +284,6 @@ export const EmployeeBenefitAssignmentForm: React.FC<EmployeeBenefitAssignmentFo
             )}
           />
         </div>
-
-        {/* Observações */}
-        <FormField
-          control={form.control}
-          name="observacoes"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Observações</FormLabel>
-              <FormControl>
-                <Textarea 
-                  {...field} 
-                  disabled={isReadOnly} 
-                  placeholder="Observações sobre este vínculo de benefício..." 
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
 
         {!isReadOnly && (
           <Button type="submit" className="w-full">

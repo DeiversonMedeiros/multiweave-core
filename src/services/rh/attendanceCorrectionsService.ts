@@ -10,6 +10,14 @@ export interface AttendanceCorrection {
   saida_original?: string;
   entrada_corrigida?: string;
   saida_corrigida?: string;
+  entrada_almoco_original?: string;
+  saida_almoco_original?: string;
+  entrada_almoco_corrigida?: string;
+  saida_almoco_corrigida?: string;
+  entrada_extra1_original?: string;
+  saida_extra1_original?: string;
+  entrada_extra1_corrigida?: string;
+  saida_extra1_corrigida?: string;
   justificativa: string;
   status: 'pendente' | 'aprovado' | 'rejeitado';
   solicitado_por?: string;
@@ -18,6 +26,8 @@ export interface AttendanceCorrection {
   observacoes?: string;
   created_at: string;
   updated_at: string;
+  funcionario_nome?: string;
+  funcionario_matricula?: string;
 }
 
 export interface AttendanceCorrectionCreateData {
@@ -190,26 +200,120 @@ export const AttendanceCorrectionsService = {
   /**
    * Busca correções pendentes de uma empresa
    */
-   getPending: async (companyId: string): Promise<AttendanceCorrection[]> => {
-     const { data, error } = await supabase
+   getPending: async (companyId: string): Promise<any[]> => {
+     console.log('🔍 [getPending] Buscando correções pendentes para companyId:', companyId);
+     
+     try {
+       // Buscar o ID do usuário autenticado
+       const { data: { user } } = await supabase.auth.getUser();
+       if (!user?.id) {
+         throw new Error('Usuário não autenticado');
+       }
+
+       console.log('👤 [getPending] Usuário:', user.id);
+
+       // Usar função RPC específica que retorna correções pendentes dos funcionários do gestor
+       // com dados completos e informações dos funcionários
+       const { data: correctionsData, error: correctionsError } = await supabase.rpc('get_pending_attendance_corrections', {
+         p_company_id: companyId,
+         p_user_id: user.id
+       });
+
+       if (correctionsError) {
+         console.error('❌ [getPending] Erro ao buscar correções:', correctionsError);
+         
+         // Fallback: tentar usar get_pending_approvals_for_user
+         try {
+           const { data: { user } } = await supabase.auth.getUser();
+           if (user?.id) {
+             const { data: approvalsData, error: approvalsError } = await supabase.rpc('get_pending_approvals_for_user', {
+               p_user_id: user.id,
+               p_company_id: companyId
+             });
+
+             if (!approvalsError && approvalsData) {
+               const correctionsFromApprovals = (approvalsData || [])
+                 .filter((item: any) => item.tipo === 'correcao_ponto')
+                 .map((item: any) => {
+                   const dataMatch = item.descricao?.match(/Correção de ponto para (\d{4}-\d{2}-\d{2})/);
+                   const dataOriginal = dataMatch ? dataMatch[1] : '';
+                   
+                   return {
+                     id: item.id,
+                     employee_id: '',
+                     company_id: companyId,
+                     data_original: dataOriginal,
+                     entrada_original: null,
+                     saida_original: null,
+                     entrada_corrigida: null,
+                     saida_corrigida: null,
+                     justificativa: '',
+                     status: item.status,
+                     funcionario_nome: item.funcionario_nome || 'N/A',
+                     funcionario_matricula: item.funcionario_matricula || 'N/A',
+                     observacoes: item.observacoes || null,
+                     created_at: item.data_solicitacao,
+                     updated_at: item.data_solicitacao
+                   };
+                 });
+               
+               console.log('✅ [getPending] Usando fallback, encontradas:', correctionsFromApprovals.length);
+               return correctionsFromApprovals;
+             }
+           }
+         } catch (fallbackError) {
+           console.error('❌ [getPending] Erro no fallback:', fallbackError);
+         }
+         
+         throw new Error(`Erro ao buscar correções pendentes: ${correctionsError.message}`);
+       }
+
+       console.log('✅ [getPending] Correções encontradas:', correctionsData?.length || 0);
+       console.log('📊 [getPending] Primeira correção (sample):', correctionsData?.[0]);
+       
+       return correctionsData || [];
+       
+     } catch (error) {
+       console.error('❌ [getPending] Erro geral:', error);
+       throw new Error(`Erro ao buscar correções pendentes: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+     }
+
+     // Buscar dados dos funcionários
+     const employeeIds = [...new Set(corrections.map((c: any) => c.employee_id).filter(Boolean))];
+     
+     if (employeeIds.length === 0) {
+       return corrections;
+     }
+
+     const { data: employeesData, error: employeesError } = await supabase
        .rpc('get_entity_data', {
          schema_name: 'rh',
-         table_name: 'attendance_corrections',
+         table_name: 'employees',
          company_id_param: companyId,
-         filters: {
-           status: 'pendente'
-         },
+         filters: {},
          order_by: 'created_at',
-         order_direction: 'DESC',
-         limit_param: 100,
+         order_direction: 'ASC',
+         limit_param: 1000,
          offset_param: 0
        });
 
-     if (error) {
-       throw new Error(`Erro ao buscar correções pendentes: ${error.message}`);
+     if (employeesError) {
+       console.warn('Erro ao buscar funcionários:', employeesError);
+       return corrections;
      }
 
-     return data?.map((item: any) => item.data) || [];
+     const employees = employeesData?.map((item: any) => item.data) || [];
+     const employeeMap = new Map(employees.map((emp: any) => [emp.id, emp]));
+
+     // Adicionar dados dos funcionários às correções
+     return corrections.map((correction: any) => {
+       const employee = employeeMap.get(correction.employee_id);
+       return {
+         ...correction,
+         funcionario_nome: employee?.nome || 'N/A',
+         funcionario_matricula: employee?.matricula || 'N/A'
+       };
+     });
    },
 
   /**
@@ -247,7 +351,7 @@ export const AttendanceCorrectionsService = {
    },
 
   /**
-   * Busca estatísticas de correções
+   * Busca estatísticas de correções (filtradas por gestor)
    */
    getStats: async (companyId: string, filters?: {
      data_inicio?: string;
@@ -259,43 +363,37 @@ export const AttendanceCorrectionsService = {
      aprovadas: number;
      rejeitadas: number;
    }> => {
-     const rpcFilters: any = {};
-     
-     if (filters?.data_inicio) {
-       rpcFilters.data_original_gte = filters.data_inicio;
-     }
-     if (filters?.data_fim) {
-       rpcFilters.data_original_lte = filters.data_fim;
-     }
-     if (filters?.employee_id) {
-       rpcFilters.employee_id = filters.employee_id;
+     // Buscar o ID do usuário autenticado
+     const { data: { user } } = await supabase.auth.getUser();
+     if (!user?.id) {
+       throw new Error('Usuário não autenticado');
      }
 
-     const { data, error } = await supabase
-       .rpc('get_entity_data', {
-         schema_name: 'rh',
-         table_name: 'attendance_corrections',
-         company_id_param: companyId,
-         filters: rpcFilters,
-         order_by: 'created_at',
-         order_direction: 'DESC',
-         limit_param: 1000,
-         offset_param: 0
-       });
+     // Usar função RPC específica que retorna estatísticas filtradas por gestor
+     const { data, error } = await supabase.rpc('get_attendance_corrections_stats_for_manager', {
+       p_company_id: companyId,
+       p_user_id: user.id
+     });
 
      if (error) {
+       console.error('❌ [getStats] Erro ao buscar estatísticas:', error);
        throw new Error(`Erro ao buscar estatísticas: ${error.message}`);
      }
 
-     const records = data?.map((item: any) => item.data) || [];
-     const stats = {
-       total: records.length,
-       pendentes: records.filter(c => c.status === 'pendente').length,
-       aprovadas: records.filter(c => c.status === 'aprovado').length,
-       rejeitadas: records.filter(c => c.status === 'rejeitado').length
+     // A função retorna um array com um único objeto
+     const stats = data?.[0] || {
+       total: 0,
+       pendentes: 0,
+       aprovadas: 0,
+       rejeitadas: 0
      };
 
-     return stats;
+     return {
+       total: Number(stats.total) || 0,
+       pendentes: Number(stats.pendentes) || 0,
+       aprovadas: Number(stats.aprovadas) || 0,
+       rejeitadas: Number(stats.rejeitadas) || 0
+     };
    },
 
   /**

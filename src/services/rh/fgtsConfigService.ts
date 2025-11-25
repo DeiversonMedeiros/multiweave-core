@@ -20,6 +20,8 @@ export async function getFgtsConfigs(
   companyId: string,
   filters: FgtsConfigFilters = {}
 ): Promise<{ data: FgtsConfig[]; totalCount: number }> {
+  console.log('🔍 [fgtsConfigService.getFgtsConfigs] Iniciando busca:', { companyId, filters });
+  
   try {
     const result = await EntityService.list<FgtsConfig>({
       schema: 'rh',
@@ -30,12 +32,31 @@ export async function getFgtsConfigs(
       orderDirection: 'DESC'
     });
 
+    console.log('✅ [fgtsConfigService.getFgtsConfigs] Resultado EntityService:', {
+      hasData: !!result.data,
+      dataLength: result.data?.length || 0,
+      totalCount: result.totalCount,
+      hasMore: result.hasMore
+    });
+
+    if (result.data && result.data.length > 0) {
+      console.log('📊 [fgtsConfigService.getFgtsConfigs] Primeiras configurações FGTS:', 
+        result.data.slice(0, 2).map(c => ({ 
+          codigo: c.codigo, 
+          descricao: c.descricao,
+          company_id: c.company_id 
+        }))
+      );
+    } else {
+      console.warn('⚠️ [fgtsConfigService.getFgtsConfigs] Array vazio retornado');
+    }
+
     return {
       data: result.data,
       totalCount: result.totalCount,
     };
   } catch (error) {
-    console.error('Erro no serviço de configurações FGTS:', error);
+    console.error('❌ [fgtsConfigService.getFgtsConfigs] Erro:', error);
     throw error;
   }
 }
@@ -155,10 +176,29 @@ export async function getCurrentFgtsConfig(companyId: string): Promise<FgtsConfi
 export async function getFgtsConfigByPeriod(
   companyId: string,
   anoVigencia: number,
-  mesVigencia: number
+  mesVigencia: number,
+  tipoContrato?: string | null
 ): Promise<FgtsConfig | null> {
   try {
+    // Se tipo_contrato foi informado, buscar primeiro configuração específica
+    if (tipoContrato) {
+      const configsEspecificas = await getActiveFgtsConfigs(companyId, anoVigencia, mesVigencia);
+      const configEspecifica = configsEspecificas.find(c => c.tipo_contrato === tipoContrato);
+      
+      if (configEspecifica) {
+        return configEspecifica;
+      }
+    }
+    
+    // Se não encontrou específica ou não foi informado tipo_contrato, buscar configuração geral (tipo_contrato NULL)
     const configs = await getActiveFgtsConfigs(companyId, anoVigencia, mesVigencia);
+    const configGeral = configs.find(c => !c.tipo_contrato || c.tipo_contrato === null);
+    
+    if (configGeral) {
+      return configGeral;
+    }
+    
+    // Se não encontrou configuração geral, retornar a primeira disponível (fallback)
     return configs.length > 0 ? configs[0] : null;
   } catch (error) {
     console.error('Erro no serviço de configuração FGTS por período:', error);
@@ -172,7 +212,8 @@ export async function getFgtsConfigByPeriod(
 
 export function calculateFgts(
   baseSalary: number,
-  config: FgtsConfig
+  config: FgtsConfig | null,
+  tipoContrato?: string | null
 ): { 
   baseCalculation: number;
   fgts: number;
@@ -183,19 +224,29 @@ export function calculateFgts(
   // Base de cálculo FGTS = Salário Base (sem deduções)
   const baseCalculation = baseSalary;
   
+  // Determinar alíquota: se for Menor Aprendiz e não houver config específica, usar 2%
+  let aliquotaFgts = 0.08; // Padrão 8%
+  
+  if (config) {
+    aliquotaFgts = config.aliquota_fgts;
+  } else if (tipoContrato === 'Menor Aprendiz') {
+    // Se não há configuração e é Menor Aprendiz, usar alíquota padrão de 2%
+    aliquotaFgts = 0.02;
+  }
+  
   // FGTS = Base de Cálculo × Alíquota FGTS
-  const fgts = baseCalculation * config.aliquota_fgts;
+  const fgts = baseCalculation * aliquotaFgts;
   
-  // Multa = FGTS × Alíquota de Multa
-  const multa = fgts * (config.aliquota_multa || 0);
+  // Multa = FGTS × Alíquota de Multa (usar valores da config se disponível)
+  const multa = fgts * (config?.aliquota_multa || 0);
   
-  // Juros = FGTS × Alíquota de Juros
-  const juros = fgts * (config.aliquota_juros || 0);
+  // Juros = FGTS × Alíquota de Juros (usar valores da config se disponível)
+  const juros = fgts * (config?.aliquota_juros || 0);
 
   return {
     baseCalculation,
     fgts,
-    aliquot: config.aliquota_fgts,
+    aliquot: aliquotaFgts,
     multa,
     juros
   };

@@ -181,6 +181,35 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     );
   };
 
+  const getApprovalStatusBadge = (approvalStatus?: string, totalAprovacoes?: number, aprovacoesPendentes?: number) => {
+    if (!approvalStatus || approvalStatus === 'sem_aprovacao') {
+      return null;
+    }
+
+    const approvalConfig = {
+      pendente: { label: 'Aguardando Aprovação', variant: 'secondary' as const, icon: AlertTriangle },
+      em_aprovacao: { 
+        label: `Em Aprovação (${aprovacoesPendentes || 0}/${totalAprovacoes || 0})`, 
+        variant: 'default' as const, 
+        icon: AlertTriangle 
+      },
+      aprovado: { label: 'Aprovado', variant: 'default' as const, icon: CheckCircle },
+      rejeitado: { label: 'Rejeitado', variant: 'destructive' as const, icon: XCircle },
+    };
+
+    const config = approvalConfig[approvalStatus as keyof typeof approvalConfig];
+    if (!config) return null;
+
+    const Icon = config.icon;
+
+    return (
+      <Badge variant={config.variant} className="flex items-center gap-1">
+        <Icon className="h-3 w-3" />
+        {config.label}
+      </Badge>
+    );
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -331,9 +360,14 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
                 >
                   <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{conta.numero_titulo}</span>
                       {getStatusBadge(conta.status)}
+                      {getApprovalStatusBadge(
+                        conta.approval_status,
+                        conta.total_aprovacoes,
+                        conta.aprovacoes_pendentes
+                      )}
                     </div>
                     <div className="text-sm text-muted-foreground">
                       <span className="font-medium">{conta.fornecedor_nome}</span>

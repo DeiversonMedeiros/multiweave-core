@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth-context';
+import { useCompany } from '@/lib/company-context';
 
 export type PermissionAction = 'read' | 'create' | 'edit' | 'delete';
 
@@ -26,6 +27,7 @@ export interface EntityPermission {
 
 export const useAuthorization = () => {
   const { user } = useAuth();
+  const { selectedCompany } = useCompany();
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
   const [entityPermissions, setEntityPermissions] = useState<EntityPermission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,32 +69,38 @@ export const useAuthorization = () => {
       }
 
       // Carregar permissões de entidade através do perfil do usuário
-      // Primeiro, buscar o perfil do usuário
-      const { data: userCompanyData, error: userCompanyError } = await supabase
-        .from('user_companies')
-        .select('profile_id')
-        .eq('user_id', user.id)
-        .eq('ativo', true)
-        .single();
+      // Primeiro, buscar o perfil do usuário na empresa selecionada
+      if (selectedCompany?.id) {
+        const { data: userCompanyData, error: userCompanyError } = await supabase
+          .from('user_companies')
+          .select('profile_id')
+          .eq('user_id', user.id)
+          .eq('company_id', selectedCompany.id)
+          .eq('ativo', true)
+          .maybeSingle();
 
-      if (userCompanyError) {
-        console.error('Erro ao buscar perfil do usuário:', userCompanyError);
-        setEntityPermissions([]);
-      } else if (userCompanyData?.profile_id) {
-        // Agora buscar as permissões de entidade para esse perfil
-        const { data: entityPermissionsData, error: entityPermissionsError } = await supabase
-          .from('entity_permissions')
-          .select('*')
-          .eq('profile_id', userCompanyData.profile_id);
-
-        if (entityPermissionsError) {
-          console.error('Erro ao carregar permissões de entidade:', entityPermissionsError);
+        if (userCompanyError) {
+          console.error('Erro ao buscar perfil do usuário:', userCompanyError);
           setEntityPermissions([]);
+        } else if (userCompanyData?.profile_id) {
+          // Agora buscar as permissões de entidade para esse perfil
+          const { data: entityPermissionsData, error: entityPermissionsError } = await supabase
+            .from('entity_permissions')
+            .select('*')
+            .eq('profile_id', userCompanyData.profile_id);
+
+          if (entityPermissionsError) {
+            console.error('Erro ao carregar permissões de entidade:', entityPermissionsError);
+            setEntityPermissions([]);
+          } else {
+            console.log('✅ Permissões de entidade carregadas:', entityPermissionsData?.length || 0, 'registros');
+            setEntityPermissions(entityPermissionsData || []);
+          }
         } else {
-          console.log('✅ Permissões de entidade carregadas:', entityPermissionsData?.length || 0, 'registros');
-          setEntityPermissions(entityPermissionsData || []);
+          setEntityPermissions([]);
         }
       } else {
+        // Sem empresa selecionada, não carregar permissões de entidade
         setEntityPermissions([]);
       }
     } catch (error) {
@@ -102,7 +110,7 @@ export const useAuthorization = () => {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, selectedCompany?.id]);
 
   // Carregar permissões quando o usuário mudar
   useEffect(() => {

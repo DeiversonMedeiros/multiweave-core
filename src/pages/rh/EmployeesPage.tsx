@@ -29,6 +29,7 @@ import { useCompany } from '@/lib/company-context';
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { formatDateOnly } from '@/lib/utils';
 
 // =====================================================
 // COMPONENTE PRINCIPAL
@@ -151,7 +152,7 @@ export default function EmployeesPage() {
       header: 'Data Admissão',
       cell: ({ row }: { row: { original: Employee } }) => (
         <span className="text-sm">
-          {new Date(row.original.data_admissao).toLocaleDateString('pt-BR')}
+          {formatDateOnly(row.original.data_admissao)}
         </span>
       ),
     },

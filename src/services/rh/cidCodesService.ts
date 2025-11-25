@@ -10,6 +10,8 @@ export const CidCodesService = {
    * Lista todos os códigos CID de uma empresa
    */
   list: async (companyId: string) => {
+    console.log('🔍 [cidCodesService.list] Iniciando busca:', { companyId });
+    
     try {
       const result = await EntityService.list<CidCode>({
         schema: 'rh',
@@ -19,9 +21,20 @@ export const CidCodesService = {
         orderBy: 'codigo',
         orderDirection: 'ASC'
       });
+      
+      console.log('✅ [cidCodesService.list] Resultado:', {
+        hasData: !!result.data,
+        dataLength: result.data?.length || 0,
+        totalCount: result.totalCount
+      });
+      
+      if (result.data && result.data.length > 0) {
+        console.log('📊 [cidCodesService.list] Primeiros códigos:', result.data.slice(0, 3));
+      }
+      
       return result.data;
     } catch (error) {
-      console.error('Erro ao buscar códigos CID:', error);
+      console.error('❌ [cidCodesService.list] Erro:', error);
       throw error;
     }
   },

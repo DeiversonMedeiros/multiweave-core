@@ -157,6 +157,7 @@ export function useBankHoursBalance(companyId: string, employeeId?: string) {
         });
 
       if (error) throw error;
+      // A função RPC retorna um array, precisamos retornar o primeiro elemento
       return data?.[0] || null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao obter saldo do colaborador');
@@ -238,6 +239,7 @@ export function useBankHoursTransactions(companyId: string, employeeId?: string)
           p_company_id: companyId,
           p_hours_amount: adjustment.hours_amount,
           p_description: adjustment.description,
+          p_transaction_date: adjustment.transaction_date || new Date().toISOString().split('T')[0],
         });
 
       if (error) throw error;

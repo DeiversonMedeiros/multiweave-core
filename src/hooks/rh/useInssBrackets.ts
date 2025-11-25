@@ -27,16 +27,53 @@ export function useInssBrackets(companyId: string, filters: InssBracketFilters =
   const [error, setError] = useState<string | null>(null);
 
   const fetchBrackets = async () => {
-    if (!companyId) return;
+    console.log('🔍 [useInssBrackets] Buscando faixas INSS:', { companyId, filters });
+    
+    if (!companyId) {
+      console.warn('⚠️ [useInssBrackets] companyId não fornecido');
+      return;
+    }
 
     try {
       setIsLoading(true);
       setError(null);
       const result = await getInssBrackets(companyId, filters);
+      
+      console.log('✅ [useInssBrackets] Resultado recebido:', {
+        hasData: !!result.data,
+        dataLength: result.data?.length || 0,
+        totalCount: result.totalCount
+      });
+      
+      if (result.data && result.data.length > 0) {
+        console.log('📊 [useInssBrackets] Primeiras faixas:', result.data.slice(0, 2).map(b => ({
+          id: b.id,
+          codigo: b.codigo,
+          descricao: b.descricao,
+          company_id: b.company_id
+        })));
+      } else {
+        console.warn('⚠️ [useInssBrackets] Nenhuma faixa encontrada para companyId:', companyId);
+        console.warn('⚠️ [useInssBrackets] result completo:', {
+          hasData: !!result.data,
+          dataType: typeof result.data,
+          isArray: Array.isArray(result.data),
+          dataLength: result.data?.length,
+          totalCount: result.totalCount,
+          resultKeys: Object.keys(result)
+        });
+      }
+      
+      console.log('🔄 [useInssBrackets] Atualizando estado:', {
+        dataLength: result.data?.length || 0,
+        totalCount: result.totalCount,
+        firstItem: result.data?.[0] ? { id: result.data[0].id, codigo: result.data[0].codigo } : null
+      });
+      
       setBrackets(result.data);
       setTotalCount(result.totalCount);
     } catch (err) {
-      console.error('Erro ao buscar faixas INSS:', err);
+      console.error('❌ [useInssBrackets] Erro na busca:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
       setIsLoading(false);

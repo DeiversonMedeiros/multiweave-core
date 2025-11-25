@@ -13,10 +13,19 @@ export function useVacationYears(employeeId: string) {
   return useQuery({
     queryKey: ['vacation-years', employeeId],
     queryFn: async (): Promise<VacationYear[]> => {
-      return await VacationCalculationService.getAvailableYears(employeeId);
+      console.log('[useVacationYears] Buscando anos de férias para employeeId:', employeeId);
+      try {
+        const result = await VacationCalculationService.getAvailableYears(employeeId);
+        console.log('[useVacationYears] Resultado recebido:', { count: result?.length || 0, result });
+        return result;
+      } catch (error) {
+        console.error('[useVacationYears] Erro ao buscar anos de férias:', error);
+        throw error;
+      }
     },
     enabled: !!employeeId,
     staleTime: 1000 * 60 * 5, // 5 minutos
+    retry: 1, // Tentar apenas 1 vez em caso de erro
   });
 }
 

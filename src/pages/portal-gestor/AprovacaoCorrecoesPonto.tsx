@@ -25,6 +25,14 @@ interface CorrectionDetails {
   saida_original?: string;
   entrada_corrigida?: string;
   saida_corrigida?: string;
+  entrada_almoco_original?: string;
+  saida_almoco_original?: string;
+  entrada_almoco_corrigida?: string;
+  saida_almoco_corrigida?: string;
+  entrada_extra1_original?: string;
+  saida_extra1_original?: string;
+  entrada_extra1_corrigida?: string;
+  saida_extra1_corrigida?: string;
   justificativa: string;
   status: 'pendente' | 'aprovado' | 'rejeitado';
   aprovado_por?: string;
@@ -88,7 +96,31 @@ export default function AprovacaoCorrecoesPonto() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
+    if (!dateString) return '-';
+    
+    // Se for string no formato YYYY-MM-DD, tratar como data local (sem timezone)
+    if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = dateString.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      
+      if (isNaN(date.getTime())) return '-';
+      
+      return date.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    }
+    
+    // Para outros formatos, usar conversão padrão
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '-';
+    
+    return date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
   };
 
   const handleApprove = async () => {
@@ -201,7 +233,7 @@ export default function AprovacaoCorrecoesPonto() {
 
       {/* Estatísticas */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
@@ -498,7 +530,7 @@ export default function AprovacaoCorrecoesPonto() {
           </DialogHeader>
           {selectedCorrection && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Funcionário</Label>
                   <p className="text-sm">{selectedCorrection.funcionario_nome}</p>
@@ -510,12 +542,26 @@ export default function AprovacaoCorrecoesPonto() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Horário Original</Label>
                   <div className="text-sm space-y-1">
                     <p>Entrada: {formatTime(selectedCorrection.entrada_original)}</p>
                     <p>Saída: {formatTime(selectedCorrection.saida_original)}</p>
+                    {(selectedCorrection.entrada_almoco_original || selectedCorrection.saida_almoco_original) && (
+                      <>
+                        <p className="text-xs text-gray-500 mt-2">Almoço:</p>
+                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_almoco_original)}</p>
+                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_almoco_original)}</p>
+                      </>
+                    )}
+                    {(selectedCorrection.entrada_extra1_original || selectedCorrection.saida_extra1_original) && (
+                      <>
+                        <p className="text-xs text-gray-500 mt-2">Hora Extra:</p>
+                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_extra1_original)}</p>
+                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_extra1_original)}</p>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -523,6 +569,20 @@ export default function AprovacaoCorrecoesPonto() {
                   <div className="text-sm space-y-1">
                     <p>Entrada: {formatTime(selectedCorrection.entrada_corrigida)}</p>
                     <p>Saída: {formatTime(selectedCorrection.saida_corrigida)}</p>
+                    {(selectedCorrection.entrada_almoco_corrigida || selectedCorrection.saida_almoco_corrigida) && (
+                      <>
+                        <p className="text-xs text-gray-500 mt-2">Almoço:</p>
+                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_almoco_corrigida)}</p>
+                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_almoco_corrigida)}</p>
+                      </>
+                    )}
+                    {(selectedCorrection.entrada_extra1_corrigida || selectedCorrection.saida_extra1_corrigida) && (
+                      <>
+                        <p className="text-xs text-gray-500 mt-2">Hora Extra:</p>
+                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_extra1_corrigida)}</p>
+                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_extra1_corrigida)}</p>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

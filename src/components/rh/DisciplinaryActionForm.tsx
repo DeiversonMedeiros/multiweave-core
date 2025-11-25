@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,8 +24,14 @@ interface DisciplinaryActionFormProps {
   isLoading?: boolean;
 }
 
-export function DisciplinaryActionForm({ action, mode, employees, onSave, onCancel, isLoading }: DisciplinaryActionFormProps) {
+export interface DisciplinaryActionFormRef {
+  submit: () => void;
+}
+
+export const DisciplinaryActionForm = forwardRef<DisciplinaryActionFormRef, DisciplinaryActionFormProps>(
+  ({ action, mode, employees, onSave, onCancel, isLoading }, ref) => {
   const { selectedCompany } = useCompany();
+  const formRef = React.useRef<HTMLFormElement>(null);
   
   const [formData, setFormData] = useState({
     employee_id: '',
@@ -47,6 +53,15 @@ export function DisciplinaryActionForm({ action, mode, employees, onSave, onCanc
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Expor método submit através da ref
+  useImperativeHandle(ref, () => ({
+    submit: () => {
+      if (formRef.current) {
+        formRef.current.requestSubmit();
+      }
+    }
+  }));
 
   useEffect(() => {
     if (action) {
@@ -184,7 +199,7 @@ export function DisciplinaryActionForm({ action, mode, employees, onSave, onCanc
   const activeEmployees = employees.filter(emp => emp.status === 'ativo');
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Informações da Ação Disciplinar</CardTitle>
@@ -441,4 +456,4 @@ export function DisciplinaryActionForm({ action, mode, employees, onSave, onCanc
       )}
     </form>
   );
-}
+});

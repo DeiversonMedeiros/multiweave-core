@@ -1,16 +1,19 @@
 import React from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Payroll } from '@/integrations/supabase/rh-types';
+import { Payroll, Employee } from '@/integrations/supabase/rh-types';
+import { useRHData } from '@/hooks/generic/useEntityData';
+import { useCompany } from '@/lib/company-context';
 
 // =====================================================
 // SCHEMA DE VALIDAÇÃO
 // =====================================================
 
 const payrollFormSchema = z.object({
+  employee_id: z.string().min(1, 'Funcionário é obrigatório').optional(),
   mes_referencia: z.number().min(1, 'Mês deve ser entre 1 e 12').max(12, 'Mês deve ser entre 1 e 12'),
   ano_referencia: z.number().min(2020, 'Ano deve ser maior que 2020').max(2030, 'Ano deve ser menor que 2030'),
   salario_base: z.number().min(0, 'Salário base deve ser positivo').optional(),
@@ -41,15 +44,21 @@ interface PayrollFormProps {
 // =====================================================
 
 export function PayrollForm({ payroll, onSubmit, mode }: PayrollFormProps) {
+  const { selectedCompany } = useCompany();
+  const { data: employeesData } = useRHData<Employee>('employees', selectedCompany?.id || '');
+  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
+
   const {
     register,
     handleSubmit,
     setValue,
     watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<PayrollFormData>({
     resolver: zodResolver(payrollFormSchema),
     defaultValues: {
+      employee_id: payroll?.employee_id || '',
       mes_referencia: payroll?.mes_referencia || new Date().getMonth() + 1,
       ano_referencia: payroll?.ano_referencia || new Date().getFullYear(),
       salario_base: payroll?.salario_base || 0,
@@ -70,6 +79,59 @@ export function PayrollForm({ payroll, onSubmit, mode }: PayrollFormProps) {
 
   return (
     <form id="form-modal-form" onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+      {/* Funcionário - apenas no modo create */}
+      {mode === 'create' && (
+        <div className="space-y-2">
+          <label htmlFor="employee_id" className="text-sm font-medium">
+            Funcionário *
+          </label>
+          <Controller
+            name="employee_id"
+            control={control}
+            rules={{ required: 'Funcionário é obrigatório' }}
+            render={({ field }) => (
+              <Select
+                value={field.value || ''}
+                onValueChange={field.onChange}
+                disabled={mode === 'view'}
+              >
+                <SelectTrigger className={errors.employee_id ? 'border-red-500' : ''}>
+                  <SelectValue placeholder="Selecione um funcionário" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.length > 0 ? (
+                    employees
+                      .filter((emp: Employee) => emp.status === 'ativo')
+                      .map((employee: Employee) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.nome} - {employee.matricula || 'Sem matrícula'}
+                        </SelectItem>
+                      ))
+                  ) : (
+                    <SelectItem value="no-employees" disabled>
+                      Nenhum funcionário encontrado
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          {errors.employee_id && (
+            <p className="text-sm text-red-500">{errors.employee_id.message}</p>
+          )}
+        </div>
+      )}
+
+      {/* Exibir funcionário no modo view/edit */}
+      {(mode === 'view' || mode === 'edit') && payroll?.employee && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Funcionário</label>
+          <p className="text-sm text-muted-foreground">
+            {payroll.employee.nome} - {payroll.employee.matricula || 'Sem matrícula'}
+          </p>
+        </div>
+      )}
+
       {/* Mês e Ano de Referência */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

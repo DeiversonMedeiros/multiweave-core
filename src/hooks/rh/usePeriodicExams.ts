@@ -19,6 +19,7 @@ import {
   PeriodicExamCreateData,
   PeriodicExamUpdateData
 } from '@/services/rh/periodicExamsService';
+import { queryConfig } from '@/lib/react-query-config';
 
 // =====================================================
 // QUERY KEYS
@@ -59,10 +60,7 @@ export function usePeriodicExams(companyId: string, filters: PeriodicExamFilters
       }
     },
     enabled: !!companyId,
-    refetchOnMount: true,
-    refetchOnWindowFocus: false,
-    staleTime: 0,
-    cacheTime: 0,
+    ...queryConfig.semiStatic,
     retry: 1,
   });
   
@@ -82,7 +80,7 @@ export function usePeriodicExam(id: string, companyId: string) {
     queryKey: queryKeys.detail(id),
     queryFn: () => getPeriodicExamById(id, companyId),
     enabled: !!id && !!companyId,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -91,7 +89,7 @@ export function useEmployeeExams(employeeId: string, companyId: string) {
     queryKey: queryKeys.employee(employeeId, companyId),
     queryFn: () => getEmployeeExams(employeeId, companyId),
     enabled: !!employeeId && !!companyId,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -100,7 +98,7 @@ export function useExpiredExams(companyId: string, daysAhead: number = 30) {
     queryKey: queryKeys.expired(companyId, daysAhead),
     queryFn: () => getExpiredExams(companyId, daysAhead),
     enabled: !!companyId,
-    staleTime: 10 * 60 * 1000, // 10 minutos
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -109,7 +107,7 @@ export function useExamsByType(companyId: string, tipoExame: string) {
     queryKey: queryKeys.byType(companyId, tipoExame),
     queryFn: () => getExamsByType(companyId, tipoExame),
     enabled: !!companyId && !!tipoExame,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -118,7 +116,7 @@ export function useExamStats(companyId: string) {
     queryKey: queryKeys.stats(companyId),
     queryFn: () => getExamStats(companyId),
     enabled: !!companyId,
-    staleTime: 10 * 60 * 1000, // 10 minutos
+    ...queryConfig.dashboard,
   });
 }
 
@@ -228,7 +226,7 @@ export function useExamCalendar(companyId: string, year: number, month: number) 
       return calendar;
     },
     enabled: !!companyId && !!year && !!month,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -250,7 +248,7 @@ export function useExamNotifications(companyId: string) {
       return notifications;
     },
     enabled: !!companyId,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.dynamic,
     refetchInterval: 10 * 60 * 1000, // Refetch a cada 10 minutos
   });
 }

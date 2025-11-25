@@ -5,9 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UsuarioForm } from "@/components/forms/UsuarioForm";
+import { UpdatePasswordDialog } from "@/components/forms/UpdatePasswordDialog";
+import { Button } from "@/components/ui/button";
+import { Key, Edit } from "lucide-react";
 import { toast } from "sonner";
 import { RequireEntity } from "@/components/RequireAuth";
-import { PermissionGuard, PermissionButton } from "@/components/PermissionGuard";
+import { PermissionGuard } from "@/components/PermissionGuard";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useMultiTenancy } from "@/hooks/useMultiTenancy";
 
@@ -17,6 +20,8 @@ export default function Usuarios() {
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUsuario, setEditingUsuario] = useState<User | null>(null);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
+  const [selectedUserForPassword, setSelectedUserForPassword] = useState<User | null>(null);
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { currentCompany, isAdmin } = useMultiTenancy();
 
@@ -92,9 +97,95 @@ export default function Usuarios() {
     }
   };
 
+  const handleUpdatePassword = (user: User) => {
+    setSelectedUserForPassword(user);
+    setIsPasswordDialogOpen(true);
+  };
+
+  const handleEdit = (user: User) => {
+    setEditingUsuario(user);
+    setIsDialogOpen(true);
+  };
+
+  const handleExport = () => {
+    try {
+      if (usuarios.length === 0) {
+        toast.warning("Não há usuários para exportar");
+        return;
+      }
+
+      // Definir cabeçalhos do CSV
+      const headers = ["Nome", "Email", "Nome de Usuário", "Status", "Data de Criação", "Data de Atualização"];
+      
+      // Converter dados para linhas CSV
+      const rows = usuarios.map((user) => {
+        const formatDate = (date: string | null | undefined) => {
+          if (!date) return "";
+          try {
+            return new Date(date).toLocaleString("pt-BR", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+          } catch {
+            return date;
+          }
+        };
+
+        const escapeCSV = (value: any) => {
+          if (value === null || value === undefined) return "";
+          const stringValue = String(value);
+          // Se contém vírgula, aspas ou quebra de linha, envolver em aspas e escapar aspas internas
+          if (stringValue.includes(",") || stringValue.includes('"') || stringValue.includes("\n")) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+          }
+          return stringValue;
+        };
+
+        return [
+          escapeCSV(user.nome),
+          escapeCSV(user.email),
+          escapeCSV(user.username || ""),
+          escapeCSV(user.ativo ? "Ativo" : "Inativo"),
+          escapeCSV(formatDate(user.created_at)),
+          escapeCSV(formatDate(user.updated_at)),
+        ].join(",");
+      });
+
+      // Combinar cabeçalhos e linhas
+      const csvContent = [headers.join(","), ...rows].join("\n");
+
+      // Adicionar BOM para UTF-8 (garante que Excel abra corretamente)
+      const BOM = "\uFEFF";
+      const blob = new Blob([BOM + csvContent], { type: "text/csv;charset=utf-8;" });
+
+      // Criar link de download
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      const timestamp = new Date().toISOString().split("T")[0];
+      const filename = `usuarios_${timestamp}.csv`;
+
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exportação concluída: ${usuarios.length} usuário(s) exportado(s)`);
+    } catch (error: any) {
+      console.error("Erro ao exportar usuários:", error);
+      toast.error("Erro ao exportar usuários: " + (error.message || "Erro desconhecido"));
+    }
+  };
+
   const columns = [
     { header: "Nome", accessor: "nome" as keyof User },
     { header: "Email", accessor: "email" as keyof User },
+    { header: "Nome de usuário", accessor: "username" as keyof User },
     {
       header: "Status",
       accessor: (item: User) => (
@@ -102,6 +193,38 @@ export default function Usuarios() {
           {item.ativo ? "Ativo" : "Inativo"}
         </Badge>
       ),
+    },
+    {
+      header: "Ações",
+      accessor: (item: User) => {
+        const canUpdate = canEditEntity('users'); // Usar canEditEntity para update também
+        return (
+          <div className="flex gap-2">
+            {canUpdate && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleEdit(item)}
+                  title="Editar usuário"
+                >
+                  <Edit className="h-4 w-4 mr-1" />
+                  Editar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleUpdatePassword(item)}
+                  title="Atualizar senha"
+                >
+                  <Key className="h-4 w-4 mr-1" />
+                  Senha
+                </Button>
+              </>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -145,18 +268,22 @@ export default function Usuarios() {
         <DataTable
           data={usuarios}
           columns={columns}
-          onNew={() => {
+          onNew={canCreateEntity('users') ? () => {
             setEditingUsuario(null);
             setIsDialogOpen(true);
-          }}
-          onExport={() => toast.info("Exportação em desenvolvimento")}
-          searchPlaceholder="Buscar por nome ou email..."
+          } : undefined}
+          onExport={handleExport}
+          searchPlaceholder="Buscar por nome, email ou usuário..."
           newButtonLabel="Novo Usuário"
-          showNewButton={canCreateEntity('users')}
         />
 
-        <PermissionGuard entity="users" action="create">
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        {(canCreateEntity('users') || canEditEntity('users')) && (
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) {
+              setEditingUsuario(null);
+            }
+          }}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
@@ -167,19 +294,33 @@ export default function Usuarios() {
                 usuario={editingUsuario || undefined}
                 onSuccess={() => {
                   setIsDialogOpen(false);
-                  if (editingUsuario) {
-                    // Para edição, recarregar a lista
-                    fetchUsuarios();
-                  } else {
-                    // Para criação, apenas recarregar a lista (usuário já foi criado pela Edge Function)
-                    fetchUsuarios();
-                  }
+                  setEditingUsuario(null);
+                  fetchUsuarios();
                 }}
-                onCancel={() => setIsDialogOpen(false)}
+                onCancel={() => {
+                  setIsDialogOpen(false);
+                  setEditingUsuario(null);
+                }}
               />
             </DialogContent>
           </Dialog>
-        </PermissionGuard>
+        )}
+
+        {selectedUserForPassword && (
+          <UpdatePasswordDialog
+            user={selectedUserForPassword}
+            open={isPasswordDialogOpen}
+            onOpenChange={(open) => {
+              setIsPasswordDialogOpen(open);
+              if (!open) {
+                setSelectedUserForPassword(null);
+              }
+            }}
+            onSuccess={() => {
+              fetchUsuarios();
+            }}
+          />
+        )}
       </div>
     </RequireEntity>
   );

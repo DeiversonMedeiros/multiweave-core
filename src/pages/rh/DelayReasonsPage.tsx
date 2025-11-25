@@ -9,13 +9,17 @@ import { toast } from '@/hooks/use-toast';
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCompany } from '@/lib/company-context';
 
 const DelayReasonsPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<DelayReason | null>(null);
   const [formData, setFormData] = useState<Partial<DelayReason>>({});
 
-  const { data = [], isLoading } = useDelayReasons();
+  const { selectedCompany } = useCompany();
+  const delayReasonsQuery = useDelayReasons(selectedCompany?.id);
+  const data = delayReasonsQuery.data || [];
+  const isLoading = delayReasonsQuery.isLoading;
   const createMutation = useCreateDelayReason();
   const updateMutation = useUpdateDelayReason();
   const deleteMutation = useDeleteDelayReason();
@@ -148,7 +152,7 @@ const DelayReasonsPage: React.FC = () => {
   const handleDelete = async (item: DelayReason) => {
     if (window.confirm('Tem certeza que deseja excluir este motivo de atraso?')) {
       try {
-        await deleteMutation.mutateAsync(item.id);
+        await deleteMutation.mutateAsync({ id: item.id, companyId: selectedCompany?.id || '' });
         toast({
           title: 'Sucesso',
           description: 'Motivo de atraso excluído com sucesso.',

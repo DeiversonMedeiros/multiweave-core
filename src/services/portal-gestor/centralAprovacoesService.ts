@@ -7,7 +7,7 @@ import { EntityService } from '@/services/generic/entityService';
 
 export interface AprovacaoItem {
   id: string;
-  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto';
+  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto' | 'registro_ponto' | 'assinatura_ponto';
   funcionario_nome: string;
   funcionario_matricula: string;
   data_solicitacao: string;
@@ -138,6 +138,14 @@ export async function approveRequest(payload: { tipo: AprovacaoItem['tipo']; id:
         rpcFunction = 'approve_attendance_correction';
         rpcParams = { correction_id: id, approved_by: user.id, observacoes };
         break;
+      case 'registro_ponto':
+        rpcFunction = 'approve_time_record';
+        rpcParams = { p_time_record_id: id, p_approved_by: user.id, p_observacoes: observacoes };
+        break;
+      case 'assinatura_ponto':
+        rpcFunction = 'approve_time_record_signature';
+        rpcParams = { p_signature_id: id, p_approved_by: user.id, p_observacoes: observacoes };
+        break;
       default:
         throw new Error(`Tipo de aprovação desconhecido: ${tipo}`);
     }
@@ -201,6 +209,14 @@ export async function rejectRequest(payload: { tipo: AprovacaoItem['tipo']; id: 
       case 'correcao_ponto':
         rpcFunction = 'reject_attendance_correction';
         rpcParams = { correction_id: id, rejected_by: user.id, observacoes };
+        break;
+      case 'registro_ponto':
+        rpcFunction = 'reject_time_record';
+        rpcParams = { p_time_record_id: id, p_rejected_by: user.id, p_observacoes: observacoes };
+        break;
+      case 'assinatura_ponto':
+        rpcFunction = 'reject_time_record_signature';
+        rpcParams = { p_signature_id: id, p_rejected_by: user.id, p_rejection_reason: observacoes };
         break;
       default:
         throw new Error(`Tipo de rejeição desconhecido: ${tipo}`);

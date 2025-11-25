@@ -24,8 +24,8 @@ import { PlanoContas, PlanoContasFormData } from '@/integrations/supabase/financ
 // Schema de validação
 const planoContasSchema = z.object({
   codigo: z.string().min(1, 'Código é obrigatório'),
-  nome: z.string().min(1, 'Nome é obrigatório'),
-  tipo: z.enum(['ativo', 'passivo', 'patrimonio_liquido', 'receita', 'despesa', 'custos']),
+  descricao: z.string().min(1, 'Descrição é obrigatória'),
+  tipo_conta: z.enum(['ativo', 'passivo', 'patrimonio', 'receita', 'despesa', 'custos']),
   nivel: z.number().min(1, 'Nível deve ser maior que zero'),
   conta_pai_id: z.string().optional(),
   aceita_lancamento: z.boolean(),
@@ -50,8 +50,8 @@ export function PlanoContasForm({ conta, onSave, onCancel, loading = false }: Pl
     resolver: zodResolver(planoContasSchema),
     defaultValues: {
       codigo: '',
-      nome: '',
-      tipo: 'ativo',
+      descricao: '',
+      tipo_conta: 'ativo',
       nivel: 1,
       conta_pai_id: '',
       aceita_lancamento: true,
@@ -66,13 +66,13 @@ export function PlanoContasForm({ conta, onSave, onCancel, loading = false }: Pl
     if (conta) {
       form.reset({
         codigo: conta.codigo,
-        nome: conta.nome,
-        tipo: conta.tipo,
+        descricao: conta.descricao,
+        tipo_conta: conta.tipo_conta,
         nivel: conta.nivel,
         conta_pai_id: conta.conta_pai_id || '',
         aceita_lancamento: conta.aceita_lancamento,
         saldo_inicial: conta.saldo_inicial,
-        natureza: conta.natureza,
+        natureza: conta.natureza || 'devedora',
         observacoes: conta.observacoes || '',
       });
     }
@@ -81,7 +81,21 @@ export function PlanoContasForm({ conta, onSave, onCancel, loading = false }: Pl
   const onSubmit = async (data: PlanoContasFormValues) => {
     try {
       setIsSubmitting(true);
-      await onSave(data);
+      // Converter para o formato esperado pela interface PlanoContasFormData
+      // A interface ainda usa 'nome' mas mapeamos de 'descricao' para compatibilidade
+      // O EntityService enviará os dados diretamente ao banco, então precisamos mapear corretamente
+      const formData: PlanoContasFormData = {
+        codigo: data.codigo,
+        nome: data.descricao, // Mapear descricao para nome (interface ainda usa nome)
+        tipo: data.tipo_conta === 'patrimonio' ? 'patrimonio_liquido' : data.tipo_conta as any,
+        nivel: data.nivel,
+        conta_pai_id: data.conta_pai_id || undefined,
+        aceita_lancamento: data.aceita_lancamento,
+        saldo_inicial: data.saldo_inicial,
+        natureza: data.natureza,
+        observacoes: data.observacoes,
+      };
+      await onSave(formData);
     } catch (error) {
       console.error('Erro ao salvar plano de contas:', error);
     } finally {
@@ -149,15 +163,15 @@ export function PlanoContasForm({ conta, onSave, onCancel, loading = false }: Pl
 
                 <FormField
                   control={form.control}
-                  name="nome"
+                  name="descricao"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Nome da Conta *</FormLabel>
+                      <FormLabel>Descrição da Conta *</FormLabel>
                       <FormControl>
                         <Input placeholder="Ex: Caixa" {...field} />
                       </FormControl>
                       <FormDescription>
-                        Nome descritivo da conta
+                        Descrição da conta
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -166,7 +180,7 @@ export function PlanoContasForm({ conta, onSave, onCancel, loading = false }: Pl
 
                 <FormField
                   control={form.control}
-                  name="tipo"
+                  name="tipo_conta"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Tipo da Conta *</FormLabel>
@@ -179,7 +193,7 @@ export function PlanoContasForm({ conta, onSave, onCancel, loading = false }: Pl
                         <SelectContent>
                           <SelectItem value="ativo">Ativo</SelectItem>
                           <SelectItem value="passivo">Passivo</SelectItem>
-                          <SelectItem value="patrimonio_liquido">Patrimônio Líquido</SelectItem>
+                          <SelectItem value="patrimonio">Patrimônio Líquido</SelectItem>
                           <SelectItem value="receita">Receita</SelectItem>
                           <SelectItem value="despesa">Despesa</SelectItem>
                           <SelectItem value="custos">Custos</SelectItem>

@@ -283,7 +283,7 @@ export default function CompensationRequestsPage() {
             funcionario_id: '', 
             tipo_compensacao: '', 
             data_compensacao: '', 
-            horas_solicitadas: 0, 
+            quantidade_horas: 0, 
             motivo: '', 
             observacoes: '' 
           });
@@ -357,7 +357,7 @@ export default function CompensationRequestsPage() {
                   <TableRow key={request.id}>
                     <TableCell className="font-medium">{request.funcionario_nome}</TableCell>
                     <TableCell>{request.tipo_compensacao}</TableCell>
-                    <TableCell>{request.horas_solicitadas}h</TableCell>
+                    <TableCell>{request.quantidade_horas}h</TableCell>
                     <TableCell>
                       {request.data_compensacao 
                         ? new Date(request.data_compensacao).toLocaleDateString('pt-BR')
@@ -473,14 +473,14 @@ export default function CompensationRequestsPage() {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="horas_solicitadas" className="text-right">
+                <Label htmlFor="quantidade_horas" className="text-right">
                   Horas
                 </Label>
                 <Input
-                  id="horas_solicitadas"
+                  id="quantidade_horas"
                   type="number"
-                  value={formData.horas_solicitadas}
-                  onChange={(e) => setFormData({ ...formData, horas_solicitadas: Number(e.target.value) })}
+                  value={formData.quantidade_horas}
+                  onChange={(e) => setFormData({ ...formData, quantidade_horas: Number(e.target.value) })}
                   className="col-span-3"
                   min="0"
                   step="0.5"

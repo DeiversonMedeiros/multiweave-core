@@ -10,15 +10,20 @@ import {
   Clock, 
   Users, 
   AlertCircle,
-  Info
+  Info,
+  Cog,
+  UserCheck
 } from 'lucide-react';
 import { BankHoursConfig } from '../../components/rh/BankHoursConfig';
 import { BankHoursDashboard } from '../../components/rh/BankHoursDashboard';
+import { BankHoursTypesManager } from '../../components/rh/BankHoursTypesManager';
+import { BankHoursAssignmentsManager } from '../../components/rh/BankHoursAssignmentsManager';
 import { useCompany } from '../../lib/company-context';
+import { BankHoursLegacyImport } from '../../components/rh/BankHoursLegacyImport';
 
 export default function BankHoursPage() {
   const { selectedCompany } = useCompany();
-  const [activeTab, setActiveTab] = useState('config');
+  const [activeTab, setActiveTab] = useState('types');
 
   if (!selectedCompany) {
     return (
@@ -51,14 +56,22 @@ export default function BankHoursPage() {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          O sistema de banco de horas permite configurar quais colaboradores terão banco de horas 
-          ou pagamento de horas extras, além de definir o período de acumulação. Configure os 
-          parâmetros na aba "Configuração" e acompanhe os saldos na aba "Dashboard".
+          O sistema de banco de horas foi otimizado! Agora você pode criar tipos de banco de horas 
+          e vincular funcionários em massa, economizando tempo na configuração. Use as abas para 
+          gerenciar tipos, vincular funcionários e acompanhar o dashboard.
         </AlertDescription>
       </Alert>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="types" className="flex items-center space-x-2">
+            <Cog className="h-4 w-4" />
+            <span>Tipos</span>
+          </TabsTrigger>
+          <TabsTrigger value="assignments" className="flex items-center space-x-2">
+            <UserCheck className="h-4 w-4" />
+            <span>Vínculos</span>
+          </TabsTrigger>
           <TabsTrigger value="config" className="flex items-center space-x-2">
             <Settings className="h-4 w-4" />
             <span>Configuração</span>
@@ -67,18 +80,30 @@ export default function BankHoursPage() {
             <BarChart3 className="h-4 w-4" />
             <span>Dashboard</span>
           </TabsTrigger>
+          <TabsTrigger value="legacy" className="flex items-center space-x-2">
+            <Clock className="h-4 w-4" />
+            <span>Legado</span>
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="types" className="space-y-6">
+          <BankHoursTypesManager companyId={selectedCompany.id} />
+        </TabsContent>
+
+        <TabsContent value="assignments" className="space-y-6">
+          <BankHoursAssignmentsManager companyId={selectedCompany.id} />
+        </TabsContent>
 
         <TabsContent value="config" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <Users className="h-5 w-5" />
-                <span>Configuração por Colaborador</span>
+                <span>Configuração Individual (Legado)</span>
               </CardTitle>
               <CardDescription>
-                Configure quais colaboradores terão banco de horas e os parâmetros de acumulação.
-                Você pode escolher o período de tempo em meses que o banco de horas vai acumular.
+                Esta é a configuração individual por colaborador. Recomendamos usar os "Tipos" 
+                e "Vínculos" para uma gestão mais eficiente.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -90,6 +115,10 @@ export default function BankHoursPage() {
         <TabsContent value="dashboard" className="space-y-6">
           <BankHoursDashboard companyId={selectedCompany.id} />
         </TabsContent>
+
+        <TabsContent value="legacy" className="space-y-6">
+          <BankHoursLegacyImport companyId={selectedCompany.id} />
+        </TabsContent>
       </Tabs>
 
       {/* Informações sobre o Sistema */}
@@ -98,19 +127,29 @@ export default function BankHoursPage() {
           <CardTitle>Como Funciona o Sistema</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <h3 className="font-semibold mb-2">Configuração</h3>
+              <h3 className="font-semibold mb-2">1. Tipos de Banco de Horas</h3>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>• Selecione quais colaboradores terão banco de horas</li>
-                <li>• Configure o período de acumulação (em meses)</li>
-                <li>• Defina o máximo de horas que podem ser acumuladas</li>
-                <li>• Escolha a taxa de compensação (ex: 1:1, 1.5:1)</li>
-                <li>• Configure se deve haver compensação automática</li>
+                <li>• Crie tipos com configurações específicas</li>
+                <li>• Ex: Padrão, Gerencial, Operacional</li>
+                <li>• Configure parâmetros uma única vez</li>
+                <li>• Defina um tipo como padrão</li>
+                <li>• Reutilize configurações entre funcionários</li>
               </ul>
             </div>
             <div>
-              <h3 className="font-semibold mb-2">Funcionamento</h3>
+              <h3 className="font-semibold mb-2">2. Vínculos de Funcionários</h3>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                <li>• Vincule funcionários aos tipos criados</li>
+                <li>• Atribuição em lote para economizar tempo</li>
+                <li>• Visualize funcionários sem vínculo</li>
+                <li>• Gerencie vínculos de forma centralizada</li>
+                <li>• Histórico de atribuições</li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-semibold mb-2">3. Funcionamento</h3>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Horas extras são automaticamente acumuladas</li>
                 <li>• O sistema calcula saldos baseado nos registros de ponto</li>

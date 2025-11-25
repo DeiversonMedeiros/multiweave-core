@@ -5,14 +5,14 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PlusCircle, Edit, Trash2, Gift, DollarSign, Users, TrendingUp, Upload, Download, CheckCircle, XCircle } from 'lucide-react';
-import { useAwardsProductivity, useAwardStats, useAwardTypes, useAwardStatuses, useAwardImports, useImportAwardsFromCSV } from '@/hooks/rh/useAwardsProductivity';
+import { PlusCircle, Edit, Trash2, Gift, DollarSign, Users, TrendingUp, Upload, Download, CheckCircle, XCircle, FileText, ExternalLink } from 'lucide-react';
+import { useAwardsProductivity, useAwardStats, useAwardTypes, useAwardStatuses, useAwardImports, useImportAwardsFromCSV, useDeleteAwardProductivity, useApproveAward, useMarkAsPaid } from '@/hooks/rh/useAwardsProductivity';
 import { AwardProductivityFilters } from '@/integrations/supabase/rh-types';
 import { formatCurrency, formatDate, getAwardTypeLabel, getAwardTypeColor, getAwardStatusLabel, getAwardStatusColor, downloadCSVTemplate } from '@/services/rh/awardsProductivityService';
 import {
@@ -26,13 +26,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { useDeleteAwardProductivity, useApproveAward, useMarkAsPaid } from '@/hooks/rh/useAwardsProductivity';
 import { toast } from 'sonner';
 import { useRHData } from '@/hooks/generic/useEntityData';
 import { Employee } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/lib/auth-context';
+import { RequireEntity } from '@/components/RequireAuth';
+import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const AwardsProductivityPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [filters, setFilters] = useState<AwardProductivityFilters>({
     tipo: '',
     status: '',
@@ -45,7 +51,8 @@ const AwardsProductivityPage: React.FC = () => {
   );
 
   const { selectedCompany } = useCompany();
-  const { data: awards, isLoading, error } = useAwardsProductivity(filters);
+  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { data: awards, isLoading, error, refetch } = useAwardsProductivity(filters);
   const { data: stats } = useAwardStats();
   const { data: imports } = useAwardImports(selectedMonth);
   
@@ -72,8 +79,12 @@ const AwardsProductivityPage: React.FC = () => {
   };
 
   const handleApprove = async (id: string) => {
+    if (!user?.id) {
+      toast.error('Usuário não autenticado');
+      return;
+    }
     try {
-      await approveMutation.mutateAsync({ id, approvedBy: 'current-user-id' }); // TODO: usar ID do usuário atual
+      await approveMutation.mutateAsync({ id, approvedBy: user.id });
       toast.success('Premiação aprovada com sucesso!');
     } catch (err) {
       toast.error('Erro ao aprovar premiação.', {
@@ -91,6 +102,10 @@ const AwardsProductivityPage: React.FC = () => {
         description: err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.',
       });
     }
+  };
+
+  const handleViewAccountsPayable = (accountsPayableId: string) => {
+    navigate(`/financeiro/contas-pagar?conta=${accountsPayableId}`);
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,8 +149,8 @@ const AwardsProductivityPage: React.FC = () => {
   if (error) return <div>Erro ao carregar premiações: {error.message}</div>;
 
   return (
-
-    <div className="container mx-auto py-8 space-y-6">
+    <RequireEntity entityName="awards_productivity" action="read">
+      <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -171,12 +186,14 @@ const AwardsProductivityPage: React.FC = () => {
             onChange={handleFileUpload}
             className="hidden"
           />
-          <Button asChild>
-            <Link to="/rh/awards-productivity/new">
-              <PlusCircle className="mr-2" size={20} />
-              Nova Premiação
-            </Link>
-          </Button>
+          <PermissionButton entity="awards_productivity" action="create">
+            <Button asChild>
+              <Link to="/rh/awards-productivity/new">
+                <PlusCircle className="mr-2" size={20} />
+                Nova Premiação
+              </Link>
+            </Button>
+          </PermissionButton>
         </div>
       </div>
 
@@ -300,6 +317,10 @@ const AwardsProductivityPage: React.FC = () => {
           <Card>
             <CardHeader>
               <CardTitle>Lista de Premiações</CardTitle>
+              <CardDescription>
+                Ao aprovar uma premiação, ela é automaticamente enviada para Flash, que gera o boleto e cria a conta a pagar.
+                A conta a pagar passa pelo sistema de aprovações configurado em Configurações/Aprovações.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -311,6 +332,7 @@ const AwardsProductivityPage: React.FC = () => {
                     <TableHead>Valor</TableHead>
                     <TableHead>Mês Referência</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Integrações</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -332,6 +354,30 @@ const AwardsProductivityPage: React.FC = () => {
                         </Badge>
                       </TableCell>
                       <TableCell>
+                        <div className="flex items-center gap-1">
+                          {award.accounts_payable_id && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleViewAccountsPayable(award.accounts_payable_id!)}
+                              title="Ver Conta a Pagar"
+                            >
+                              <FileText className="h-4 w-4 text-blue-600" />
+                            </Button>
+                          )}
+                          {award.flash_invoice_id && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => window.open(`https://flash-api.example.com/invoices/${award.flash_invoice_id}`, '_blank')}
+                              title="Ver Boleto Flash"
+                            >
+                              <ExternalLink className="h-4 w-4 text-green-600" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center space-x-2">
                           {award.status === 'pendente' && (
                             <Button
@@ -339,28 +385,48 @@ const AwardsProductivityPage: React.FC = () => {
                               size="sm"
                               onClick={() => handleApprove(award.id)}
                               disabled={approveMutation.isPending}
+                              title="Aprovar"
                             >
                               <CheckCircle className="h-4 w-4" />
                             </Button>
                           )}
                           {award.status === 'aprovado' && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleMarkAsPaid(award.id)}
-                              disabled={markAsPaidMutation.isPending}
-                            >
-                              <DollarSign className="h-4 w-4" />
-                            </Button>
+                            <>
+                              {/* Status automático: após aprovação, envia para Flash automaticamente */}
+                              {award.flash_invoice_id && (
+                                <Badge variant="outline" className="text-xs">
+                                  Flash: {award.flash_invoice_id.substring(0, 8)}...
+                                </Badge>
+                              )}
+                              {award.accounts_payable_id && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleViewAccountsPayable(award.accounts_payable_id!)}
+                                  title="Ver Conta a Pagar"
+                                >
+                                  <FileText className="h-4 w-4 text-blue-600" />
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleMarkAsPaid(award.id)}
+                                disabled={markAsPaidMutation.isPending}
+                                title="Marcar como Pago"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </Button>
+                            </>
                           )}
                           <Link to={`/rh/awards-productivity/${award.id}`}>
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" title="Editar">
                               <Edit className="h-4 w-4" />
                             </Button>
                           </Link>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="destructive" size="sm">
+                              <Button variant="destructive" size="sm" title="Excluir">
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </AlertDialogTrigger>
@@ -448,8 +514,9 @@ const AwardsProductivityPage: React.FC = () => {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
-    );
+      </div>
+    </RequireEntity>
+  );
 };
 
 export default AwardsProductivityPage;

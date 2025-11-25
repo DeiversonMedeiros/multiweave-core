@@ -1,0 +1,12 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#1f2937"/>
+  <circle cx="256" cy="256" r="200" fill="#3b82f6"/>
+  <rect x="200" y="180" width="112" height="152" rx="8" fill="white"/>
+  <rect x="220" y="200" width="72" height="8" fill="#1f2937"/>
+  <rect x="220" y="220" width="72" height="8" fill="#1f2937"/>
+  <rect x="220" y="240" width="72" height="8" fill="#1f2937"/>
+  <rect x="220" y="260" width="72" height="8" fill="#1f2937"/>
+  <rect x="220" y="280" width="72" height="8" fill="#1f2937"/>
+  <rect x="220" y="300" width="72" height="8" fill="#1f2937"/>
+  <text x="256" y="380" text-anchor="middle" fill="white" font-family="Arial" font-size="24" font-weight="bold">MW</text>
+</svg>

@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { EntityService } from '@/services/generic/entityService';
+
+// LOG DE VERSÃO - Se você ver este log, o código novo está carregado
+console.log('🆕🆕🆕 [useGestorPortal] CÓDIGO NOVO CARREGADO - Versão com call_schema_rpc', new Date().toISOString());
 
 export interface DashboardStats {
   total_funcionarios: number;
@@ -40,6 +44,9 @@ export interface FeriasItem {
   created_at: string;
   saldo_ferias_disponivel: number;
   conflitos?: string[];
+  ano_aquisitivo?: number;
+  periodo_aquisitivo_inicio?: string;
+  periodo_aquisitivo_fim?: string;
 }
 
 export interface CompensationRequest {
@@ -50,7 +57,7 @@ export interface CompensationRequest {
   tipo_compensacao: string;
   data_solicitacao: string;
   data_compensacao: string;
-  horas_solicitadas: number;
+  quantidade_horas: number; // Corrigido: era horas_solicitadas
   motivo: string;
   status: 'pendente' | 'aprovado' | 'rejeitado' | 'compensado';
   aprovado_por?: string;
@@ -131,6 +138,7 @@ export interface AttendanceCorrection {
 
 // Hook para gerenciar férias
 export const useVacationRequests = (companyId: string) => {
+  const queryClient = useQueryClient();
   const [ferias, setFerias] = useState<FeriasItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -154,23 +162,103 @@ export const useVacationRequests = (companyId: string) => {
         return;
       }
 
-      // Buscar dados dos funcionários
-      const employeeIds = vacationsResult.data.map(v => v.employee_id).filter(Boolean);
+      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
       const employeesResult = await EntityService.list({
         schema: 'rh',
         table: 'employees',
-        companyId: companyId,
-        filters: { id: { in: employeeIds } }
+        companyId: companyId
       });
+      
+      // Filtrar apenas os funcionários necessários
+      const employeeIds = new Set(vacationsResult.data.map(v => v.employee_id).filter(Boolean));
 
-      // Mapear funcionários por ID
+      // Mapear funcionários por ID (apenas os que estão nas férias)
       const employeeMap = new Map();
       employeesResult.data?.forEach(emp => {
-        employeeMap.set(emp.id, emp);
+        if (employeeIds.has(emp.id)) {
+          employeeMap.set(emp.id, emp);
+        }
       });
 
-      const formattedData = vacationsResult.data.map(item => {
+      // Buscar períodos aquisitivos para todas as férias
+      const employeeIdsForEntitlements = new Set(vacationsResult.data.map(v => v.employee_id).filter(Boolean));
+      const entitlementsResult = await EntityService.list({
+        schema: 'rh',
+        table: 'vacation_entitlements',
+        companyId: companyId,
+        filters: {}
+      });
+
+      // Criar mapa de períodos aquisitivos por employee_id e data_inicio
+      const entitlementsMap = new Map<string, any>();
+      entitlementsResult.data?.forEach((ent: any) => {
+        if (employeeIdsForEntitlements.has(ent.employee_id)) {
+          const key = `${ent.employee_id}_${ent.ano_aquisitivo}`;
+          if (!entitlementsMap.has(key) || ent.ano_aquisitivo > entitlementsMap.get(key)?.ano_aquisitivo) {
+            entitlementsMap.set(key, ent);
+          }
+        }
+      });
+
+      const formattedData = await Promise.all(vacationsResult.data.map(async (item) => {
         const employee = employeeMap.get(item.employee_id);
+        
+        // Buscar período aquisitivo relacionado às férias
+        let periodoAquisitivo: any = null;
+        if (item.data_inicio) {
+          const employeeEntitlements = entitlementsResult.data?.filter((ent: any) => 
+            ent.employee_id === item.employee_id
+          ) || [];
+          
+          // Se a férias já foi aprovada, buscar o período que tem dias_gozados correspondentes
+          // ou que foi atualizado próximo à data de aprovação
+          if (item.status === 'aprovado' && item.aprovado_em) {
+            // Buscar período que tem dias_gozados >= dias_solicitados (indicando que foi usado)
+            const periodosComDiasGozados = employeeEntitlements.filter((ent: any) => 
+              ent.dias_gozados > 0
+            );
+            
+            if (periodosComDiasGozados.length > 0) {
+              // Ordenar por updated_at mais recente (mais provável de ser o período usado)
+              periodosComDiasGozados.sort((a: any, b: any) => {
+                const dateA = new Date(a.updated_at || 0).getTime();
+                const dateB = new Date(b.updated_at || 0).getTime();
+                return dateB - dateA;
+              });
+              
+              // Verificar se algum período tem dias_gozados que corresponde aos dias solicitados
+              const periodoCorrespondente = periodosComDiasGozados.find((ent: any) => 
+                ent.dias_gozados >= item.dias_solicitados
+              );
+              
+              if (periodoCorrespondente) {
+                periodoAquisitivo = periodoCorrespondente;
+              } else {
+                // Se não encontrou correspondência exata, usar o mais recente com dias gozados
+                periodoAquisitivo = periodosComDiasGozados[0];
+              }
+            }
+          }
+          
+          // Se ainda não encontrou, buscar período que contém a data de início
+          if (!periodoAquisitivo) {
+            const matchingEntitlements = employeeEntitlements.filter((ent: any) => 
+              ent.data_inicio_periodo <= item.data_inicio &&
+              ent.data_fim_periodo >= item.data_inicio
+            );
+            
+            if (matchingEntitlements.length > 0) {
+              periodoAquisitivo = matchingEntitlements[0];
+            }
+          }
+          
+          // Se ainda não encontrou, buscar o período mais recente do funcionário
+          if (!periodoAquisitivo && employeeEntitlements.length > 0) {
+            employeeEntitlements.sort((a: any, b: any) => b.ano_aquisitivo - a.ano_aquisitivo);
+            periodoAquisitivo = employeeEntitlements[0];
+          }
+        }
+        
         return {
           id: item.id,
           employee_id: item.employee_id,
@@ -188,9 +276,12 @@ export const useVacationRequests = (companyId: string) => {
           aprovado_em: item.aprovado_em,
           created_at: item.created_at,
           saldo_ferias_disponivel: 30, // Mock - calcular baseado no banco de horas
-          conflitos: [] // Mock - implementar lógica de conflitos
+          conflitos: [], // Mock - implementar lógica de conflitos
+          ano_aquisitivo: periodoAquisitivo?.ano_aquisitivo,
+          periodo_aquisitivo_inicio: periodoAquisitivo?.data_inicio_periodo,
+          periodo_aquisitivo_fim: periodoAquisitivo?.data_fim_periodo
         };
-      });
+      }));
 
       setFerias(formattedData);
     } catch (err) {
@@ -202,23 +293,147 @@ export const useVacationRequests = (companyId: string) => {
   };
 
   const approveVacation = async (vacationId: string, approvedBy: string, observacoes?: string) => {
+    console.log('🚀🚀🚀 [approveVacation] FUNÇÃO CHAMADA - NOVO CÓDIGO', {
+      vacationId,
+      approvedBy,
+      observacoes,
+      timestamp: new Date().toISOString()
+    });
+    
     try {
-      // TODO: Implementar aprovação via RPC function
-      console.log('Aprovar férias:', { vacationId, approvedBy, observacoes });
+      console.log('🔵 [approveVacation] Iniciando aprovação:', { vacationId, approvedBy, observacoes });
+      
+      console.log('📞 [approveVacation] Chamando call_schema_rpc...');
+      console.log('📋 [approveVacation] Parâmetros que serão enviados:', {
+        p_schema_name: 'rh',
+        p_function_name: 'aprovar_ferias',
+        p_params: {
+          p_vacation_id: vacationId,
+          p_aprovado_por: approvedBy
+        }
+      });
+      
+      // Verificar se a férias existe antes de chamar a função
+      const vacationCheck = await EntityService.list({
+        schema: 'rh',
+        table: 'vacations',
+        companyId: companyId,
+        filters: { id: vacationId }
+      });
+      
+      console.log('🔍 [approveVacation] Verificação de existência da férias:', {
+        found: vacationCheck.data && vacationCheck.data.length > 0,
+        vacationData: vacationCheck.data?.[0],
+        vacationId
+      });
+      
+      if (!vacationCheck.data || vacationCheck.data.length === 0) {
+        throw new Error(`Férias com ID ${vacationId} não encontrada no banco de dados`);
+      }
+      
+      // Usar call_schema_rpc para chamar função do schema rh
+      // IMPORTANTE: A ordem dos parâmetros deve ser p_vacation_id, p_aprovado_por
+      const rpcParams = {
+        p_schema_name: 'rh',
+        p_function_name: 'aprovar_ferias',
+        p_params: {
+          p_vacation_id: vacationId,
+          p_aprovado_por: approvedBy
+        }
+      };
+      
+      console.log('📤 [approveVacation] Enviando para call_schema_rpc:', JSON.stringify(rpcParams, null, 2));
+      
+      const { data, error } = await (supabase as any).rpc('call_schema_rpc', rpcParams);
+
+      console.log('📥 [approveVacation] Resposta recebida:', { 
+        data, 
+        error, 
+        hasError: !!error, 
+        hasData: !!data,
+        dataType: typeof data,
+        dataIsObject: typeof data === 'object',
+        dataKeys: data ? Object.keys(data) : null,
+        dataError: data?.error,
+        dataMessage: data?.message,
+        dataResult: data?.result,
+        dataSql: data?.sql,
+        fullData: JSON.stringify(data, null, 2)
+      });
+
+      if (error) {
+        console.error('❌ [approveVacation] Erro na RPC:', error);
+        throw error;
+      }
+
+      // call_schema_rpc retorna { result: ... } ou { error: true, message: ... }
+      if (data?.error) {
+        const errorMessage = data.message || 'Erro ao aprovar férias';
+        console.error('❌ [approveVacation] Erro retornado pela função:', errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      console.log('✅ [approveVacation] Aprovação bem-sucedida:', data);
+
+      // Invalidar todas as queries relacionadas a férias
+      queryClient.invalidateQueries({ queryKey: ['pending-vacations'] });
+      queryClient.invalidateQueries({ queryKey: ['vacation-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['vacation-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['rh', 'vacations'] });
+      
+      // Recarregar a lista de férias
+      console.log('🔄 [approveVacation] Recarregando lista de férias...');
       await fetchFerias();
+      console.log('✅ [approveVacation] Lista recarregada');
     } catch (err) {
-      console.error('Erro ao aprovar férias:', err);
+      console.error('❌ [approveVacation] Erro ao aprovar férias:', err);
       throw err;
     }
   };
 
   const rejectVacation = async (vacationId: string, rejectedBy: string, observacoes: string) => {
     try {
-      // TODO: Implementar rejeição via RPC function
-      console.log('Rejeitar férias:', { vacationId, rejectedBy, observacoes });
+      if (!observacoes || observacoes.trim() === '') {
+        throw new Error('Observações são obrigatórias para rejeitar uma solicitação.');
+      }
+
+      console.log('🔴 [rejectVacation] Iniciando rejeição:', { vacationId, rejectedBy, observacoes });
+
+      // Usar call_schema_rpc para chamar função do schema rh
+      const { data, error } = await (supabase as any).rpc('call_schema_rpc', {
+        p_schema_name: 'rh',
+        p_function_name: 'rejeitar_ferias',
+        p_params: {
+          p_vacation_id: vacationId,
+          p_aprovado_por: rejectedBy,
+          p_motivo_rejeicao: observacoes.trim()
+        }
+      });
+
+      if (error) {
+        console.error('❌ [rejectVacation] Erro na RPC:', error);
+        throw error;
+      }
+
+      // call_schema_rpc retorna { result: ... } ou { error: true, message: ... }
+      if (data?.error) {
+        const errorMessage = data.message || 'Erro ao rejeitar férias';
+        console.error('❌ [rejectVacation] Erro retornado pela função:', errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      console.log('✅ [rejectVacation] Rejeição bem-sucedida:', data);
+
+      // Invalidar todas as queries relacionadas a férias
+      queryClient.invalidateQueries({ queryKey: ['pending-vacations'] });
+      queryClient.invalidateQueries({ queryKey: ['vacation-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['vacation-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['rh', 'vacations'] });
+      
+      // Recarregar a lista de férias
       await fetchFerias();
     } catch (err) {
-      console.error('Erro ao rejeitar férias:', err);
+      console.error('❌ [rejectVacation] Erro ao rejeitar férias:', err);
       throw err;
     }
   };
@@ -264,19 +479,22 @@ export const useCompensationRequests = (companyId: string) => {
         return;
       }
 
-      // Buscar dados dos funcionários
-      const employeeIds = compensationsResult.data.map(c => c.employee_id).filter(Boolean);
+      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
       const employeesResult = await EntityService.list({
         schema: 'rh',
         table: 'employees',
-        companyId: companyId,
-        filters: { id: { in: employeeIds } }
+        companyId: companyId
       });
+      
+      // Filtrar apenas os funcionários necessários
+      const employeeIds = new Set(compensationsResult.data.map(c => c.employee_id).filter(Boolean));
 
-      // Mapear funcionários por ID
+      // Mapear funcionários por ID (apenas os que estão nas compensações)
       const employeeMap = new Map();
       employeesResult.data?.forEach(emp => {
-        employeeMap.set(emp.id, emp);
+        if (employeeIds.has(emp.id)) {
+          employeeMap.set(emp.id, emp);
+        }
       });
 
       const formattedData = compensationsResult.data.map(item => {
@@ -289,7 +507,7 @@ export const useCompensationRequests = (companyId: string) => {
           tipo_compensacao: item.tipo_compensacao,
           data_solicitacao: item.data_solicitacao,
           data_compensacao: item.data_compensacao,
-          horas_solicitadas: item.quantidade_horas,
+          quantidade_horas: item.quantidade_horas,
           motivo: item.motivo,
           status: item.status,
           aprovado_por: item.aprovado_por,
@@ -372,19 +590,22 @@ export const useMedicalCertificates = (companyId: string) => {
         return;
       }
 
-      // Buscar dados dos funcionários
-      const employeeIds = certificatesResult.data.map(c => c.employee_id).filter(Boolean);
+      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
       const employeesResult = await EntityService.list({
         schema: 'rh',
         table: 'employees',
-        companyId: companyId,
-        filters: { id: { in: employeeIds } }
+        companyId: companyId
       });
+      
+      // Filtrar apenas os funcionários necessários
+      const employeeIds = new Set(certificatesResult.data.map(c => c.employee_id).filter(Boolean));
 
-      // Mapear funcionários por ID
+      // Mapear funcionários por ID (apenas os que estão nos atestados)
       const employeeMap = new Map();
       employeesResult.data?.forEach(emp => {
-        employeeMap.set(emp.id, emp);
+        if (employeeIds.has(emp.id)) {
+          employeeMap.set(emp.id, emp);
+        }
       });
 
       const formattedData = certificatesResult.data.map(item => {
@@ -479,19 +700,22 @@ export const useReimbursementRequests = (companyId: string) => {
         return;
       }
 
-      // Buscar dados dos funcionários
-      const employeeIds = reimbursementsResult.data.map(r => r.employee_id).filter(Boolean);
+      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
       const employeesResult = await EntityService.list({
         schema: 'rh',
         table: 'employees',
-        companyId: companyId,
-        filters: { id: { in: employeeIds } }
+        companyId: companyId
       });
+      
+      // Filtrar apenas os funcionários necessários
+      const employeeIds = new Set(reimbursementsResult.data.map(r => r.employee_id).filter(Boolean));
 
-      // Mapear funcionários por ID
+      // Mapear funcionários por ID (apenas os que estão nos reembolsos)
       const employeeMap = new Map();
       employeesResult.data?.forEach(emp => {
-        employeeMap.set(emp.id, emp);
+        if (employeeIds.has(emp.id)) {
+          employeeMap.set(emp.id, emp);
+        }
       });
 
       const formattedData = reimbursementsResult.data.map(item => {
@@ -502,10 +726,11 @@ export const useReimbursementRequests = (companyId: string) => {
           funcionario_nome: employee?.nome || 'N/A',
           funcionario_matricula: employee?.matricula || 'N/A',
           tipo_despesa: item.tipo_despesa,
-          valor: item.valor,
+          valor: item.valor_solicitado || item.valor || 0,
+          valor_solicitado: item.valor_solicitado || item.valor || 0,
           data_despesa: item.data_despesa,
           descricao: item.descricao,
-          anexo_url: item.anexo_url,
+          anexo_url: item.comprovante_url || item.anexo_url,
           status: item.status,
           solicitado_por: item.solicitado_por,
           aprovado_por: item.aprovado_por,
@@ -587,19 +812,22 @@ export const useEquipmentRentals = (companyId: string) => {
         return;
       }
 
-      // Buscar dados dos funcionários
-      const employeeIds = equipmentsResult.data.map(e => e.employee_id).filter(Boolean);
+      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
       const employeesResult = await EntityService.list({
         schema: 'rh',
         table: 'employees',
-        companyId: companyId,
-        filters: { id: { in: employeeIds } }
+        companyId: companyId
       });
+      
+      // Filtrar apenas os funcionários necessários
+      const employeeIds = new Set(equipmentsResult.data.map(e => e.employee_id).filter(Boolean));
 
-      // Mapear funcionários por ID
+      // Mapear funcionários por ID (apenas os que estão nos equipamentos)
       const employeeMap = new Map();
       employeesResult.data?.forEach(emp => {
-        employeeMap.set(emp.id, emp);
+        if (employeeIds.has(emp.id)) {
+          employeeMap.set(emp.id, emp);
+        }
       });
 
       const formattedData = equipmentsResult.data.map(item => {
@@ -632,9 +860,18 @@ export const useEquipmentRentals = (companyId: string) => {
 
   const approveEquipment = async (equipmentId: string, approvedBy: string, observacoes?: string) => {
     try {
-      // TODO: Implementar aprovação via RPC function
-      console.log('Aprovar equipamento:', { equipmentId, approvedBy, observacoes });
+      const { data, error } = await supabase.rpc('approve_equipment', {
+        equipment_id: equipmentId,
+        approved_by: approvedBy,
+        observacoes: observacoes || null
+      });
+
+      if (error) {
+        throw error;
+      }
+
       await fetchEquipments();
+      return data;
     } catch (err) {
       console.error('Erro ao aprovar equipamento:', err);
       throw err;
@@ -643,9 +880,22 @@ export const useEquipmentRentals = (companyId: string) => {
 
   const rejectEquipment = async (equipmentId: string, rejectedBy: string, observacoes: string) => {
     try {
-      // TODO: Implementar rejeição via RPC function
-      console.log('Rejeitar equipamento:', { equipmentId, rejectedBy, observacoes });
+      if (!observacoes || observacoes.trim() === '') {
+        throw new Error('Observações são obrigatórias para rejeitar uma solicitação.');
+      }
+
+      const { data, error } = await supabase.rpc('reject_equipment', {
+        equipment_id: equipmentId,
+        rejected_by: rejectedBy,
+        observacoes: observacoes
+      });
+
+      if (error) {
+        throw error;
+      }
+
       await fetchEquipments();
+      return data;
     } catch (err) {
       console.error('Erro ao rejeitar equipamento:', err);
       throw err;
@@ -693,19 +943,22 @@ export const useAttendanceCorrections = (companyId: string) => {
         return;
       }
 
-      // Buscar dados dos funcionários
-      const employeeIds = correctionsResult.data.map(c => c.employee_id).filter(Boolean);
+      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
       const employeesResult = await EntityService.list({
         schema: 'rh',
         table: 'employees',
-        companyId: companyId,
-        filters: { id: { in: employeeIds } }
+        companyId: companyId
       });
+      
+      // Filtrar apenas os funcionários necessários
+      const employeeIds = new Set(correctionsResult.data.map(c => c.employee_id).filter(Boolean));
 
-      // Mapear funcionários por ID
+      // Mapear funcionários por ID (apenas os que estão nas correções)
       const employeeMap = new Map();
       employeesResult.data?.forEach(emp => {
-        employeeMap.set(emp.id, emp);
+        if (employeeIds.has(emp.id)) {
+          employeeMap.set(emp.id, emp);
+        }
       });
 
       const formattedData = correctionsResult.data.map(item => {

@@ -224,6 +224,58 @@ class TimeRecordSignatureService {
     return result.data;
   }
 
+  /**
+   * Busca assinaturas de ponto pendentes de aprovação do gestor
+   */
+  async getPendingSignatures(companyId: string): Promise<any[]> {
+    const { data, error } = await supabase.rpc('get_pending_signatures', {
+      p_company_id: companyId
+    });
+
+    if (error) {
+      console.error('Erro ao buscar assinaturas pendentes:', error);
+      throw error;
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Aprova uma assinatura de ponto usando RPC
+   */
+  async approveSignatureRPC(signatureId: string, approvedBy: string, observacoes?: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc('approve_time_record_signature', {
+      p_signature_id: signatureId,
+      p_approved_by: approvedBy,
+      p_observacoes: observacoes || null
+    });
+
+    if (error) {
+      console.error('Erro ao aprovar assinatura:', error);
+      throw error;
+    }
+
+    return data as boolean;
+  }
+
+  /**
+   * Rejeita uma assinatura de ponto usando RPC
+   */
+  async rejectSignatureRPC(signatureId: string, rejectedBy: string, rejectionReason: string): Promise<boolean> {
+    const { data, error } = await supabase.rpc('reject_time_record_signature', {
+      p_signature_id: signatureId,
+      p_rejected_by: rejectedBy,
+      p_rejection_reason: rejectionReason
+    });
+
+    if (error) {
+      console.error('Erro ao rejeitar assinatura:', error);
+      throw error;
+    }
+
+    return data as boolean;
+  }
+
   // Geração de assinaturas
   async generateMonthlySignatures(companyId: string, monthYear: string): Promise<void> {
     const { error } = await supabase.rpc('generate_monthly_signatures', {

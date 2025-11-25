@@ -25,14 +25,62 @@ export function useFgtsConfigs(filters: FgtsConfigFilters = {}) {
   return useQuery({
     queryKey: ['fgts-configs', selectedCompany?.id, filters],
     queryFn: async () => {
-      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      console.log('🔍 [useFgtsConfigs] Buscando configurações FGTS:', { 
+        companyId: selectedCompany?.id, 
+        filters 
+      });
       
-      const result = await getFgtsConfigs(selectedCompany.id, filters);
-      return {
-        data: result.data,
-        count: result.totalCount,
-        hasMore: result.data.length >= 100
-      };
+      if (!selectedCompany?.id) {
+        console.warn('⚠️ [useFgtsConfigs] Empresa não selecionada');
+        throw new Error('Empresa não selecionada');
+      }
+      
+      try {
+        const result = await getFgtsConfigs(selectedCompany.id, filters);
+        
+        console.log('✅ [useFgtsConfigs] Resultado recebido:', {
+          hasData: !!result.data,
+          dataLength: result.data?.length || 0,
+          totalCount: result.totalCount
+        });
+        
+        if (result.data && result.data.length > 0) {
+          console.log('📊 [useFgtsConfigs] Primeiras configurações:', result.data.slice(0, 2).map(c => ({
+            id: c.id,
+            codigo: c.codigo,
+            descricao: c.descricao,
+            company_id: c.company_id
+          })));
+        } else {
+          console.warn('⚠️ [useFgtsConfigs] Nenhuma configuração encontrada para companyId:', selectedCompany.id);
+          console.warn('⚠️ [useFgtsConfigs] result completo:', {
+            hasData: !!result.data,
+            dataType: typeof result.data,
+            isArray: Array.isArray(result.data),
+            dataLength: result.data?.length,
+            totalCount: result.totalCount,
+            resultKeys: Object.keys(result)
+          });
+        }
+        
+        const returnData = {
+          data: result.data,
+          count: result.totalCount,
+          hasMore: result.data.length >= 100
+        };
+        
+        console.log('🔄 [useFgtsConfigs] Retornando do hook:', {
+          hasData: !!returnData.data,
+          dataLength: returnData.data?.length || 0,
+          count: returnData.count,
+          firstItem: returnData.data?.[0] ? { id: returnData.data[0].id, codigo: returnData.data[0].codigo } : null
+        });
+        
+        return returnData;
+      } catch (error) {
+        console.error('❌ [useFgtsConfigs] Erro na busca:', error);
+        throw error;
+      }
     },
     enabled: !!selectedCompany?.id,
     staleTime: 1000 * 60 * 5, // 5 minutos

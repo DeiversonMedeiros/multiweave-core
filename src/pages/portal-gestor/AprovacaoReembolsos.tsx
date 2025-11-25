@@ -159,7 +159,7 @@ const AprovacaoReembolsos: React.FC = () => {
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Buscar</label>
               <Input
@@ -209,7 +209,7 @@ const AprovacaoReembolsos: React.FC = () => {
                           Matrícula: {reimbursement.funcionario_matricula}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {getTipoLabel(reimbursement.tipo_despesa)} • R$ {reimbursement.valor_solicitado.toFixed(2)}
+                          {getTipoLabel(reimbursement.tipo_despesa)} • R$ {(reimbursement.valor_solicitado || reimbursement.valor || 0).toFixed(2)}
                         </p>
                         <div className="flex items-center space-x-4 mt-2">
                           <div className="flex items-center space-x-1">

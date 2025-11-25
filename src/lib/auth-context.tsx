@@ -2,13 +2,15 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { useOfflineAuth } from "@/hooks/useOfflineAuth";
+import { loginService } from "@/services/auth/loginService";
 
 type AuthContextType = {
   user: User | null;
   session: Session | null;
   loading: boolean;
   signOut: () => Promise<void>;
-  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signIn: (loginInput: string, password: string) => Promise<{ error?: string }>;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -32,6 +34,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { saveAuthCache, clearAuthCache, cachedAuth, cachedUserData } = useOfflineAuth();
 
   useEffect(() => {
     // Set up auth state listener
@@ -40,6 +43,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        
+        // Salvar dados de autenticação no cache offline
+        if (session?.user) {
+          saveAuthCache(session, session.user);
+        } else {
+          clearAuthCache();
+        }
       }
     );
 
@@ -48,15 +58,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      
+      // Salvar dados de autenticação no cache offline se já estiver logado
+      if (session?.user) {
+        saveAuthCache(session, session.user);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (loginInput: string, password: string) => {
+    const resolved = await loginService.resolveEmail(loginInput);
+
+    if (resolved.error || !resolved.email) {
+      return { error: resolved.error ?? 'Erro ao resolver email' };
+    }
+
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+      const { error } = await supabase.auth.signInWithPassword({
+        email: resolved.email,
         password,
       });
 

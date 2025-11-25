@@ -45,7 +45,9 @@ import {
   Receipt,
   ClipboardList,
   History,
-  Edit
+  Edit,
+  AlertTriangle,
+  Plug
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -104,11 +106,35 @@ export const useMenu = () => {
           requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
         },
         {
-          id: 'colaborador-holerites',
-          title: 'Holerites',
-          url: '/portal-colaborador/holerites',
+          id: 'colaborador-correcao-ponto',
+          title: 'Correção de Ponto',
+          url: '/portal-colaborador/correcao-ponto',
+          icon: Edit,
+          description: 'Corrija seus registros de ponto',
+          requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
+        },
+        {
+          id: 'colaborador-assinatura-ponto',
+          title: 'Assinatura de Ponto',
+          url: '/portal-colaborador/assinatura-ponto',
           icon: FileText,
-          description: 'Visualização de holerites',
+          description: 'Assine seus registros de ponto mensais',
+          requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
+        },
+        {
+          id: 'colaborador-historico-marcacoes',
+          title: 'Histórico de Marcações',
+          url: '/portal-colaborador/historico-marcacoes',
+          icon: History,
+          description: 'Visualize todas as suas marcações de ponto',
+          requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
+        },
+        {
+          id: 'colaborador-banco-horas',
+          title: 'Banco de Horas',
+          url: '/portal-colaborador/banco-horas',
+          icon: Clock,
+          description: 'Controle de banco de horas',
           requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
         },
         {
@@ -120,11 +146,19 @@ export const useMenu = () => {
           requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
         },
         {
-          id: 'colaborador-banco-horas',
-          title: 'Banco de Horas',
-          url: '/portal-colaborador/banco-horas',
-          icon: Clock,
-          description: 'Controle de banco de horas',
+          id: 'colaborador-holerites',
+          title: 'Holerites',
+          url: '/portal-colaborador/holerites',
+          icon: FileText,
+          description: 'Visualização de holerites',
+          requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
+        },
+        {
+          id: 'colaborador-reembolsos',
+          title: 'Reembolsos',
+          url: '/portal-colaborador/reembolsos',
+          icon: DollarSign,
+          description: 'Solicitação de reembolsos',
           requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
         },
         {
@@ -149,22 +183,6 @@ export const useMenu = () => {
           url: '/portal-colaborador/comprovantes',
           icon: FileText,
           description: 'Comprovantes e documentos',
-          requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
-        },
-        {
-          id: 'colaborador-reembolsos',
-          title: 'Reembolsos',
-          url: '/portal-colaborador/reembolsos',
-          icon: DollarSign,
-          description: 'Solicitação de reembolsos',
-          requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
-        },
-        {
-          id: 'colaborador-correcao-ponto',
-          title: 'Correção de Ponto',
-          url: '/portal-colaborador/correcao-ponto',
-          icon: Edit,
-          description: 'Solicitação de correção de registros de ponto',
           requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
         }
       ]
@@ -244,7 +262,7 @@ export const useMenu = () => {
       url: '/cadastros',
       icon: Building2,
       description: 'Gestão de cadastros básicos',
-      requiresPermission: { type: 'module', name: 'companies', action: 'read' },
+      requiresPermission: { type: 'module', name: 'cadastros', action: 'read' },
       children: [
         {
           id: 'empresas',
@@ -361,30 +379,28 @@ export const useMenu = () => {
           requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
         },
         {
-          id: 'financeiro-configuracoes',
-          title: 'Configurações',
-          url: '/financeiro/configuracoes',
-          icon: Settings,
-          description: 'Configurações de integração',
-          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' },
-          children: [
-            {
-              id: 'financeiro-config-sefaz',
-              title: 'SEFAZ',
-              url: '/financeiro/configuracoes/sefaz',
-              icon: Globe,
-              description: 'Configuração de integração SEFAZ',
-              requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
-            },
-            {
-              id: 'financeiro-config-bancaria',
-              title: 'Integrações Bancárias',
-              url: '/financeiro/configuracoes/bancaria',
-              icon: Building,
-              description: 'Configuração de integrações bancárias',
-              requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
-            }
-          ]
+          id: 'financeiro-classes-financeiras',
+          title: 'Classes Financeiras',
+          url: '/financeiro/classes-financeiras',
+          icon: FileText,
+          description: 'Classes gerenciais e vinculação com contas contábeis',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'financeiro-sefaz',
+          title: 'SEFAZ',
+          url: '/financeiro/sefaz',
+          icon: Globe,
+          description: 'Configuração de integração SEFAZ',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'financeiro-bancaria',
+          title: 'Bancária',
+          url: '/financeiro/bancaria',
+          icon: Building,
+          description: 'Configuração de integrações bancárias',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
         }
       ]
     },
@@ -526,7 +542,65 @@ export const useMenu = () => {
       url: '/frota',
       icon: Truck,
       description: 'Gestão de frota',
-      requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+      requiresPermission: { type: 'module', name: 'frota', action: 'read' },
+      children: [
+        {
+          id: 'frota-dashboard',
+          title: 'Dashboard de Frota',
+          url: '/frota/dashboard',
+          icon: LayoutDashboard,
+          description: 'Painel principal com KPIs da frota',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        },
+        {
+          id: 'frota-veiculos',
+          title: 'Veículos',
+          url: '/frota/veiculos',
+          icon: Truck,
+          description: 'Gestão de veículos da frota',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        },
+        {
+          id: 'frota-condutores',
+          title: 'Condutores',
+          url: '/frota/condutores',
+          icon: Users,
+          description: 'Gestão de condutores',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        },
+        {
+          id: 'frota-vistorias',
+          title: 'Vistorias',
+          url: '/frota/vistorias',
+          icon: ClipboardList,
+          description: 'Controle de vistorias dos veículos',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        },
+        {
+          id: 'frota-manutencoes',
+          title: 'Manutenções',
+          url: '/frota/manutencoes',
+          icon: Settings,
+          description: 'Gestão de manutenções preventivas e corretivas',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        },
+        {
+          id: 'frota-ocorrencias',
+          title: 'Multas e Sinistros',
+          url: '/frota/ocorrencias',
+          icon: AlertTriangle,
+          description: 'Registro de multas e sinistros',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        },
+        {
+          id: 'frota-solicitacoes',
+          title: 'Solicitações e Devoluções',
+          url: '/frota/solicitacoes',
+          icon: FileText,
+          description: 'Solicitações e devoluções de veículos',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        }
+      ]
     },
     {
       id: 'logistica',
@@ -686,6 +760,22 @@ export const useMenu = () => {
               icon: FileText,
               description: 'Configure as regras de assinatura de ponto',
               requiresPermission: { type: 'module', name: 'rh', action: 'write' }
+            },
+            {
+              id: 'rh-configuracao-ponto-eletronico',
+              title: 'Configurações de Ponto Eletrônico',
+              url: '/rh/ponto-eletronico-config',
+              icon: Clock,
+              description: 'Configure a janela de tempo para marcações de ponto',
+              requiresPermission: { type: 'module', name: 'rh', action: 'write' }
+            },
+            {
+              id: 'rh-location-zones',
+              title: 'Zonas de Localização',
+              url: '/rh/location-zones',
+              icon: MapPin,
+              description: 'Configure zonas geográficas para registro de ponto',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
             }
           ]
         },
@@ -721,6 +811,22 @@ export const useMenu = () => {
               url: '/rh/medical-agreements',
               icon: Heart,
               description: 'Gestão de convênios médicos e odontológicos',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
+              id: 'rh-servicos-medicos',
+              title: 'Serviços Médicos',
+              url: '/rh/medical-services',
+              icon: Stethoscope,
+              description: 'Registro de consultas, exames e cirurgias para coparticipação',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
+              id: 'rh-deducoes',
+              title: 'Deduções',
+              url: '/rh/employee-deductions',
+              icon: DollarSign,
+              description: 'Gestão de deduções: coparticipação, empréstimos, multas e avarias',
               requiresPermission: { type: 'module', name: 'rh', action: 'read' }
             },
             {
@@ -789,6 +895,14 @@ export const useMenu = () => {
               url: '/rh/fgts-config',
               icon: Calculator,
               description: 'Configuração de FGTS',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
+              id: 'rh-financial-integration',
+              title: 'Integração Financeira',
+              url: '/rh/financial-integration-config',
+              icon: Settings,
+              description: 'Configuração de integração com módulo financeiro',
               requiresPermission: { type: 'module', name: 'rh', action: 'read' }
             }
           ]
@@ -878,6 +992,22 @@ export const useMenu = () => {
               icon: Calculator,
               description: 'Consolidação de eventos da folha',
               requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
+              id: 'rh-pagamentos-mensais-alugueis',
+              title: 'Pagamentos Mensais de Aluguéis',
+              url: '/rh/equipment-rental-payments',
+              icon: Receipt,
+              description: 'Pagamentos mensais de aluguel de equipamentos e veículos',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
+              id: 'rh-folhas-individuais',
+              title: 'Folhas Individuais',
+              url: '/rh/payroll-individual',
+              icon: FileText,
+              description: 'Visualizar e gerenciar folhas individuais por funcionário',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
             }
           ]
         },
@@ -905,6 +1035,14 @@ export const useMenu = () => {
               url: '/rh/esocial-integration',
               icon: Upload,
               description: 'Integração com eSocial',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
+              id: 'rh-configuracao-flash',
+              title: 'Configuração Flash API',
+              url: '/rh/configuracao-flash',
+              icon: Plug,
+              description: 'Configuração de integração com Flash API',
               requiresPermission: { type: 'module', name: 'rh', action: 'read' }
             }
           ]

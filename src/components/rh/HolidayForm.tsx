@@ -32,6 +32,8 @@ export const HolidayForm = forwardRef<HTMLFormElement, HolidayFormProps>(({ holi
     tipo: '',
     descricao: '',
     ativo: true,
+    uf: '',
+    municipio: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -44,6 +46,19 @@ export const HolidayForm = forwardRef<HTMLFormElement, HolidayFormProps>(({ holi
         tipo: holiday.tipo,
         descricao: holiday.descricao || '',
         ativo: holiday.ativo,
+        uf: holiday.uf || '',
+        municipio: holiday.municipio || '',
+      });
+    } else {
+      // Reset form when creating new
+      setFormData({
+        nome: '',
+        data: '',
+        tipo: '',
+        descricao: '',
+        ativo: true,
+        uf: '',
+        municipio: '',
       });
     }
   }, [holiday]);
@@ -63,6 +78,27 @@ export const HolidayForm = forwardRef<HTMLFormElement, HolidayFormProps>(({ holi
       newErrors.tipo = 'Tipo do feriado é obrigatório';
     }
 
+    // Validação condicional para UF e Município
+    if (formData.tipo === 'estadual' || formData.tipo === 'municipal') {
+      if (!formData.uf || formData.uf.length !== 2) {
+        newErrors.uf = 'UF é obrigatória para feriados estaduais e municipais';
+      }
+    }
+
+    if (formData.tipo === 'municipal') {
+      if (!formData.municipio || !formData.municipio.trim()) {
+        newErrors.municipio = 'Município é obrigatório para feriados municipais';
+      }
+    }
+
+    // Limpar UF e município se for feriado nacional
+    if (formData.tipo === 'nacional') {
+      if (formData.uf || formData.municipio) {
+        // Não é erro, mas vamos limpar os campos
+        setFormData(prev => ({ ...prev, uf: '', municipio: '' }));
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -75,11 +111,23 @@ export const HolidayForm = forwardRef<HTMLFormElement, HolidayFormProps>(({ holi
     }
 
     try {
-      const data = {
-        ...formData,
+      const data: any = {
+        nome: formData.nome,
+        data: formData.data,
+        tipo: formData.tipo,
+        descricao: formData.descricao || undefined,
+        ativo: formData.ativo,
         company_id: selectedCompany?.id || '',
         ...(holiday && { id: holiday.id }),
       };
+
+      // Incluir UF e município apenas se necessário
+      if (formData.tipo === 'estadual' || formData.tipo === 'municipal') {
+        data.uf = formData.uf.toUpperCase();
+      }
+      if (formData.tipo === 'municipal') {
+        data.municipio = formData.municipio.trim();
+      }
 
       await onSave(data);
     } catch (error) {
@@ -88,7 +136,22 @@ export const HolidayForm = forwardRef<HTMLFormElement, HolidayFormProps>(({ holi
   };
 
   const handleInputChange = (field: string, value: string | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      
+      // Limpar campos dependentes quando tipo muda
+      if (field === 'tipo') {
+        if (value === 'nacional') {
+          newData.uf = '';
+          newData.municipio = '';
+        } else if (value === 'estadual') {
+          newData.municipio = '';
+        }
+      }
+      
+      return newData;
+    });
+    
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -154,6 +217,40 @@ export const HolidayForm = forwardRef<HTMLFormElement, HolidayFormProps>(({ holi
                 <p className="text-sm text-red-500">{errors.tipo}</p>
               )}
             </div>
+
+            {(formData.tipo === 'estadual' || formData.tipo === 'municipal') && (
+              <div className="space-y-2">
+                <Label htmlFor="uf">UF (Estado) *</Label>
+                <Input
+                  id="uf"
+                  value={formData.uf}
+                  onChange={(e) => handleInputChange('uf', e.target.value.toUpperCase())}
+                  placeholder="Ex: SP"
+                  maxLength={2}
+                  disabled={isReadOnly}
+                  className="uppercase"
+                />
+                {errors.uf && (
+                  <p className="text-sm text-red-500">{errors.uf}</p>
+                )}
+              </div>
+            )}
+
+            {formData.tipo === 'municipal' && (
+              <div className="space-y-2">
+                <Label htmlFor="municipio">Município *</Label>
+                <Input
+                  id="municipio"
+                  value={formData.municipio}
+                  onChange={(e) => handleInputChange('municipio', e.target.value)}
+                  placeholder="Ex: São Paulo"
+                  disabled={isReadOnly}
+                />
+                {errors.municipio && (
+                  <p className="text-sm text-red-500">{errors.municipio}</p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="ativo">Status</Label>

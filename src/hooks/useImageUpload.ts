@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { IMAGE_UPLOAD_CONFIG } from '@/config/storage';
+import { compressImage, shouldCompressImage } from '@/lib/imageOptimization';
 
 interface UseImageUploadOptions {
   bucket: string;
@@ -41,15 +42,35 @@ export function useImageUpload({
     setIsUploading(true);
 
     try {
+      // Comprimir imagem se necessário (arquivos > 1MB)
+      let fileToUpload = file;
+      if (shouldCompressImage(file, 1)) {
+        try {
+          const optimized = await compressImage(file, {
+            maxWidth: 1920,
+            maxHeight: 1080,
+            quality: 0.8,
+            format: 'jpeg'
+          });
+          fileToUpload = optimized.file;
+          
+          const compressionInfo = `Imagem comprimida: ${(optimized.compressionRatio).toFixed(1)}% de redução`;
+          console.log(compressionInfo);
+        } catch (compressError) {
+          console.warn('Erro ao comprimir imagem, usando original:', compressError);
+          // Continuar com arquivo original se compressão falhar
+        }
+      }
+
       // Gerar nome único para o arquivo
-      const fileExt = file.name.split('.').pop();
+      const fileExt = fileToUpload.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${bucket}/${fileName}`;
 
       // Upload para o Supabase Storage
       const { data, error } = await supabase.storage
         .from(bucket)
-        .upload(filePath, file, {
+        .upload(filePath, fileToUpload, {
           cacheControl: IMAGE_UPLOAD_CONFIG.CACHE_CONTROL,
           upsert: false
         });

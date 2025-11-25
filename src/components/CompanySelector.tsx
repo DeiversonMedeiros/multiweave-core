@@ -29,7 +29,7 @@ export const CompanySelector = () => {
 
   if (!companies || companies.length === 0) {
     return (
-      <Button variant="outline" disabled className="w-[280px] justify-between">
+      <Button variant="outline" disabled className="w-[200px] sm:w-[280px] justify-between">
         <Building2 className="mr-2 h-4 w-4" />
         Nenhuma empresa disponível
       </Button>
@@ -43,13 +43,13 @@ export const CompanySelector = () => {
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[280px] justify-between"
+          className="w-[200px] sm:w-[280px] justify-between"
         >
           <Building2 className="mr-2 h-4 w-4" />
           {selectedCompany ? selectedCompany.nome_fantasia : "Selecionar empresa..."}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[280px] p-0">
+      <PopoverContent className="w-[200px] sm:w-[280px] p-0">
         <Command>
           <CommandInput placeholder="Buscar empresa..." />
           <CommandList>

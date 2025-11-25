@@ -20,8 +20,8 @@ DECLARE
   permission_id UUID;
 BEGIN
   -- Verificar se o usuário tem permissão para gerenciar permissões
-  -- Usa verificação baseada em permissões de produção
-  IF auth.uid() IS NOT NULL AND NOT is_admin_all_production(auth.uid()) THEN
+  -- Aceita Super Admin (is_admin_simple) OU usuários com todas as permissões de produção
+  IF auth.uid() IS NOT NULL AND NOT (is_admin_simple(auth.uid()) OR is_admin_all_production(auth.uid())) THEN
     RAISE EXCEPTION 'Acesso negado: apenas usuários com permissões administrativas podem gerenciar permissões';
   END IF;
   
@@ -103,8 +103,8 @@ DECLARE
   permission_id UUID;
 BEGIN
   -- Verificar se o usuário tem permissão para gerenciar permissões
-  -- Usa verificação baseada em permissões de produção
-  IF auth.uid() IS NOT NULL AND NOT is_admin_all_production(auth.uid()) THEN
+  -- Aceita Super Admin (is_admin_simple) OU usuários com todas as permissões de produção
+  IF auth.uid() IS NOT NULL AND NOT (is_admin_simple(auth.uid()) OR is_admin_all_production(auth.uid())) THEN
     RAISE EXCEPTION 'Acesso negado: apenas usuários com permissões administrativas podem gerenciar permissões';
   END IF;
   

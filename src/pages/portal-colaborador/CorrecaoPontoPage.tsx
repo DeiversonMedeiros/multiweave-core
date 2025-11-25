@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
 import { useEmployeeByUserId } from '@/hooks/rh/useEmployeeByUserId';
-import { useEmployeeCorrectionStatus } from '@/hooks/rh/useEmployeeCorrectionStatus';
+import { useEmployeeCorrectionStatusSimple } from '@/hooks/rh/useEmployeeCorrectionStatus';
 import { useMonthlyTimeRecords } from '@/hooks/rh/useMonthlyTimeRecords';
 import { useDelayReasons } from '@/hooks/rh/useDelayReasons';
+import { useEmployeeAttendanceCorrections } from '@/hooks/rh/useAttendanceCorrections';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +20,7 @@ import { cn } from '@/lib/utils';
 export default function CorrecaoPontoPage() {
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -33,14 +36,37 @@ export default function CorrecaoPontoPage() {
     isLoading: statusLoading, 
     error: statusError,
     configuracoes 
-  } = useEmployeeCorrectionStatus(selectedYear, selectedMonth);
+  } = useEmployeeCorrectionStatusSimple(selectedYear, selectedMonth);
 
   // Buscar registros mensais
   const { 
-    recordsByDate, 
+    data: monthlyRecords,
     isLoading: recordsLoading, 
     error: recordsError 
   } = useMonthlyTimeRecords(selectedYear, selectedMonth);
+
+  // Buscar correções pendentes do funcionário para o mês
+  const { data: pendingCorrections } = useEmployeeAttendanceCorrections(
+    employee?.id || '', 
+    selectedYear, 
+    selectedMonth
+  );
+
+  // Criar mapa de correções pendentes por data
+  const pendingCorrectionsByDate = new Map<string, boolean>();
+  pendingCorrections?.forEach(correction => {
+    if (correction.status === 'pendente') {
+      pendingCorrectionsByDate.set(correction.data_original, true);
+    }
+  });
+
+  // Desestruturar dados
+  const recordsByDate = monthlyRecords?.recordsByDate || {};
+
+  // Debug
+  console.log('📅 [DEBUG] CorrecaoPontoPage - monthlyRecords:', monthlyRecords);
+  console.log('📅 [DEBUG] CorrecaoPontoPage - recordsByDate:', recordsByDate);
+  console.log('📅 [DEBUG] CorrecaoPontoPage - recordsKeys:', Object.keys(recordsByDate));
 
   // Buscar motivos de atraso
   const { data: delayReasons, isLoading: reasonsLoading } = useDelayReasons(selectedCompany?.id || '');
@@ -66,7 +92,8 @@ export default function CorrecaoPontoPage() {
 
   const handleDateClick = (date: string, hasRecord: boolean) => {
     setSelectedDate(date);
-    setIsCreating(!hasRecord);
+    // Na página de correção de ponto, sempre criar correção (não registro direto)
+    setIsCreating(false);
     setIsEditModalOpen(true);
   };
 
@@ -252,6 +279,7 @@ export default function CorrecaoPontoPage() {
               records={recordsByDate}
               onDateClick={handleDateClick}
               disabled={!correctionEnabled}
+              pendingCorrectionsByDate={pendingCorrectionsByDate}
             />
           )}
         </CardContent>
@@ -264,7 +292,7 @@ export default function CorrecaoPontoPage() {
             <CardTitle className="text-lg">Configurações de Correção</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-gray-500" />
                 <span>Prazo de liberação: {configuracoes.dias_liberacao_correcao} dias</span>
@@ -296,8 +324,9 @@ export default function CorrecaoPontoPage() {
           employeeId={employee.id}
           delayReasons={delayReasons || []}
           onSuccess={() => {
-            // Recarregar dados
-            window.location.reload();
+            // Invalidar queries para atualizar o calendário e correções pendentes
+            queryClient.invalidateQueries({ queryKey: ['monthly-time-records'] });
+            queryClient.invalidateQueries({ queryKey: ['employee-attendance-corrections'] });
           }}
         />
       )}

@@ -31,6 +31,8 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useNavigate } from 'react-router-dom';
+import { toast } from '@/hooks/use-toast';
+import { formatDateOnly } from '@/lib/utils';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
@@ -100,26 +102,105 @@ export default function EmployeesPageNew() {
 
   const handleModalSubmit = async () => {
     if (formRef.current) {
-      formRef.current.submit();
+      try {
+        const result = await formRef.current.submit();
+        // Se houver erro de validação, não fazer nada (o formulário já mostra os erros)
+        // Se houver outro tipo de erro, já foi tratado no handleFormSubmit
+        if (!result.success && !result.validationError) {
+          console.error('Erro ao submeter formulário');
+        }
+      } catch (error: any) {
+        // Fallback para qualquer erro não esperado
+        console.error('Erro inesperado ao submeter formulário:', error);
+      }
     }
   };
 
   const handleFormSubmit = async (data: Partial<Employee>) => {
     try {
+      let savedEmployee: Employee | undefined;
+      
       if (modalMode === 'create') {
-        await createEmployee.mutateAsync({
+        savedEmployee = await createEmployee.mutateAsync({
           ...data,
           company_id: selectedCompany?.id
-        });
+        } as any);
+        
+        // Sincronizar zonas de localização após criar o funcionário
+        if (savedEmployee?.id && selectedCompany?.id && (data as any).location_zone_ids) {
+          try {
+            const { EmployeeLocationZonesService } = await import('@/services/rh/employeeLocationZonesService');
+            await EmployeeLocationZonesService.syncEmployeeZones(
+              savedEmployee.id,
+              (data as any).location_zone_ids,
+              selectedCompany.id
+            );
+          } catch (zoneError: any) {
+            console.error('Erro ao sincronizar zonas de localização:', zoneError);
+            toast('Aviso: Funcionário criado, mas houve um erro ao associar as zonas de localização. Você pode editar o funcionário para corrigir.', {
+              style: { background: '#ef4444', color: 'white' }
+            });
+          }
+        }
+        
+        toast('Funcionário criado com sucesso!');
       } else if (modalMode === 'edit' && selectedEmployee) {
-        await updateEmployee.mutateAsync({
+        savedEmployee = await updateEmployee.mutateAsync({
           id: selectedEmployee.id,
           data
         });
+        
+        // Sincronizar zonas de localização após atualizar o funcionário
+        if (selectedEmployee.id && selectedCompany?.id && (data as any).location_zone_ids) {
+          try {
+            const { EmployeeLocationZonesService } = await import('@/services/rh/employeeLocationZonesService');
+            await EmployeeLocationZonesService.syncEmployeeZones(
+              selectedEmployee.id,
+              (data as any).location_zone_ids,
+              selectedCompany.id
+            );
+          } catch (zoneError: any) {
+            console.error('Erro ao sincronizar zonas de localização:', zoneError);
+            toast('Aviso: Funcionário atualizado, mas houve um erro ao associar as zonas de localização.', {
+              style: { background: '#ef4444', color: 'white' }
+            });
+          }
+        }
+        
+        toast('Funcionário atualizado com sucesso!');
       }
+      
       setIsModalOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao salvar funcionário:', error);
+      
+      // Tratar erros específicos
+      let errorMessage = 'Erro ao salvar funcionário. Tente novamente.';
+      
+      if (error?.message) {
+        const errorMsg = error.message.toLowerCase();
+        
+        // Erro de CPF duplicado
+        if (errorMsg.includes('duplicate key') || errorMsg.includes('cpf') || errorMsg.includes('employees_cpf_key')) {
+          errorMessage = 'Este CPF já está cadastrado. Verifique se o funcionário já existe ou use um CPF diferente.';
+        }
+        // Erro de constraint
+        else if (errorMsg.includes('constraint') || errorMsg.includes('violates')) {
+          errorMessage = 'Dados inválidos. Verifique se todos os campos obrigatórios estão preenchidos corretamente.';
+        }
+        // Erro de permissão
+        else if (errorMsg.includes('permission') || errorMsg.includes('access')) {
+          errorMessage = 'Você não tem permissão para realizar esta ação.';
+        }
+        // Outros erros
+        else {
+          errorMessage = error.message;
+        }
+      }
+      
+      toast(errorMessage, {
+        style: { background: '#ef4444', color: 'white' }
+      });
     }
   };
 
@@ -169,7 +250,7 @@ export default function EmployeesPageNew() {
       key: 'data_admissao',
       header: 'Data Admissão',
       render: (employee: Employee) => {
-        return employee.data_admissao ? new Date(employee.data_admissao).toLocaleDateString('pt-BR') : '-';
+        return formatDateOnly(employee.data_admissao);
       }
     },
     {

@@ -28,7 +28,7 @@ import { useCentralAprovacoes } from '@/hooks/portal-gestor/useCentralAprovacoes
 
 interface AprovacaoItem {
   id: string;
-  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto';
+  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto' | 'registro_ponto' | 'assinatura_ponto';
   funcionario_nome: string;
   funcionario_matricula: string;
   data_solicitacao: string;
@@ -64,6 +64,8 @@ const CentralAprovacoes: React.FC = () => {
       case 'reembolso': return <DollarSign className="h-4 w-4" />;
       case 'equipamento': return <Laptop className="h-4 w-4" />;
       case 'correcao_ponto': return <Edit className="h-4 w-4" />;
+      case 'registro_ponto': return <Clock className="h-4 w-4" />;
+      case 'assinatura_ponto': return <Eye className="h-4 w-4" />;
       default: return <Calendar className="h-4 w-4" />;
     }
   };
@@ -152,6 +154,8 @@ const CentralAprovacoes: React.FC = () => {
       case 'reembolso': return 'Reembolso';
       case 'equipamento': return 'Equipamento';
       case 'correcao_ponto': return 'Correção de Ponto';
+      case 'registro_ponto': return 'Registro de Ponto (Hora Extra)';
+      case 'assinatura_ponto': return 'Assinatura de Ponto';
       default: return tipo;
     }
   };
@@ -224,7 +228,7 @@ const CentralAprovacoes: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="space-y-3">
               <label className="text-sm font-medium">Buscar</label>
               <div className="relative">

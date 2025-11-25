@@ -719,6 +719,187 @@ export async function markAsPaid(
   }
 }
 
+// =====================================================
+// FUNÇÕES DE INTEGRAÇÃO COM CONTAS A PAGAR E FLASH
+// =====================================================
+
+/**
+ * Envia premiação para Contas a Pagar
+ */
+export async function sendAwardToAccountsPayable(
+  awardId: string,
+  dueDate?: Date
+): Promise<{
+  success: boolean;
+  award_id: string;
+  accounts_payable_id?: string;
+  numero_titulo?: string;
+  data_vencimento?: string;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await supabase.rpc('send_award_to_accounts_payable', {
+      p_award_id: awardId,
+      p_sent_by: user.id,
+      p_due_date: dueDate ? dueDate.toISOString().split('T')[0] : null
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as any;
+  } catch (error) {
+    console.error('Erro ao enviar premiação para Contas a Pagar:', error);
+    throw error;
+  }
+}
+
+/**
+ * Envia premiação para Flash
+ */
+export async function sendAwardToFlash(awardId: string): Promise<{
+  success: boolean;
+  award_id: string;
+  flash_account_number?: string;
+  flash_payment_id?: string;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await supabase.rpc('send_award_to_flash', {
+      p_award_id: awardId,
+      p_sent_by: user.id
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as any;
+  } catch (error) {
+    console.error('Erro ao enviar premiação para Flash:', error);
+    throw error;
+  }
+}
+
+/**
+ * Gera boleto Flash para premiação
+ */
+export async function generateFlashInvoiceForAward(awardId: string): Promise<{
+  success: boolean;
+  award_id: string;
+  flash_invoice_id?: string;
+  invoice_url?: string;
+  message?: string;
+  error?: string;
+}> {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await supabase.rpc('generate_flash_invoice_for_award', {
+      p_award_id: awardId,
+      p_sent_by: user.id
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as any;
+  } catch (error) {
+    console.error('Erro ao gerar boleto Flash:', error);
+    throw error;
+  }
+}
+
+/**
+ * Envia múltiplas premiações para Contas a Pagar
+ */
+export async function sendMultipleAwardsToAccountsPayable(
+  awardIds: string[],
+  dueDate?: Date
+): Promise<{
+  success: boolean;
+  total: number;
+  success_count: number;
+  error_count: number;
+  results: any[];
+}> {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await supabase.rpc('send_multiple_awards_to_accounts_payable', {
+      p_award_ids: awardIds,
+      p_sent_by: user.id,
+      p_due_date: dueDate ? dueDate.toISOString().split('T')[0] : null
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as any;
+  } catch (error) {
+    console.error('Erro ao enviar múltiplas premiações para Contas a Pagar:', error);
+    throw error;
+  }
+}
+
+/**
+ * Envia múltiplas premiações para Flash
+ */
+export async function sendMultipleAwardsToFlash(awardIds: string[]): Promise<{
+  success: boolean;
+  total: number;
+  success_count: number;
+  error_count: number;
+  results: any[];
+}> {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await supabase.rpc('send_multiple_awards_to_flash', {
+      p_award_ids: awardIds,
+      p_sent_by: user.id
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as any;
+  } catch (error) {
+    console.error('Erro ao enviar múltiplas premiações para Flash:', error);
+    throw error;
+  }
+}
+
 // Função para gerar template CSV
 export function generateCSVTemplate(): string {
   const headers = [

@@ -3,6 +3,8 @@ import { DeficiencyType } from '@/integrations/supabase/rh-types';
 
 export const DeficiencyTypesService = {
   list: async (companyId: string) => {
+    console.log('🔍 [deficiencyTypesService.list] Iniciando busca:', { companyId });
+    
     try {
       const result = await EntityService.list<DeficiencyType>({
         schema: 'rh',
@@ -12,9 +14,20 @@ export const DeficiencyTypesService = {
         orderBy: 'nome',
         orderDirection: 'ASC'
       });
+      
+      console.log('✅ [deficiencyTypesService.list] Resultado:', {
+        hasData: !!result.data,
+        dataLength: result.data?.length || 0,
+        totalCount: result.totalCount
+      });
+      
+      if (result.data && result.data.length > 0) {
+        console.log('📊 [deficiencyTypesService.list] Primeiros tipos:', result.data.slice(0, 3));
+      }
+      
       return result.data;
     } catch (error) {
-      console.error('Erro ao buscar tipos de deficiência:', error);
+      console.error('❌ [deficiencyTypesService.list] Erro:', error);
       throw error;
     }
   },

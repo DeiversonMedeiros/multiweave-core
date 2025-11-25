@@ -29,111 +29,24 @@ import {
 import { EventoFiscal } from '@/integrations/supabase/financial-types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useFiscal } from '@/hooks/financial/useFiscal';
 
 interface EventosFiscaisProps {
   onClose: () => void;
 }
 
 export function EventosFiscais({ onClose }: EventosFiscaisProps) {
-  const [eventos, setEventos] = useState<EventoFiscal[]>([]);
   const [filteredEventos, setFilteredEventos] = useState<EventoFiscal[]>([]);
-  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [tipoFilter, setTipoFilter] = useState('all');
 
-  // Dados mockados para demonstração
-  const mockEventos: EventoFiscal[] = [
-    {
-      id: '1',
-      company_id: '1',
-      tipo_evento: 'emissao',
-      documento_tipo: 'nfe',
-      documento_id: '123456',
-      chave_acesso: '35200114200166000187550010000012345678901234',
-      numero_protocolo: '135200000012345',
-      data_evento: new Date().toISOString(),
-      status: 'processado',
-      xml_evento: '<xml>...</xml>',
-      observacoes: 'NF-e emitida com sucesso',
-      created_by: 'user1',
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '2',
-      company_id: '1',
-      tipo_evento: 'cancelamento',
-      documento_tipo: 'nfe',
-      documento_id: '123457',
-      chave_acesso: '35200114200166000187550010000012345678901235',
-      numero_protocolo: '135200000012346',
-      data_evento: new Date(Date.now() - 3600000).toISOString(),
-      status: 'processado',
-      xml_evento: '<xml>...</xml>',
-      observacoes: 'NF-e cancelada por solicitação do cliente',
-      created_by: 'user1',
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '3',
-      company_id: '1',
-      tipo_evento: 'manifestacao',
-      documento_tipo: 'nfe',
-      documento_id: '123458',
-      chave_acesso: '35200114200166000187550010000012345678901236',
-      data_evento: new Date(Date.now() - 7200000).toISOString(),
-      status: 'pendente',
-      observacoes: 'Manifestação de ciência pendente',
-      created_by: 'user2',
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '4',
-      company_id: '1',
-      tipo_evento: 'emissao',
-      documento_tipo: 'nfse',
-      documento_id: '789012',
-      data_evento: new Date(Date.now() - 10800000).toISOString(),
-      status: 'erro',
-      observacoes: 'Erro na validação do XML da NFS-e',
-      created_by: 'user1',
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '5',
-      company_id: '1',
-      tipo_evento: 'inutilizacao',
-      documento_tipo: 'nfe',
-      documento_id: '123459',
-      chave_acesso: '35200114200166000187550010000012345678901237',
-      numero_protocolo: '135200000012347',
-      data_evento: new Date(Date.now() - 14400000).toISOString(),
-      status: 'processado',
-      xml_evento: '<xml>...</xml>',
-      observacoes: 'Números inutilizados por erro de digitação',
-      created_by: 'user1',
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
-
-  useEffect(() => {
-    setEventos(mockEventos);
-    setFilteredEventos(mockEventos);
-  }, []);
+  // Carregar dados reais usando hook useFiscal
+  const { eventos, loading } = useFiscal();
 
   // Filtrar eventos
   useEffect(() => {
-    let filtered = eventos;
+    let filtered = eventos || [];
 
     // Filtro por termo de busca
     if (searchTerm) {

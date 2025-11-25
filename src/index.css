@@ -166,4 +166,14 @@ All colors MUST be HSL.
   .sidebar-scrollbar::-webkit-scrollbar-thumb:active {
     background: hsl(150 10% 85% / 0.7);
   }
+
+  /* Logo sharp rendering - prevents blur/antialiasing */
+  .logo-sharp {
+    image-rendering: -webkit-optimize-contrast;
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: unset;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
 }

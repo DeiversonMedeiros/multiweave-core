@@ -24,7 +24,7 @@ export function EmploymentContractForm({ contract, mode, onSave, isLoading = fal
   const [formData, setFormData] = useState({
     employee_id: '',
     numero_contrato: '',
-    tipo_contrato: 'CLT' as 'CLT' | 'PJ' | 'Estagiário' | 'Terceirizado' | 'Temporário' | 'Freelancer',
+    tipo_contrato: 'CLT' as 'CLT' | 'Menor Aprendiz' | 'PJ' | 'Estagiário' | 'Terceirizado' | 'Temporário' | 'Freelancer',
     data_inicio: '',
     data_fim: '',
     periodo_experiencia: 90,

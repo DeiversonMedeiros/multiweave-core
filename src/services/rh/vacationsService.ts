@@ -232,11 +232,24 @@ export async function getVacationStats(companyId: string) {
 
 /**
  * Formata data para exibição
+ * Corrige problema de timezone que faz a data aparecer um dia antes
  */
 export function formatDate(date: string | Date): string {
   if (!date) return '-';
   
-  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  let dateObj: Date;
+  
+  if (typeof date === 'string') {
+    // Se for string no formato YYYY-MM-DD, tratar como data local (sem timezone)
+    if (date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      const [year, month, day] = date.split('-').map(Number);
+      dateObj = new Date(year, month - 1, day);
+    } else {
+      dateObj = new Date(date);
+    }
+  } else {
+    dateObj = date;
+  }
   
   if (isNaN(dateObj.getTime())) return '-';
   

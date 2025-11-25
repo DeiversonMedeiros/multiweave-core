@@ -38,6 +38,8 @@ export async function getInssBrackets(
   companyId: string,
   filters: InssBracketFilters = {}
 ): Promise<{ data: InssBracket[]; totalCount: number }> {
+  console.log('🔍 [inssBracketsService.getInssBrackets] Iniciando busca:', { companyId, filters });
+  
   try {
     const result = await EntityService.list<InssBracket>({
       schema: 'rh',
@@ -48,12 +50,31 @@ export async function getInssBrackets(
       orderDirection: 'DESC'
     });
 
+    console.log('✅ [inssBracketsService.getInssBrackets] Resultado EntityService:', {
+      hasData: !!result.data,
+      dataLength: result.data?.length || 0,
+      totalCount: result.totalCount,
+      hasMore: result.hasMore
+    });
+
+    if (result.data && result.data.length > 0) {
+      console.log('📊 [inssBracketsService.getInssBrackets] Primeiras faixas INSS:', 
+        result.data.slice(0, 2).map(b => ({ 
+          codigo: b.codigo, 
+          descricao: b.descricao,
+          company_id: b.company_id 
+        }))
+      );
+    } else {
+      console.warn('⚠️ [inssBracketsService.getInssBrackets] Array vazio retornado');
+    }
+
     return {
       data: result.data,
       totalCount: result.totalCount,
     };
   } catch (error) {
-    console.error('Erro no serviço de faixas INSS:', error);
+    console.error('❌ [inssBracketsService.getInssBrackets] Erro:', error);
     throw error;
   }
 }

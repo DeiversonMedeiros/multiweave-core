@@ -23,7 +23,12 @@ import {
   getAwardStats,
   approveAward,
   markAsPaid,
-  validateAwardImportRow
+  validateAwardImportRow,
+  sendAwardToAccountsPayable,
+  sendAwardToFlash,
+  generateFlashInvoiceForAward,
+  sendMultipleAwardsToAccountsPayable,
+  sendMultipleAwardsToFlash
 } from '@/services/rh/awardsProductivityService';
 import {
   AwardProductivity,
@@ -312,6 +317,105 @@ export function useMarkAsPaid() {
     onError: (error) => {
       toast.error('Erro ao marcar como pago.', {
         description: error.message,
+      });
+    },
+  });
+}
+
+// =====================================================
+// HOOKS DE INTEGRAÇÃO COM CONTAS A PAGAR E FLASH
+// =====================================================
+
+export function useSendAwardToAccountsPayable() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ awardId, dueDate }: { awardId: string; dueDate?: Date }) =>
+      sendAwardToAccountsPayable(awardId, dueDate),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['awardsProductivity'] });
+      toast.success(data.message || 'Premiação enviada para Contas a Pagar com sucesso!');
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao enviar para Contas a Pagar.', {
+        description: error.message || 'Ocorreu um erro desconhecido.',
+      });
+    },
+  });
+}
+
+export function useSendAwardToFlash() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (awardId: string) => sendAwardToFlash(awardId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['awardsProductivity'] });
+      toast.success(data.message || 'Premiação enviada para Flash com sucesso!');
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao enviar para Flash.', {
+        description: error.message || 'Ocorreu um erro desconhecido.',
+      });
+    },
+  });
+}
+
+export function useGenerateFlashInvoiceForAward() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (awardId: string) => generateFlashInvoiceForAward(awardId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['awardsProductivity'] });
+      toast.success(data.message || 'Boleto gerado com sucesso!', {
+        action: data.invoice_url ? {
+          label: 'Abrir',
+          onClick: () => window.open(data.invoice_url, '_blank')
+        } : undefined
+      });
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao gerar boleto Flash.', {
+        description: error.message || 'Ocorreu um erro desconhecido.',
+      });
+    },
+  });
+}
+
+export function useSendMultipleAwardsToAccountsPayable() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ awardIds, dueDate }: { awardIds: string[]; dueDate?: Date }) =>
+      sendMultipleAwardsToAccountsPayable(awardIds, dueDate),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['awardsProductivity'] });
+      if (data.error_count > 0) {
+        toast.warning(`${data.success_count} premiação(ões) enviada(s), ${data.error_count} falharam.`);
+      } else {
+        toast.success(`${data.success_count} premiação(ões) enviada(s) para Contas a Pagar com sucesso!`);
+      }
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao enviar premiações para Contas a Pagar.', {
+        description: error.message || 'Ocorreu um erro desconhecido.',
+      });
+    },
+  });
+}
+
+export function useSendMultipleAwardsToFlash() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (awardIds: string[]) => sendMultipleAwardsToFlash(awardIds),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['awardsProductivity'] });
+      if (data.error_count > 0) {
+        toast.warning(`${data.success_count} premiação(ões) enviada(s), ${data.error_count} falharam.`);
+      } else {
+        toast.success(`${data.success_count} premiação(ões) enviada(s) para Flash com sucesso!`);
+      }
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao enviar premiações para Flash.', {
+        description: error.message || 'Ocorreu um erro desconhecido.',
       });
     },
   });

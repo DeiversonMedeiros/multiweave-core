@@ -321,7 +321,7 @@ export function LancamentoForm({ lancamento, onSave, onCancel, loading = false }
                               <SelectContent>
                                 {planoContas.map((conta) => (
                                   <SelectItem key={conta.id} value={conta.id}>
-                                    {conta.codigo} - {conta.nome}
+                                    {conta.codigo} - {conta.descricao}
                                   </SelectItem>
                                 ))}
                               </SelectContent>

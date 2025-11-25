@@ -8,6 +8,7 @@ import {
   PayrollToAPMapping 
 } from '@/services/rh/financialIntegrationService';
 import { toast } from 'sonner';
+import { useFinanceiroData } from '@/hooks/generic/useEntityData';
 
 // =====================================================
 // HOOKS PARA INTEGRAÇÃO FINANCEIRA
@@ -17,31 +18,35 @@ import { toast } from 'sonner';
  * Hook para buscar contas a pagar da folha
  */
 export function usePayrollAccountsPayable(companyId: string, period?: string) {
-  const integrationService = FinancialIntegrationService.getInstance();
-
-  return useQuery({
-    queryKey: ['payroll-accounts-payable', companyId, period],
-    queryFn: async () => {
-      if (!companyId) return [];
-
-      // Buscar contas a pagar relacionadas à folha
-      const { data, error } = await supabase
-        .from('financeiro.accounts_payable')
-        .select('*')
-        .eq('company_id', companyId)
-        .eq('document_type', 'payroll')
-        .order('due_date', { ascending: true });
-
-      if (error) {
-        throw new Error(`Erro ao buscar contas a pagar: ${error.message}`);
-      }
-
-      return (data || []) as AccountsPayable[];
-
-    },
-    enabled: !!companyId,
-    staleTime: 1000 * 60 * 5, // 5 minutos
+  const { data, isLoading, error, ...rest } = useFinanceiroData<AccountsPayable>('contas_pagar', companyId, {
+    categoria: 'Folha de Pagamento'
   });
+
+  // Transformar dados para compatibilidade
+  const transformedData = data?.map(ap => ({
+    ...ap,
+    amount: ap.valor_atual || ap.amount || 0,
+    due_date: ap.data_vencimento || ap.due_date || '',
+    description: ap.descricao || ap.description || '',
+    category: ap.categoria || ap.category || '',
+    status: ap.status === 'pendente' ? 'pending' : 
+            ap.status === 'aprovado' ? 'approved' : 
+            ap.status === 'pago' ? 'paid' : 
+            ap.status === 'cancelado' ? 'cancelled' : 'pending' as any,
+    document_type: 'payroll' as const
+  })) || [];
+
+  // Filtrar por período se fornecido
+  const filteredData = period 
+    ? transformedData.filter(ap => ap.document_number?.includes(`FOLHA-${period}`))
+    : transformedData;
+
+  return {
+    data: filteredData,
+    isLoading,
+    error,
+    ...rest
+  };
 }
 
 /**
@@ -97,8 +102,9 @@ export function useSaveIntegrationConfig() {
       await integrationService.saveIntegrationConfig(selectedCompany.id, config);
     },
     onSuccess: () => {
-      // Invalidar queries relacionadas
+      // Invalidar queries relacionadas (incluindo a query específica da empresa)
       queryClient.invalidateQueries({ queryKey: ['integration-config'] });
+      queryClient.invalidateQueries({ queryKey: ['integration-config', selectedCompany?.id] });
       toast.success('Configuração de integração salva com sucesso');
     },
     onError: (error) => {

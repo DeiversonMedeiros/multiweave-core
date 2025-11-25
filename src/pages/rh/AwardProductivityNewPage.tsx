@@ -36,7 +36,7 @@ const AwardProductivityNewPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="award_productivity" action="read">
+    <RequireEntity entityName="awards_productivity" action="read">
       <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">

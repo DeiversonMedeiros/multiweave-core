@@ -1,7 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEntityData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
+import { useQuery } from '@tanstack/react-query';
+import { useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
+import { EntityService } from '@/services/generic/entityService';
 import { CostCenter } from '@/lib/supabase-types';
 import { useCompany } from '@/lib/company-context';
+import { queryConfig } from '@/lib/react-query-config';
 
 // =====================================================
 // HOOKS DE CONSULTA
@@ -15,15 +17,18 @@ export function useCostCenters() {
 
   return useQuery({
     queryKey: ['public', 'cost_centers', selectedCompany?.id],
-    queryFn: () => useEntityData<CostCenter>({
-      schema: 'public',
-      table: 'cost_centers',
-      companyId: selectedCompany?.id || '',
-      page: 1,
-      pageSize: 100
-    }),
+    queryFn: async () => {
+      const result = await EntityService.list<CostCenter>({
+        schema: 'public',
+        table: 'cost_centers',
+        companyId: selectedCompany?.id || '',
+        page: 1,
+        pageSize: 100
+      });
+      return result;
+    },
     enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.static,
   });
 }
 
@@ -35,12 +40,15 @@ export function useCostCenter(id: string) {
 
   return useQuery({
     queryKey: ['public', 'cost_centers', 'byId', id, selectedCompany?.id],
-    queryFn: () => useEntityData<CostCenter>({
-      schema: 'public',
-      table: 'cost_centers',
-      companyId: selectedCompany?.id || '',
-      filters: { id }
-    }),
+    queryFn: async () => {
+      const result = await EntityService.list<CostCenter>({
+        schema: 'public',
+        table: 'cost_centers',
+        companyId: selectedCompany?.id || '',
+        filters: { id }
+      });
+      return result.data[0] || null;
+    },
     enabled: !!id && !!selectedCompany?.id,
   });
 }
@@ -53,16 +61,19 @@ export function useActiveCostCenters() {
 
   return useQuery({
     queryKey: ['public', 'cost_centers', 'active', selectedCompany?.id],
-    queryFn: () => useEntityData<CostCenter>({
-      schema: 'public',
-      table: 'cost_centers',
-      companyId: selectedCompany?.id || '',
-      filters: { ativo: true },
-      page: 1,
-      pageSize: 100
-    }),
+    queryFn: async () => {
+      const result = await EntityService.list<CostCenter>({
+        schema: 'public',
+        table: 'cost_centers',
+        companyId: selectedCompany?.id || '',
+        filters: { ativo: true },
+        page: 1,
+        pageSize: 100
+      });
+      return result;
+    },
     enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.static,
   });
 }
 

@@ -23,6 +23,7 @@ import {
   Activity
 } from 'lucide-react';
 import { SefazStatus } from '@/integrations/supabase/financial-types';
+import { useFiscal } from '@/hooks/financial/useFiscal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -31,83 +32,20 @@ interface SefazMonitorProps {
 }
 
 export function SefazMonitor({ onClose }: SefazMonitorProps) {
-  const [status, setStatus] = useState<SefazStatus[]>([]);
-  const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
-  // Dados mockados para demonstração
-  const mockStatus: SefazStatus[] = [
-    {
-      id: '1',
-      company_id: '1',
-      uf: 'SP',
-      servico: 'NFe Autorização',
-      status: 'online',
-      ultima_verificacao: new Date().toISOString(),
-      tempo_resposta: 120,
-      observacoes: 'Funcionando normalmente',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '2',
-      company_id: '1',
-      uf: 'SP',
-      servico: 'NFe Consulta',
-      status: 'online',
-      ultima_verificacao: new Date().toISOString(),
-      tempo_resposta: 95,
-      observacoes: 'Funcionando normalmente',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '3',
-      company_id: '1',
-      uf: 'RJ',
-      servico: 'NFe Autorização',
-      status: 'contingencia',
-      ultima_verificacao: new Date(Date.now() - 300000).toISOString(),
-      tempo_resposta: 2500,
-      observacoes: 'Sistema em contingência - SVC',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '4',
-      company_id: '1',
-      uf: 'MG',
-      servico: 'NFe Autorização',
-      status: 'offline',
-      ultima_verificacao: new Date(Date.now() - 600000).toISOString(),
-      observacoes: 'Serviço indisponível temporariamente',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: '5',
-      company_id: '1',
-      uf: 'RS',
-      servico: 'NFS-e',
-      status: 'online',
-      ultima_verificacao: new Date().toISOString(),
-      tempo_resposta: 180,
-      observacoes: 'Funcionando normalmente',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
+  // Carregar dados reais usando hook useFiscal
+  const { sefazStatus, loading, refresh } = useFiscal();
+  
+  const [status, setStatus] = useState(sefazStatus || []);
 
   useEffect(() => {
-    setStatus(mockStatus);
-  }, []);
+    setStatus(sefazStatus || []);
+  }, [sefazStatus]);
 
   const handleRefresh = async () => {
-    setLoading(true);
-    // Simular consulta aos serviços SEFAZ
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await refresh();
     setLastUpdate(new Date());
-    setLoading(false);
   };
 
   const getStatusBadge = (status: string) => {

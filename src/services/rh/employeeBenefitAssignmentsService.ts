@@ -302,7 +302,9 @@ export async function getBenefitEmployees(
  */
 export async function calculateBenefitValue(
   assignment: EmployeeBenefitAssignment,
-  employeeSalary?: number
+  employeeSalary?: number,
+  startDate?: Date,
+  endDate?: Date
 ): Promise<number> {
   try {
     // Se tem valor personalizado, usar ele
@@ -333,8 +335,66 @@ export async function calculateBenefitValue(
         return benefitConfig.base_value || 0;
       
       case 'daily_value':
-        // Assumir 30 dias por mês
+        // Se foram fornecidas datas, usar cálculo baseado em dias reais de trabalho
+        if (startDate && endDate && assignment.company_id && assignment.employee_id) {
+          try {
+            const { data: calculatedValue, error: rpcError } = await supabase.rpc('calculate_daily_benefit_value', {
+              company_id_param: assignment.company_id,
+              employee_id_param: assignment.employee_id,
+              benefit_config_id_param: assignment.benefit_config_id,
+              start_date_param: startDate.toISOString().split('T')[0],
+              end_date_param: endDate.toISOString().split('T')[0]
+            });
+
+            if (!rpcError && calculatedValue !== null) {
+              return calculatedValue || 0;
+            }
+          } catch (rpcError) {
+            console.warn('Erro ao calcular benefício com dias reais, usando cálculo padrão:', rpcError);
+          }
+        }
+        
+        // Fallback: calcular baseado no período do mês atual ou usar base padrão
+        if (startDate && endDate) {
+          // Calcular dias trabalhados reais usando a função RPC
+          try {
+            const { data: workingDays, error: daysError } = await supabase.rpc('calculate_working_days_for_benefits', {
+              company_id_param: assignment.company_id,
+              employee_id_param: assignment.employee_id,
+              start_date_param: startDate.toISOString().split('T')[0],
+              end_date_param: endDate.toISOString().split('T')[0]
+            });
+
+            if (!daysError && workingDays !== null) {
+              return (benefitConfig.base_value || 0) * workingDays;
+            }
+          } catch (daysError) {
+            console.warn('Erro ao calcular dias trabalhados, usando 30 dias padrão:', daysError);
+          }
+        }
+        
+        // Fallback final: usar 30 dias por mês (comportamento antigo)
         return (benefitConfig.base_value || 0) * 30;
+      
+      case 'work_days':
+        // Para work_days, sempre usar cálculo baseado em dias reais
+        if (startDate && endDate && assignment.company_id && assignment.employee_id) {
+          try {
+            const { data: workingDays, error: daysError } = await supabase.rpc('calculate_working_days_for_benefits', {
+              company_id_param: assignment.company_id,
+              employee_id_param: assignment.employee_id,
+              start_date_param: startDate.toISOString().split('T')[0],
+              end_date_param: endDate.toISOString().split('T')[0]
+            });
+
+            if (!daysError && workingDays !== null) {
+              return (benefitConfig.base_value || 0) * workingDays;
+            }
+          } catch (daysError) {
+            console.warn('Erro ao calcular dias trabalhados:', daysError);
+          }
+        }
+        return benefitConfig.base_value || 0;
       
       default:
         return benefitConfig.base_value || 0;

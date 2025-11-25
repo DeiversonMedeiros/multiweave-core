@@ -48,6 +48,7 @@ export const PermissionManager: React.FC = () => {
 
   const modules = [
     'dashboard',
+    'cadastros', // Módulo principal de cadastros (controla visibilidade do menu)
     'usuarios',
     'empresas',
     'projetos',
@@ -82,29 +83,67 @@ export const PermissionManager: React.FC = () => {
     'centros_custo',
     
     // Entidades RH
-    'funcionarios',
-    'registros_ponto',
-    'ferias',
-    'reembolsos',
-    'exames_periodicos',
-    'acoes_disciplinares',
-    'treinamentos',
+    'employees', // Tabela: rh.employees (usado nas páginas)
+    'registros_ponto', // Usado em LocationZonesPage - pode ser diferente de time_records
+    'time_records', // Tabela: rh.time_records (usado nas páginas de histórico)
+    'vacations', // Tabela: rh.vacations (usado nas páginas)
+    'reimbursement_requests', // Tabela: rh.reimbursement_requests
+    'periodic_exams', // Tabela: rh.periodic_exams (usado nas páginas)
+    'disciplinary_actions', // Tabela: rh.disciplinary_actions (usado nas páginas)
+    'trainings', // Tabela: rh.trainings
+    'positions', // Tabela: rh.positions (usado nas páginas)
+    'work_shifts', // Tabela: rh.work_shifts (usado nas páginas)
+    'holidays', // Tabela: rh.holidays (usado nas páginas)
+    'rubricas', // Tabela: rh.rubricas (usado nas páginas)
+    'units', // Tabela: rh.units (usado nas páginas)
+    'dependents', // Tabela: rh.dependents (usado nas páginas)
+    'employment_contracts', // Tabela: rh.employment_contracts (usado nas páginas)
+    'medical_agreements', // Tabela: rh.medical_agreements
+    'benefits', // Tabela: rh.benefits
+    'payroll_config', // Tabela: rh.payroll_config (usado nas páginas)
+    'payroll', // Usado nas páginas
+    'income_statements', // Tabela: rh.income_statements (usado em ComprovantesPage)
+    'esocial', // Usado nas páginas
+    
+    // Entidades RH - Parâmetros e Configurações
+    'inss_brackets', // Tabela: rh.inss_brackets
+    'irrf_brackets', // Tabela: rh.irrf_brackets
+    'fgts_config', // Tabela: rh.fgts_config
+    'delay_reasons', // Tabela: rh.delay_reasons
+    'absence_types', // Tabela: rh.absence_types
+    'cid_codes', // Tabela: rh.cid_codes
+    'allowance_types', // Tabela: rh.allowance_types
+    'deficiency_types', // Tabela: rh.deficiency_types
+    
+    // Entidades RH - Benefícios e Convênios
+    'awards_productivity', // Tabela: rh.awards_productivity
+    'medical_plans', // Tabela: rh.medical_plans
+    'employee_medical_plans', // Tabela: rh.employee_medical_plans
+    'unions', // Tabela: rh.unions
+    'employee_union_memberships', // Tabela: rh.employee_union_memberships
+    
+    // Entidades RH - Processamento
+    'payroll_calculation', // Tabela: rh.payroll_calculations
+    'event_consolidation', // Tabela: rh.event_consolidations
     
     // Entidades Financeiras
-    'contas_pagar',
-    'contas_receber',
-    'borderos',
-    'remessas_bancarias',
-    'retornos_bancarios',
-    'contas_bancarias',
-    'conciliacoes_bancarias',
-    'fluxo_caixa',
-    'nfe',
-    'nfse',
-    'plano_contas',
-    'lancamentos_contabeis',
-    'configuracoes_aprovacao',
-    'aprovacoes',
+    'contas_pagar', // Tabela: financeiro.contas_pagar
+    'contas_receber', // Tabela: financeiro.contas_receber
+    'borderos', // Tabela: financeiro.borderos
+    'remessas_bancarias', // Tabela: financeiro.remessas_bancarias
+    'retornos_bancarios', // Tabela: financeiro.retornos_bancarios
+    'contas_bancarias', // Tabela: financeiro.contas_bancarias
+    'conciliacoes_bancarias', // Tabela: financeiro.conciliacoes_bancarias
+    'fluxo_caixa', // Tabela: financeiro.fluxo_caixa
+    'nfe', // Tabela: financeiro.nfe
+    'nfse', // Tabela: financeiro.nfse
+    'plano_contas', // Tabela: financeiro.plano_contas
+    'lancamentos_contabeis', // Tabela: financeiro.lancamentos_contabeis
+    'configuracoes_aprovacao', // Tabela: public.configuracoes_aprovacao_unificada (sistema unificado)
+    'aprovacoes', // Tabela: public.aprovacoes_unificada (sistema unificado)
+    'accounts_payable', // Tabela: financeiro.accounts_payable (se diferente de contas_pagar)
+    'configuracao_fiscal', // Tabela: financeiro.configuracao_fiscal
+    'configuracao_bancaria', // Tabela: financeiro.configuracao_bancaria
     
     // Entidades Almoxarifado
     'estoque_atual',
@@ -117,6 +156,12 @@ export const PermissionManager: React.FC = () => {
     'inventarios',
     'inventario_itens',
     'almoxarifados',
+    'localizacoes_fisicas',
+    'warehouse_transfers',
+    'material_exit_requests',
+    'inventory_dashboard',
+    'inventory_management',
+    'warehouse_reports',
     
     // Entidades do Processo de Compras
     'solicitacoes_compra',
@@ -126,7 +171,20 @@ export const PermissionManager: React.FC = () => {
     'fornecedores',
     'contratos_compra',
     'historico_compras',
-    'avaliacao_fornecedores'
+    'avaliacao_fornecedores',
+    'fornecedores_dados',
+    
+    // Entidades Frota
+    'vehicles', // Tabela: frota.vehicles
+    'vehicle_documents', // Tabela: frota.vehicle_documents
+    'drivers', // Tabela: frota.drivers
+    'vehicle_assignments', // Tabela: frota.vehicle_assignments
+    'vehicle_inspections', // Tabela: frota.vehicle_inspections
+    'inspection_items', // Tabela: frota.inspection_items
+    'vehicle_maintenances', // Tabela: frota.vehicle_maintenances
+    'vehicle_occurrences', // Tabela: frota.vehicle_occurrences
+    'vehicle_requests', // Tabela: frota.vehicle_requests
+    'vehicle_images' // Tabela: frota.vehicle_images
   ];
 
   useEffect(() => {
@@ -284,6 +342,7 @@ export const PermissionManager: React.FC = () => {
   const getModuleDisplayName = (moduleName: string) => {
     const moduleNames: { [key: string]: string } = {
       'dashboard': 'Painel Principal',
+      'cadastros': 'Cadastros',
       'usuarios': 'Usuários',
       'empresas': 'Empresas',
       'projetos': 'Projetos',
@@ -319,13 +378,47 @@ export const PermissionManager: React.FC = () => {
       'materiais_equipamentos': 'Materiais e Equipamentos',
       'parceiros': 'Parceiros',
       'centros_custo': 'Centros de Custo',
-      'funcionarios': 'Funcionários',
-      'registros_ponto': 'Registros de Ponto',
-      'ferias': 'Férias',
-      'reembolsos': 'Reembolsos',
-      'exames_periodicos': 'Exames Periódicos',
-      'acoes_disciplinares': 'Ações Disciplinares',
-      'treinamentos': 'Treinamentos',
+      // RH
+      'employees': 'Funcionários (rh.employees)',
+      'registros_ponto': 'Registros de Ponto - Localização',
+      'time_records': 'Registros de Ponto - Histórico (rh.time_records)',
+      'vacations': 'Férias (rh.vacations)',
+      'reimbursement_requests': 'Solicitações de Reembolso (rh.reimbursement_requests)',
+      'periodic_exams': 'Exames Periódicos (rh.periodic_exams)',
+      'disciplinary_actions': 'Ações Disciplinares (rh.disciplinary_actions)',
+      'trainings': 'Treinamentos (rh.trainings)',
+      'positions': 'Cargos (rh.positions)',
+      'work_shifts': 'Escalas de Trabalho (rh.work_shifts)',
+      'holidays': 'Feriados (rh.holidays)',
+      'rubricas': 'Rubricas (rh.rubricas)',
+      'units': 'Unidades/Departamentos (rh.units)',
+      'dependents': 'Dependentes (rh.dependents)',
+      'employment_contracts': 'Contratos de Trabalho (rh.employment_contracts)',
+      'medical_agreements': 'Convênios Médicos (rh.medical_agreements)',
+      'benefits': 'Benefícios (rh.benefits)',
+      'payroll_config': 'Configurações de Folha (rh.payroll_config)',
+      'payroll': 'Folha de Pagamento',
+      'income_statements': 'Comprovantes de Rendimentos (rh.income_statements)',
+      'esocial': 'eSocial',
+      // RH - Parâmetros e Configurações
+      'inss_brackets': 'Faixas INSS (rh.inss_brackets)',
+      'irrf_brackets': 'Faixas IRRF (rh.irrf_brackets)',
+      'fgts_config': 'Configurações FGTS (rh.fgts_config)',
+      'delay_reasons': 'Motivos de Atraso (rh.delay_reasons)',
+      'absence_types': 'Tipos de Afastamento (rh.absence_types)',
+      'cid_codes': 'Códigos CID (rh.cid_codes)',
+      'allowance_types': 'Tipos de Adicionais (rh.allowance_types)',
+      'deficiency_types': 'Tipos de Deficiência (rh.deficiency_types)',
+      // RH - Benefícios e Convênios
+      'awards_productivity': 'Premiações e Produtividade (rh.awards_productivity)',
+      'medical_plans': 'Planos Médicos (rh.medical_plans)',
+      'employee_medical_plans': 'Adesões de Planos Médicos (rh.employee_medical_plans)',
+      'unions': 'Sindicatos (rh.unions)',
+      'employee_union_memberships': 'Vínculos Sindicais (rh.employee_union_memberships)',
+      // RH - Processamento
+      'payroll_calculation': 'Cálculo de Folha (rh.payroll_calculations)',
+      'event_consolidation': 'Consolidação de Eventos (rh.event_consolidations)',
+      // Financeiro
       'contas_pagar': 'Contas a Pagar',
       'contas_receber': 'Contas a Receber',
       'borderos': 'Borderôs',
@@ -340,6 +433,10 @@ export const PermissionManager: React.FC = () => {
       'lancamentos_contabeis': 'Lançamentos Contábeis',
       'configuracoes_aprovacao': 'Configurações de Aprovação',
       'aprovacoes': 'Aprovações',
+      'accounts_payable': 'Contas a Pagar - Alternativa (financeiro.accounts_payable)',
+      'configuracao_fiscal': 'Configuração Fiscal',
+      'configuracao_bancaria': 'Configuração Bancária',
+      // Almoxarifado
       'estoque_atual': 'Estoque Atual',
       'movimentacoes_estoque': 'Movimentações de Estoque',
       'entradas_materiais': 'Entradas de Materiais',
@@ -350,6 +447,13 @@ export const PermissionManager: React.FC = () => {
       'inventarios': 'Inventários',
       'inventario_itens': 'Itens de Inventário',
       'almoxarifados': 'Almoxarifados',
+      'localizacoes_fisicas': 'Localizações Físicas',
+      'warehouse_transfers': 'Transferências de Almoxarifado',
+      'material_exit_requests': 'Solicitações de Saída',
+      'inventory_dashboard': 'Dashboard de Estoque',
+      'inventory_management': 'Gestão de Inventário',
+      'warehouse_reports': 'Relatórios de Almoxarifado',
+      // Compras
       'solicitacoes_compra': 'Solicitações de Compra',
       'cotacoes': 'Cotações',
       'pedidos_compra': 'Pedidos de Compra',
@@ -357,9 +461,21 @@ export const PermissionManager: React.FC = () => {
       'fornecedores': 'Fornecedores',
       'contratos_compra': 'Contratos de Compra',
       'historico_compras': 'Histórico de Compras',
-      'avaliacao_fornecedores': 'Avaliação de Fornecedores'
+      'avaliacao_fornecedores': 'Avaliação de Fornecedores',
+      'fornecedores_dados': 'Dados de Fornecedores',
+      // Frota
+      'vehicles': 'Veículos (frota.vehicles)',
+      'vehicle_documents': 'Documentos de Veículos (frota.vehicle_documents)',
+      'drivers': 'Condutores (frota.drivers)',
+      'vehicle_assignments': 'Atribuições de Veículos (frota.vehicle_assignments)',
+      'vehicle_inspections': 'Vistorias (frota.vehicle_inspections)',
+      'inspection_items': 'Itens de Vistoria (frota.inspection_items)',
+      'vehicle_maintenances': 'Manutenções (frota.vehicle_maintenances)',
+      'vehicle_occurrences': 'Ocorrências (frota.vehicle_occurrences)',
+      'vehicle_requests': 'Solicitações de Veículos (frota.vehicle_requests)',
+      'vehicle_images': 'Imagens de Veículos (frota.vehicle_images)'
     };
-    return entityNames[entityName] || entityName.replace('_', ' ');
+    return entityNames[entityName] || entityName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };
 
   if (!isAdmin) {

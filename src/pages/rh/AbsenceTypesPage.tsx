@@ -9,13 +9,17 @@ import { toast } from '@/hooks/use-toast';
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCompany } from '@/lib/company-context';
 
 const AbsenceTypesPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<AbsenceType | null>(null);
   const [formData, setFormData] = useState<Partial<AbsenceType>>({});
 
-  const { data = [], isLoading } = useAbsenceTypes();
+  const { selectedCompany } = useCompany();
+  const absenceTypesQuery = useAbsenceTypes();
+  const data = absenceTypesQuery.data || [];
+  const isLoading = absenceTypesQuery.isLoading;
   const createMutation = useCreateAbsenceType();
   const updateMutation = useUpdateAbsenceType();
   const deleteMutation = useDeleteAbsenceType();
@@ -36,11 +40,15 @@ const AbsenceTypesPage: React.FC = () => {
       label: 'Tipo',
       render: (value: string) => {
         const tipoLabels = {
-          medico: 'Médico',
-          maternidade: 'Maternidade',
-          paternidade: 'Paternidade',
-          acidente_trabalho: 'Acidente de Trabalho',
-          outros: 'Outros',
+          ferias: 'Férias',
+          licenca_medica: 'Licença Médica',
+          licenca_maternidade: 'Licença Maternidade',
+          licenca_paternidade: 'Licença Paternidade',
+          licenca_casamento: 'Licença Casamento',
+          licenca_luto: 'Licença Luto',
+          afastamento_medico: 'Afastamento Médico',
+          suspensao: 'Suspensão',
+          afastamento_sem_vencimento: 'Afastamento sem Vencimento',
         };
         return tipoLabels[value as keyof typeof tipoLabels] || value;
       },
@@ -84,11 +92,15 @@ const AbsenceTypesPage: React.FC = () => {
       type: 'select' as const,
       required: true,
       options: [
-        { value: 'medico', label: 'Médico' },
-        { value: 'maternidade', label: 'Maternidade' },
-        { value: 'paternidade', label: 'Paternidade' },
-        { value: 'acidente_trabalho', label: 'Acidente de Trabalho' },
-        { value: 'outros', label: 'Outros' },
+        { value: 'ferias', label: 'Férias' },
+        { value: 'licenca_medica', label: 'Licença Médica' },
+        { value: 'licenca_maternidade', label: 'Licença Maternidade' },
+        { value: 'licenca_paternidade', label: 'Licença Paternidade' },
+        { value: 'licenca_casamento', label: 'Licença Casamento' },
+        { value: 'licenca_luto', label: 'Licença Luto' },
+        { value: 'afastamento_medico', label: 'Afastamento Médico' },
+        { value: 'suspensao', label: 'Suspensão' },
+        { value: 'afastamento_sem_vencimento', label: 'Afastamento sem Vencimento' },
       ],
     },
     {
@@ -119,7 +131,7 @@ const AbsenceTypesPage: React.FC = () => {
       codigo: '',
       nome: '',
       descricao: '',
-      tipo: 'medico',
+      tipo: 'ferias',
       requer_justificativa: false,
       requer_anexo: false,
       desconta_salario: false,

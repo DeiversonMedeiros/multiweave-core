@@ -39,10 +39,12 @@ export function BankHoursDashboard({ companyId }: BankHoursDashboardProps) {
   });
   const [transactionTypeFilter, setTransactionTypeFilter] = useState<string>('');
   const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
+  const today = new Date().toISOString().split('T')[0];
   const [adjustmentForm, setAdjustmentForm] = useState<BankHoursAdjustmentForm>({
     employee_id: '',
     hours_amount: 0,
     description: '',
+    transaction_date: today
   });
 
   const handleAdjustBalance = async (e: React.FormEvent) => {
@@ -54,6 +56,7 @@ export function BankHoursDashboard({ companyId }: BankHoursDashboardProps) {
         employee_id: '',
         hours_amount: 0,
         description: '',
+        transaction_date: today
       });
     } catch (err) {
       console.error('Erro ao ajustar saldo:', err);
@@ -479,6 +482,17 @@ export function BankHoursDashboard({ companyId }: BankHoursDashboardProps) {
                     value={adjustmentForm.description}
                     onChange={(e) => setAdjustmentForm(prev => ({ ...prev, description: e.target.value }))}
                     placeholder="Motivo do ajuste"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="adjust-date">Data da Transação</Label>
+                  <Input
+                    id="adjust-date"
+                    type="date"
+                    value={adjustmentForm.transaction_date}
+                    max={today}
+                    onChange={(e) => setAdjustmentForm(prev => ({ ...prev, transaction_date: e.target.value }))}
                   />
                 </div>
 

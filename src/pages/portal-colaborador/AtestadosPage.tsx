@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 import { useEmployeeByUserId } from '@/hooks/rh/useEmployees';
 import { useMedicalCertificates } from '@/hooks/rh/useMedicalCertificates';
+import { useCidCodes } from '@/hooks/rh/useCidCodes';
 import { EntityService } from '@/services/generic/entityService';
 import { useCompany } from '@/lib/company-context';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +12,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   Dialog,
   DialogContent,
@@ -58,6 +66,7 @@ export default function AtestadosPage() {
   } = useMedicalCertificates(selectedCompany?.id);
   
   const { data: medicalCertificates, isLoading } = useMedicalCertificatesByEmployee(employee?.id || '');
+  const { data: cidCodes } = useCidCodes();
 
   // Mutação para enviar atestado usando o hook
   const certificateMutation = useMutation({
@@ -67,19 +76,23 @@ export default function AtestadosPage() {
       }
       
       // Criar atestado
-      const certificate = await createMedicalCertificate.mutateAsync({
+      const certificateData: any = {
         employee_id: employee.id,
         company_id: selectedCompany.id,
         data_emissao: new Date().toISOString().split('T')[0],
         data_inicio: startDate,
         data_fim: endDate,
         tipo_atestado: type as 'medico' | 'odontologico' | 'psicologico',
-        medico_nome: '', // TODO: Adicionar campo no formulário
-        crm_crmo: '', // TODO: Adicionar campo no formulário
-        cid_codigo: cidCode,
         valor_beneficio: 0,
         status: 'pendente'
-      });
+      };
+      
+      // Adicionar campos opcionais apenas se tiverem valor
+      if (cidCode) {
+        certificateData.cid_codigo = cidCode;
+      }
+      
+      const certificate = await createMedicalCertificate.mutateAsync(certificateData);
       
       // Upload do anexo se houver
       if (file && certificate) {
@@ -181,7 +194,7 @@ export default function AtestadosPage() {
               {!employee?.id ? 'Carregando...' : 'Enviar Atestado'}
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Enviar Atestado</DialogTitle>
               <DialogDescription>
@@ -191,18 +204,16 @@ export default function AtestadosPage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="type">Tipo de Atestado</Label>
-                <select
-                  id="type"
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md"
-                >
-                  <option value="">Selecione o tipo</option>
-                  <option value="doenca">Doença</option>
-                  <option value="acidente">Acidente</option>
-                  <option value="licenca_medica">Licença Médica</option>
-                  <option value="preventivo">Preventivo</option>
-                </select>
+                <Select value={type} onValueChange={setType}>
+                  <SelectTrigger id="type">
+                    <SelectValue placeholder="Selecione o tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="medico">Médico</SelectItem>
+                    <SelectItem value="odontologico">Odontológico</SelectItem>
+                    <SelectItem value="psicologico">Psicológico</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="start">Data de Início</Label>
@@ -224,12 +235,18 @@ export default function AtestadosPage() {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="cid">Código CID (opcional)</Label>
-                <Input
-                  id="cid"
-                  value={cidCode}
-                  onChange={(e) => setCidCode(e.target.value)}
-                  placeholder="Ex: A00.0"
-                />
+                <Select value={cidCode || undefined} onValueChange={(value) => setCidCode(value || '')}>
+                  <SelectTrigger id="cid">
+                    <SelectValue placeholder="Selecione um CID (opcional)" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    {cidCodes?.map((cid) => (
+                      <SelectItem key={cid.id} value={cid.codigo}>
+                        {cid.codigo} - {cid.descricao}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="file">Arquivo do Atestado (PDF, JPG, PNG)</Label>
@@ -278,7 +295,7 @@ export default function AtestadosPage() {
                     </div>
                     <div>
                       <p className="font-medium">
-                        {certificate.tipo} - {certificate.cid_codigo || 'Sem CID'}
+                        {certificate.tipo_atestado} - {certificate.cid_codigo || 'Sem CID'}
                       </p>
                       <p className="text-sm text-gray-600">
                         {new Date(certificate.data_inicio).toLocaleDateString('pt-BR')} - {new Date(certificate.data_fim).toLocaleDateString('pt-BR')}

@@ -220,11 +220,14 @@ export const useMedicalCertificates = (companyId?: string) => {
       file: File; 
       uploadedBy: string; 
     }) => {
-      const fileName = `${certificateId}_${Date.now()}_${file.name}`;
+      const sanitizedOriginalName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const uniqueName = `${Date.now()}_${sanitizedOriginalName}`;
+      // Estrutura: {company_id}/{certificate_id}/{filename}
+      const filePath = `${companyId}/${certificateId}/${uniqueName}`;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('medical-certificates')
-        .upload(fileName, file);
+        .upload(filePath, file, { cacheControl: '3600', upsert: false });
       
       if (uploadError) throw uploadError;
       

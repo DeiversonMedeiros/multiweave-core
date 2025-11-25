@@ -310,6 +310,7 @@ export async function terminateEmploymentContract(
 export function getContractTypes(): { value: string; label: string }[] {
   return [
     { value: 'CLT', label: 'CLT - Consolidação das Leis do Trabalho' },
+    { value: 'Menor Aprendiz', label: 'Menor Aprendiz' },
     { value: 'PJ', label: 'PJ - Pessoa Jurídica' },
     { value: 'Estagiário', label: 'Estagiário' },
     { value: 'Terceirizado', label: 'Terceirizado' },

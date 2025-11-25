@@ -1,5 +1,5 @@
-import React from "react";
-import { Toaster } from "@/components/ui/toaster";
+import React, { useEffect } from "react";
+// import { Toaster } from "@/components/ui/toaster"; // removed to avoid shadcn hook issues
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -28,6 +28,16 @@ import PortalGestorRoutes from "./pages/portal-gestor/PortalGestorRoutes";
 import TestPortal from "./pages/portal-colaborador/TestPortal";
 import DebugPermissions from "./pages/DebugPermissions";
 import { FinancialPage } from "./pages/FinancialPage";
+// Imports das páginas do Financeiro
+import { DashboardFinanceiroPage } from "./pages/financeiro/DashboardFinanceiroPage";
+import { ContasPagarPage } from "./pages/financeiro/ContasPagarPage";
+import { ContasReceberPage } from "./pages/financeiro/ContasReceberPage";
+import { TesourariaPage } from "./pages/financeiro/TesourariaPage";
+import { FiscalPage } from "./pages/financeiro/FiscalPage";
+import { ContabilidadePage } from "./pages/financeiro/ContabilidadePage";
+import { ClassesFinanceirasPage } from "./pages/financeiro/ClassesFinanceirasPage";
+import { SefazPage } from "./pages/financeiro/SefazPage";
+import { BancariaPage } from "./pages/financeiro/BancariaPage";
 import AlmoxarifadoPage from "./pages/AlmoxarifadoPage";
 import DashboardEstoquePage from "./pages/almoxarifado/DashboardEstoquePage";
 import MateriaisEquipamentosPage from "./pages/almoxarifado/MateriaisEquipamentosPage";
@@ -46,13 +56,108 @@ import PedidosCompra from "./pages/Compras/PedidosCompra";
 import AvaliacaoFornecedores from "./pages/Compras/AvaliacaoFornecedores";
 import ContratosRecorrentes from "./pages/Compras/ContratosRecorrentes";
 import HistoricoCompras from "./pages/Compras/HistoricoCompras";
+// Imports das páginas de Frota
+import FrotaRoutes from "./pages/frota/FrotaRoutes";
 
-const queryClient = new QueryClient();
+// Configuração otimizada do QueryClient
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutos padrão
+      gcTime: 10 * 60 * 1000,   // 10 minutos padrão (antigo cacheTime)
+      refetchOnWindowFocus: false,
+      refetchOnMount: false,
+      retry: 1,
+      retryDelay: 1000,
+    },
+    mutations: {
+      retry: 1,
+      retryDelay: 1000,
+    },
+  },
+});
 
 function App() {
+  // Handler global de erros para capturar problemas de renderização do React
+  useEffect(() => {
+    // Capturar erros não tratados do JavaScript
+    const handleError = (event: ErrorEvent) => {
+      const error = event.error || event.message;
+      const errorInfo = {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: error,
+        stack: error?.stack,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+        isRemoveChildError: event.message?.includes('removeChild') || error?.message?.includes('removeChild'),
+        isReactError: error?.stack?.includes('react') || error?.stack?.includes('React')
+      };
+      
+      console.error('[APP][GLOBAL_ERROR] ❌ Erro global capturado', errorInfo);
+      
+      // Log especial para erros de removeChild (mas não interromper execução)
+      // Erros de removeChild são geralmente inofensivos e ocorrem quando o React tenta
+      // remover nós do DOM que já foram removidos pelo Leaflet ou outros componentes
+      // Isso é comum em dispositivos mais antigos com navegadores que têm problemas
+      // com a reconciliação do DOM do React
+      if (errorInfo.isRemoveChildError) {
+        // Log apenas em modo debug, não como erro crítico
+        // Suprimir completamente o erro em dispositivos antigos para melhor UX
+        console.warn('[APP][GLOBAL_ERROR] ⚠️ Erro de removeChild detectado (suprimido - inofensivo)', {
+          message: event.message,
+          userAgent: navigator.userAgent,
+          currentPath: window.location.pathname
+        });
+        // Prevenir que o erro seja propagado (não é crítico)
+        event.preventDefault();
+        event.stopPropagation();
+        return false;
+      }
+    };
+    
+    // Capturar rejeições de promises não tratadas
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const errorInfo = {
+        reason: event.reason,
+        message: event.reason?.message || String(event.reason),
+        stack: event.reason?.stack,
+        timestamp: new Date().toISOString(),
+        userAgent: navigator.userAgent,
+        url: window.location.href,
+        isRemoveChildError: event.reason?.message?.includes('removeChild') || String(event.reason).includes('removeChild')
+      };
+      
+      console.error('[APP][GLOBAL_ERROR] ❌ Promise rejeitada não tratada', errorInfo);
+      
+      if (errorInfo.isRemoveChildError) {
+        // Log apenas em modo debug, não como erro crítico
+        // Suprimir completamente o erro em dispositivos antigos para melhor UX
+        console.warn('[APP][GLOBAL_ERROR] ⚠️ Erro de removeChild em promise (suprimido - inofensivo)', {
+          message: event.reason?.message || String(event.reason),
+          userAgent: navigator.userAgent
+        });
+        // Prevenir que o erro seja propagado (não é crítico)
+        event.preventDefault();
+        return;
+      }
+    };
+    
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+  
   return (
     <QueryClientProvider client={queryClient}>
-      <Toaster />
+      {/* <Toaster /> */}
       <Sonner />
       <BrowserRouter
         future={{
@@ -86,15 +191,15 @@ function App() {
                 <Route path="/cadastros/departamentos" element={<UnitsPageNew />} />
                 <Route path="/permissoes" element={<Permissions />} />
                 <Route path="/menu-test" element={<MenuTest />} />
-                <Route path="/financeiro" element={<FinancialPage />} />
-                <Route path="/financeiro/contas-pagar" element={<FinancialPage />} />
-                <Route path="/financeiro/contas-receber" element={<FinancialPage />} />
-                <Route path="/financeiro/tesouraria" element={<FinancialPage />} />
-                <Route path="/financeiro/fiscal" element={<FinancialPage />} />
-                <Route path="/financeiro/contabilidade" element={<FinancialPage />} />
-                <Route path="/financeiro/configuracoes" element={<FinancialPage />} />
-                <Route path="/financeiro/configuracoes/sefaz" element={<FinancialPage />} />
-                <Route path="/financeiro/configuracoes/bancaria" element={<FinancialPage />} />
+                <Route path="/financeiro" element={<DashboardFinanceiroPage />} />
+                <Route path="/financeiro/contas-pagar" element={<ContasPagarPage />} />
+                <Route path="/financeiro/contas-receber" element={<ContasReceberPage />} />
+                <Route path="/financeiro/tesouraria" element={<TesourariaPage />} />
+                <Route path="/financeiro/fiscal" element={<FiscalPage />} />
+                <Route path="/financeiro/contabilidade" element={<ContabilidadePage />} />
+                <Route path="/financeiro/classes-financeiras" element={<ClassesFinanceirasPage />} />
+                <Route path="/financeiro/sefaz" element={<SefazPage />} />
+                <Route path="/financeiro/bancaria" element={<BancariaPage />} />
                 <Route path="/compras" element={<RequisicoesCompra />} />
                 <Route path="/compras/requisicoes" element={<RequisicoesCompra />} />
                 <Route path="/compras/cotacoes" element={<Cotacoes />} />
@@ -113,7 +218,7 @@ function App() {
                 <Route path="/almoxarifado/historico" element={<HistoricoMovimentacoesPage />} />
                 <Route path="/almoxarifado/relatorios" element={<RelatoriosPage />} />
                 <Route path="/almoxarifado/test" element={<TestPage />} />
-                <Route path="/frota" element={<div className="text-2xl font-bold">Frota - Em desenvolvimento</div>} />
+                <Route path="/frota/*" element={<FrotaRoutes />} />
                 <Route path="/logistica" element={<div className="text-2xl font-bold">Logística - Em desenvolvimento</div>} />
                 <Route path="/rh/*" element={<RHRoutesNew />} />
                 <Route path="/portal-colaborador/*" element={<PortalColaboradorRoutes />} />

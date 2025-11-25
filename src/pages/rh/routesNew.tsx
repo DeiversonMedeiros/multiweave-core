@@ -9,6 +9,7 @@ import UnitsPageNew from './UnitsPageNew';
 import TimeRecordsPageNew from './TimeRecordsPageNew';
 import BenefitsPageNew from './BenefitsPageNew';
 import PayrollPageNew from './PayrollPageNew';
+import PayrollIndividualPage from './PayrollIndividualPage';
 
 // Importar novas páginas - FASE 1: ESTRUTURA ORGANIZACIONAL
 import WorkShiftsPage from './WorkShiftsPage';
@@ -39,6 +40,10 @@ import MedicalAgreementEditPage from './MedicalAgreementEditPage';
 import MedicalAgreementDetailPage from './MedicalAgreementDetailPage';
 import MedicalPlanNewPage from './MedicalPlanNewPage';
 import EmployeeMedicalPlanNewPage from './EmployeeMedicalPlanNewPage';
+import EmployeeDeductionsPage from './EmployeeDeductionsPage';
+import EquipmentRentalMonthlyPaymentsPage from './EquipmentRentalMonthlyPaymentsPage';
+import ConfiguracaoFlashPage from './ConfiguracaoFlashPage';
+import MedicalServicesPage from './MedicalServicesPage';
 import UnionsPage from './UnionsPage';
 import UnionNewPage from './UnionNewPage';
 import EmployeeUnionMembershipNewPage from './EmployeeUnionMembershipNewPage';
@@ -50,6 +55,8 @@ import RecruitmentPage from './RecruitmentPage';
 import TrainingPage from './TrainingPage';
 import ConfiguracaoCorrecaoPontoPage from './ConfiguracaoCorrecaoPontoPage';
 import TimeRecordSignatureConfigPage from './TimeRecordSignatureConfigPage';
+import TimeRecordSettingsPage from './TimeRecordSettingsPage';
+import LocationZonesPage from './LocationZonesPage';
 
 // Importar página do Organograma
 import OrganogramaPage from './OrganogramaPage';
@@ -84,6 +91,9 @@ import EmployeeUserLinks from './EmployeeUserLinks';
 
 // Importar página de Vínculos de Benefícios
 import EmployeeBenefitsPage from './EmployeeBenefitsPage';
+
+// Importar página de Configuração de Integração Financeira
+import FinancialIntegrationConfigPage from './FinancialIntegrationConfigPage';
 
 // =====================================================
 // ROTAS DO MÓDULO RH - NOVA ABORDAGEM
@@ -142,9 +152,18 @@ export function RHRoutesNew() {
       
       {/* Configuração de Correção de Ponto */}
       <Route path="/correcao-ponto-config" element={<ConfiguracaoCorrecaoPontoPage />} />
-      
+
       {/* Configuração de Assinatura de Ponto */}
       <Route path="/assinatura-ponto-config" element={<TimeRecordSignatureConfigPage />} />
+
+      {/* Configurações de Ponto Eletrônico */}
+      <Route path="/ponto-eletronico-config" element={<TimeRecordSettingsPage />} />
+      
+      {/* Configuração de Zonas de Localização */}
+      <Route path="/location-zones" element={<LocationZonesPage />} />
+      <Route path="/location-zones/new" element={<LocationZonesPage />} />
+      <Route path="/location-zones/:id" element={<LocationZonesPage />} />
+      <Route path="/location-zones/:id/edit" element={<LocationZonesPage />} />
       
       {/* Sistema de Benefícios - NOVA ABORDAGEM */}
       <Route path="/benefits" element={<BenefitsPageNew />} />
@@ -152,11 +171,20 @@ export function RHRoutesNew() {
       <Route path="/benefits/:id" element={<BenefitsPageNew />} />
       <Route path="/benefits/:id/edit" element={<BenefitsPageNew />} />
       
+      {/* Pagamentos Mensais de Aluguéis */}
+      <Route path="/equipment-rental-payments" element={<EquipmentRentalMonthlyPaymentsPage />} />
+      
+      {/* Configuração Flash API */}
+      <Route path="/configuracao-flash" element={<ConfiguracaoFlashPage />} />
+      
       {/* Folha de Pagamento - NOVA ABORDAGEM */}
       <Route path="/payroll" element={<PayrollPageNew />} />
       <Route path="/payroll/new" element={<PayrollPageNew />} />
       <Route path="/payroll/:id" element={<PayrollPageNew />} />
       <Route path="/payroll/:id/edit" element={<PayrollPageNew />} />
+      
+      {/* Folhas Individuais por Funcionário */}
+      <Route path="/payroll-individual" element={<PayrollIndividualPage />} />
 
       {/* FASE 1: ESTRUTURA ORGANIZACIONAL - NOVAS PÁGINAS */}
       
@@ -199,6 +227,9 @@ export function RHRoutesNew() {
       <Route path="/fgts-config/new" element={<FgtsConfigPage />} />
       <Route path="/fgts-config/:id" element={<FgtsConfigPage />} />
       <Route path="/fgts-config/:id/edit" element={<FgtsConfigPage />} />
+
+      {/* Configuração de Integração Financeira */}
+      <Route path="/financial-integration-config" element={<FinancialIntegrationConfigPage />} />
 
       {/* FASE 4: MOTOR DE CÁLCULO */}
       
@@ -271,6 +302,12 @@ export function RHRoutesNew() {
       <Route path="/employee-medical-plans/new" element={<EmployeeMedicalPlanNewPage />} />
       <Route path="/employee-medical-plans/:id" element={<MedicalAgreementsPage />} />
       <Route path="/employee-medical-plans/:id/edit" element={<MedicalAgreementsPage />} />
+      
+      {/* Deduções e Serviços Médicos */}
+      <Route path="/employee-deductions" element={<EmployeeDeductionsPage />} />
+      <Route path="/employee-deductions/new" element={<EmployeeDeductionsPage />} />
+      <Route path="/medical-services" element={<MedicalServicesPage />} />
+      <Route path="/medical-services/new" element={<MedicalServicesPage />} />
       
       {/* Sindicatos e Gestão Sindical */}
       <Route path="/unions" element={<UnionsPage />} />

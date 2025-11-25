@@ -112,6 +112,26 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
     }
   };
 
+  // Função auxiliar para converter hora HH:MM em minutos desde meia-noite
+  const timeToMinutes = (time: string): number => {
+    if (!time) return 0;
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  // Função auxiliar para calcular duração do turno considerando cruzamento de meia-noite
+  const calculateShiftDuration = (start: string, end: string): number => {
+    if (!start || !end) return 0;
+    const startMinutes = timeToMinutes(start);
+    const endMinutes = timeToMinutes(end);
+    
+    // Se fim é menor que início, o turno cruza a meia-noite
+    if (endMinutes <= startMinutes) {
+      return (24 * 60) - startMinutes + endMinutes; // Duração cruzando meia-noite
+    }
+    return endMinutes - startMinutes; // Duração normal
+  };
+
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
@@ -127,12 +147,46 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
       newErrors.hora_fim = 'Hora de fim é obrigatória';
     }
 
-    if (formData.hora_inicio && formData.hora_fim && formData.hora_inicio >= formData.hora_fim) {
-      newErrors.hora_fim = 'Hora de fim deve ser maior que hora de início';
+    // Validação de horários permitindo cruzamento de meia-noite
+    if (formData.hora_inicio && formData.hora_fim) {
+      const startMinutes = timeToMinutes(formData.hora_inicio);
+      const endMinutes = timeToMinutes(formData.hora_fim);
+      
+      // Não permitir que sejam iguais (turno de 0 horas)
+      if (startMinutes === endMinutes) {
+        newErrors.hora_fim = 'Hora de fim deve ser diferente da hora de início';
+      } else {
+        // Calcular duração considerando possível cruzamento de meia-noite
+        const duration = calculateShiftDuration(formData.hora_inicio, formData.hora_fim);
+        
+        // Validar que a duração seja razoável (máximo 24 horas, mínimo 1 minuto)
+        if (duration <= 0) {
+          newErrors.hora_fim = 'Duração do turno deve ser maior que zero';
+        } else if (duration > 24 * 60) {
+          newErrors.hora_fim = 'Duração do turno não pode exceder 24 horas';
+        }
+      }
     }
 
-    if (formData.intervalo_inicio && formData.intervalo_fim && formData.intervalo_inicio >= formData.intervalo_fim) {
-      newErrors.intervalo_fim = 'Fim do intervalo deve ser maior que início';
+    // Validação de intervalo considerando cruzamento de meia-noite
+    if (formData.intervalo_inicio && formData.intervalo_fim) {
+      const intervalStartMinutes = timeToMinutes(formData.intervalo_inicio);
+      const intervalEndMinutes = timeToMinutes(formData.intervalo_fim);
+      
+      // Não permitir que sejam iguais
+      if (intervalStartMinutes === intervalEndMinutes) {
+        newErrors.intervalo_fim = 'Fim do intervalo deve ser diferente do início';
+      } else {
+        // Calcular duração considerando possível cruzamento de meia-noite
+        const intervalDuration = calculateShiftDuration(formData.intervalo_inicio, formData.intervalo_fim);
+        
+        // Validar que a duração seja razoável (máximo 8 horas de intervalo)
+        if (intervalDuration <= 0) {
+          newErrors.intervalo_fim = 'Duração do intervalo deve ser maior que zero';
+        } else if (intervalDuration > 8 * 60) {
+          newErrors.intervalo_fim = 'Duração do intervalo não pode exceder 8 horas';
+        }
+      }
     }
 
     if (formData.dias_semana.length === 0) {

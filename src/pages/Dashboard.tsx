@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, DollarSign, Package, Users, ShoppingCart } fr
 import { MenuDemo } from "@/components/MenuDemo";
 import { TenantIsolationDemo } from "@/components/TenantIsolationDemo";
 import { RequireModule } from "@/components/RequireAuth";
+import { DashboardRedirect } from "@/components/DashboardRedirect";
 
 const stats = [
   {
@@ -37,7 +38,9 @@ const stats = [
 
 export default function Dashboard() {
   return (
-    <RequireModule moduleName="dashboard" action="read">
+    <>
+      <DashboardRedirect />
+      <RequireModule moduleName="dashboard" action="read">
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
@@ -150,5 +153,6 @@ export default function Dashboard() {
       </div>
       </div>
     </RequireModule>
+    </>
   );
 }

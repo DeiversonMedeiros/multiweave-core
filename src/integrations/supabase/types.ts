@@ -342,6 +342,7 @@ export type Database = {
           email: string
           id: string
           nome: string
+          username: string | null
           updated_at: string | null
         }
         Insert: {
@@ -351,6 +352,7 @@ export type Database = {
           email: string
           id: string
           nome: string
+          username?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -360,6 +362,7 @@ export type Database = {
           email?: string
           id?: string
           nome?: string
+          username?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -380,6 +383,10 @@ export type Database = {
       is_admin: {
         Args: { user_id: string }
         Returns: boolean
+      }
+      get_user_email_by_username: {
+        Args: { p_username: string | null }
+        Returns: string | null
       }
       user_has_company_access: {
         Args: { company_id: string; user_id: string }

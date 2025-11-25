@@ -48,6 +48,9 @@ export interface EmployeeCalculationData {
   inssBrackets: InssBracket[];
   irrfBrackets: IrrfBracket[];
   fgtsConfig: FgtsConfig | null;
+  companyId: string;
+  mesReferencia: number;
+  anoReferencia: number;
 }
 
 // =====================================================
@@ -470,8 +473,10 @@ export async function calculatePayroll(
           inssBrackets,
           irrfBrackets,
           fgtsConfig,
+          companyId: params.companyId,
           mesReferencia: params.mesReferencia,
-          anoReferencia: params.anoReferencia
+          anoReferencia: params.anoReferencia,
+          events: [] // Será populado dentro da função
         });
 
         // Salvar eventos
@@ -636,7 +641,7 @@ async function getOrCreatePayroll(
 
 async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<PayrollEvent[]> {
   const eventos: PayrollEvent[] = [];
-  const { employee, payroll, config, rubricas } = data;
+  const { employee, payroll, config, rubricas, companyId } = data;
 
   // 1. Salário Base
   eventos.push({
@@ -727,20 +732,55 @@ async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<P
     }
   }
 
-  if (config.aplicar_fgts && data.fgtsConfig) {
-    const fgtsValue = calculateFGTS(employee.salario_base || 0, data.fgtsConfig);
-    if (fgtsValue > 0) {
+  if (config.aplicar_fgts) {
+    // Buscar contrato ativo do funcionário para obter tipo_contrato
+    let tipoContrato: string | null = null;
+    try {
+      const { getEmploymentContractsByEmployee } = await import('./employmentContractsService');
+      const contratos = await getEmploymentContractsByEmployee(employee.id, companyId);
+      const contratoAtivo = contratos.find(c => c.status === 'ativo');
+      if (contratoAtivo) {
+        tipoContrato = contratoAtivo.tipo_contrato;
+      }
+    } catch (error) {
+      console.warn('Erro ao buscar contrato do funcionário para cálculo FGTS:', error);
+    }
+
+    // Buscar configuração FGTS específica por tipo de contrato ou usar a geral
+    let fgtsConfig = data.fgtsConfig;
+    if (tipoContrato && !fgtsConfig?.tipo_contrato) {
+      try {
+        const { getFgtsConfigByPeriod } = await import('./fgtsConfigService');
+        const configEspecifica = await getFgtsConfigByPeriod(
+          companyId,
+          data.anoReferencia,
+          data.mesReferencia,
+          tipoContrato
+        );
+        if (configEspecifica) {
+          fgtsConfig = configEspecifica;
+        }
+      } catch (error) {
+        console.warn('Erro ao buscar configuração FGTS específica:', error);
+      }
+    }
+
+    // Calcular FGTS usando a função atualizada que considera tipo de contrato
+    const { calculateFgts } = await import('./fgtsConfigService');
+    const fgtsResult = calculateFgts(employee.salario_base || 0, fgtsConfig, tipoContrato);
+    
+    if (fgtsResult.fgts > 0) {
       eventos.push({
         payroll_id: payroll.id,
         employee_id: employee.id,
         rubrica_id: 'fgts',
         codigo_rubrica: 'FGTS',
-        descricao_rubrica: 'FGTS',
+        descricao_rubrica: `FGTS${tipoContrato === 'Menor Aprendiz' ? ' (Menor Aprendiz - 2%)' : ''}`,
         tipo_rubrica: 'desconto',
         quantidade: 1,
-        valor_unitario: fgtsValue,
-        valor_total: fgtsValue,
-        percentual: 0,
+        valor_unitario: fgtsResult.fgts,
+        valor_total: fgtsResult.fgts,
+        percentual: fgtsResult.aliquot * 100, // Converter para percentual
         mes_referencia: data.mesReferencia,
         ano_referencia: data.anoReferencia,
         calculado_automaticamente: true,
@@ -749,7 +789,62 @@ async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<P
     }
   }
 
+  // 4. Buscar e aplicar deduções pendentes (coparticipação, empréstimos, multas, etc.)
+  try {
+    const { DeductionsService } = await import('./deductionsService');
+    const deducoes = await DeductionsService.getPendingForPayroll(
+      companyId,
+      employee.id,
+      data.mesReferencia,
+      data.anoReferencia
+    );
+
+    for (const deducao of deducoes) {
+      const valorDeducao = deducao.valor_parcela || deducao.valor_total;
+      if (valorDeducao > 0) {
+        eventos.push({
+          payroll_id: payroll.id,
+          employee_id: employee.id,
+          rubrica_id: deducao.id,
+          codigo_rubrica: getDeductionCode(deducao.tipo_deducao),
+          descricao_rubrica: deducao.categoria 
+            ? `${deducao.categoria}: ${deducao.descricao}`
+            : deducao.descricao,
+          tipo_rubrica: 'desconto',
+          quantidade: 1,
+          valor_unitario: valorDeducao,
+          valor_total: valorDeducao,
+          percentual: 0,
+          mes_referencia: data.mesReferencia,
+          ano_referencia: data.anoReferencia,
+          calculado_automaticamente: true,
+          origem_evento: 'sistema',
+          observacoes: deducao.numero_parcelas > 1 
+            ? `Parcela ${deducao.parcela_atual}/${deducao.numero_parcelas}`
+            : undefined
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Erro ao buscar deduções pendentes:', error);
+    // Não falha o cálculo se houver erro ao buscar deduções
+  }
+
   return eventos;
+}
+
+function getDeductionCode(tipo: string): string {
+  const codes: Record<string, string> = {
+    coparticipacao_medica: 'COP_MED',
+    emprestimo: 'EMPREST',
+    multa: 'MULTA',
+    avaria_veiculo: 'AVARIA',
+    danos_materiais: 'DANOS',
+    adiantamento: 'ADIANT',
+    desconto_combinado: 'DESC_COMB',
+    outros: 'DESC_OUT'
+  };
+  return codes[tipo] || 'DESC_OUT';
 }
 
 function calculateRubricaValue(
@@ -796,7 +891,15 @@ function calculateIRRF(salarioBase: number, irrfBrackets: IrrfBracket[]): number
   return Math.max(0, (salarioBase * bracket.aliquota) - bracket.valor_deducao);
 }
 
-function calculateFGTS(salarioBase: number, fgtsConfig: FgtsConfig): number {
+// Função mantida para compatibilidade, mas não deve ser usada diretamente
+// Use calculateFgts de fgtsConfigService que considera tipo de contrato
+function calculateFGTS(salarioBase: number, fgtsConfig: FgtsConfig | null, tipoContrato?: string | null): number {
+  if (!fgtsConfig && tipoContrato === 'Menor Aprendiz') {
+    return salarioBase * 0.02; // 2% para Menor Aprendiz
+  }
+  if (!fgtsConfig) {
+    return salarioBase * 0.08; // 8% padrão
+  }
   return salarioBase * fgtsConfig.aliquota_fgts;
 }
 

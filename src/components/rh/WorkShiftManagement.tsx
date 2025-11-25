@@ -23,6 +23,7 @@ import { WorkShiftTable } from './WorkShiftTable';
 import { EmployeeShiftManagement } from './EmployeeShiftManagement';
 import { WorkShiftForm } from './WorkShiftForm';
 import { FormModal } from './FormModal';
+import { WorkShiftDaysCalculation } from './WorkShiftDaysCalculation';
 import { WorkShift } from '@/integrations/supabase/rh-types';
 
 interface WorkShiftManagementProps {
@@ -50,7 +51,7 @@ export function WorkShiftManagement({
   onEmployeeShiftDelete,
   isLoading = false
 }: WorkShiftManagementProps) {
-  const [activeTab, setActiveTab] = useState<'shifts' | 'assignments'>('shifts');
+  const [activeTab, setActiveTab] = useState<'shifts' | 'assignments' | 'calculation'>('shifts');
   const [filters, setFilters] = useState({
     status: 'all',
     tipo_turno: 'all',
@@ -232,6 +233,16 @@ export function WorkShiftManagement({
         >
           Atribuições de Funcionários
         </button>
+        <button
+          onClick={() => setActiveTab('calculation')}
+          className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'calculation'
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Cálculo de Dias
+        </button>
       </div>
 
       {/* Conteúdo das Tabs */}
@@ -317,7 +328,7 @@ export function WorkShiftManagement({
             isLoading={isLoading}
           />
         </div>
-      ) : (
+      ) : activeTab === 'assignments' ? (
         <EmployeeShiftManagement
           employeeShifts={employeeShifts}
           workShifts={workShifts}
@@ -325,6 +336,11 @@ export function WorkShiftManagement({
           onAdd={onEmployeeShiftCreate}
           onEdit={onEmployeeShiftEdit}
           onDelete={onEmployeeShiftDelete}
+          isLoading={isLoading}
+        />
+      ) : (
+        <WorkShiftDaysCalculation
+          workShifts={workShifts}
           isLoading={isLoading}
         />
       )}

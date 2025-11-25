@@ -12,6 +12,7 @@ interface MonthlyTimeRecordsCalendarProps {
   records: Record<string, TimeRecord>;
   onDateClick: (date: string, hasRecord: boolean) => void;
   disabled?: boolean;
+  pendingCorrectionsByDate?: Map<string, boolean>;
 }
 
 export function MonthlyTimeRecordsCalendar({
@@ -19,8 +20,13 @@ export function MonthlyTimeRecordsCalendar({
   month,
   records,
   onDateClick,
-  disabled = false
+  disabled = false,
+  pendingCorrectionsByDate = new Map()
 }: MonthlyTimeRecordsCalendarProps) {
+  console.log('📅 [DEBUG] MonthlyTimeRecordsCalendar - Props:', { year, month, disabled });
+  console.log('📅 [DEBUG] MonthlyTimeRecordsCalendar - records:', records);
+  console.log('📅 [DEBUG] MonthlyTimeRecordsCalendar - records keys:', Object.keys(records || {}));
+  
   // Nomes dos dias da semana
   const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   
@@ -36,6 +42,13 @@ export function MonthlyTimeRecordsCalendar({
   const daysInMonth = lastDay.getDate();
   const startDayOfWeek = firstDay.getDay();
 
+  console.log('📅 [DEBUG] MonthlyTimeRecordsCalendar - Date info:', {
+    firstDay: firstDay.toISOString().split('T')[0],
+    lastDay: lastDay.toISOString().split('T')[0],
+    daysInMonth,
+    startDayOfWeek
+  });
+
   // Criar array de dias
   const days = [];
   
@@ -50,6 +63,11 @@ export function MonthlyTimeRecordsCalendar({
     const dateString = date.toISOString().split('T')[0];
     const record = records?.[dateString];
     
+    // Log apenas se tiver registro
+    if (record) {
+      console.log(`📅 [DEBUG] Day ${day} (${dateString}) has record:`, record);
+    }
+    
     days.push({
       day,
       date: dateString,
@@ -59,9 +77,58 @@ export function MonthlyTimeRecordsCalendar({
     });
   }
 
-  const getRecordStatus = (record?: TimeRecord) => {
-    if (!record) return 'empty';
+  console.log('📅 [DEBUG] MonthlyTimeRecordsCalendar - Total days created:', days.length);
+  console.log('📅 [DEBUG] MonthlyTimeRecordsCalendar - Days with records:', days.filter(d => d && d.record).length);
+
+  // Função auxiliar para verificar se tem as 4 marcações obrigatórias
+  const hasAllRequiredMarks = (record: TimeRecord): boolean => {
+    // As 4 marcações obrigatórias são: entrada, entrada_almoco, saida_almoco, saida
+    const hasEntrada = !!record.entrada;
+    const hasEntradaAlmoco = !!record.entrada_almoco;
+    const hasSaidaAlmoco = !!record.saida_almoco;
+    const hasSaida = !!record.saida;
     
+    return hasEntrada && hasEntradaAlmoco && hasSaidaAlmoco && hasSaida;
+  };
+
+  // Função auxiliar para verificar marcações ímpares (hora extra)
+  const hasOddMarks = (record: TimeRecord): boolean => {
+    // Marcações ímpares: entrada_extra1 sem saida_extra1 ou vice-versa
+    const hasEntradaExtra = !!record.entrada_extra1;
+    const hasSaidaExtra = !!record.saida_extra1;
+    
+    // Se tem entrada_extra mas não tem saida_extra, ou vice-versa, é ímpar
+    return (hasEntradaExtra && !hasSaidaExtra) || (!hasEntradaExtra && hasSaidaExtra);
+  };
+
+  const getRecordStatus = (record?: TimeRecord, date?: string) => {
+    // PRIORIDADE 1: Se há correção pendente para esta data, SEMPRE mostrar como pendente
+    // (independente de ter registro completo ou não)
+    if (date && pendingCorrectionsByDate.has(date)) {
+      return 'pending_correction';
+    }
+    
+    if (!record) {
+      return 'empty';
+    }
+    
+    // Verificar se faltam marcações obrigatórias ou se há marcações ímpares
+    const allMarksPresent = hasAllRequiredMarks(record);
+    const hasOdd = hasOddMarks(record);
+    
+    // Se faltam marcações ou há marcações ímpares, não pode estar completo/aprovado
+    if (!allMarksPresent || hasOdd) {
+      // Se está aprovado mas faltam marcações, mostrar como incompleto
+      if (record.status === 'aprovado') {
+        return 'approved_incomplete';
+      }
+      // Outros status mantêm a lógica original
+      if (record.status === 'rejeitado') return 'rejected';
+      if (record.status === 'corrigido') return 'corrected';
+      return 'incomplete';
+    }
+    
+    // Se tem todas as marcações e não há ímpares, verificar status normal
     if (record.status === 'aprovado') return 'approved';
     if (record.status === 'rejeitado') return 'rejected';
     if (record.status === 'corrigido') return 'corrected';
@@ -75,10 +142,14 @@ export function MonthlyTimeRecordsCalendar({
     switch (status) {
       case 'approved':
         return <CheckCircle className="w-3 h-3 text-green-600" />;
+      case 'approved_incomplete':
+        return <AlertTriangle className="w-3 h-3 text-yellow-600" />;
       case 'rejected':
         return <XCircle className="w-3 h-3 text-red-600" />;
       case 'corrected':
         return <Edit className="w-3 h-3 text-blue-600" />;
+      case 'pending_correction':
+        return <Clock className="w-3 h-3 text-orange-600" />;
       case 'complete':
         return <CheckCircle className="w-3 h-3 text-green-600" />;
       case 'partial':
@@ -95,10 +166,14 @@ export function MonthlyTimeRecordsCalendar({
       case 'approved':
       case 'complete':
         return 'bg-green-50 border-green-200 text-green-800';
+      case 'approved_incomplete':
+        return 'bg-yellow-50 border-yellow-200 text-yellow-800';
       case 'rejected':
         return 'bg-red-50 border-red-200 text-red-800';
       case 'corrected':
         return 'bg-blue-50 border-blue-200 text-blue-800';
+      case 'pending_correction':
+        return 'bg-orange-50 border-orange-200 text-orange-800';
       case 'partial':
         return 'bg-yellow-50 border-yellow-200 text-yellow-800';
       case 'incomplete':
@@ -112,10 +187,14 @@ export function MonthlyTimeRecordsCalendar({
     switch (status) {
       case 'approved':
         return 'Aprovado';
+      case 'approved_incomplete':
+        return 'Aprovado - Faltam Marcações';
       case 'rejected':
         return 'Rejeitado';
       case 'corrected':
         return 'Corrigido';
+      case 'pending_correction':
+        return 'Aguardando Aprovação';
       case 'complete':
         return 'Completo';
       case 'partial':
@@ -180,8 +259,13 @@ export function MonthlyTimeRecordsCalendar({
           }
 
           const { day, date, record, isToday, isWeekend } = dayData;
-          const status = getRecordStatus(record);
+          const status = getRecordStatus(record, date);
           const hasRecord = !!record;
+          
+          // Debug: Log apenas quando tem registro para não poluir o console
+          if (hasRecord) {
+            console.log(`📅 [DEBUG] Rendering day ${day} with record:`, { status, hasRecord, record });
+          }
 
           return (
             <Card
@@ -234,13 +318,14 @@ export function MonthlyTimeRecordsCalendar({
                     )}
 
                     {/* Status */}
-                    <Badge
+                      <Badge
                       variant="secondary"
                       className={cn(
                         "text-xs px-1 py-0",
                         status === 'approved' || status === 'complete' ? 'bg-green-100 text-green-800' :
                         status === 'rejected' ? 'bg-red-100 text-red-800' :
                         status === 'corrected' ? 'bg-blue-100 text-blue-800' :
+                        status === 'pending_correction' ? 'bg-orange-100 text-orange-800' :
                         status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
                         'bg-gray-100 text-gray-800'
                       )}
@@ -279,6 +364,10 @@ export function MonthlyTimeRecordsCalendar({
         <div className="flex items-center gap-1">
           <Edit className="w-3 h-3 text-blue-600" />
           <span>Corrigido</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Clock className="w-3 h-3 text-orange-600" />
+          <span>Aguardando Aprovação</span>
         </div>
         <div className="flex items-center gap-1">
           <Plus className="w-3 h-3 text-gray-400" />

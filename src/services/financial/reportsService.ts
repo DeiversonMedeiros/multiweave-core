@@ -103,6 +103,8 @@ class ReportsService {
       return data;
     } catch (error) {
       console.error('Erro ao gerar dashboard:', error);
+      // Fallback para dados mockados quando API falha
+      // TODO: Implementar busca de dados reais via EntityService como fallback
       return this.getDashboardMock();
     }
   }
@@ -320,7 +322,8 @@ class ReportsService {
     }
   }
 
-  // Dados mockados para desenvolvimento
+  // Dados mockados para desenvolvimento - FALLBACK quando API falha
+  // TODO: Substituir por dados reais usando EntityService quando RPCs de relatórios estiverem disponíveis
   private getDashboardMock(): DashboardData {
     return {
       kpis: [

@@ -17,8 +17,8 @@ export default function IrrfBracketsPage() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
-    ano_vigencia: new Date().getFullYear(),
-    mes_vigencia: new Date().getMonth() + 1,
+    ano_vigencia: 2024, // Dados padrão inseridos para 2024
+    mes_vigencia: 1, // Dados padrão inseridos para janeiro
     ativo: '',
   });
   const [searchTerm, setSearchTerm] = useState('');
@@ -27,12 +27,48 @@ export default function IrrfBracketsPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
 
   // Hooks
-  const { data: bracketsData, isLoading } = useIrrfBrackets(filters);
+  console.log('🔍 [IrrfBracketsPage] Renderizando com:', { 
+    companyId: selectedCompany?.id, 
+    hasCompany: !!selectedCompany,
+    filters 
+  });
+  
+  const bracketsQuery = useIrrfBrackets(filters);
+  
+  console.log('🔍 [IrrfBracketsPage] Hook retornou:', {
+    hasData: !!bracketsQuery.data,
+    dataType: typeof bracketsQuery.data,
+    dataStructure: bracketsQuery.data ? {
+      hasData: !!bracketsQuery.data.data,
+      dataType: typeof bracketsQuery.data.data,
+      isArray: Array.isArray(bracketsQuery.data.data),
+      dataLength: bracketsQuery.data.data?.length || 0,
+      count: bracketsQuery.data.count,
+      keys: Object.keys(bracketsQuery.data)
+    } : null,
+    isLoading: bracketsQuery.isLoading,
+    isError: bracketsQuery.isError,
+    error: bracketsQuery.error?.message,
+    status: bracketsQuery.status
+  });
+  
+  const bracketsData = bracketsQuery.data;
+  const isLoading = bracketsQuery.isLoading;
+  const error = bracketsQuery.error;
   const deleteBracketMutation = useDeleteIrrfBracket();
 
-  // Dados
+  // Dados - corrigir acesso aos dados
   const brackets = bracketsData?.data || [];
   const totalCount = bracketsData?.count || 0;
+  
+  console.log('📊 [IrrfBracketsPage] Estado após processamento:', {
+    bracketsLength: brackets.length,
+    totalCount,
+    firstBracket: brackets[0] ? { id: brackets[0].id, codigo: brackets[0].codigo, descricao: brackets[0].descricao } : null,
+    isLoading,
+    hasError: !!error,
+    error: error?.message
+  });
 
   // Handlers
   const handleSearch = (value: string) => {

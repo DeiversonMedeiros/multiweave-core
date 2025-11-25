@@ -29,7 +29,7 @@ const EmployeeMedicalPlanNewPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="employee_medical_plan" action="read">
+    <RequireEntity entityName="employee_medical_plans" action="read">
       <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">

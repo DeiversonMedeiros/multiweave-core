@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEntityData } from '@/hooks/generic/useEntityData';
+import { EntityService } from '@/services/generic/entityService';
 import { Project } from '@/lib/supabase-types';
 import { useCompany } from '@/lib/company-context';
+import { queryConfig } from '@/lib/react-query-config';
 
 /**
  * Hook para listar projetos
@@ -11,15 +12,18 @@ export function useProjects() {
 
   return useQuery({
     queryKey: ['public', 'projects', selectedCompany?.id],
-    queryFn: () => useEntityData<Project>({
-      schema: 'public',
-      table: 'projects',
-      companyId: selectedCompany?.id || '',
-      page: 1,
-      pageSize: 100
-    }),
+    queryFn: async () => {
+      const result = await EntityService.list<Project>({
+        schema: 'public',
+        table: 'projects',
+        companyId: selectedCompany?.id || '',
+        page: 1,
+        pageSize: 100
+      });
+      return result;
+    },
     enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.static,
   });
 }
 
@@ -31,15 +35,18 @@ export function useActiveProjects() {
 
   return useQuery({
     queryKey: ['public', 'projects', 'active', selectedCompany?.id],
-    queryFn: () => useEntityData<Project>({
-      schema: 'public',
-      table: 'projects',
-      companyId: selectedCompany?.id || '',
-      filters: { ativo: true },
-      page: 1,
-      pageSize: 100
-    }),
+    queryFn: async () => {
+      const result = await EntityService.list<Project>({
+        schema: 'public',
+        table: 'projects',
+        companyId: selectedCompany?.id || '',
+        filters: { ativo: true },
+        page: 1,
+        pageSize: 100
+      });
+      return result;
+    },
     enabled: !!selectedCompany?.id,
-    staleTime: 5 * 60 * 1000,
+    ...queryConfig.static,
   });
 }

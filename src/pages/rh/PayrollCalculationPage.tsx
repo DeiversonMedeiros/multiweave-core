@@ -14,6 +14,7 @@ import { usePayrollCalculation, useCalculationLogs, useCalculationProgress, useP
 import { formatCurrency, formatDate } from '@/services/rh/payrollCalculationService';
 import { toast } from 'sonner';
 import { usePermissions } from '@/hooks/usePermissions';
+import { RequireEntity } from '@/components/RequireAuth';
 
 export default function PayrollCalculationPage() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
@@ -113,7 +114,7 @@ export default function PayrollCalculationPage() {
   }
 
   return (
-    
+    <RequireEntity entityName="payroll_calculation" action="read">
       <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -336,6 +337,7 @@ export default function PayrollCalculationPage() {
           )}
         </CardContent>
       </Card>
-    </div>
-    );
+      </div>
+    </RequireEntity>
+  );
 }

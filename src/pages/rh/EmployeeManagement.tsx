@@ -39,6 +39,7 @@ import { Employee, EmployeeFilters, EmployeeInsert, EmployeeUpdate } from '@/int
 import { useCompany } from '@/lib/company-context';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateOnly } from '@/lib/utils';
 
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -367,7 +368,7 @@ export default function EmployeeManagement() {
       header: 'Data Admissão',
       cell: ({ row }) => {
         const date = row.getValue('data_admissao') as string;
-        return date ? format(new Date(date), 'dd/MM/yyyy', { locale: ptBR }) : '-';
+        return formatDateOnly(date);
       },
     },
     {

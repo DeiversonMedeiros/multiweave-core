@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { useCompany } from '@/lib/company-context';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ContaPagar, ContaPagarFormData, ContaPagarFilters } from '@/integrations/supabase/financial-types';
+import { supabase } from '@/integrations/supabase/client';
 
 interface UseContasPagarReturn {
   contasPagar: ContaPagar[];
@@ -52,115 +53,187 @@ export function useContasPagar(): UseContasPagarReturn {
       setLoading(true);
       setError(null);
 
-      // Dados mockados temporariamente até implementar a API
-      const mockData: ContaPagar[] = [
-        {
-          id: '1',
-          company_id: selectedCompany.id,
-          numero_titulo: 'TIT-001',
-          fornecedor_id: '1',
-          fornecedor_nome: 'Fornecedor ABC Ltda',
-          fornecedor_cnpj: '12.345.678/0001-90',
-          descricao: 'Pagamento de fornecedor - Material de escritório',
-          valor_original: 1500.00,
-          valor_atual: 1500.00,
-          data_emissao: '2025-01-15',
-          data_vencimento: '2025-01-20',
-          centro_custo_id: '1',
-          projeto_id: '1',
-          departamento: 'Administrativo',
-          classe_financeira: 'Despesa Operacional',
-          categoria: 'Material de Escritório',
-          status: 'pendente',
-          forma_pagamento: 'Boleto',
-          conta_bancaria_id: '1',
-          observacoes: 'Pagamento de fornecedor',
-          anexos: [],
-          created_by: 'user1',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          company_id: selectedCompany.id,
-          numero_titulo: 'TIT-002',
-          fornecedor_id: '2',
-          fornecedor_nome: 'Consultoria XYZ S/A',
-          fornecedor_cnpj: '98.765.432/0001-10',
-          descricao: 'Serviços de consultoria técnica',
-          valor_original: 2500.00,
-          valor_atual: 2500.00,
-          data_emissao: '2025-01-18',
-          data_vencimento: '2025-01-25',
-          centro_custo_id: '2',
-          projeto_id: '2',
-          departamento: 'Técnico',
-          classe_financeira: 'Despesa Operacional',
-          categoria: 'Serviços',
-          status: 'pendente',
-          forma_pagamento: 'Transferência',
-          conta_bancaria_id: '1',
-          observacoes: 'Serviços de consultoria',
-          anexos: [],
-          created_by: 'user1',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          id: '3',
-          company_id: selectedCompany.id,
-          numero_titulo: 'TIT-003',
-          fornecedor_id: '3',
-          fornecedor_nome: 'Equipamentos ABC Ltda',
-          fornecedor_cnpj: '11.222.333/0001-44',
-          descricao: 'Material de escritório e suprimentos',
-          valor_original: 800.00,
-          valor_atual: 0.00,
-          data_emissao: '2025-01-05',
-          data_vencimento: '2025-01-10',
-          data_pagamento: '2025-01-10',
-          centro_custo_id: '1',
-          projeto_id: '1',
-          departamento: 'Administrativo',
-          classe_financeira: 'Despesa Operacional',
-          categoria: 'Material de Escritório',
-          status: 'pago',
-          forma_pagamento: 'PIX',
-          conta_bancaria_id: '1',
-          observacoes: 'Material de escritório',
-          anexos: [],
-          created_by: 'user1',
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ];
+      // Chamar função RPC para buscar contas a pagar com status de aprovação
+      // Nota: Funções RPC são chamadas sem o schema, mas precisam estar no schema public ou ter GRANT apropriado
+      console.log('🔍 [useContasPagar] Chamando RPC list_contas_pagar_with_approval_status com:', {
+        p_company_id: selectedCompany.id
+      });
 
-      // Simular delay da API
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const { data, error: rpcError } = await supabase.rpc(
+        'list_contas_pagar_with_approval_status',
+        {
+          p_company_id: selectedCompany.id
+        }
+      );
+
+      console.log('📥 [useContasPagar] Resposta RPC:', {
+        hasData: !!data,
+        dataLength: Array.isArray(data) ? data.length : 'N/A',
+        hasError: !!rpcError,
+        error: rpcError ? {
+          message: rpcError.message,
+          code: rpcError.code,
+          details: rpcError.details,
+          hint: rpcError.hint
+        } : null
+      });
+
+      if (rpcError) {
+        console.error('❌ [useContasPagar] Erro completo da RPC:', rpcError);
+        throw new Error(`Erro ao carregar contas a pagar: ${rpcError.message}${rpcError.details ? ` - ${rpcError.details}` : ''}${rpcError.hint ? ` (${rpcError.hint})` : ''}`);
+      }
+
+      if (!data) {
+        setContasPagar([]);
+        return;
+      }
+
+      // Aplicar filtros nos dados retornados
+      let filteredData = data as ContaPagar[];
       
-      setContasPagar(mockData);
-
-      // TODO: Implementar API real
-      // const response = await fetch('/api/financial/contas-pagar', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //   },
-      //   body: JSON.stringify({
-      //     company_id: selectedCompany.id,
-      //     filters,
-      //   }),
-      // });
-
-      // if (!response.ok) {
-      //   throw new Error('Erro ao carregar contas a pagar');
-      // }
-
-      // const data = await response.json();
-      // setContasPagar(data);
+      // Filtrar por data de vencimento (início)
+      if (filters.data_vencimento_inicio) {
+        const dataInicio = new Date(filters.data_vencimento_inicio);
+        filteredData = filteredData.filter(conta => {
+          const dataVencimento = new Date(conta.data_vencimento);
+          return dataVencimento >= dataInicio;
+        });
+      }
+      
+      // Filtrar por data de vencimento (fim)
+      if (filters.data_vencimento_fim) {
+        const dataFim = new Date(filters.data_vencimento_fim);
+        filteredData = filteredData.filter(conta => {
+          const dataVencimento = new Date(conta.data_vencimento);
+          return dataVencimento <= dataFim;
+        });
+      }
+      
+      // Filtrar por status
+      if (filters.status) {
+        filteredData = filteredData.filter(conta => conta.status === filters.status);
+      }
+      
+      // Filtrar por fornecedor
+      if (filters.fornecedor_nome) {
+        filteredData = filteredData.filter(conta => 
+          conta.fornecedor_nome?.toLowerCase().includes(filters.fornecedor_nome!.toLowerCase())
+        );
+      }
+      
+      // Filtrar por valor mínimo
+      if (filters.valor_minimo !== undefined) {
+        filteredData = filteredData.filter(conta => conta.valor_atual >= filters.valor_minimo!);
+      }
+      
+      // Filtrar por valor máximo
+      if (filters.valor_maximo !== undefined) {
+        filteredData = filteredData.filter(conta => conta.valor_atual <= filters.valor_maximo!);
+      }
+      
+      // Filtrar por centro de custo
+      if (filters.centro_custo_id) {
+        filteredData = filteredData.filter(conta => conta.centro_custo_id === filters.centro_custo_id);
+      }
+      
+      // Filtrar por departamento
+      if (filters.departamento) {
+        filteredData = filteredData.filter(conta => 
+          conta.departamento?.toLowerCase().includes(filters.departamento!.toLowerCase())
+        );
+      }
+      
+      // Filtrar por classe financeira
+      if (filters.classe_financeira) {
+        filteredData = filteredData.filter(conta => 
+          conta.classe_financeira?.toLowerCase().includes(filters.classe_financeira!.toLowerCase())
+        );
+      }
+      
+      // Filtrar por número do título
+      if (filters.numero_titulo) {
+        filteredData = filteredData.filter(conta => 
+          conta.numero_titulo?.toLowerCase().includes(filters.numero_titulo!.toLowerCase())
+        );
+      }
+      
+      // Filtrar por CNPJ do fornecedor
+      if (filters.fornecedor_cnpj) {
+        filteredData = filteredData.filter(conta => 
+          conta.fornecedor_cnpj?.toLowerCase().includes(filters.fornecedor_cnpj!.toLowerCase())
+        );
+      }
+      
+      // Filtrar por categoria
+      if (filters.categoria) {
+        filteredData = filteredData.filter(conta => 
+          conta.categoria?.toLowerCase().includes(filters.categoria!.toLowerCase())
+        );
+      }
+      
+      // Filtrar por forma de pagamento
+      if (filters.forma_pagamento) {
+        filteredData = filteredData.filter(conta => 
+          conta.forma_pagamento?.toLowerCase().includes(filters.forma_pagamento!.toLowerCase())
+        );
+      }
+      
+      // Filtrar por projeto
+      if (filters.projeto_id) {
+        filteredData = filteredData.filter(conta => conta.projeto_id === filters.projeto_id);
+      }
+      
+      // Filtrar por conta bancária
+      if (filters.conta_bancaria_id) {
+        filteredData = filteredData.filter(conta => conta.conta_bancaria_id === filters.conta_bancaria_id);
+      }
+      
+      // Filtrar por data de emissão (início)
+      if (filters.data_emissao_inicio) {
+        const dataInicio = new Date(filters.data_emissao_inicio);
+        filteredData = filteredData.filter(conta => {
+          if (!conta.data_emissao) return false;
+          const dataEmissao = new Date(conta.data_emissao);
+          return dataEmissao >= dataInicio;
+        });
+      }
+      
+      // Filtrar por data de emissão (fim)
+      if (filters.data_emissao_fim) {
+        const dataFim = new Date(filters.data_emissao_fim);
+        filteredData = filteredData.filter(conta => {
+          if (!conta.data_emissao) return false;
+          const dataEmissao = new Date(conta.data_emissao);
+          return dataEmissao <= dataFim;
+        });
+      }
+      
+      // Filtrar por data de pagamento (início)
+      if (filters.data_pagamento_inicio) {
+        const dataInicio = new Date(filters.data_pagamento_inicio);
+        filteredData = filteredData.filter(conta => {
+          if (!conta.data_pagamento) return false;
+          const dataPagamento = new Date(conta.data_pagamento);
+          return dataPagamento >= dataInicio;
+        });
+      }
+      
+      // Filtrar por data de pagamento (fim)
+      if (filters.data_pagamento_fim) {
+        const dataFim = new Date(filters.data_pagamento_fim);
+        filteredData = filteredData.filter(conta => {
+          if (!conta.data_pagamento) return false;
+          const dataPagamento = new Date(conta.data_pagamento);
+          return dataPagamento <= dataFim;
+        });
+      }
+      
+      // Filtrar por parcelada
+      if (filters.is_parcelada !== undefined) {
+        filteredData = filteredData.filter(conta => conta.is_parcelada === filters.is_parcelada);
+      }
+      
+      setContasPagar(filteredData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {

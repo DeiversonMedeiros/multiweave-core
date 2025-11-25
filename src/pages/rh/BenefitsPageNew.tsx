@@ -57,7 +57,7 @@ export default function BenefitsPageNew() {
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({
       ...prev,
-      [key]: value === 'all' ? undefined : value
+      [key]: value === 'all' ? undefined : (key === 'is_active' ? (value === 'active' ? true : value === 'inactive' ? false : undefined) : value)
     }));
   };
 
@@ -91,6 +91,12 @@ export default function BenefitsPageNew() {
 
   const handleModalSubmit = async (data: Partial<BenefitConfiguration>) => {
     try {
+      // Validar que data não é undefined ou null
+      if (!data || typeof data !== 'object') {
+        console.error('Erro: dados inválidos para salvar benefício', data);
+        return;
+      }
+
       if (modalMode === 'create') {
         await createBenefit.mutateAsync({
           ...data,
@@ -99,7 +105,7 @@ export default function BenefitsPageNew() {
       } else if (modalMode === 'edit' && selectedBenefit) {
         await updateBenefit.mutateAsync({
           id: selectedBenefit.id,
-          updatedEntity: data
+          data: data
         });
       }
       setIsModalOpen(false);
@@ -266,7 +272,7 @@ export default function BenefitsPageNew() {
 
         <Select
           value={filters.is_active === undefined ? 'all' : filters.is_active ? 'active' : 'inactive'}
-          onValueChange={(value) => handleFilterChange('is_active', value === 'active' ? true : value === 'inactive' ? false : undefined)}
+          onValueChange={(value) => handleFilterChange('is_active', value)}
         >
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Status" />
@@ -312,11 +318,14 @@ export default function BenefitsPageNew() {
         loading={createBenefit.isPending || updateBenefit.isPending}
         size="lg"
         submitLabel={modalMode === 'create' ? 'Criar Benefício' : 'Salvar Alterações'}
+        onSubmit={() => {}} // FormModal vai chamar submit via ref
       >
         <BenefitForm
           benefit={selectedBenefit}
           onSubmit={handleModalSubmit}
           mode={modalMode}
+          isLoading={createBenefit.isPending || updateBenefit.isPending}
+          showSubmitButton={false}
         />
       </FormModal>
     </div>

@@ -160,7 +160,7 @@ const AprovacaoCompensacoes: React.FC = () => {
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Buscar</label>
               <Input
@@ -211,7 +211,7 @@ const AprovacaoCompensacoes: React.FC = () => {
                           Matrícula: {compensation.funcionario_matricula}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {getTipoLabel(compensation.tipo_compensacao)} • {compensation.horas_solicitadas} horas
+                          {getTipoLabel(compensation.tipo_compensacao)} • {compensation.quantidade_horas} horas
                         </p>
                         <div className="flex items-center space-x-4 mt-2">
                           <div className="flex items-center space-x-1">
@@ -314,7 +314,7 @@ const AprovacaoCompensacoes: React.FC = () => {
               <div className="space-y-2">
                 <p><strong>Funcionário:</strong> {selectedCompensation.funcionario_nome}</p>
                 <p><strong>Tipo:</strong> {getTipoLabel(selectedCompensation.tipo_compensacao)}</p>
-                <p><strong>Horas:</strong> {selectedCompensation.horas_solicitadas}</p>
+                <p><strong>Horas:</strong> {selectedCompensation.quantidade_horas}</p>
                 <p><strong>Data:</strong> {new Date(selectedCompensation.data_compensacao).toLocaleDateString('pt-BR')}</p>
                 <p><strong>Saldo Disponível:</strong> {selectedCompensation.saldo_horas_disponivel} horas</p>
                 <p><strong>Motivo:</strong> {selectedCompensation.motivo}</p>
@@ -354,7 +354,7 @@ const AprovacaoCompensacoes: React.FC = () => {
               <div className="space-y-2">
                 <p><strong>Funcionário:</strong> {selectedCompensation.funcionario_nome}</p>
                 <p><strong>Tipo:</strong> {getTipoLabel(selectedCompensation.tipo_compensacao)}</p>
-                <p><strong>Horas:</strong> {selectedCompensation.horas_solicitadas}</p>
+                <p><strong>Horas:</strong> {selectedCompensation.quantidade_horas}</p>
                 <p><strong>Data:</strong> {new Date(selectedCompensation.data_compensacao).toLocaleDateString('pt-BR')}</p>
               </div>
             )}

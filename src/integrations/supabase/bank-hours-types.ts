@@ -115,6 +115,19 @@ export interface BankHoursAdjustmentForm {
   employee_id: string;
   hours_amount: number;
   description: string;
+  transaction_date?: string;
+}
+
+export interface BankHoursLegacyImport {
+  id: string;
+  employee_id: string;
+  company_id: string;
+  hours_amount: number;
+  reference_date: string;
+  description?: string;
+  transaction_id?: string;
+  created_by?: string;
+  created_at: string;
 }
 
 export interface BankHoursCalculationForm {

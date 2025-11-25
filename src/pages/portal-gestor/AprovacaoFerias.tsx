@@ -14,98 +14,48 @@ import {
   XCircle, 
   Eye,
   AlertTriangle,
-  CalendarDays
+  CalendarDays,
+  Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/lib/auth-context';
 
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useVacationRequests, FeriasItem } from '@/hooks/rh/useGestorPortal';
+import { useCompany } from '@/lib/company-context';
+import { formatDateString } from '@/utils/dateUtils';
+import { EntityService } from '@/services/generic/entityService';
 
-interface FeriasItem {
-  id: string;
-  employee_id: string;
-  funcionario_nome: string;
-  funcionario_matricula: string;
-  tipo: string;
-  data_inicio: string;
-  data_fim: string;
-  dias_solicitados: number;
-  status: 'pendente' | 'aprovado' | 'rejeitado' | 'em_andamento' | 'concluido';
-  observacoes?: string;
-  anexos?: string[];
-  solicitado_por: string;
-  aprovado_por?: string;
-  aprovado_em?: string;
-  created_at: string;
-  saldo_ferias_disponivel: number;
-  conflitos?: string[];
-}
+// LOG DE VERSÃO - Se você ver este log, o código novo está carregado
+console.log('🆕🆕🆕 [AprovacaoFerias] CÓDIGO NOVO CARREGADO - Versão com logs detalhados', new Date().toISOString());
 
 const AprovacaoFerias: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('pendente');
+  const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [selectedFerias, setSelectedFerias] = useState<FeriasItem | null>(null);
   const [aprovacaoObservacoes, setAprovacaoObservacoes] = useState('');
   const [rejeicaoObservacoes, setRejeicaoObservacoes] = useState('');
   const [isAprovacaoDialogOpen, setIsAprovacaoDialogOpen] = useState(false);
   const [isRejeicaoDialogOpen, setIsRejeicaoDialogOpen] = useState(false);
+  const [isDetalhesDialogOpen, setIsDetalhesDialogOpen] = useState(false);
 
-  // Mock data - em produção virá do Supabase
-  const ferias: FeriasItem[] = [
-    {
-      id: '1',
-      employee_id: 'emp1',
-      funcionario_nome: 'João Silva',
-      funcionario_matricula: '001',
-      tipo: 'ferias',
-      data_inicio: '2025-02-01',
-      data_fim: '2025-02-15',
-      dias_solicitados: 15,
-      status: 'pendente',
-      observacoes: 'Férias de verão',
-      anexos: ['documento1.pdf'],
-      solicitado_por: 'João Silva',
-      created_at: '2025-01-10T10:30:00Z',
-      saldo_ferias_disponivel: 30,
-      conflitos: []
-    },
-    {
-      id: '2',
-      employee_id: 'emp2',
-      funcionario_nome: 'Maria Santos',
-      funcionario_matricula: '002',
-      tipo: 'ferias',
-      data_inicio: '2025-03-01',
-      data_fim: '2025-03-10',
-      dias_solicitados: 10,
-      status: 'pendente',
-      observacoes: 'Férias para viagem familiar',
-      solicitado_por: 'Maria Santos',
-      created_at: '2025-01-09T14:20:00Z',
-      saldo_ferias_disponivel: 20,
-      conflitos: ['João Silva - 2025-03-05 a 2025-03-07']
-    },
-    {
-      id: '3',
-      employee_id: 'emp3',
-      funcionario_nome: 'Pedro Costa',
-      funcionario_matricula: '003',
-      tipo: 'ferias',
-      data_inicio: '2025-01-15',
-      data_fim: '2025-01-20',
-      dias_solicitados: 6,
-      status: 'aprovado',
-      observacoes: 'Férias aprovadas',
-      solicitado_por: 'Pedro Costa',
-      aprovado_por: 'Gestor',
-      aprovado_em: '2025-01-08T16:30:00Z',
-      created_at: '2025-01-07T09:15:00Z',
-      saldo_ferias_disponivel: 24,
-      conflitos: []
-    }
-  ];
+  // Buscar dados reais do banco
+  const { ferias = [], loading, error, approveVacation, rejectVacation } = useVacationRequests(companyId);
+  
+  // LOG: Verificar se approveVacation está definido
+  console.log('🔍 [AprovacaoFerias] Hook carregado:', {
+    hasApproveVacation: typeof approveVacation === 'function',
+    hasRejectVacation: typeof rejectVacation === 'function',
+    feriasCount: ferias.length,
+    loading,
+    error
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -150,9 +100,11 @@ const AprovacaoFerias: React.FC = () => {
   });
 
   const handleAprovar = (feria: FeriasItem) => {
+    console.log('🟡 [handleAprovar] Botão clicado:', feria);
     setSelectedFerias(feria);
     setAprovacaoObservacoes('');
     setIsAprovacaoDialogOpen(true);
+    console.log('🟡 [handleAprovar] Dialog aberto');
   };
 
   const handleRejeitar = (feria: FeriasItem) => {
@@ -161,27 +113,104 @@ const AprovacaoFerias: React.FC = () => {
     setIsRejeicaoDialogOpen(true);
   };
 
-  const confirmarAprovacao = () => {
-    if (selectedFerias) {
-      // Implementar lógica de aprovação
-      console.log(`Aprovar férias ${selectedFerias.id}`, aprovacaoObservacoes);
+  const confirmarAprovacao = async () => {
+    console.log('🟢 [confirmarAprovacao] Função chamada', {
+      hasSelectedFerias: !!selectedFerias,
+      hasUserId: !!user?.id,
+      selectedFeriasId: selectedFerias?.id,
+      userId: user?.id
+    });
+    
+    if (!selectedFerias) {
+      console.error('❌ [confirmarAprovacao] selectedFerias está null');
+      alert('Erro: Nenhuma férias selecionada');
+      return;
+    }
+    
+    if (!user?.id) {
+      console.error('❌ [confirmarAprovacao] user.id está null');
+      alert('Erro: Usuário não autenticado');
+      return;
+    }
+    
+    try {
+      console.log('🟢 [confirmarAprovacao] Confirmando aprovação:', {
+        feriaId: selectedFerias.id,
+        userId: user.id,
+        observacoes: aprovacaoObservacoes
+      });
+      
+      await approveVacation(selectedFerias.id, user.id, aprovacaoObservacoes);
+      
+      console.log('✅ [confirmarAprovacao] Aprovação confirmada com sucesso');
       setIsAprovacaoDialogOpen(false);
       setSelectedFerias(null);
+      setAprovacaoObservacoes('');
+    } catch (err: any) {
+      console.error('❌ [confirmarAprovacao] Erro ao aprovar férias:', err);
+      const errorMessage = err?.message || err?.error_description || 'Erro desconhecido ao aprovar férias';
+      alert(`Erro ao aprovar férias: ${errorMessage}`);
     }
   };
 
-  const confirmarRejeicao = () => {
-    if (selectedFerias && rejeicaoObservacoes.trim()) {
-      // Implementar lógica de rejeição
-      console.log(`Rejeitar férias ${selectedFerias.id}`, rejeicaoObservacoes);
-      setIsRejeicaoDialogOpen(false);
-      setSelectedFerias(null);
+  const confirmarRejeicao = async () => {
+    if (selectedFerias && rejeicaoObservacoes.trim() && user?.id) {
+      try {
+        console.log('🔴 [confirmarRejeicao] Confirmando rejeição:', {
+          feriaId: selectedFerias.id,
+          userId: user.id,
+          observacoes: rejeicaoObservacoes
+        });
+        
+        await rejectVacation(selectedFerias.id, user.id, rejeicaoObservacoes);
+        
+        console.log('✅ [confirmarRejeicao] Rejeição confirmada com sucesso');
+        setIsRejeicaoDialogOpen(false);
+        setSelectedFerias(null);
+        setRejeicaoObservacoes('');
+      } catch (err: any) {
+        console.error('❌ [confirmarRejeicao] Erro ao rejeitar férias:', err);
+        const errorMessage = err?.message || err?.error_description || 'Erro desconhecido ao rejeitar férias';
+        alert(`Erro ao rejeitar férias: ${errorMessage}`);
+      }
     }
   };
 
   const getFeriasPendentes = () => {
     return ferias.filter(f => f.status === 'pendente').length;
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <RequireEntity entityName="vacation_approvals" action="read">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>Carregando férias...</span>
+          </div>
+        </div>
+      </RequireEntity>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <RequireEntity entityName="vacation_approvals" action="read">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Erro ao carregar férias</h3>
+            <p className="text-gray-600 mb-4">Não foi possível carregar os dados das férias.</p>
+            <Button onClick={() => window.location.reload()}>
+              Tentar novamente
+            </Button>
+          </div>
+        </div>
+      </RequireEntity>
+    );
+  }
 
   return (
     <RequireEntity entityName="vacation_approvals" action="read">
@@ -210,7 +239,7 @@ const AprovacaoFerias: React.FC = () => {
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="space-y-3">
               <label className="text-sm font-medium">Buscar</label>
               <Input
@@ -263,14 +292,25 @@ const AprovacaoFerias: React.FC = () => {
                         </p>
                         <p className="text-sm text-muted-foreground mt-1">
                           {getTipoLabel(feria.tipo)} • {feria.dias_solicitados} dias
+                          {feria.ano_aquisitivo && (
+                            <span className="ml-2">• Ano de Referência: {feria.ano_aquisitivo}</span>
+                          )}
                         </p>
-                        <div className="flex items-center space-x-6 mt-3">
+                        <div className="flex items-center space-x-6 mt-3 flex-wrap">
                           <div className="flex items-center space-x-2">
                             <CalendarDays className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm text-muted-foreground">
-                              {new Date(feria.data_inicio).toLocaleDateString('pt-BR')} - {new Date(feria.data_fim).toLocaleDateString('pt-BR')}
+                              {formatDateString(feria.data_inicio)} - {formatDateString(feria.data_fim)}
                             </span>
                           </div>
+                          {feria.periodo_aquisitivo_inicio && feria.periodo_aquisitivo_fim && (
+                            <div className="flex items-center space-x-2">
+                              <Calendar className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                Período Aquisitivo: {formatDateString(feria.periodo_aquisitivo_inicio)} - {formatDateString(feria.periodo_aquisitivo_fim)}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center space-x-2">
                             <User className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm text-muted-foreground">
@@ -316,7 +356,10 @@ const AprovacaoFerias: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setSelectedFerias(feria)}
+                        onClick={() => {
+                          setSelectedFerias(feria);
+                          setIsDetalhesDialogOpen(true);
+                        }}
                       >
                         <Eye className="h-4 w-4 mr-1" />
                         Ver Detalhes
@@ -392,7 +435,16 @@ const AprovacaoFerias: React.FC = () => {
             <Button variant="outline" onClick={() => setIsAprovacaoDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={confirmarAprovacao} className="bg-green-600 hover:bg-green-700">
+            <Button 
+              onClick={(e) => {
+                console.log('🔴 [Button onClick] Botão Confirmar Aprovação clicado', e);
+                e.preventDefault();
+                e.stopPropagation();
+                confirmarAprovacao();
+              }} 
+              className="bg-green-600 hover:bg-green-700"
+              type="button"
+            >
               Confirmar Aprovação
             </Button>
           </DialogFooter>
@@ -436,6 +488,96 @@ const AprovacaoFerias: React.FC = () => {
               disabled={!rejeicaoObservacoes.trim()}
             >
               Confirmar Rejeição
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Detalhes */}
+      <Dialog open={isDetalhesDialogOpen} onOpenChange={setIsDetalhesDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Solicitação de Férias</DialogTitle>
+            <DialogDescription>
+              Informações completas da solicitação
+            </DialogDescription>
+          </DialogHeader>
+          {selectedFerias && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Funcionário</p>
+                  <p className="text-base">{selectedFerias.funcionario_nome}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Matrícula</p>
+                  <p className="text-base">{selectedFerias.funcionario_matricula}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Tipo</p>
+                  <p className="text-base">{getTipoLabel(selectedFerias.tipo)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Status</p>
+                  <Badge className={getStatusColor(selectedFerias.status)}>
+                    {selectedFerias.status}
+                  </Badge>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Data de Início</p>
+                  <p className="text-base">{new Date(selectedFerias.data_inicio).toLocaleDateString('pt-BR')}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Data de Fim</p>
+                  <p className="text-base">{new Date(selectedFerias.data_fim).toLocaleDateString('pt-BR')}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Dias Solicitados</p>
+                  <p className="text-base">{selectedFerias.dias_solicitados} dias</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Saldo Disponível</p>
+                  <p className="text-base">{selectedFerias.saldo_ferias_disponivel} dias</p>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <p className="text-sm font-medium text-muted-foreground">Data da Solicitação</p>
+                  <p className="text-base">
+                    {new Date(selectedFerias.created_at).toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+                {selectedFerias.observacoes && (
+                  <div className="space-y-1 col-span-2">
+                    <p className="text-sm font-medium text-muted-foreground">Observações</p>
+                    <p className="text-base">{selectedFerias.observacoes}</p>
+                  </div>
+                )}
+                {selectedFerias.conflitos && selectedFerias.conflitos.length > 0 && (
+                  <div className="space-y-1 col-span-2">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                      Conflitos Detectados
+                    </p>
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                      <ul className="list-disc list-inside space-y-1">
+                        {selectedFerias.conflitos.map((conflito, index) => (
+                          <li key={index} className="text-sm text-yellow-800">{conflito}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetalhesDialogOpen(false)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

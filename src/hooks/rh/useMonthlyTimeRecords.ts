@@ -67,9 +67,16 @@ export function useMonthlyTimeRecords(year: number, month: number) {
         const firstDay = new Date(year, month - 1, 1);
         const lastDay = new Date(year, month, 0);
 
+         // Debug logs
+         console.log('🔍 [useMonthlyTimeRecords] Buscando registros com params:', {
+           employee_id: employee.id,
+           data_registro_gte: firstDay.toISOString().split('T')[0],
+           data_registro_lte: lastDay.toISOString().split('T')[0],
+           company_id: selectedCompany.id
+         });
+
          // Buscar registros do mês usando RPC function
-         const { data: records, error: recordsError } = await supabase
-           .rpc('get_entity_data', {
+         const { data: records, error: recordsError } = await supabase.rpc('get_entity_data', {
              schema_name: 'rh',
              table_name: 'time_records',
              company_id_param: selectedCompany.id,
@@ -82,13 +89,25 @@ export function useMonthlyTimeRecords(year: number, month: number) {
              order_direction: 'ASC',
              limit_param: 1000,
              offset_param: 0
-           });
+           }) as { data: any[] | null; error: any };
+
+         // Debug logs
+         console.log('📊 [useMonthlyTimeRecords] Resultado da função:', {
+           records,
+           error: recordsError,
+           recordsLength: records?.length || 0
+         });
 
          if (recordsError) {
+           console.error('❌ [useMonthlyTimeRecords] Erro ao buscar registros:', recordsError);
            throw new Error(`Erro ao buscar registros: ${recordsError.message}`);
          }
 
-         const recordsData = records?.map((item: any) => item.data) || [];
+         const recordsData = Array.isArray(records) ? records.map((item: any) => item.data) : [];
+         console.log('🔄 [useMonthlyTimeRecords] RecordsData processado:', {
+           totalRecords: recordsData.length,
+           sampleRecord: recordsData[0] || 'Nenhum registro'
+         });
 
         // Processar registros por data
         const recordsByDate: Record<string, TimeRecord> = {};
@@ -98,6 +117,13 @@ export function useMonthlyTimeRecords(year: number, month: number) {
         let workedDays = 0;
 
         recordsData.forEach(record => {
+          console.log('📅 [useMonthlyTimeRecords] Processando registro:', {
+            data_registro: record.data_registro,
+            entrada: record.entrada,
+            saida: record.saida,
+            status: record.status
+          });
+          
           recordsByDate[record.data_registro] = record;
           
           if (record.horas_trabalhadas) {
@@ -112,6 +138,13 @@ export function useMonthlyTimeRecords(year: number, month: number) {
           if (record.entrada && record.saida) {
             workedDays++;
           }
+        });
+
+        console.log('✅ [useMonthlyTimeRecords] Registros organizados por data:', {
+          totalDays: recordsByDate,
+          keys: Object.keys(recordsByDate),
+          totalHours,
+          workedDays
         });
 
         // Calcular total de dias no mês

@@ -60,7 +60,14 @@ export default function Projetos() {
     try {
       const { data, error } = await supabase
         .from("projects")
-        .select("*")
+        .select(`
+          *,
+          cost_center:cost_centers!cost_center_id (
+            id,
+            codigo,
+            nome
+          )
+        `)
         .eq("company_id", selectedCompany.id)
         .order("codigo");
 
@@ -133,6 +140,14 @@ export default function Projetos() {
   const columns = [
     { header: "Código", accessor: "codigo" as keyof Project },
     { header: "Nome", accessor: "nome" as keyof Project },
+    {
+      header: "Centro de Custo",
+      accessor: (item: any) => {
+        const costCenter = item.cost_center;
+        if (!costCenter) return "-";
+        return `${costCenter.codigo} - ${costCenter.nome}`;
+      },
+    },
     {
       header: "Status",
       accessor: (item: Project) => (

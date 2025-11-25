@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,15 +12,21 @@ import { Building2, ChevronRight } from "lucide-react";
 export default function CompanySelect() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isPending, startTransition] = useTransition();
   const { user } = useAuth();
   const { setSelectedCompany, setCompanies: setContextCompanies } = useCompany();
   const navigate = useNavigate();
+
+  // Memoizar a lista de empresas para evitar re-renderizações desnecessárias
+  const memoizedCompanies = useMemo(() => companies, [companies]);
 
   useEffect(() => {
     if (!user) {
       navigate("/login");
       return;
     }
+
+    let isMounted = true;
 
     const fetchCompanies = async () => {
       try {
@@ -41,8 +47,12 @@ export default function CompanySelect() {
 
           if (error) throw error;
 
-          setCompanies(data || []);
-          setContextCompanies(data || []);
+          if (isMounted) {
+            startTransition(() => {
+              setCompanies(data || []);
+              setContextCompanies(data || []);
+            });
+          }
           return;
         }
 
@@ -69,20 +79,32 @@ export default function CompanySelect() {
 
         if (userError) throw userError;
 
-        const companies = userCompanyData
+        const companiesList = userCompanyData
           ?.map(uc => uc.companies)
           .filter(Boolean) as Company[] || [];
 
-        setCompanies(companies);
-        setContextCompanies(companies);
+        if (isMounted) {
+          startTransition(() => {
+            setCompanies(companiesList);
+            setContextCompanies(companiesList);
+          });
+        }
       } catch (error: any) {
-        toast.error("Erro ao carregar empresas: " + error.message);
+        if (isMounted) {
+          toast.error("Erro ao carregar empresas: " + error.message);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchCompanies();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user, navigate, setContextCompanies]);
 
   const handleSelectCompany = (company: Company) => {
@@ -90,7 +112,9 @@ export default function CompanySelect() {
     navigate("/");
   };
 
-  if (loading) {
+  // Renderização única e estável - evitar múltiplas renderizações condicionais
+  // Usar estrutura única de retorno para evitar problemas de insertBefore
+  if (loading || isPending) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
@@ -98,7 +122,7 @@ export default function CompanySelect() {
     );
   }
 
-  if (companies.length === 0) {
+  if (memoizedCompanies.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
         <Card className="w-full max-w-md">
@@ -129,7 +153,7 @@ export default function CompanySelect() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-3">
-            {companies.map((company) => (
+            {memoizedCompanies.map((company) => (
               <Button
                 key={company.id}
                 variant="outline"

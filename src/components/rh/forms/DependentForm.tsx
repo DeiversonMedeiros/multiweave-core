@@ -255,11 +255,17 @@ export function DependentForm({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {employees?.map((employee) => (
-                              <SelectItem key={employee.id} value={employee.id}>
-                                {employee.nome} - {employee.matricula || 'Sem matrícula'}
+                            {Array.isArray(employees) && employees.length > 0 ? (
+                              employees.map((employee) => (
+                                <SelectItem key={employee.id} value={employee.id}>
+                                  {employee.nome} - {employee.matricula || 'Sem matrícula'}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="no-employees" disabled>
+                                Nenhum funcionário encontrado
                               </SelectItem>
-                            ))}
+                            )}
                           </SelectContent>
                         </Select>
                         <FormMessage />

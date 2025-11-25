@@ -62,8 +62,8 @@ export const PERMISSION_CONFIG = {
     'nfse': ['read', 'create', 'edit', 'delete'],
     'plano_contas': ['read', 'create', 'edit', 'delete'],
     'lancamentos_contabeis': ['read', 'create', 'edit', 'delete'],
-    'configuracoes_aprovacao': ['read', 'create', 'edit', 'delete'],
-    'aprovacoes': ['read', 'create', 'edit', 'delete'],
+    'configuracoes_aprovacao': ['read', 'create', 'edit', 'delete'], // Usa public.configuracoes_aprovacao_unificada
+    'aprovacoes': ['read', 'create', 'edit', 'delete'], // Usa public.aprovacoes_unificada
     
     // Entidades Almoxarifado
     'estoque_atual': ['read', 'create', 'edit', 'delete'],
@@ -76,7 +76,6 @@ export const PERMISSION_CONFIG = {
     'inventarios': ['read', 'create', 'edit', 'delete'],
     'inventario_itens': ['read', 'create', 'edit', 'delete'],
     'almoxarifados': ['read', 'create', 'edit', 'delete'],
-    'materiais_equipamentos': ['read', 'create', 'edit', 'delete'],
     
     // Entidades do Processo de Compras
     'solicitacoes_compra': ['read', 'create', 'edit', 'delete'],

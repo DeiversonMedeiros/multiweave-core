@@ -121,16 +121,8 @@ export function FinancialPage({ className }: FinancialPageProps) {
     loadPermissions();
   }, [checkModulePermission]);
 
-  // Dados mockados para o dashboard
-  const dashboardData = {
-    totalPagar: 125000.00,
-    totalReceber: 180000.00,
-    saldoCaixa: 55000.00,
-    contasPendentes: 15,
-    contasVencidas: 3,
-    dso: 25.5,
-    dpo: 18.2,
-  };
+  // Dados do dashboard agora vêm do DashboardFinanceiroPage
+  // Este componente apenas renderiza as abas
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {

@@ -25,14 +25,62 @@ export function useIrrfBrackets(filters: IrrfBracketFilters = {}) {
   return useQuery({
     queryKey: ['irrf-brackets', selectedCompany?.id, filters],
     queryFn: async () => {
-      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      console.log('🔍 [useIrrfBrackets] Buscando faixas IRRF:', { 
+        companyId: selectedCompany?.id, 
+        filters 
+      });
       
-      const result = await getIrrfBrackets(selectedCompany.id, filters);
-      return {
-        data: result.data,
-        count: result.totalCount,
-        hasMore: result.data.length >= 100
-      };
+      if (!selectedCompany?.id) {
+        console.warn('⚠️ [useIrrfBrackets] Empresa não selecionada');
+        throw new Error('Empresa não selecionada');
+      }
+      
+      try {
+        const result = await getIrrfBrackets(selectedCompany.id, filters);
+        
+        console.log('✅ [useIrrfBrackets] Resultado recebido:', {
+          hasData: !!result.data,
+          dataLength: result.data?.length || 0,
+          totalCount: result.totalCount
+        });
+        
+        if (result.data && result.data.length > 0) {
+          console.log('📊 [useIrrfBrackets] Primeiras faixas:', result.data.slice(0, 2).map(b => ({
+            id: b.id,
+            codigo: b.codigo,
+            descricao: b.descricao,
+            company_id: b.company_id
+          })));
+        } else {
+          console.warn('⚠️ [useIrrfBrackets] Nenhuma faixa encontrada para companyId:', selectedCompany.id);
+          console.warn('⚠️ [useIrrfBrackets] result completo:', {
+            hasData: !!result.data,
+            dataType: typeof result.data,
+            isArray: Array.isArray(result.data),
+            dataLength: result.data?.length,
+            totalCount: result.totalCount,
+            resultKeys: Object.keys(result)
+          });
+        }
+        
+        const returnData = {
+          data: result.data,
+          count: result.totalCount,
+          hasMore: result.data.length >= 100
+        };
+        
+        console.log('🔄 [useIrrfBrackets] Retornando do hook:', {
+          hasData: !!returnData.data,
+          dataLength: returnData.data?.length || 0,
+          count: returnData.count,
+          firstItem: returnData.data?.[0] ? { id: returnData.data[0].id, codigo: returnData.data[0].codigo } : null
+        });
+        
+        return returnData;
+      } catch (error) {
+        console.error('❌ [useIrrfBrackets] Erro na busca:', error);
+        throw error;
+      }
     },
     enabled: !!selectedCompany?.id,
     staleTime: 1000 * 60 * 5, // 5 minutos

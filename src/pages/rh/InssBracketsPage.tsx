@@ -49,27 +49,53 @@ export default function InssBracketsPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
 
   // Hooks
-  const { brackets, isLoading, error, refetch } = useInssBrackets(selectedCompany?.id || '', filters);
+  console.log('🔍 [InssBracketsPage] Renderizando com:', { 
+    companyId: selectedCompany?.id, 
+    hasCompany: !!selectedCompany,
+    filters 
+  });
+  
+  const bracketsQuery = useInssBrackets(selectedCompany?.id || '', filters);
+  
+  console.log('🔍 [InssBracketsPage] Hook retornou:', {
+    hasBrackets: !!bracketsQuery.brackets,
+    bracketsType: typeof bracketsQuery.brackets,
+    isArray: Array.isArray(bracketsQuery.brackets),
+    bracketsLength: bracketsQuery.brackets?.length || 0,
+    isLoading: bracketsQuery.isLoading,
+    isError: !!bracketsQuery.error,
+    error: bracketsQuery.error
+  });
+  
+  const brackets = bracketsQuery.brackets || [];
+  const isLoading = bracketsQuery.isLoading;
+  const error = bracketsQuery.error;
+  const refetch = bracketsQuery.refetch;
+  
+  console.log('📊 [InssBracketsPage] Estado após processamento:', {
+    bracketsLength: brackets.length,
+    firstBracket: brackets[0] ? { id: brackets[0].id, codigo: brackets[0].codigo, descricao: brackets[0].descricao } : null,
+    isLoading,
+    hasError: !!error,
+    error: error
+  });
   const { createMutation, updateMutation, deleteMutation, isLoading: isMutating } = useInssBracketMutations(selectedCompany?.id || '');
 
-  // Filtrar dados por termo de busca
-  const filteredBrackets = brackets.filter(bracket =>
-    bracket.descricao.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    bracket.codigo.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Dados para exibição (sem filtro manual, o SimpleDataTable faz isso)
+  const filteredBrackets = brackets;
 
   // Colunas da tabela
   const columns = [
     {
       key: 'codigo',
-      label: 'Código',
+      header: 'Código',
       render: (bracket: InssBracket) => (
         <div className="font-mono font-medium">{bracket.codigo}</div>
       ),
     },
     {
       key: 'descricao',
-      label: 'Descrição',
+      header: 'Descrição',
       render: (bracket: InssBracket) => (
         <div>
           <div className="font-medium">{bracket.descricao}</div>
@@ -81,7 +107,7 @@ export default function InssBracketsPage() {
     },
     {
       key: 'faixa_salarial',
-      label: 'Faixa Salarial',
+      header: 'Faixa Salarial',
       render: (bracket: InssBracket) => (
         <div className="text-sm">
           <div className="font-medium">
@@ -93,7 +119,7 @@ export default function InssBracketsPage() {
     },
     {
       key: 'aliquota',
-      label: 'Alíquota',
+      header: 'Alíquota',
       render: (bracket: InssBracket) => (
         <Badge variant="outline" className="bg-blue-50 text-blue-700">
           {formatTaxRate(bracket.aliquota)}
@@ -102,7 +128,7 @@ export default function InssBracketsPage() {
     },
     {
       key: 'valor_deducao',
-      label: 'Dedução',
+      header: 'Dedução',
       render: (bracket: InssBracket) => (
         <div className="text-sm">
           {bracket.valor_deducao > 0 ? (
@@ -115,7 +141,7 @@ export default function InssBracketsPage() {
     },
     {
       key: 'vigencia',
-      label: 'Vigência',
+      header: 'Vigência',
       render: (bracket: InssBracket) => (
         <div className="text-sm">
           <div className="font-medium">{bracket.ano_vigencia}</div>
@@ -127,7 +153,7 @@ export default function InssBracketsPage() {
     },
     {
       key: 'status',
-      label: 'Status',
+      header: 'Status',
       render: (bracket: InssBracket) => (
         <Badge variant={bracket.ativo ? 'default' : 'secondary'}>
           {bracket.ativo ? 'Ativo' : 'Inativo'}
@@ -136,7 +162,7 @@ export default function InssBracketsPage() {
     },
     {
       key: 'actions',
-      label: 'Ações',
+      header: 'Ações',
       render: (bracket: InssBracket) => (
         <TableActions
           onView={() => handleView(bracket)}
@@ -316,10 +342,11 @@ export default function InssBracketsPage() {
       <SimpleDataTable
         data={filteredBrackets}
         columns={columns}
-        isLoading={isLoading}
-        error={error}
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
+        loading={isLoading}
+        onAdd={handleCreate}
+        onExport={handleExport}
+        searchPlaceholder="Pesquisar faixas..."
+        emptyMessage="Nenhuma faixa INSS encontrada"
       />
 
       {/* Modal */}

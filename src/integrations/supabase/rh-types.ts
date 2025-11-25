@@ -41,7 +41,7 @@ export interface EmploymentContract {
   company_id: string;
   employee_id: string;
   numero_contrato: string;
-  tipo_contrato: 'CLT' | 'PJ' | 'Estagiário' | 'Terceirizado' | 'Temporário' | 'Freelancer';
+  tipo_contrato: 'CLT' | 'Menor Aprendiz' | 'PJ' | 'Estagiário' | 'Terceirizado' | 'Temporário' | 'Freelancer';
   data_inicio: string;
   data_fim?: string;
   periodo_experiencia: number; // dias
@@ -447,6 +447,7 @@ export interface FgtsConfig {
   teto_salario?: number;
   valor_minimo_contribuicao: number;
   multa_rescisao: number; // 0.4 = 40%
+  tipo_contrato?: string | null; // NULL = configuração geral, valor específico = configuração por tipo
   ativo: boolean;
   created_at: string;
   updated_at: string;
@@ -658,26 +659,40 @@ export function calculateIrrfValue(
   };
 }
 
-export function calculateFgtsValue(salary: number, config: FgtsConfig): {
+export function calculateFgtsValue(
+  salary: number, 
+  config: FgtsConfig | null, 
+  tipoContrato?: string | null
+): {
   valor: number;
   aliquota: number;
   base_calculo: number;
 } {
   let baseCalculo = salary;
   
-  // Aplicar teto se existir
-  if (config.teto_salario && salary > config.teto_salario) {
-    baseCalculo = config.teto_salario;
-  }
+  // Determinar alíquota: se for Menor Aprendiz e não houver config específica, usar 2%
+  let aliquotaFgts = 0.08; // Padrão 8%
   
-  // Aplicar valor mínimo de contribuição
-  if (baseCalculo < config.valor_minimo_contribuicao) {
-    baseCalculo = config.valor_minimo_contribuicao;
+  if (config) {
+    aliquotaFgts = config.aliquota_fgts;
+    
+    // Aplicar teto se existir
+    if (config.teto_salario && salary > config.teto_salario) {
+      baseCalculo = config.teto_salario;
+    }
+    
+    // Aplicar valor mínimo de contribuição
+    if (baseCalculo < config.valor_minimo_contribuicao) {
+      baseCalculo = config.valor_minimo_contribuicao;
+    }
+  } else if (tipoContrato === 'Menor Aprendiz') {
+    // Se não há configuração e é Menor Aprendiz, usar alíquota padrão de 2%
+    aliquotaFgts = 0.02;
   }
   
   return {
-    valor: baseCalculo * config.aliquota_fgts,
-    aliquota: config.aliquota_fgts,
+    valor: baseCalculo * aliquotaFgts,
+    aliquota: aliquotaFgts,
     base_calculo: baseCalculo,
   };
 }
@@ -713,6 +728,9 @@ export interface Employee {
   matricula?: string;
   cpf: string;
   rg?: string;
+  rg_orgao_emissor?: string;
+  rg_uf_emissao?: string;
+  rg_data_emissao?: string;
   data_nascimento?: string;
   data_admissao: string;
   data_demissao?: string;
@@ -731,26 +749,63 @@ export interface Employee {
   naturalidade?: string;
   nome_mae?: string;
   nome_pai?: string;
+  sexo?: 'masculino' | 'feminino' | 'outro' | 'nao_informar';
+  orientacao_sexual?: 'heterossexual' | 'homossexual' | 'bissexual' | 'pansexual' | 'assexual' | 'outro' | 'nao_informar' | 'prefiro_nao_dizer';
   work_shift_id?: string;
   cost_center_id?: string;
   gestor_imediato_id?: string;
   user_id?: string;
+  requer_registro_ponto?: boolean; // Artigo 62 da CLT - indica se precisa registrar ponto
+  tipo_contrato_trabalho?: 'CLT' | 'PJ' | 'Estagiario' | 'Menor_Aprendiz' | 'Terceirizado' | 'Autonomo' | 'Cooperado' | 'Temporario' | 'Intermitente' | 'Outro';
+  vinculo_periculosidade?: boolean;
+  vinculo_insalubridade?: boolean;
+  grau_insalubridade?: 'minimo' | 'medio' | 'maximo';
+  // location_zones será carregado via relacionamento quando necessário
   
-  // Documentos pessoais
+  // Documentos pessoais - Título de Eleitor
+  titulo_eleitor?: string;
+  titulo_eleitor_zona?: string;
+  titulo_eleitor_secao?: string;
+  
+  // Documentos pessoais - CTPS
+  ctps?: string;
+  ctps_serie?: string;
+  ctps_uf?: string;
+  ctps_data_emissao?: string;
+  
+  // Documentos pessoais - CNH
+  cnh_numero?: string;
+  cnh_validade?: string;
+  cnh_categoria?: 'A' | 'B' | 'C' | 'D' | 'E' | 'AB' | 'AC' | 'AD' | 'AE';
+  
+  // Documentos pessoais - Outros
   certidao_nascimento?: string;
   certidao_casamento?: string;
-  titulo_eleitor?: string;
-  ctps?: string;
+  certidao_casamento_numero?: string;
+  certidao_casamento_data?: string;
+  certidao_uniao_estavel_numero?: string;
+  certidao_uniao_estavel_data?: string;
   pis_pasep?: string;
   certificado_reservista?: string;
   comprovante_endereco?: string;
   foto_funcionario?: string;
   escolaridade?: string;
-  tipo_cnh?: 'A' | 'B' | 'C' | 'D' | 'E';
+  tipo_cnh?: 'A' | 'B' | 'C' | 'D' | 'E'; // Mantido para compatibilidade
   cartao_sus?: string;
   registros_profissionais?: Record<string, string>; // CREA, CRM, OAB, Coren, etc.
   outros_vinculos_empregaticios?: boolean;
   detalhes_outros_vinculos?: string;
+  
+  // Deficiência
+  possui_deficiencia?: boolean;
+  deficiencia_tipo_id?: string;
+  deficiencia_grau?: 'leve' | 'moderada' | 'severa' | 'profunda';
+  deficiencia_laudo_url?: string;
+  
+  // RNE (Registro Nacional de Estrangeiro)
+  rne_numero?: string;
+  rne_orgao?: string;
+  rne_data_expedicao?: string;
   
   // Dados bancários
   banco_nome?: string;
@@ -767,6 +822,7 @@ export interface Employee {
   work_shift?: WorkShift;
   cost_center?: CostCenter;
   gestor_imediato?: Employee;
+  deficiencia_tipo?: any; // Referência a DeficiencyType
 }
 
 export interface Position {
@@ -869,6 +925,41 @@ export interface TimeRecord {
   aprovado_em?: string;
   created_at: string;
   updated_at: string;
+  // Novos campos opcionais (localização e foto)
+  latitude?: number | string;
+  longitude?: number | string;
+  endereco?: string;
+  foto_url?: string;
+  localizacao_type?: 'gps' | 'manual' | 'wifi';
+  outside_zone?: boolean;
+  // Campos do JOIN com employees (retornados pela função RPC)
+  employee_nome?: string;
+  employee_matricula?: string;
+  // Campos event-derived da nova RPC
+  events_count?: number;
+  first_event_photo_url?: string;
+  entrada_latitude?: number;
+  entrada_longitude?: number;
+  entrada_endereco?: string;
+  saida_latitude?: number;
+  saida_longitude?: number;
+  // Arrays agregados com todas as fotos e localizações do dia
+  all_photos?: Array<{
+    id?: string;
+    photo_url: string;
+    event_type?: string;
+    event_at?: string;
+    event_id?: string;
+  }>;
+  all_locations?: Array<{
+    id?: string;
+    event_type?: string;
+    event_at?: string;
+    latitude?: number | string | null;
+    longitude?: number | string | null;
+    endereco?: string | null;
+    source?: string;
+  }>;
   // Relacionamentos
   employee?: Employee;
   aprovador?: any; // Profile
@@ -889,6 +980,42 @@ export interface WorkSchedule {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// =====================================================
+// New: Event-based time record model (per punch)
+// =====================================================
+export type TimeRecordEventType =
+  | 'entrada'
+  | 'saida'
+  | 'entrada_almoco'
+  | 'saida_almoco'
+  | 'extra_inicio'
+  | 'extra_fim'
+  | 'manual';
+
+export interface TimeRecordEvent {
+  id: string;
+  time_record_id: string;
+  employee_id: string;
+  company_id: string;
+  event_type: TimeRecordEventType;
+  event_at: string; // ISO datetime
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  endereco?: string | null;
+  source?: 'gps' | 'wifi' | 'manual';
+  accuracy_meters?: number | null;
+  outside_zone?: boolean | null;
+  created_at?: string;
+  photos?: TimeRecordEventPhoto[];
+}
+
+export interface TimeRecordEventPhoto {
+  id: string;
+  event_id: string;
+  photo_url: string;
+  created_at?: string;
 }
 
 export interface EmployeeSchedule {
@@ -942,6 +1069,7 @@ export interface BenefitConfiguration {
   daily_calculation_base: number;
   requires_approval: boolean;
   is_active: boolean;
+  entra_no_calculo_folha?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1219,6 +1347,8 @@ export interface Holiday {
   tipo: 'nacional' | 'estadual' | 'municipal' | 'pontos_facultativos' | 'outros';
   descricao?: string;
   ativo: boolean;
+  uf?: string; // Sigla do estado (2 caracteres) - obrigatório para estaduais e municipais
+  municipio?: string; // Nome do município - obrigatório para municipais
   created_at: string;
   updated_at: string;
 }
@@ -1230,6 +1360,8 @@ export interface HolidayCreateData {
   tipo: 'nacional' | 'estadual' | 'municipal' | 'pontos_facultativos' | 'outros';
   descricao?: string;
   ativo?: boolean;
+  uf?: string; // Obrigatório para estaduais e municipais
+  municipio?: string; // Obrigatório para municipais
 }
 
 export interface HolidayUpdateData extends Partial<HolidayCreateData> {
@@ -1694,6 +1826,14 @@ export interface AwardProductivity {
   data_pagamento?: string;
   observacoes?: string;
   anexos?: string[];
+  // Campos de integração com Contas a Pagar
+  accounts_payable_id?: string;
+  enviado_contas_pagar_em?: string;
+  // Campos de integração com Flash
+  flash_payment_id?: string;
+  flash_invoice_id?: string;
+  flash_account_number?: string;
+  enviado_flash_em?: string;
   created_at: string;
   updated_at: string;
   // Campos relacionados (populados via JOIN)
@@ -1919,6 +2059,15 @@ export interface MedicalPlan {
   data_inicio_vigencia?: string;
   data_fim_vigencia?: string;
   observacoes?: string;
+  // Coparticipação
+  tem_coparticipacao?: boolean;
+  percentual_coparticipacao?: number;
+  valor_minimo_coparticipacao?: number;
+  valor_maximo_coparticipacao?: number;
+  // Folha de pagamento
+  entra_no_calculo_folha?: boolean;
+  tipo_folha?: 'provento' | 'desconto';
+  categoria_desconto?: 'convenio_medico' | 'convenio_odontologico' | 'seguro_vida' | 'outros';
   created_at: string;
   updated_at: string;
   // Campos relacionados (populados via JOIN)
@@ -1945,6 +2094,15 @@ export interface MedicalPlanCreateData {
   data_inicio_vigencia?: string;
   data_fim_vigencia?: string;
   observacoes?: string;
+  // Coparticipação
+  tem_coparticipacao?: boolean;
+  percentual_coparticipacao?: number;
+  valor_minimo_coparticipacao?: number;
+  valor_maximo_coparticipacao?: number;
+  // Folha de pagamento
+  entra_no_calculo_folha?: boolean;
+  tipo_folha?: 'provento' | 'desconto';
+  categoria_desconto?: 'convenio_medico' | 'convenio_odontologico' | 'seguro_vida' | 'outros';
 }
 
 export interface MedicalPlanUpdateData extends Partial<MedicalPlanCreateData> {

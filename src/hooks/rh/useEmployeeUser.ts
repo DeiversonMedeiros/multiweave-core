@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../integrations/supabase/client';
 import { useCompany } from '../../lib/company-context';
 import { EntityService } from '../../services/generic/entityService';
+import { usePermissions } from '../usePermissions';
 
 export interface EmployeeUser {
   id: string;
@@ -28,6 +29,7 @@ export interface User {
 
 export const useEmployeeUser = () => {
   const { selectedCompany } = useCompany();
+  const { isAdmin } = usePermissions();
   const [employees, setEmployees] = useState<EmployeeUser[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -36,6 +38,7 @@ export const useEmployeeUser = () => {
   const companyId = selectedCompany?.id;
   console.log('useEmployeeUser: Hook inicializado, selectedCompany:', selectedCompany);
   console.log('useEmployeeUser: companyId extraído:', companyId);
+  console.log('useEmployeeUser: isAdmin:', isAdmin);
 
   // Buscar funcionários com status de vínculo
   const fetchEmployees = async () => {
@@ -105,35 +108,30 @@ export const useEmployeeUser = () => {
     }
 
     console.log('useEmployeeUser: Buscando usuários vinculados à empresa via user_companies:', companyId);
+    console.log('useEmployeeUser: isAdmin:', isAdmin);
 
     try {
-      // Buscar usuários vinculados à empresa ativa através de user_companies
-      const { data, error } = await supabase
-        .from('user_companies')
-        .select(`
-          user_id,
-          user:users!inner(
-            id,
-            nome,
-            email,
-            ativo
-          )
-        `)
-        .eq('company_id', companyId)
-        .eq('ativo', true)
-        .eq('user.ativo', true);
+      let usersData: User[] = [];
 
-      console.log('useEmployeeUser: Resultado da consulta de usuários via user_companies:', { data, error });
+      // Usar RPC para buscar usuários (ela já trata admin vs não-admin internamente)
+      console.log('useEmployeeUser: Buscando usuários via RPC get_users_by_company');
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_users_by_company', { p_company_id: companyId });
 
-      if (error) throw error;
-      
-      // Extrair dados dos usuários do resultado e ordenar por nome
-      const usersData = data?.map(item => ({
-        id: item.user.id,
-        nome: item.user.nome,
-        email: item.user.email,
-        ativo: item.user.ativo
-      })).sort((a, b) => a.nome.localeCompare(b.nome)) || [];
+      if (rpcError) {
+        console.error('useEmployeeUser: Erro na RPC:', rpcError);
+        throw rpcError;
+      }
+
+      if (rpcData) {
+        console.log('useEmployeeUser: Resultado da RPC:', rpcData);
+        usersData = rpcData.map((user: any) => ({
+          id: user.id,
+          nome: user.nome,
+          email: user.email,
+          ativo: user.ativo
+        })).sort((a, b) => a.nome.localeCompare(b.nome));
+      }
 
       console.log('useEmployeeUser: Usuários processados:', usersData);
       
@@ -146,6 +144,7 @@ export const useEmployeeUser = () => {
     } catch (err) {
       console.error('useEmployeeUser: Erro ao buscar usuários:', err);
       setError(err instanceof Error ? err.message : 'Erro ao buscar usuários');
+      setUsers([]);
     }
   };
 
@@ -219,7 +218,7 @@ export const useEmployeeUser = () => {
   };
 
   useEffect(() => {
-    console.log('useEmployeeUser: useEffect executado, companyId:', companyId);
+    console.log('useEmployeeUser: useEffect executado, companyId:', companyId, 'isAdmin:', isAdmin);
     if (companyId) {
       console.log('useEmployeeUser: Executando fetchEmployees e fetchAvailableUsers');
       fetchEmployees();
@@ -227,7 +226,7 @@ export const useEmployeeUser = () => {
     } else {
       console.log('useEmployeeUser: companyId não disponível, não executando fetch');
     }
-  }, [companyId]);
+  }, [companyId, isAdmin]);
 
   return {
     employees,

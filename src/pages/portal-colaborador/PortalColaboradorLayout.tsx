@@ -130,7 +130,7 @@ export default function PortalColaboradorLayout() {
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent 
           side="left" 
-          className="w-72 p-0"
+          className="w-[85vw] max-w-80 p-0"
           onOpenAutoFocus={(e) => {
             // Previne conflitos de foco com aria-hidden
             e.preventDefault();
@@ -276,7 +276,7 @@ export default function PortalColaboradorLayout() {
           </div>
 
           {/* Mobile header */}
-          <div className="lg:hidden flex items-center justify-between p-4 bg-white border-b">
+          <div className="lg:hidden flex items-center justify-between px-3 py-3 sm:px-4 sm:py-4 bg-white border-b">
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="sm">
@@ -285,7 +285,7 @@ export default function PortalColaboradorLayout() {
               </SheetTrigger>
               <SheetContent 
                 side="left" 
-                className="w-72 p-0"
+                className="w-[85vw] max-w-80 p-0"
                 onOpenAutoFocus={(e) => {
                   // Previne conflitos de foco com aria-hidden
                   e.preventDefault();
@@ -366,7 +366,7 @@ export default function PortalColaboradorLayout() {
           </div>
 
           {/* Page content */}
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
             <Outlet />
           </main>
         </div>

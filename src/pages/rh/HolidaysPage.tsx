@@ -38,6 +38,7 @@ import {
   formatDateWithWeekday
 } from '@/services/rh/holidaysService';
 import { useCompany } from '@/lib/company-context';
+import { toast } from '@/hooks/use-toast';
 
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -89,8 +90,10 @@ export default function HolidaysPage() {
     if (window.confirm('Tem certeza que deseja excluir este feriado?')) {
       try {
         await deleteMutation.mutateAsync({ id });
+        toast.success('Feriado excluído com sucesso!');
       } catch (error) {
         console.error('Erro ao excluir feriado:', error);
+        toast.error('Erro ao excluir feriado. Por favor, tente novamente.');
       }
     }
   };
@@ -99,8 +102,10 @@ export default function HolidaysPage() {
     if (window.confirm(`Importar feriados nacionais brasileiros para ${filters.ano}?`)) {
       try {
         await importNationalMutation.mutateAsync(filters.ano);
+        toast.success(`Feriados nacionais importados com sucesso para ${filters.ano}!`);
       } catch (error) {
         console.error('Erro ao importar feriados:', error);
+        toast.error('Erro ao importar feriados nacionais. Por favor, tente novamente.');
       }
     }
   };
@@ -364,14 +369,26 @@ export default function HolidaysPage() {
         <HolidayForm
           holiday={selectedHoliday}
           mode={modalMode}
-          onSave={(data) => {
-            if (modalMode === 'create') {
-              return createMutation.mutateAsync(data);
-            } else {
-              return updateMutation.mutateAsync({ ...data, id: selectedHoliday?.id || '' });
+          onSave={async (data) => {
+            try {
+              if (modalMode === 'create') {
+                await createMutation.mutateAsync(data);
+                toast.success('Feriado criado com sucesso!');
+              } else {
+                await updateMutation.mutateAsync({ ...data, id: selectedHoliday?.id || '' });
+                toast.success('Feriado atualizado com sucesso!');
+              }
+              setIsModalOpen(false);
+              setSelectedHoliday(null);
+            } catch (error) {
+              toast.error('Erro ao salvar feriado. Por favor, tente novamente.');
+              throw error;
             }
           }}
-          onCancel={() => setIsModalOpen(false)}
+          onCancel={() => {
+            setIsModalOpen(false);
+            setSelectedHoliday(null);
+          }}
           isLoading={isMutating}
         />
       </FormModal>

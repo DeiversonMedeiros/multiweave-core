@@ -7,6 +7,8 @@ import { AbsenceType } from '@/integrations/supabase/rh-types';
 
 export const AbsenceTypesService = {
   list: async (companyId: string) => {
+    console.log('🔍 [absenceTypesService.list] Iniciando busca:', { companyId });
+    
     try {
       const result = await EntityService.list<AbsenceType>({
         schema: 'rh',
@@ -16,9 +18,20 @@ export const AbsenceTypesService = {
         orderBy: 'nome',
         orderDirection: 'ASC'
       });
+      
+      console.log('✅ [absenceTypesService.list] Resultado:', {
+        hasData: !!result.data,
+        dataLength: result.data?.length || 0,
+        totalCount: result.totalCount
+      });
+      
+      if (result.data && result.data.length > 0) {
+        console.log('📊 [absenceTypesService.list] Primeiros tipos:', result.data.slice(0, 3));
+      }
+      
       return result.data;
     } catch (error) {
-      console.error('Erro ao buscar tipos de afastamento:', error);
+      console.error('❌ [absenceTypesService.list] Erro:', error);
       throw error;
     }
   },

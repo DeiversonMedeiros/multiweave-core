@@ -88,12 +88,12 @@ export function TesourariaPage({ className }: TesourariaPageProps) {
   // Calcular estatísticas
   const stats = {
     totalContas: contasBancarias.length,
-    saldoTotal: contasBancarias.reduce((sum, conta) => sum + conta.saldo_atual, 0),
-    saldoDisponivel: contasBancarias.reduce((sum, conta) => sum + conta.saldo_disponivel, 0),
-    limiteTotal: contasBancarias.reduce((sum, conta) => sum + conta.limite_credito, 0),
+    saldoTotal: contasBancarias.reduce((sum, conta) => sum + (conta.saldo_atual || 0), 0),
+    saldoDisponivel: contasBancarias.reduce((sum, conta) => sum + (conta.saldo_disponivel || 0), 0),
+    limiteTotal: contasBancarias.reduce((sum, conta) => sum + (conta.limite_credito || 0), 0),
     conciliacoesPendentes: conciliacoes.filter(c => c.status === 'pendente').length,
-    fluxoEntradas: fluxoCaixa.filter(f => f.tipo_movimento === 'entrada').reduce((sum, f) => sum + f.valor, 0),
-    fluxoSaidas: fluxoCaixa.filter(f => f.tipo_movimento === 'saida').reduce((sum, f) => sum + f.valor, 0),
+    fluxoEntradas: fluxoCaixa.filter(f => f.tipo_movimento === 'entrada').reduce((sum, f) => sum + (f.valor || 0), 0),
+    fluxoSaidas: fluxoCaixa.filter(f => f.tipo_movimento === 'saida').reduce((sum, f) => sum + (f.valor || 0), 0),
     fluxoLiquido: 0, // Calculado abaixo
   };
 

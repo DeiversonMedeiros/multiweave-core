@@ -109,17 +109,16 @@ export const CorrectionSettingsService = {
   savePermissions: async (permissions: EmployeePermission[]): Promise<EmployeePermission[]> => {
     try {
       const promises = permissions.map(permission => {
-        const permissionData = {
-          employee_id: permission.employee_id,
-          company_id: permission.company_id,
-          mes_ano: permission.mes_ano,
-          liberado: permission.liberado,
-          liberado_por: permission.liberado_por,
-          liberado_em: permission.liberado_em,
-          observacoes: permission.observacoes
-        };
+        // Remover campos undefined para evitar erros no banco
+        // NÃO incluir liberado_por na atualização para evitar erro de foreign key
+        const permissionData: any = {};
+        
+        if (permission.liberado !== undefined) permissionData.liberado = permission.liberado;
+        if (permission.liberado_em) permissionData.liberado_em = permission.liberado_em;
+        if (permission.observacoes !== undefined) permissionData.observacoes = permission.observacoes;
 
         if (permission.id) {
+          // Atualizar permissão existente
           return EntityService.update({
             schema: 'rh',
             table: 'employee_correction_permissions',
@@ -128,11 +127,26 @@ export const CorrectionSettingsService = {
             data: permissionData
           });
         } else {
+          // Criar nova permissão
+          const createData = {
+            employee_id: permission.employee_id,
+            company_id: permission.company_id,
+            mes_ano: permission.mes_ano,
+            liberado: permission.liberado,
+            liberado_em: permission.liberado_em,
+            observacoes: permission.observacoes
+          };
+          
+          // Adicionar liberado_por apenas se estiver definido E for válido
+          if (permission.liberado_por) {
+            createData.liberado_por = permission.liberado_por;
+          }
+          
           return EntityService.create({
             schema: 'rh',
             table: 'employee_correction_permissions',
             companyId: permission.company_id,
-            data: permissionData
+            data: createData
           });
         }
       });

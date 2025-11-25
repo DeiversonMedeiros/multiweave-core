@@ -23,9 +23,13 @@ import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
 import { PayrollForm } from '@/components/rh/PayrollForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
-import { Payroll } from '@/integrations/supabase/rh-types';
+import { Payroll, Employee } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 import { usePermissions } from '@/hooks/usePermissions';
+import { FinancialIntegrationService } from '@/services/rh/financialIntegrationService';
+import { EntityService } from '@/services/generic/entityService';
+import { toast } from 'sonner';
+import { useProcessAllPayroll } from '@/hooks/rh/usePayroll';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
@@ -41,10 +45,15 @@ export default function PayrollPageNew() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
 
   // Hooks usando nova abordagem genérica
-  const { data: payrolls, isLoading, error } = useRHData<Payroll>('payroll', selectedCompany?.id || '');
+  const { data: payrolls, isLoading, error, refetch } = useRHData<Payroll>('payroll', selectedCompany?.id || '');
   const createPayroll = useCreateEntity<Payroll>('rh', 'payroll', selectedCompany?.id || '');
   const updatePayroll = useUpdateEntity<Payroll>('rh', 'payroll', selectedCompany?.id || '');
   const deletePayroll = useDeleteEntity('rh', 'payroll', selectedCompany?.id || '');
+  const processAllPayroll = useProcessAllPayroll();
+  
+  // Estado para filtros de mês/ano
+  const [monthFilter, setMonthFilter] = useState(new Date().getMonth() + 1);
+  const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -87,22 +96,83 @@ export default function PayrollPageNew() {
     }
   };
 
-  const handleModalSubmit = async (data: Partial<Payroll>) => {
+  const handleModalSubmit = async (data: Partial<Payroll> & { employee_id?: string }) => {
     try {
       if (modalMode === 'create') {
-        await createPayroll.mutateAsync({
+        if (!data.employee_id) {
+          toast.error('Por favor, selecione um funcionário');
+          return;
+        }
+        
+        // Criar folha
+        const newPayroll = await createPayroll.mutateAsync({
           ...data,
+          employee_id: data.employee_id,
           company_id: selectedCompany?.id
         });
+
+        // Criar conta a pagar automaticamente se a folha foi processada
+        if (newPayroll && (newPayroll.status === 'processado' || newPayroll.status === 'pago')) {
+          try {
+            const integrationService = FinancialIntegrationService.getInstance();
+            const config = await integrationService.getIntegrationConfig(selectedCompany?.id || '');
+            
+            if (config.autoCreateAP) {
+              // Buscar dados do funcionário
+              const employeeResult = await EntityService.getById<Employee>({
+                schema: 'rh',
+                table: 'employees',
+                companyId: selectedCompany?.id || '',
+                id: data.employee_id
+              });
+              
+              if (employeeResult) {
+                const employee = employeeResult;
+                const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+                const monthName = monthNames[(newPayroll.mes_referencia || 1) - 1];
+                const period = `${monthName}/${newPayroll.ano_referencia}`;
+                
+                // Calcular data de vencimento
+                const dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + (config.defaultDueDate || 5));
+                
+                await integrationService.createAccountPayable(
+                  selectedCompany?.id || '',
+                  {
+                    payrollId: newPayroll.id,
+                    employeeId: employee.id || data.employee_id,
+                    employeeName: employee.nome || 'Funcionário',
+                    netSalary: newPayroll.salario_liquido || 0,
+                    period: period,
+                    dueDate: dueDate.toISOString().split('T')[0],
+                    costCenter: employee.cost_center_id || undefined
+                  },
+                  config
+                );
+                
+                toast.success('Folha criada e conta a pagar gerada automaticamente');
+              }
+            }
+          } catch (apError) {
+            console.error('Erro ao criar conta a pagar:', apError);
+            // Não falhar a criação da folha se a conta a pagar falhar
+            toast.warning('Folha criada, mas houve erro ao criar conta a pagar');
+          }
+        } else {
+          toast.success('Folha criada com sucesso');
+        }
       } else if (modalMode === 'edit' && selectedPayroll) {
         await updatePayroll.mutateAsync({
           id: selectedPayroll.id,
           updatedEntity: data
         });
+        toast.success('Folha atualizada com sucesso');
       }
       setIsModalOpen(false);
     } catch (error) {
       console.error('Erro ao salvar folha:', error);
+      toast.error('Erro ao salvar folha');
     }
   };
 
@@ -110,9 +180,32 @@ export default function PayrollPageNew() {
     console.log('Exportando folha de pagamento para CSV...');
   };
 
-  const handleProcessPayroll = () => {
-    // TODO: Implementar processamento de folha
-    console.log('Processando folha de pagamento...');
+  const handleProcessPayroll = async () => {
+    if (!selectedCompany?.id) {
+      toast.error('Selecione uma empresa');
+      return;
+    }
+
+    if (!confirm(`Processar folha de pagamento para ${monthFilter}/${yearFilter}?`)) {
+      return;
+    }
+
+    try {
+      toast.loading('Processando folha de pagamento...', { id: 'process-payroll' });
+      
+      await processAllPayroll.mutateAsync({
+        month: monthFilter,
+        year: yearFilter
+      });
+
+      toast.success('Folha de pagamento processada com sucesso!', { id: 'process-payroll' });
+      
+      // Atualizar lista de folhas
+      refetch();
+    } catch (error) {
+      console.error('Erro ao processar folha:', error);
+      toast.error('Erro ao processar folha de pagamento', { id: 'process-payroll' });
+    }
   };
 
   // Colunas da tabela - formato simplificado para dados diretos
@@ -235,9 +328,13 @@ export default function PayrollPageNew() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleProcessPayroll} className="flex items-center gap-2">
+          <Button 
+            onClick={handleProcessPayroll} 
+            className="flex items-center gap-2"
+            disabled={processAllPayroll.isPending}
+          >
             <Calculator className="h-4 w-4" />
-            Processar Folha
+            {processAllPayroll.isPending ? 'Processando...' : 'Processar Folha'}
           </Button>
           <Button onClick={handleCreate} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
@@ -275,6 +372,37 @@ export default function PayrollPageNew() {
             <SelectItem value="cancelado">Cancelado</SelectItem>
           </SelectContent>
         </Select>
+
+        <Select
+          value={monthFilter.toString()}
+          onValueChange={(value) => setMonthFilter(parseInt(value))}
+        >
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Mês" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="1">Janeiro</SelectItem>
+            <SelectItem value="2">Fevereiro</SelectItem>
+            <SelectItem value="3">Março</SelectItem>
+            <SelectItem value="4">Abril</SelectItem>
+            <SelectItem value="5">Maio</SelectItem>
+            <SelectItem value="6">Junho</SelectItem>
+            <SelectItem value="7">Julho</SelectItem>
+            <SelectItem value="8">Agosto</SelectItem>
+            <SelectItem value="9">Setembro</SelectItem>
+            <SelectItem value="10">Outubro</SelectItem>
+            <SelectItem value="11">Novembro</SelectItem>
+            <SelectItem value="12">Dezembro</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Input
+          type="number"
+          placeholder="Ano"
+          value={yearFilter}
+          onChange={(e) => setYearFilter(parseInt(e.target.value) || new Date().getFullYear())}
+          className="w-[100px]"
+        />
 
         <Button
           variant="outline"

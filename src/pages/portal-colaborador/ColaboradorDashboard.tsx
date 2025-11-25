@@ -38,7 +38,9 @@ export default function ColaboradorDashboard() {
     queryKey: ['bank-hours-balance', employee?.id],
     queryFn: async () => {
       if (!employee?.id || !selectedCompany?.id) return { current_balance: 0, has_bank_hours: false };
-      return await getEmployeeBalance(employee.id);
+      const result = await getEmployeeBalance(employee.id);
+      // Se não retornou dados, significa que não tem configuração
+      return result || { current_balance: 0, has_bank_hours: false };
     },
     enabled: !!employee?.id && !!selectedCompany?.id
   });
@@ -162,16 +164,16 @@ export default function ColaboradorDashboard() {
     
       <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
             Olá, {employee.nome.split(' ')[0]}!
           </h1>
-          <p className="text-gray-600">
+          <p className="text-sm sm:text-base text-gray-600">
             {employee.position?.nome} • {employee.unit?.nome}
           </p>
         </div>
-        <Badge variant="outline" className="text-sm">
+        <Badge variant="outline" className="text-sm w-fit">
           {employee.status}
         </Badge>
       </div>
@@ -258,7 +260,7 @@ export default function ColaboradorDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {quickActions.map((action) => {
               const Icon = action.icon;
               return (

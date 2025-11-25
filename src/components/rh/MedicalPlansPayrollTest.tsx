@@ -71,7 +71,7 @@ export function MedicalPlansPayrollTest() {
           });
 
           const traditionalBenefitsTotal = traditionalBenefits?.reduce((sum: number, benefit: any) => {
-            return sum + (benefit.custom_value || 0);
+            return sum + (benefit.calculated_value || benefit.custom_value || 0);
           }, 0) || 0;
 
           // Calcular totais

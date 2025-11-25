@@ -10,6 +10,8 @@ import AprovacaoReembolsos from './AprovacaoReembolsos';
 import AprovacaoAtestados from './AprovacaoAtestados';
 import AprovacaoEquipamentos from './AprovacaoEquipamentos';
 import AprovacaoCorrecoesPonto from './AprovacaoCorrecoesPonto';
+import AprovacaoHorasExtras from './AprovacaoHorasExtras';
+import AprovacaoAssinaturasPonto from './AprovacaoAssinaturasPonto';
 import AcompanhamentoPonto from './AcompanhamentoPonto';
 import AcompanhamentoExames from './AcompanhamentoExames';
 
@@ -27,6 +29,8 @@ const PortalGestorRoutes: React.FC = () => {
         <Route path="aprovacoes/atestados" element={<AprovacaoAtestados />} />
         <Route path="aprovacoes/equipamentos" element={<AprovacaoEquipamentos />} />
         <Route path="aprovacoes/correcoes-ponto" element={<AprovacaoCorrecoesPonto />} />
+        <Route path="aprovacoes/horas-extras" element={<AprovacaoHorasExtras />} />
+        <Route path="aprovacoes/assinaturas-ponto" element={<AprovacaoAssinaturasPonto />} />
         <Route path="acompanhamento/ponto" element={<AcompanhamentoPonto />} />
         <Route path="acompanhamento/exames" element={<AcompanhamentoExames />} />
       </Route>

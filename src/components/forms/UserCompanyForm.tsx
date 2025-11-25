@@ -84,7 +84,7 @@ export function UserCompanyForm({ userCompany, onSuccess, onCancel, allowCompany
   const onSubmit = async (data: UserCompanyFormData) => {
     setLoading(true);
     try {
-      if (editingUserCompany) {
+      if (userCompany) {
         // Atualizar vínculo existente
         const { error } = await supabase
           .from('user_companies')
@@ -92,7 +92,7 @@ export function UserCompanyForm({ userCompany, onSuccess, onCancel, allowCompany
             profile_id: data.profile_id,
             ativo: data.ativo,
           })
-          .eq('id', editingUserCompany.id);
+          .eq('id', userCompany.id);
 
         if (error) throw error;
         toast.success("Vínculo atualizado com sucesso!");

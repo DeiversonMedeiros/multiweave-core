@@ -20,6 +20,8 @@ export async function getIrrfBrackets(
   companyId: string,
   filters: IrrfBracketFilters = {}
 ): Promise<{ data: IrrfBracket[]; totalCount: number }> {
+  console.log('🔍 [irrfBracketsService.getIrrfBrackets] Iniciando busca:', { companyId, filters });
+  
   try {
     const result = await EntityService.list<IrrfBracket>({
       schema: 'rh',
@@ -30,12 +32,31 @@ export async function getIrrfBrackets(
       orderDirection: 'DESC'
     });
 
+    console.log('✅ [irrfBracketsService.getIrrfBrackets] Resultado EntityService:', {
+      hasData: !!result.data,
+      dataLength: result.data?.length || 0,
+      totalCount: result.totalCount,
+      hasMore: result.hasMore
+    });
+
+    if (result.data && result.data.length > 0) {
+      console.log('📊 [irrfBracketsService.getIrrfBrackets] Primeiras faixas IRRF:', 
+        result.data.slice(0, 2).map(b => ({ 
+          codigo: b.codigo, 
+          descricao: b.descricao,
+          company_id: b.company_id 
+        }))
+      );
+    } else {
+      console.warn('⚠️ [irrfBracketsService.getIrrfBrackets] Array vazio retornado');
+    }
+
     return {
       data: result.data,
       totalCount: result.totalCount,
     };
   } catch (error) {
-    console.error('Erro no serviço de faixas IRRF:', error);
+    console.error('❌ [irrfBracketsService.getIrrfBrackets] Erro:', error);
     throw error;
   }
 }

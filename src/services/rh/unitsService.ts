@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { EntityService } from '@/services/generic/entityService';
 import { 
   Unit, 
   UnitInsert, 
@@ -13,85 +13,120 @@ export const UnitsService = {
   /**
    * Lista todos os departamentos de uma empresa
    */
-  list: async (companyId: string) => {
-    const { data, error } = await supabase.rpc('get_units_by_string', {
-      company_id_param: companyId
+  list: async (companyId: string): Promise<Unit[]> => {
+    const result = await EntityService.list<Unit>({
+      schema: 'rh',
+      table: 'units',
+      companyId: companyId,
+      filters: {},
+      page: 1,
+      pageSize: 1000
     });
 
-    if (error) {
-      console.error('Erro ao buscar departamentos:', error);
-      throw error;
-    }
-
-    return data || [];
+    return result.data || [];
   },
 
   /**
    * Busca um departamento por ID
    */
   getById: async (id: string, companyId: string): Promise<Unit | null> => {
-    const { data, error } = await supabase.rpc('get_units_by_string', {
-      company_id_param: companyId
+    const result = await EntityService.list<Unit>({
+      schema: 'rh',
+      table: 'units',
+      companyId: companyId,
+      filters: { id },
+      page: 1,
+      pageSize: 1
     });
 
-    if (error) {
-      console.error('Erro ao buscar departamento:', error);
-      throw error;
-    }
+    return result.data?.[0] || null;
+  },
 
-    const unit = data?.find((unit: Unit) => unit.id === id);
-    return unit || null;
+  /**
+   * Busca departamentos ativos
+   */
+  getActive: async (companyId: string): Promise<Unit[]> => {
+    const result = await EntityService.list<Unit>({
+      schema: 'rh',
+      table: 'units',
+      companyId: companyId,
+      filters: { is_active: true },
+      page: 1,
+      pageSize: 1000
+    });
+
+    return result.data || [];
   },
 
   /**
    * Cria um novo departamento
    */
   create: async (unit: UnitInsert): Promise<Unit> => {
-    const { data, error } = await supabase
-      .from('units')
-      .insert(unit)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Erro ao criar departamento:', error);
-      throw error;
+    if (!unit.company_id) {
+      throw new Error('company_id é obrigatório');
     }
 
-    return data;
+    const result = await EntityService.create<Unit>({
+      schema: 'rh',
+      table: 'units',
+      companyId: unit.company_id,
+      data: unit
+    });
+
+    return result;
   },
 
   /**
    * Atualiza um departamento
    */
   update: async (id: string, unit: UnitUpdate): Promise<Unit> => {
-    const { data, error } = await supabase
-      .from('units')
-      .update(unit)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Erro ao atualizar departamento:', error);
-      throw error;
+    if (!unit.company_id) {
+      throw new Error('company_id é obrigatório');
     }
 
-    return data;
+    const result = await EntityService.update<Unit>({
+      schema: 'rh',
+      table: 'units',
+      companyId: unit.company_id,
+      id: id,
+      data: unit
+    });
+
+    return result;
   },
 
   /**
    * Remove um departamento
    */
-  delete: async (id: string): Promise<void> => {
-    const { error } = await supabase
-      .from('units')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Erro ao remover departamento:', error);
-      throw error;
+  delete: async (id: string, companyId: string): Promise<void> => {
+    if (!companyId) {
+      throw new Error('company_id é obrigatório para deletar');
     }
+
+    await EntityService.delete({
+      schema: 'rh',
+      table: 'units',
+      companyId: companyId,
+      id: id
+    });
+  },
+
+  /**
+   * Ativa/desativa um departamento
+   */
+  toggleStatus: async (id: string, isActive: boolean, companyId: string): Promise<Unit> => {
+    if (!companyId) {
+      throw new Error('company_id é obrigatório');
+    }
+
+    const unit = await UnitsService.getById(id, companyId);
+    if (!unit) {
+      throw new Error('Departamento não encontrado');
+    }
+
+    return await UnitsService.update(id, {
+      ...unit,
+      is_active: isActive
+    });
   }
 };

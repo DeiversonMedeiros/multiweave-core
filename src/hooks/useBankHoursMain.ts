@@ -15,11 +15,18 @@ export function useBankHours(companyId: string) {
           p_company_id: companyId,
         });
 
-      if (error) throw error;
-      return data;
+      if (error) {
+        console.error('Erro na função RPC get_bank_hours_balance:', error);
+        throw error;
+      }
+      
+      // A função RPC retorna um array, precisamos retornar o primeiro elemento
+      // Se não há dados, significa que não tem configuração de banco de horas
+      return data?.[0] || null;
     } catch (err) {
       console.error('Erro ao buscar saldo do funcionário:', err);
-      throw err;
+      // Retornar null em caso de erro para evitar quebrar a interface
+      return null;
     }
   };
 

@@ -38,6 +38,40 @@ export interface ContaPagar {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Campos de parcelamento
+  is_parcelada?: boolean;
+  numero_parcelas?: number;
+  intervalo_parcelas?: 'diario' | 'semanal' | 'quinzenal' | 'mensal' | 'bimestral' | 'trimestral' | 'semestral' | 'anual';
+  conta_pagar_principal_id?: string;
+  // Campos de status de aprovação agregado
+  approval_status?: 'pendente' | 'em_aprovacao' | 'aprovado' | 'rejeitado' | 'sem_aprovacao';
+  total_aprovacoes?: number;
+  aprovacoes_pendentes?: number;
+  aprovacoes_aprovadas?: number;
+  aprovacoes_rejeitadas?: number;
+  nivel_atual_aprovacao?: number;
+  proximo_aprovador_id?: string;
+}
+
+export interface ContaPagarParcela {
+  id: string;
+  conta_pagar_id: string;
+  company_id: string;
+  numero_parcela: number;
+  valor_parcela: number;
+  valor_original: number;
+  valor_atual: number;
+  data_vencimento: string;
+  data_pagamento?: string;
+  valor_desconto: number;
+  valor_juros: number;
+  valor_multa: number;
+  valor_pago: number;
+  status: 'pendente' | 'aprovado' | 'pago' | 'vencido' | 'cancelado';
+  numero_titulo?: string;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ContaReceber {
@@ -233,6 +267,9 @@ export interface ContaPagarFormData {
   fornecedor_cnpj?: string;
   descricao: string;
   valor_original: number;
+  valor_desconto?: number;
+  valor_juros?: number;
+  valor_multa?: number;
   data_emissao: string;
   data_vencimento: string;
   centro_custo_id?: string;
@@ -244,6 +281,19 @@ export interface ContaPagarFormData {
   conta_bancaria_id?: string;
   observacoes?: string;
   anexos?: string[];
+  // Campos de parcelamento
+  is_parcelada?: boolean;
+  numero_parcelas?: number;
+  intervalo_parcelas?: 'diario' | 'semanal' | 'quinzenal' | 'mensal' | 'bimestral' | 'trimestral' | 'semestral' | 'anual';
+  data_primeira_parcela?: string;
+  parcelas?: ContaPagarParcelaFormData[];
+}
+
+export interface ContaPagarParcelaFormData {
+  numero_parcela: number;
+  valor_parcela: number;
+  data_vencimento: string;
+  observacoes?: string;
 }
 
 export interface ContaReceberFormData {
@@ -285,15 +335,25 @@ export interface FluxoCaixaFormData {
 
 export interface ContaPagarFilters {
   fornecedor_nome?: string;
+  fornecedor_cnpj?: string;
+  numero_titulo?: string;
   status?: string;
   data_vencimento_inicio?: string;
   data_vencimento_fim?: string;
+  data_emissao_inicio?: string;
+  data_emissao_fim?: string;
+  data_pagamento_inicio?: string;
+  data_pagamento_fim?: string;
   valor_minimo?: number;
   valor_maximo?: number;
   centro_custo_id?: string;
   projeto_id?: string;
   departamento?: string;
   classe_financeira?: string;
+  categoria?: string;
+  forma_pagamento?: string;
+  conta_bancaria_id?: string;
+  is_parcelada?: boolean;
 }
 
 export interface ContaReceberFilters {
@@ -741,19 +801,67 @@ export interface PlanoContas {
   id: string;
   company_id: string;
   codigo: string;
-  nome: string;
-  tipo: 'ativo' | 'passivo' | 'patrimonio_liquido' | 'receita' | 'despesa' | 'custos';
+  descricao: string;
+  tipo_conta: 'ativo' | 'passivo' | 'patrimonio' | 'receita' | 'despesa' | 'custos';
   nivel: number;
   conta_pai_id?: string;
   aceita_lancamento: boolean;
   saldo_inicial: number;
   saldo_atual: number;
-  natureza: 'devedora' | 'credora';
+  natureza?: 'devedora' | 'credora';
   observacoes?: string;
   created_by?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// =====================================================
+// TIPOS PARA CLASSES FINANCEIRAS GERENCIAIS
+// =====================================================
+
+export interface ClasseFinanceira {
+  id: string;
+  company_id: string;
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  classe_pai_id?: string;
+  nivel: number;
+  ordem: number;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClasseFinanceiraConta {
+  id: string;
+  company_id: string;
+  classe_financeira_id: string;
+  conta_contabil_id: string;
+  is_default: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClasseFinanceiraFormData {
+  codigo: string;
+  nome: string;
+  descricao?: string;
+  classe_pai_id?: string;
+  ordem?: number;
+  observacoes?: string;
+}
+
+export interface ClasseFinanceiraContaFormData {
+  classe_financeira_id: string;
+  conta_contabil_id: string;
+  is_default?: boolean;
+  observacoes?: string;
 }
 
 export interface LancamentoContabil {

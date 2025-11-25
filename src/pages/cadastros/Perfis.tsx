@@ -10,9 +10,10 @@ import { ProfileForm } from "@/components/forms/ProfileForm";
 import { PermissionManager } from "@/components/PermissionManager";
 import { PermissionSync } from "@/components/PermissionSync";
 import { UserPermissions } from "@/components/UserPermissions";
+import { GranularPermissionsManager } from "@/components/GranularPermissionsManager";
 import { supabase } from "@/integrations/supabase/client";
 import { Profile } from "@/lib/supabase-types";
-import { Plus, Edit, Trash2, Shield, Users, Settings, Key } from "lucide-react";
+import { Plus, Edit, Trash2, Shield, Users, Settings, Key, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { usePermissions } from "@/hooks/usePermissions";
 import { RequireModule } from "@/components/RequireAuth";
@@ -33,7 +34,7 @@ export default function Perfis() {
   // Detectar query string para abrir aba específica
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && ['perfis', 'permissoes', 'minhas-permissoes'].includes(tab)) {
+    if (tab && ['perfis', 'permissoes', 'granulares', 'minhas-permissoes'].includes(tab)) {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -188,7 +189,7 @@ export default function Perfis() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="perfis" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               Perfis de Acesso
@@ -196,6 +197,10 @@ export default function Perfis() {
             <TabsTrigger value="permissoes" className="flex items-center gap-2">
               <Key className="h-4 w-4" />
               Gerenciar Permissões
+            </TabsTrigger>
+            <TabsTrigger value="granulares" className="flex items-center gap-2">
+              <Lock className="h-4 w-4" />
+              Permissões Granulares
             </TabsTrigger>
             <TabsTrigger value="minhas-permissoes" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
@@ -263,6 +268,10 @@ export default function Perfis() {
               </div>
               <PermissionSync />
               <PermissionManager />
+            </TabsContent>
+
+            <TabsContent value="granulares" className="space-y-6">
+              <GranularPermissionsManager />
             </TabsContent>
 
           <TabsContent value="minhas-permissoes" className="space-y-6">

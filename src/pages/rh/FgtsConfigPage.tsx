@@ -17,8 +17,8 @@ export default function FgtsConfigPage() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
-    ano_vigencia: new Date().getFullYear(),
-    mes_vigencia: new Date().getMonth() + 1,
+    ano_vigencia: 2024, // Dados padrão inseridos para 2024
+    mes_vigencia: 1, // Dados padrão inseridos para janeiro
     ativo: '',
   });
   const [searchTerm, setSearchTerm] = useState('');
@@ -27,12 +27,48 @@ export default function FgtsConfigPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
 
   // Hooks
-  const { data: configsData, isLoading } = useFgtsConfigs(filters);
+  console.log('🔍 [FgtsConfigPage] Renderizando com:', { 
+    companyId: selectedCompany?.id, 
+    hasCompany: !!selectedCompany,
+    filters 
+  });
+  
+  const configsQuery = useFgtsConfigs(filters);
+  
+  console.log('🔍 [FgtsConfigPage] Hook retornou:', {
+    hasData: !!configsQuery.data,
+    dataType: typeof configsQuery.data,
+    dataStructure: configsQuery.data ? {
+      hasData: !!configsQuery.data.data,
+      dataType: typeof configsQuery.data.data,
+      isArray: Array.isArray(configsQuery.data.data),
+      dataLength: configsQuery.data.data?.length || 0,
+      count: configsQuery.data.count,
+      keys: Object.keys(configsQuery.data)
+    } : null,
+    isLoading: configsQuery.isLoading,
+    isError: configsQuery.isError,
+    error: configsQuery.error?.message,
+    status: configsQuery.status
+  });
+  
+  const configsData = configsQuery.data;
+  const isLoading = configsQuery.isLoading;
+  const error = configsQuery.error;
   const deleteConfigMutation = useDeleteFgtsConfig();
 
-  // Dados
+  // Dados - corrigir acesso aos dados
   const configs = configsData?.data || [];
   const totalCount = configsData?.count || 0;
+  
+  console.log('📊 [FgtsConfigPage] Estado após processamento:', {
+    configsLength: configs.length,
+    totalCount,
+    firstConfig: configs[0] ? { id: configs[0].id, codigo: configs[0].codigo, descricao: configs[0].descricao } : null,
+    isLoading,
+    hasError: !!error,
+    error: error?.message
+  });
 
   // Handlers
   const handleSearch = (value: string) => {

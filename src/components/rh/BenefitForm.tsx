@@ -2,7 +2,7 @@
 // FORMULÁRIO DE BENEFÍCIOS
 // =====================================================
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -42,11 +42,21 @@ const formSchema = z.object({
 
 interface BenefitFormProps {
   initialData?: BenefitConfiguration;
+  benefit?: BenefitConfiguration; // Alias para initialData (compatibilidade)
   onSubmit: (data: BenefitConfigurationInsert | BenefitConfigurationUpdate) => void;
-  isLoading: boolean;
+  isLoading?: boolean;
+  mode?: 'create' | 'edit' | 'view'; // Para compatibilidade, não usado internamente
+  showSubmitButton?: boolean; // Controla se o botão de submit deve ser exibido (útil quando usado dentro de FormModal)
 }
 
-const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoading }) => {
+export interface BenefitFormRef {
+  submit: () => void;
+}
+
+const BenefitForm = forwardRef<BenefitFormRef, BenefitFormProps>(({ initialData, benefit, onSubmit, isLoading = false, mode, showSubmitButton = true }, ref) => {
+  // Usar benefit ou initialData (benefit tem prioridade para compatibilidade)
+  const data = benefit || initialData;
+  
   const benefitTypes = useBenefitTypes();
   const benefitCalculationTypes = useBenefitCalculationTypes();
   const benefitCategories = useBenefitCategories();
@@ -54,55 +64,80 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: initialData?.name || '',
-      benefit_type: initialData?.benefit_type || 'vr_va',
-      description: initialData?.description || '',
-      base_value: initialData?.base_value || 0,
-      percentage_value: initialData?.percentage_value || 0,
-      calculation_type: initialData?.calculation_type || 'fixed_value',
-      min_value: initialData?.min_value || 0,
-      max_value: initialData?.max_value || 0,
-      daily_calculation_base: initialData?.daily_calculation_base || 30,
-      requires_approval: initialData?.requires_approval || false,
-      is_active: initialData?.is_active ?? true,
-      entra_no_calculo_folha: initialData?.entra_no_calculo_folha ?? true,
+      name: data?.name || '',
+      benefit_type: data?.benefit_type || 'vr_va',
+      description: data?.description || '',
+      base_value: data?.base_value || 0,
+      percentage_value: data?.percentage_value || 0,
+      calculation_type: data?.calculation_type || 'fixed_value',
+      min_value: data?.min_value || 0,
+      max_value: data?.max_value || 0,
+      daily_calculation_base: data?.daily_calculation_base || 30,
+      requires_approval: data?.requires_approval || false,
+      is_active: data?.is_active ?? true,
+      entra_no_calculo_folha: (data as any)?.entra_no_calculo_folha ?? true,
     },
   });
 
   useEffect(() => {
-    if (initialData) {
+    if (data) {
       form.reset({
-        name: initialData.name,
-        benefit_type: initialData.benefit_type,
-        description: initialData.description || '',
-        base_value: initialData.base_value || 0,
-        percentage_value: initialData.percentage_value || 0,
-        calculation_type: initialData.calculation_type,
-        min_value: initialData.min_value || 0,
-        max_value: initialData.max_value || 0,
-        daily_calculation_base: initialData.daily_calculation_base || 30,
-        requires_approval: initialData.requires_approval,
-        is_active: initialData.is_active,
-        entra_no_calculo_folha: initialData.entra_no_calculo_folha,
+        name: data.name,
+        benefit_type: data.benefit_type,
+        description: data.description || '',
+        base_value: data.base_value || 0,
+        percentage_value: data.percentage_value || 0,
+        calculation_type: data.calculation_type,
+        min_value: data.min_value || 0,
+        max_value: data.max_value || 0,
+        daily_calculation_base: data.daily_calculation_base || 30,
+        requires_approval: data.requires_approval,
+        is_active: data.is_active,
+        entra_no_calculo_folha: (data as any).entra_no_calculo_folha ?? true,
       });
     }
-  }, [initialData, form]);
+  }, [data, form]);
 
   const handleSubmit = (values: z.infer<typeof formSchema>) => {
-    const dataToSubmit = {
-      ...values,
-      base_value: values.base_value && values.base_value > 0 ? parseFloat(values.base_value.toFixed(2)) : undefined,
-      percentage_value: values.percentage_value && values.percentage_value > 0 ? parseFloat(values.percentage_value.toFixed(2)) : undefined,
-      min_value: values.min_value && values.min_value > 0 ? parseFloat(values.min_value.toFixed(2)) : undefined,
-      max_value: values.max_value && values.max_value > 0 ? parseFloat(values.max_value.toFixed(2)) : undefined,
+    // Preparar dados para envio, mantendo valores 0 e convertendo apenas valores inválidos
+    const dataToSubmit: any = {
+      name: values.name,
+      benefit_type: values.benefit_type,
+      description: values.description || null,
+      calculation_type: values.calculation_type,
+      daily_calculation_base: values.daily_calculation_base,
+      requires_approval: values.requires_approval,
+      is_active: values.is_active,
+      entra_no_calculo_folha: values.entra_no_calculo_folha,
     };
 
-    if (initialData) {
-      onSubmit({ ...dataToSubmit, id: initialData.id, company_id: initialData.company_id });
+    // Campos numéricos opcionais: enviar null se não preenchidos, senão enviar o valor formatado
+    if (values.base_value !== undefined && values.base_value !== null) {
+      dataToSubmit.base_value = values.base_value > 0 ? parseFloat(values.base_value.toFixed(2)) : null;
+    }
+    if (values.percentage_value !== undefined && values.percentage_value !== null) {
+      dataToSubmit.percentage_value = values.percentage_value > 0 ? parseFloat(values.percentage_value.toFixed(2)) : null;
+    }
+    if (values.min_value !== undefined && values.min_value !== null) {
+      dataToSubmit.min_value = values.min_value > 0 ? parseFloat(values.min_value.toFixed(2)) : null;
+    }
+    if (values.max_value !== undefined && values.max_value !== null) {
+      dataToSubmit.max_value = values.max_value > 0 ? parseFloat(values.max_value.toFixed(2)) : null;
+    }
+
+    if (data) {
+      onSubmit({ ...dataToSubmit, id: data.id, company_id: data.company_id });
     } else {
       onSubmit(dataToSubmit);
     }
   };
+
+  // Expor método submit via ref para o FormModal
+  useImperativeHandle(ref, () => ({
+    submit: () => {
+      form.handleSubmit(handleSubmit)();
+    }
+  }));
 
   const watchCalculationType = form.watch('calculation_type');
 
@@ -405,12 +440,16 @@ const BenefitForm: React.FC<BenefitFormProps> = ({ initialData, onSubmit, isLoad
           )}
         />
 
-        <Button type="submit" disabled={isLoading}>
-          {isLoading ? 'Salvando...' : (initialData ? 'Atualizar Benefício' : 'Criar Benefício')}
-        </Button>
+        {showSubmitButton && (
+          <Button type="submit" disabled={isLoading}>
+            {isLoading ? 'Salvando...' : (initialData ? 'Atualizar Benefício' : 'Criar Benefício')}
+          </Button>
+        )}
       </form>
     </Form>
   );
-};
+});
+
+BenefitForm.displayName = 'BenefitForm';
 
 export default BenefitForm;

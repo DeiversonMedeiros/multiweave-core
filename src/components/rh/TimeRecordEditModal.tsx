@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EntityService } from '@/services/generic/entityService';
 import { useCompany } from '@/lib/company-context';
 import { supabase } from '@/integrations/supabase/client';
@@ -30,17 +30,27 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import { DelayReason } from '@/hooks/rh/useDelayReasons';
 
-const timeRecordSchema = z.object({
+// Schema base - campos opcionais para criação de registro
+const baseTimeRecordSchema = z.object({
   entrada: z.string().optional(),
   saida: z.string().optional(),
   entrada_almoco: z.string().optional(),
   saida_almoco: z.string().optional(),
   entrada_extra1: z.string().optional(),
   saida_extra1: z.string().optional(),
-  justificativa: z.string().min(10, 'Justificativa deve ter pelo menos 10 caracteres'),
-  motivo_id: z.string().min(1, 'Selecione um motivo'),
+  justificativa: z.string().optional(),
+  motivo_id: z.string().optional(),
   observacoes: z.string().optional(),
 });
+
+// Schema para correção - justificativa e motivo são obrigatórios
+const correctionSchema = baseTimeRecordSchema.extend({
+  justificativa: z.string().min(1, 'Justificativa detalhada é obrigatória'),
+  motivo_id: z.string().min(1, 'Motivo do atraso/falta é obrigatório'),
+});
+
+// Schema para criação de registro - campos opcionais
+const timeRecordSchema = baseTimeRecordSchema;
 
 type TimeRecordFormData = z.infer<typeof timeRecordSchema>;
 
@@ -69,21 +79,95 @@ export function TimeRecordEditModal({
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculatedHours, setCalculatedHours] = useState<number>(0);
 
+  // Buscar registro existente
+  const { data: existingRecord } = useQuery({
+    queryKey: ['time-record', date, employeeId, selectedCompany?.id],
+    queryFn: async () => {
+      if (!selectedCompany?.id) return null;
+
+      const result = await EntityService.list({
+        schema: 'rh',
+        table: 'time_records',
+        companyId: selectedCompany.id,
+        filters: {
+          employee_id: employeeId,
+          data_registro: date
+        },
+        pageSize: 1
+      });
+
+      return result.data[0] || null;
+    },
+    enabled: !isCreating && !!selectedCompany?.id && !!employeeId && !!date
+  });
+
+  // Usar schema de correção se não estiver criando (ou seja, está corrigindo)
+  const schema = useMemo(() => {
+    return isCreating ? timeRecordSchema : correctionSchema;
+  }, [isCreating]);
+  
   const {
     register,
     handleSubmit,
     watch,
     setValue,
     reset,
+    control,
     formState: { errors, isSubmitting }
   } = useForm<TimeRecordFormData>({
-    resolver: zodResolver(timeRecordSchema),
+    resolver: zodResolver(schema),
     defaultValues: {
       justificativa: '',
       motivo_id: '',
       observacoes: ''
     }
   });
+
+  // Função para formatar hora de HH:MM:SS para HH:MM
+  const formatTimeForInput = (time: string | null | undefined): string | undefined => {
+    if (!time) return undefined;
+    // Se já está no formato correto HH:MM, retornar
+    if (time.length === 5) return time;
+    // Se tem segundos (HH:MM:SS), remover
+    if (time.length === 8) return time.substring(0, 5);
+    return time;
+  };
+
+  // Preencher formulário com dados existentes
+  useEffect(() => {
+    if (existingRecord && !isCreating) {
+      console.log('📝 [TimeRecordEditModal] Preenchendo formulário com dados existentes:', existingRecord);
+      
+      if (existingRecord.entrada) {
+        const entradaFormatted = formatTimeForInput(existingRecord.entrada);
+        if (entradaFormatted) setValue('entrada', entradaFormatted);
+      }
+      if (existingRecord.saida) {
+        const saidaFormatted = formatTimeForInput(existingRecord.saida);
+        if (saidaFormatted) setValue('saida', saidaFormatted);
+      }
+      if (existingRecord.entrada_almoco) {
+        const entradaAlmocoFormatted = formatTimeForInput(existingRecord.entrada_almoco);
+        if (entradaAlmocoFormatted) setValue('entrada_almoco', entradaAlmocoFormatted);
+      }
+      if (existingRecord.saida_almoco) {
+        const saidaAlmocoFormatted = formatTimeForInput(existingRecord.saida_almoco);
+        if (saidaAlmocoFormatted) setValue('saida_almoco', saidaAlmocoFormatted);
+      }
+      if (existingRecord.entrada_extra1) {
+        const entradaExtraFormatted = formatTimeForInput(existingRecord.entrada_extra1);
+        if (entradaExtraFormatted) setValue('entrada_extra1', entradaExtraFormatted);
+      }
+      if (existingRecord.saida_extra1) {
+        const saidaExtraFormatted = formatTimeForInput(existingRecord.saida_extra1);
+        if (saidaExtraFormatted) setValue('saida_extra1', saidaExtraFormatted);
+      }
+      
+      console.log('✅ [TimeRecordEditModal] Formulário preenchido');
+    } else if (isCreating) {
+      reset();
+    }
+  }, [existingRecord, isCreating, setValue, reset]);
 
   // Watch form values for real-time calculation
   const watchedValues = watch();
@@ -185,6 +269,15 @@ export function TimeRecordEditModal({
       }
 
       try {
+        // Buscar o ID do usuário autenticado
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user?.id) {
+          throw new Error('Usuário não autenticado');
+        }
+
+        console.log('👤 [TimeRecordEditModal] Usuário autenticado:', user.id);
+
         // Buscar registro original
         const originalRecordResult = await EntityService.list({
           schema: 'rh',
@@ -199,29 +292,65 @@ export function TimeRecordEditModal({
 
         const originalRecord = originalRecordResult.data?.[0];
 
+        // Preparar dados para a correção
+        const correctionData = {
+          employee_id: employeeId,
+          company_id: selectedCompany.id,
+          data_original: date,
+          entrada_original: originalRecord?.entrada || null,
+          saida_original: originalRecord?.saida || null,
+          entrada_corrigida: data.entrada || null,
+          saida_corrigida: data.saida || null,
+          entrada_almoco_original: originalRecord?.entrada_almoco || null,
+          saida_almoco_original: originalRecord?.saida_almoco || null,
+          entrada_almoco_corrigida: data.entrada_almoco || null,
+          saida_almoco_corrigida: data.saida_almoco || null,
+          entrada_extra1_original: originalRecord?.entrada_extra1 || null,
+          saida_extra1_original: originalRecord?.saida_extra1 || null,
+          entrada_extra1_corrigida: data.entrada_extra1 || null,
+          saida_extra1_corrigida: data.saida_extra1 || null,
+          justificativa: data.justificativa || 'Correção solicitada',
+          status: 'pendente',
+          solicitado_por: user.id,
+          observacoes: data.observacoes || null
+        };
+
+        console.log('📝 [TimeRecordEditModal] Dados da correção:', {
+          user_id: user.id,
+          employee_id: employeeId,
+          solicitado_por: correctionData.solicitado_por,
+          data_original: date,
+          entrada_original: originalRecord?.entrada,
+          saida_original: originalRecord?.saida,
+          entrada_corrigida: correctionData.entrada_corrigida,
+          saida_corrigida: correctionData.saida_corrigida,
+          justificativa: correctionData.justificativa,
+          status: correctionData.status
+        });
+
+        // Verificar campos vazios
+        Object.entries(correctionData).forEach(([key, value]) => {
+          if (value === null) {
+            console.log(`⚠️ [TimeRecordEditModal] Campo ${key} é NULL`);
+          } else if (value === undefined) {
+            console.log(`⚠️ [TimeRecordEditModal] Campo ${key} é UNDEFINED`);
+          } else if (typeof value === 'string' && value.trim() === '') {
+            console.log(`⚠️ [TimeRecordEditModal] Campo ${key} é STRING VAZIA`);
+          }
+        });
+
         // Criar correção
         const result = await EntityService.create({
           schema: 'rh',
           table: 'attendance_corrections',
           companyId: selectedCompany.id,
-          data: {
-            employee_id: employeeId,
-            company_id: selectedCompany.id,
-            data_original: date,
-            entrada_original: originalRecord?.entrada || null,
-            saida_original: originalRecord?.saida || null,
-            entrada_corrigida: data.entrada || null,
-            saida_corrigida: data.saida || null,
-            justificativa: data.justificativa,
-            status: 'pendente',
-            solicitado_por: (await supabase.auth.getUser()).data.user?.id,
-            observacoes: data.observacoes || null
-          }
+          data: correctionData
         });
 
+        console.log('✅ [TimeRecordEditModal] Correção criada com sucesso:', result);
         return result;
       } catch (error) {
-        console.error('Erro ao criar correção:', error);
+        console.error('❌ [TimeRecordEditModal] Erro ao criar correção:', error);
         throw new Error(`Erro ao criar correção: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
       }
     },
@@ -234,6 +363,8 @@ export function TimeRecordEditModal({
       // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['monthly-time-records'] });
       queryClient.invalidateQueries({ queryKey: ['attendance-corrections'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-attendance-corrections'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-attendance-corrections'] });
       
       onSuccess?.();
       onClose();
@@ -248,6 +379,26 @@ export function TimeRecordEditModal({
   });
 
   const onSubmit = async (data: TimeRecordFormData) => {
+    // Validação adicional para correções
+    if (!isCreating) {
+      if (!data.justificativa || data.justificativa.trim() === '') {
+        toast({
+          title: "Erro de validação",
+          description: "Justificativa detalhada é obrigatória",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!data.motivo_id || data.motivo_id.trim() === '') {
+        toast({
+          title: "Erro de validação",
+          description: "Motivo do atraso/falta é obrigatório",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    
     if (isCreating) {
       await createTimeRecordMutation.mutateAsync(data);
     } else {
@@ -312,13 +463,64 @@ export function TimeRecordEditModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* Mostrar registro atual se houver */}
+          {!isCreating && existingRecord && (
+            <Alert className="bg-blue-50 border-blue-200">
+              <CheckCircle className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-blue-800">
+                <div className="space-y-2">
+                  <p className="font-medium">Registro Atual:</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="font-medium">Entrada:</span>{' '}
+                      {existingRecord.entrada ? existingRecord.entrada : 'Não registrado'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Saída:</span>{' '}
+                      {existingRecord.saida ? existingRecord.saida : 'Não registrado'}
+                    </div>
+                    {existingRecord.entrada_almoco && (
+                      <div>
+                        <span className="font-medium">Entrada Almoço:</span> {existingRecord.entrada_almoco}
+                      </div>
+                    )}
+                    {existingRecord.saida_almoco && (
+                      <div>
+                        <span className="font-medium">Saída Almoço:</span> {existingRecord.saida_almoco}
+                      </div>
+                    )}
+                    {existingRecord.entrada_extra1 && (
+                      <div>
+                        <span className="font-medium">Entrada Extra:</span> {existingRecord.entrada_extra1}
+                      </div>
+                    )}
+                    {existingRecord.saida_extra1 && (
+                      <div>
+                        <span className="font-medium">Saída Extra:</span> {existingRecord.saida_extra1}
+                      </div>
+                    )}
+                  </div>
+                  {!existingRecord.saida && (
+                    <p className="text-xs text-blue-600 mt-2">
+                      ⚠️ Registro incompleto - Complete o horário de saída abaixo
+                    </p>
+                  )}
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Horários de Trabalho */}
           <div className="space-y-4">
-            <h3 className="text-lg font-medium">Horários de Trabalho</h3>
+            <h3 className="text-lg font-medium">
+              {isCreating ? 'Horários de Trabalho' : 'Novos Horários (Correção)'}
+            </h3>
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="entrada">Entrada *</Label>
+                <Label htmlFor="entrada">
+                  Entrada {isCreating ? '*' : ''}
+                </Label>
                 <Input
                   id="entrada"
                   type="time"
@@ -331,12 +533,15 @@ export function TimeRecordEditModal({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="saida">Saída *</Label>
+                <Label htmlFor="saida">
+                  Saída {isCreating ? '*' : ''}
+                </Label>
                 <Input
                   id="saida"
                   type="time"
                   {...register('saida')}
                   className={errors.saida ? 'border-red-500' : ''}
+                  placeholder={isCreating ? 'Obrigatório' : 'Opcional'}
                 />
                 {errors.saida && (
                   <p className="text-sm text-red-500">{errors.saida.message}</p>
@@ -416,18 +621,30 @@ export function TimeRecordEditModal({
             
             <div className="space-y-2">
               <Label htmlFor="motivo_id">Motivo do Atraso/Falta *</Label>
-              <Select onValueChange={(value) => setValue('motivo_id', value)}>
-                <SelectTrigger className={errors.motivo_id ? 'border-red-500' : ''}>
-                  <SelectValue placeholder="Selecione um motivo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {delayReasons.map((reason) => (
-                    <SelectItem key={reason.id} value={reason.id}>
-                      {reason.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Controller
+                name="motivo_id"
+                control={control}
+                render={({ field }) => (
+                  <Select 
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      setValue('motivo_id', value, { shouldValidate: true });
+                    }}
+                    value={field.value || ''}
+                  >
+                    <SelectTrigger className={errors.motivo_id ? 'border-red-500' : ''}>
+                      <SelectValue placeholder="Selecione um motivo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {delayReasons.map((reason) => (
+                        <SelectItem key={reason.id} value={reason.id}>
+                          {reason.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {errors.motivo_id && (
                 <p className="text-sm text-red-500">{errors.motivo_id.message}</p>
               )}
@@ -464,7 +681,7 @@ export function TimeRecordEditModal({
             </Button>
             <Button 
               type="submit" 
-              disabled={isSubmitting || !isTimeSequenceValid()}
+              disabled={isSubmitting || !isTimeSequenceValid() || Object.keys(errors).length > 0}
               className="min-w-[120px]"
             >
               {isSubmitting ? (

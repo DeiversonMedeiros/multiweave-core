@@ -52,22 +52,66 @@ export function useRubricas(companyId: string, filters: RubricaFilters = {}) {
   return useQuery({
     queryKey: ['rubricas', companyId, filters],
     queryFn: async () => {
-      if (!companyId) return [];
-
-      const result = await EntityService.list({
-        schema: 'rh',
-        table: 'rubricas',
-        companyId: companyId,
-        filters: filters,
-        orderBy: 'ordem_exibicao',
-        orderDirection: 'asc'
-      });
-
-      if (result.error) {
-        throw new Error(`Erro ao buscar rubricas: ${result.error.message}`);
+      console.log('🔍 [useRubricas] Buscando rubricas:', { companyId, filters });
+      
+      if (!companyId) {
+        console.warn('⚠️ [useRubricas] companyId não fornecido');
+        return [];
       }
 
-      return result.data as Rubrica[];
+      try {
+        const result = await EntityService.list({
+          schema: 'rh',
+          table: 'rubricas',
+          companyId: companyId,
+          filters: filters,
+          orderBy: 'ordem_exibicao',
+          orderDirection: 'asc'
+        });
+
+        console.log('✅ [useRubricas] Resultado recebido:', {
+          hasData: !!result.data,
+          dataLength: result.data?.length || 0,
+          hasError: !!result.error,
+          error: result.error,
+          totalCount: result.totalCount
+        });
+
+        if (result.error) {
+          console.error('❌ [useRubricas] Erro na resposta:', result.error);
+          throw new Error(`Erro ao buscar rubricas: ${result.error.message}`);
+        }
+
+        if (result.data && result.data.length > 0) {
+          console.log('📊 [useRubricas] Primeiras rubricas:', result.data.slice(0, 3).map(r => ({
+            id: r.id,
+            codigo: r.codigo,
+            nome: r.nome,
+            company_id: r.company_id
+          })));
+        } else {
+          console.warn('⚠️ [useRubricas] Nenhuma rubrica encontrada para companyId:', companyId);
+          console.warn('⚠️ [useRubricas] result completo:', {
+            hasData: !!result.data,
+            dataType: typeof result.data,
+            isArray: Array.isArray(result.data),
+            dataLength: result.data?.length,
+            totalCount: result.totalCount,
+            resultKeys: Object.keys(result)
+          });
+        }
+
+        const rubricas = result.data as Rubrica[];
+        console.log('🔄 [useRubricas] Retornando do hook:', {
+          rubricasLength: rubricas.length,
+          firstRubrica: rubricas[0] ? { id: rubricas[0].id, codigo: rubricas[0].codigo } : null
+        });
+        
+        return rubricas;
+      } catch (error) {
+        console.error('❌ [useRubricas] Erro na busca:', error);
+        throw error;
+      }
     },
     enabled: !!companyId,
     staleTime: 1000 * 60 * 5, // 5 minutos

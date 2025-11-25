@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { TimeRecordsService } from '@/services/rh/timeRecordsService';
 import { 
   TimeRecord, 
@@ -6,13 +6,16 @@ import {
   TimeRecordUpdate 
 } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { queryConfig } from '@/lib/react-query-config';
+import { supabase } from '@/integrations/supabase/client';
 
 // =====================================================
 // HOOKS DE CONSULTA
 // =====================================================
 
 /**
- * Hook para listar registros de ponto
+ * Hook para listar registros de ponto (sem paginação - use apenas para casos específicos)
+ * @deprecated Use useTimeRecordsPaginated para melhor performance
  */
 export function useTimeRecords(params: {
   employeeId?: string;
@@ -24,12 +27,109 @@ export function useTimeRecords(params: {
 
   return useQuery({
     queryKey: ['rh', 'time-records', selectedCompany?.id, params],
-    queryFn: () => TimeRecordsService.list({
-      ...params,
-      companyId: selectedCompany?.id || ''
-    }),
+    queryFn: async () => {
+      console.group('[useTimeRecords]');
+      console.log('[useTimeRecords] companyId:', selectedCompany?.id || null);
+      console.log('[useTimeRecords] params:', params);
+      try {
+        const rows = await TimeRecordsService.list({
+          ...params,
+          companyId: selectedCompany?.id || ''
+        });
+        console.log('[useTimeRecords] rows length:', rows?.length || 0);
+        if (rows?.length) {
+          console.log('[useTimeRecords] sample row:', rows[0]);
+        }
+        console.groupEnd();
+        return rows;
+      } catch (e: any) {
+        console.error('[useTimeRecords] error:', e?.message || e);
+        console.groupEnd();
+        throw e;
+      }
+    },
     enabled: !!selectedCompany?.id,
-    staleTime: 2 * 60 * 1000, // 2 minutos
+    ...queryConfig.dynamic,
+  });
+}
+
+/**
+ * Hook para listar registros de ponto com paginação infinita (otimizado)
+ * Usa get_time_records_simple com paginação manual no cliente para melhor performance
+ */
+export function useTimeRecordsPaginated(params: {
+  employeeId?: string;
+  startDate?: string;
+  endDate?: string;
+  status?: string;
+  pageSize?: number;
+}) {
+  const { selectedCompany } = useCompany();
+  const { pageSize = 50, employeeId, startDate, endDate, status } = params;
+
+  return useInfiniteQuery({
+    queryKey: ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize],
+    queryFn: async ({ pageParam = 0 }): Promise<{
+      data: TimeRecord[];
+      nextCursor?: number;
+      hasMore: boolean;
+    }> => {
+      if (!selectedCompany?.id) {
+        return { data: [], hasMore: false };
+      }
+
+      // Buscar todos os registros filtrados usando a função otimizada
+      // A função get_time_records_simple já aplica filtros no servidor
+      const allRecords = await TimeRecordsService.list({
+        companyId: selectedCompany.id,
+        employeeId,
+        startDate,
+        endDate,
+        status,
+      });
+
+      // Aplicar paginação no cliente
+      const startIndex = pageParam as number;
+      const endIndex = startIndex + pageSize;
+      const paginatedData = allRecords.slice(startIndex, endIndex);
+      const hasMore = endIndex < allRecords.length;
+
+      // Processar dados
+      const items = paginatedData.map((record: any) => {
+        // Processar all_photos e all_locations se vierem como string JSON
+        if (typeof record.all_photos === 'string') {
+          try {
+            record.all_photos = JSON.parse(record.all_photos);
+          } catch (e) {
+            record.all_photos = null;
+          }
+        }
+        if (typeof record.all_locations === 'string') {
+          try {
+            record.all_locations = JSON.parse(record.all_locations);
+          } catch (e) {
+            record.all_locations = null;
+          }
+        }
+        // Garantir números
+        if (record.horas_trabalhadas != null) record.horas_trabalhadas = Number(record.horas_trabalhadas);
+        if (record.horas_extras != null) record.horas_extras = Number(record.horas_extras);
+        if (record.horas_faltas != null) record.horas_faltas = Number(record.horas_faltas);
+        return record;
+      });
+
+      return {
+        data: items,
+        nextCursor: hasMore ? endIndex : undefined,
+        hasMore,
+      };
+    },
+    getNextPageParam: (lastPage) => {
+      return lastPage.hasMore ? lastPage.nextCursor : undefined;
+    },
+    enabled: !!selectedCompany?.id,
+    initialPageParam: 0,
+    ...queryConfig.dynamic,
   });
 }
 
@@ -41,20 +141,7 @@ export function useTimeRecord(id: string) {
     queryKey: ['rh', 'time-records', id],
     queryFn: () => TimeRecordsService.getById(id),
     enabled: !!id,
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-/**
- * Hook para buscar registro do dia atual
- */
-export function useTodayTimeRecord(employeeId: string) {
-  return useQuery({
-    queryKey: ['rh', 'time-records', 'today', employeeId],
-    queryFn: () => TimeRecordsService.getTodayRecords(employeeId),
-    enabled: !!employeeId,
-    staleTime: 30 * 1000, // 30 segundos
-    refetchInterval: 30 * 1000, // Refetch a cada 30 segundos
+    ...queryConfig.semiStatic,
   });
 }
 
@@ -66,24 +153,17 @@ export function usePendingTimeRecords() {
 
   return useQuery({
     queryKey: ['rh', 'time-records', 'pending', selectedCompany?.id],
-    queryFn: () => TimeRecordsService.getPendingApprovals(selectedCompany?.id || ''),
+    queryFn: async () => {
+      const records = await TimeRecordsService.list({
+        companyId: selectedCompany?.id || '',
+        status: 'pendente'
+      });
+      return records;
+    },
     enabled: !!selectedCompany?.id,
     staleTime: 1 * 60 * 1000, // 1 minuto
     refetchInterval: 1 * 60 * 1000, // Refetch a cada minuto
-  });
-}
-
-/**
- * Hook para buscar estatísticas de ponto
- */
-export function useTimeRecordsStats(startDate: string, endDate: string) {
-  const { selectedCompany } = useCompany();
-
-  return useQuery({
-    queryKey: ['rh', 'time-records', 'stats', selectedCompany?.id, startDate, endDate],
-    queryFn: () => TimeRecordsService.getStats(selectedCompany?.id || '', startDate, endDate),
-    enabled: !!selectedCompany?.id && !!startDate && !!endDate,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    ...queryConfig.dynamic,
   });
 }
 

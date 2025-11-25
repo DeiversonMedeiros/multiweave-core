@@ -24,10 +24,11 @@ import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
 import { EmployeeBenefitAssignmentForm } from '@/components/rh/EmployeeBenefitAssignmentForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
-import { EmployeeBenefitAssignment, Employee, BenefitConfiguration } from '@/integrations/supabase/rh-types';
+import { EmployeeBenefitAssignment, BenefitConfiguration } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 import { RequireEntity } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useEmployees } from '@/hooks/rh/useEmployees';
 
 // =====================================================
 // PÁGINA DE VÍNCULOS FUNCIONÁRIO-BENEFÍCIO
@@ -44,12 +45,11 @@ export default function EmployeeBenefitsPage() {
 
   // Hooks para dados
   const { data: assignmentsData, isLoading, error } = useRHData<EmployeeBenefitAssignment>('employee_benefit_assignments', selectedCompany?.id || '');
-  const { data: employeesData } = useRHData<Employee>('employees', selectedCompany?.id || '');
+  const { data: employees = [] } = useEmployees();
   const { data: benefitsData } = useRHData<BenefitConfiguration>('benefit_configurations', selectedCompany?.id || '');
 
   // Extrair dados dos objetos de resposta
   const assignments = Array.isArray(assignmentsData) ? assignmentsData : assignmentsData?.data || [];
-  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
   const benefits = Array.isArray(benefitsData) ? benefitsData : benefitsData?.data || [];
   
   const createAssignment = useCreateEntity<EmployeeBenefitAssignment>('rh', 'employee_benefit_assignments', selectedCompany?.id || '');

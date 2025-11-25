@@ -14,6 +14,9 @@ export interface FractionedVacationData {
   ano: number;
   periodos: VacationPeriod[];
   observacoes?: string;
+  approvedVacations?: Array<{
+    diasFerias: number;
+  }>; // Férias já aprovadas para o período aquisitivo
 }
 
 export interface ValidationResult {
@@ -53,6 +56,10 @@ export function validateFractionedVacation(data: FractionedVacationData): Valida
   let totalDias = 0;
   let hasLongPeriod = false;
 
+  // Calcular dias já aprovados (se houver)
+  const diasAprovados = data.approvedVacations?.reduce((sum, v) => sum + (v.diasFerias || 0), 0) || 0;
+  const isFirstRequest = diasAprovados === 0;
+
   data.periodos.forEach((periodo, index) => {
     const periodoNum = index + 1;
 
@@ -84,7 +91,7 @@ export function validateFractionedVacation(data: FractionedVacationData): Valida
       errors.push(`Período ${periodoNum}: Mínimo de ${vacationRules.minPeriodDays} dias por período`);
     }
 
-    // Verificar se pelo menos um período tem 14+ dias
+    // Verificar se pelo menos um período tem 14+ dias (na solicitação atual)
     if (periodo.diasFerias >= vacationRules.minOnePeriodDays) {
       hasLongPeriod = true;
     }
@@ -102,9 +109,41 @@ export function validateFractionedVacation(data: FractionedVacationData): Valida
     errors.push(`Total de dias (${totalDias}) excede o limite de ${vacationRules.maxTotalDays} dias`);
   }
 
-  // Validar se pelo menos um período tem 14+ dias
-  if (!hasLongPeriod) {
-    errors.push(`Pelo menos um período deve ter ${vacationRules.minOnePeriodDays} ou mais dias`);
+  // Validação de 14 dias: ajustada para considerar férias já aprovadas
+  if (isFirstRequest) {
+    // Primeira solicitação: permitir qualquer combinação, mas:
+    // 1. Se tiver apenas 1 período: pode ser qualquer valor (não precisa ter 14 dias)
+    //    O funcionário pode fazer mais solicitações depois
+    // 2. Se tiver 2+ períodos:
+    //    - A soma dos dois primeiros não pode ultrapassar 16 dias
+    //    - Pelo menos um período deve ter 14+ dias
+    if (data.periodos.length === 1) {
+      // Primeira solicitação com apenas 1 período: não precisa ter 14 dias
+      // O funcionário pode fazer mais solicitações depois
+      // Não adicionar erro aqui
+    } else if (data.periodos.length >= 2) {
+      // Primeira solicitação com 2+ períodos: validar regras
+      const somaPrimeirosDois = data.periodos[0].diasFerias + data.periodos[1].diasFerias;
+      if (somaPrimeirosDois > 16) {
+        errors.push(`A soma dos dois primeiros períodos (${somaPrimeirosDois} dias) não pode ultrapassar 16 dias, para garantir que sobre pelo menos 14 dias para um terceiro período`);
+      }
+      
+      // Se tiver 2 ou 3 períodos, pelo menos um deve ter 14+ dias
+      if (!hasLongPeriod) {
+        errors.push(`Pelo menos um período deve ter ${vacationRules.minOnePeriodDays} ou mais dias`);
+      }
+    }
+  } else {
+    // Já existem férias aprovadas: verificar se no total (incluindo as já aprovadas) há pelo menos um período com 14+ dias
+    // Buscar o maior período entre os aprovados e os atuais
+    const maiorPeriodoAprovado = data.approvedVacations?.reduce((max, v) => 
+      Math.max(max, v.diasFerias || 0), 0) || 0;
+    const maiorPeriodoAtual = Math.max(...data.periodos.map(p => p.diasFerias), 0);
+    const maiorPeriodoTotal = Math.max(maiorPeriodoAprovado, maiorPeriodoAtual);
+    
+    if (maiorPeriodoTotal < vacationRules.minOnePeriodDays) {
+      errors.push(`Pelo menos um período (incluindo férias já aprovadas) deve ter ${vacationRules.minOnePeriodDays} ou mais dias`);
+    }
   }
 
   // Validar sobreposição de períodos

@@ -50,14 +50,21 @@ export default function PositionsPageNew() {
   });
 
   // Hooks usando nova abordagem genérica
-  const { data: positionsData, isLoading, error } = useRHData<Position>('positions', selectedCompany?.id || '', filters);
+  const { data: positionsData, totalCount, isLoading, error } = useRHData<Position>('positions', selectedCompany?.id || '', filters);
   const createPosition = useCreateEntity<Position>('rh', 'positions', selectedCompany?.id || '');
   const updatePosition = useUpdateEntity<Position>('rh', 'positions', selectedCompany?.id || '');
   const deletePosition = useDeleteEntity('rh', 'positions', selectedCompany?.id || '');
-
-  // Dados
-  const positions = positionsData?.data || [];
-  const totalCount = positionsData?.totalCount || 0;
+  
+  // Garantir que positions seja sempre um array
+  const positions = Array.isArray(positionsData) ? positionsData : [];
+  
+  // Debug logs
+  console.log('🔍 [PositionsPageNew] selectedCompany?.id:', selectedCompany?.id);
+  console.log('🔍 [PositionsPageNew] positionsData:', positionsData);
+  console.log('🔍 [PositionsPageNew] positions:', positions);
+  console.log('🔍 [PositionsPageNew] totalCount:', totalCount);
+  console.log('🔍 [PositionsPageNew] isLoading:', isLoading);
+  console.log('🔍 [PositionsPageNew] error:', error);
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -270,11 +277,24 @@ export default function PositionsPageNew() {
     }
   ];
 
+  if (!selectedCompany?.id) {
+    return (
+      <div className="p-6">
+        <div className="text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="font-medium">Nenhuma empresa selecionada</p>
+          <p className="text-sm mt-1">Por favor, selecione uma empresa para visualizar os cargos.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
-
-    <div className="p-6">
-        <div className="text-red-500">Erro ao carregar cargos: {error.message}</div>
+      <div className="p-6">
+        <div className="text-red-500 bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="font-medium">Erro ao carregar cargos</p>
+          <p className="text-sm mt-1">{error.message}</p>
+        </div>
       </div>
     );
   }

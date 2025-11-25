@@ -9,13 +9,17 @@ import { toast } from '@/hooks/use-toast';
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCompany } from '@/lib/company-context';
 
 const CidCodesPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CidCode | null>(null);
   const [formData, setFormData] = useState<Partial<CidCode>>({});
 
-  const { data = [], isLoading } = useCidCodes();
+  const { selectedCompany } = useCompany();
+  const cidCodesQuery = useCidCodes();
+  const data = cidCodesQuery.data || [];
+  const isLoading = cidCodesQuery.isLoading;
   const createMutation = useCreateCidCode();
   const updateMutation = useUpdateCidCode();
   const deleteMutation = useDeleteCidCode();

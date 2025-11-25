@@ -171,11 +171,22 @@ export class ConfiguracaoBancariaService {
    */
   async validarCredenciais(baseUrl: string, clientId: string, clientSecret: string): Promise<{ valido: boolean; mensagem: string; accessToken?: string }> {
     // Lógica real de validação de credenciais (ex: chamar API de autenticação do banco)
-    // Por enquanto, uma simulação simples
-    if (clientId === 'bradesco_client' && clientSecret === 'bradesco_secret') {
-      return { valido: true, mensagem: 'Credenciais válidas.', accessToken: 'mock_access_token_123' };
+    try {
+      // TODO: Implementar chamada real à API do banco para validar credenciais
+      // Por enquanto, validação básica de formato
+      if (!clientId || !clientSecret) {
+        return { valido: false, mensagem: 'Credenciais não podem estar vazias.' };
+      }
+      
+      // Nota: Em produção, fazer chamada real à API do banco
+      // const response = await fetch(`${baseUrl}/auth`, { ... });
+      // return { valido: response.ok, mensagem: ..., accessToken: ... };
+      
+      return { valido: false, mensagem: 'Validação de credenciais não implementada. Configure a integração com o banco.' };
+    } catch (error) {
+      console.error('Erro ao validar credenciais:', error);
+      return { valido: false, mensagem: 'Erro ao validar credenciais.' };
     }
-    return { valido: false, mensagem: 'Credenciais inválidas.' };
   }
 
   /**

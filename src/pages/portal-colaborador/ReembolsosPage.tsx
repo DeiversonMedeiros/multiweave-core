@@ -43,6 +43,7 @@ export default function ReembolsosPage() {
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
+  const [expenseDate, setExpenseDate] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
   // Buscar funcionário
@@ -77,11 +78,18 @@ export default function ReembolsosPage() {
       
       let fileUrl = '';
       if (file) {
-        const fileName = `${employee.id}_${Date.now()}_${file.name}`;
+        const sanitizedOriginalName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const uniqueName = `${Date.now()}_${sanitizedOriginalName}`;
+        // Estrutura: {company_id}/{employee_id}/{filename}
+        const filePath = `${selectedCompany.id}/${employee.id}/${uniqueName}`;
+
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('reimbursements')
-          .upload(fileName, file);
-        
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
         if (uploadError) throw uploadError;
         fileUrl = uploadData.path;
       }
@@ -92,10 +100,11 @@ export default function ReembolsosPage() {
         companyId: selectedCompany.id,
         data: {
           employee_id: employee.id,
-          valor: parseFloat(amount),
-          categoria: category,
+          tipo_despesa: category,
+          valor_solicitado: parseFloat(amount),
+          data_despesa: expenseDate, // formato YYYY-MM-DD
           descricao: description,
-          arquivo_comprovante: fileUrl,
+          comprovante_url: fileUrl,
           status: 'pendente'
         }
       });
@@ -108,6 +117,7 @@ export default function ReembolsosPage() {
       setAmount('');
       setCategory('');
       setDescription('');
+      setExpenseDate('');
       setFile(null);
       
       toast({
@@ -125,7 +135,7 @@ export default function ReembolsosPage() {
   });
 
   const handleSubmit = () => {
-    if (!amount || !category || !description) {
+    if (!amount || !category || !description || !expenseDate) {
       toast({
         title: "Campos obrigatórios",
         description: "Preencha todos os campos obrigatórios.",
@@ -226,6 +236,15 @@ export default function ReembolsosPage() {
                 </select>
               </div>
               <div className="grid gap-2">
+                <Label htmlFor="date">Data da Despesa</Label>
+                <Input
+                  id="date"
+                  type="date"
+                  value={expenseDate}
+                  onChange={(e) => setExpenseDate(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="description">Descrição</Label>
                 <Textarea
                   id="description"
@@ -282,7 +301,7 @@ export default function ReembolsosPage() {
                     </div>
                     <div>
                       <p className="font-medium">
-                        {request.categoria} - R$ {request.valor.toFixed(2)}
+                        {request.tipo_despesa} - R$ {Number(request.valor_solicitado ?? 0).toFixed(2)}
                       </p>
                       <p className="text-sm text-gray-600">{request.descricao}</p>
                       <p className="text-xs text-gray-500">

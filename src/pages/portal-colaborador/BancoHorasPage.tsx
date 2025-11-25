@@ -33,6 +33,7 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useToast } from '@/hooks/use-toast';
+import { EntityService } from '@/services/generic/entityService';
 
 interface BankHoursRecord {
   id: string;
@@ -67,7 +68,9 @@ export default function BancoHorasPage() {
     queryKey: ['bank-hours-balance', employee?.id],
     queryFn: async () => {
       if (!employee?.id || !selectedCompany?.id) return { current_balance: 0, has_bank_hours: false };
-      return await getEmployeeBalance(employee.id);
+      const result = await getEmployeeBalance(employee.id);
+      // Se não retornou dados, significa que não tem configuração
+      return result || { current_balance: 0, has_bank_hours: false };
     },
     enabled: !!employee?.id && !!selectedCompany?.id
   });
@@ -103,9 +106,10 @@ export default function BancoHorasPage() {
         companyId: selectedCompany.id,
         data: {
           employee_id: employee.id,
-          data_compensacao: compensationDate,
-          horas_solicitadas: parseFloat(compensationHours),
-          motivo: compensationReason,
+          tipo: 'banco_horas',
+          data_inicio: compensationDate,
+          quantidade_horas: parseFloat(compensationHours),
+          descricao: compensationReason,
           status: 'pendente'
         }
       });
@@ -388,7 +392,7 @@ export default function BancoHorasPage() {
           <CardTitle>Como Funciona o Banco de Horas</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
               <h4 className="font-medium text-gray-900 mb-2">Créditos</h4>
               <ul className="space-y-1 text-gray-600">

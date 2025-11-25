@@ -27,7 +27,7 @@ interface BankHoursConfigProps {
 
 export function BankHoursConfig({ companyId }: BankHoursConfigProps) {
   const { configs, loading, error, createConfig, updateConfig, deleteConfig } = useBankHoursConfig(companyId);
-  const { data: employees, isLoading: employeesLoading } = useEmployees();
+  const { data: employees = [], isLoading: employeesLoading } = useEmployees();
   const [showForm, setShowForm] = useState(false);
   const [editingConfig, setEditingConfig] = useState<string | null>(null);
   const [formData, setFormData] = useState<BankHoursConfigForm>({
@@ -167,7 +167,7 @@ export function BankHoursConfig({ companyId }: BankHoursConfigProps) {
                       <SelectValue placeholder="Selecione um colaborador" />
                     </SelectTrigger>
                     <SelectContent>
-                      {employees
+                      {Array.isArray(employees) && employees
                         .filter(emp => !configs.some(c => c.employee_id === emp.id))
                         .map(employee => (
                           <SelectItem key={employee.id} value={employee.id}>

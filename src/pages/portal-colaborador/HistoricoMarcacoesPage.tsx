@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
 import { EntityService } from '@/services/generic/entityService';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,11 +27,14 @@ import {
   Clock3,
   Clock4,
   Coffee,
-  ArrowUpDown
+  ArrowUpDown,
+  MapPin,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { RequireEntity } from '@/components/RequireAuth';
 import { useEmployeeByUserId } from '@/hooks/rh/useEmployees';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 type TimeRecordStatus = 'pendente' | 'aprovado' | 'rejeitado';
@@ -49,6 +53,11 @@ interface TimeRecord {
   observacoes?: string;
   created_at: string;
   updated_at: string;
+  // Novos campos opcionais
+  latitude?: number | string;
+  longitude?: number | string;
+  endereco?: string;
+  localizacao_type?: 'gps' | 'manual' | 'wifi';
 }
 
 export default function HistoricoMarcacoesPage() {
@@ -63,48 +72,37 @@ export default function HistoricoMarcacoesPage() {
   // Buscar dados do funcionário
   const { data: employee } = useEmployeeByUserId(user?.id || '');
 
-  // Buscar histórico de marcações usando EntityService
+  // Buscar histórico de marcações usando função RPC
   const { data: timeRecords, isLoading, error } = useQuery({
     queryKey: ['rh', 'time-records', selectedCompany?.id, employee?.id, filters],
     queryFn: async () => {
       if (!selectedCompany?.id || !employee?.id) return [];
-      
-      const result = await EntityService.list({
-        schema: 'rh',
-        table: 'time_records',
-        companyId: selectedCompany.id,
-        filters: {
-          employee_id: employee.id,
-          ...(filters.status !== 'all' && { status: filters.status })
-        },
-        orderBy: 'data_registro',
-        orderDirection: 'DESC'
+      const { data, error } = await supabase.rpc('get_time_records_simple', {
+        company_id_param: selectedCompany.id
       });
-
-      if (result.error) {
-        console.error('Erro ao buscar registros de ponto:', result.error);
-        throw result.error;
+      if (error) {
+        console.error('Erro ao buscar registros de ponto:', error);
+        throw error;
       }
-
-      let filteredData = result.data || [];
-      
-      // Aplicar filtros de data no lado do cliente
+      let filteredData = data || [];
+      filteredData = filteredData.filter(record => record.employee_id === employee.id);
       if (filters.startDate) {
         filteredData = filteredData.filter(record => 
           record.data_registro >= filters.startDate
         );
       }
-      
       if (filters.endDate) {
         filteredData = filteredData.filter(record => 
           record.data_registro <= filters.endDate
         );
       }
-
-      return filteredData;
+      if (filters.status !== 'all') {
+        filteredData = filteredData.filter(record => record.status === filters.status);
+      }
+      return filteredData as TimeRecord[];
     },
     enabled: !!selectedCompany?.id && !!employee?.id,
-    staleTime: 2 * 60 * 1000, // 2 minutos
+    staleTime: 2 * 60 * 1000,
   });
 
   const getStatusIcon = (status: TimeRecordStatus) => {
@@ -151,6 +149,14 @@ export default function HistoricoMarcacoesPage() {
     return time;
   };
 
+  const formatDate = (dateString: string) => {
+    // Parse a data manualmente para evitar problemas de timezone
+    // dateString vem no formato 'YYYY-MM-DD'
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return format(date, 'dd/MM/yyyy', { locale: ptBR });
+  };
+
   const calculateTotalHours = (record: TimeRecord) => {
     if (!record.entrada || !record.saida) return '--:--';
     
@@ -185,6 +191,64 @@ export default function HistoricoMarcacoesPage() {
       endDate: format(new Date(), 'yyyy-MM-dd'),
       status: 'all'
     });
+  };
+
+  // Estado para controlar quais cards têm endereços expandidos
+  const [expandedAddresses, setExpandedAddresses] = useState<Set<string>>(new Set());
+
+  // Função para obter localização do registro
+  const getLocationForRecord = (record: TimeRecord) => {
+    let allLocations = (record as any).all_locations;
+    
+    if (typeof allLocations === 'string') {
+      try {
+        allLocations = JSON.parse(allLocations);
+      } catch (e) {
+        allLocations = null;
+      }
+    }
+    
+    // Buscar localização da ENTRADA em all_locations
+    if (allLocations && Array.isArray(allLocations) && allLocations.length > 0) {
+      const entradaLocation = allLocations.find((loc: any) => loc.event_type === 'entrada');
+      if (entradaLocation) {
+        return {
+          latitude: entradaLocation.latitude,
+          longitude: entradaLocation.longitude,
+          endereco: entradaLocation.endereco,
+          hasCoords: Boolean(entradaLocation.latitude && entradaLocation.longitude),
+          hasAddress: Boolean(entradaLocation.endereco),
+          allLocations: allLocations,
+        };
+      }
+      
+      // Se não encontrar entrada, usar primeira localização disponível
+      const firstLocation = allLocations[0];
+      if (firstLocation && (firstLocation.latitude || firstLocation.longitude || firstLocation.endereco)) {
+        return {
+          latitude: firstLocation.latitude,
+          longitude: firstLocation.longitude,
+          endereco: firstLocation.endereco,
+          hasCoords: Boolean(firstLocation.latitude && firstLocation.longitude),
+          hasAddress: Boolean(firstLocation.endereco),
+          allLocations: allLocations,
+        };
+      }
+    }
+    
+    // Fallback para campos diretos
+    const lat = (record as any).entrada_latitude || record.latitude;
+    const lng = (record as any).entrada_longitude || record.longitude;
+    const addr = (record as any).entrada_endereco || record.endereco;
+    
+    return {
+      latitude: lat,
+      longitude: lng,
+      endereco: addr,
+      hasCoords: Boolean(lat && lng),
+      hasAddress: Boolean(addr),
+      allLocations: null,
+    };
   };
 
   if (isLoading) {
@@ -238,7 +302,7 @@ export default function HistoricoMarcacoesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="startDate">Data Inicial</Label>
                 <Input
@@ -318,11 +382,10 @@ export default function HistoricoMarcacoesPage() {
                         </div>
                         <div>
                           <h3 className="font-medium text-gray-900">
-                            {format(new Date(record.data_registro), 'dd/MM/yyyy', { locale: ptBR })}
+                            {formatDate(record.data_registro)}
                           </h3>
                           <p className="text-sm text-gray-500">
-                            {format(new Date(record.created_at), 'HH:mm', { locale: ptBR })} - 
-                            Última atualização
+                            Criado em {format(parseISO(record.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                           </p>
                         </div>
                       </div>
@@ -335,7 +398,7 @@ export default function HistoricoMarcacoesPage() {
                     </div>
 
                     {/* Horários */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
                       <div className="text-center">
                         <div className="flex items-center justify-center mb-1">
                           <Clock3 className="h-4 w-4 text-green-600 mr-1" />
@@ -398,7 +461,7 @@ export default function HistoricoMarcacoesPage() {
                     </div>
 
                     {/* Total de horas e observações */}
-                    <div className="flex items-center justify-between pt-3 border-t">
+                    <div className="flex items-center justify-between pt-3 border-t mb-3">
                       <div className="flex items-center space-x-4">
                         <div className="text-sm">
                           <span className="text-gray-500">Total de horas: </span>
@@ -406,6 +469,14 @@ export default function HistoricoMarcacoesPage() {
                             {calculateTotalHours(record)}
                           </span>
                         </div>
+                        {(record as any).horas_extras != null && Number((record as any).horas_extras) > 0 && (
+                          <div className="text-sm">
+                            <span className="text-gray-500">Extras: </span>
+                            <span className="font-medium text-orange-600">
+                              +{Number((record as any).horas_extras).toFixed(1)}h
+                            </span>
+                          </div>
+                        )}
                       </div>
                       
                       {record.observacoes && (
@@ -414,6 +485,169 @@ export default function HistoricoMarcacoesPage() {
                           <span>{record.observacoes}</span>
                         </div>
                       )}
+                    </div>
+
+                    {/* Endereços e Localizações */}
+                    <div className="mt-3 border-t pt-3">
+                      <div className="flex items-start gap-2 text-sm">
+                        <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                        <div className="space-y-2 flex-1">
+                          {/* Botão para expandir/recolher */}
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-700">Localização</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => {
+                                const newExpanded = new Set(expandedAddresses);
+                                if (newExpanded.has(record.id)) {
+                                  newExpanded.delete(record.id);
+                                } else {
+                                  newExpanded.add(record.id);
+                                }
+                                setExpandedAddresses(newExpanded);
+                              }}
+                            >
+                              {expandedAddresses.has(record.id) ? (
+                                <>
+                                  <ChevronUp className="h-4 w-4 mr-1" />
+                                  <span className="text-xs">Recolher</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronDown className="h-4 w-4 mr-1" />
+                                  <span className="text-xs">Expandir</span>
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          
+                          {/* Conteúdo das localizações (mostrar apenas se expandido) */}
+                          {expandedAddresses.has(record.id) && (
+                            <div>
+                              {(() => {
+                                const location = getLocationForRecord(record);
+                                const mapHref = location.hasCoords
+                                  ? `https://www.google.com/maps?q=${location.latitude},${location.longitude}`
+                                  : location.hasAddress
+                                    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.endereco || '')}`
+                                    : undefined;
+                                
+                                let allLocations = location.allLocations;
+                                if (typeof allLocations === 'string') {
+                                  try {
+                                    allLocations = JSON.parse(allLocations);
+                                  } catch (e) {
+                                    allLocations = null;
+                                  }
+                                }
+                                
+                                // Se tiver all_locations, mostrar todas
+                                if (allLocations && Array.isArray(allLocations) && allLocations.length > 0) {
+                                  return (
+                                    <div className="space-y-2">
+                                      {allLocations.map((loc: any, idx: number) => {
+                                        const locLat = loc.latitude;
+                                        const locLng = loc.longitude;
+                                        const locAddr = loc.endereco || '';
+                                        const locHasCoords = Boolean(locLat && locLng);
+                                        const locHasAddress = Boolean(locAddr);
+                                        const locMapHref = locHasCoords
+                                          ? `https://www.google.com/maps?q=${locLat},${locLng}`
+                                          : locHasAddress
+                                            ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(locAddr)}`
+                                            : undefined;
+                                        
+                                        const getEventTypeLabel = (eventType?: string) => {
+                                          const labels: Record<string, string> = {
+                                            'entrada': 'Entrada',
+                                            'saida': 'Saída',
+                                            'entrada_almoco': 'Almoço E',
+                                            'saida_almoco': 'Almoço S',
+                                            'extra_inicio': 'Extra E',
+                                            'extra_fim': 'Extra S',
+                                            'manual': 'Manual'
+                                          };
+                                          return labels[eventType || ''] || eventType || '';
+                                        };
+                                        
+                                        const eventLabel = loc.event_type ? getEventTypeLabel(loc.event_type) : '';
+                                        
+                                        return (
+                                          <div key={loc.id || idx} className="border-l-2 border-blue-200 pl-2">
+                                            {eventLabel && (
+                                              <div className="text-xs font-medium text-blue-600 mb-1">{eventLabel}</div>
+                                            )}
+                                            <div className="text-gray-900 font-medium max-w-full break-words">
+                                              {locAddr.trim() || (locHasCoords ? `${locLat}, ${locLng}` : 'Sem endereço')}
+                                            </div>
+                                            <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
+                                              {locHasCoords && (
+                                                <span className="font-mono text-xs">
+                                                  ({locLat}, {locLng})
+                                                </span>
+                                              )}
+                                              {locMapHref && (
+                                                <a
+                                                  href={locMapHref}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="text-blue-600 hover:underline text-xs flex items-center gap-1"
+                                                >
+                                                  <MapPin className="h-3 w-3" />
+                                                  Ver no mapa
+                                                </a>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                }
+                                
+                                // Fallback: usar localização única
+                                if (location.hasAddress || location.hasCoords) {
+                                  return (
+                                    <div>
+                                      <div className="text-gray-900 font-medium max-w-full break-words" title={location.endereco || ''}>
+                                        {location.endereco?.trim() || (location.hasCoords ? `${location.latitude}, ${location.longitude}` : 'Endereço não informado')}
+                                      </div>
+                                      <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
+                                        {location.hasCoords && (
+                                          <span className="font-mono text-xs">
+                                            ({location.latitude}, {location.longitude})
+                                          </span>
+                                        )}
+                                        {mapHref && (
+                                          <a
+                                            href={mapHref}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:underline text-xs flex items-center gap-1"
+                                          >
+                                            <MapPin className="h-3 w-3" />
+                                            Ver no mapa
+                                          </a>
+                                        )}
+                                        {record.localizacao_type && (
+                                          <span className="text-xs">• origem: {record.localizacao_type}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                
+                                // Sem localização
+                                return (
+                                  <div className="text-gray-500 text-xs">Coordenadas e endereço não informados</div>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}

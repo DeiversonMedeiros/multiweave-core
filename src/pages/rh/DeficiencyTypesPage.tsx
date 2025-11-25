@@ -9,6 +9,7 @@ import { toast } from '@/hooks/use-toast';
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCompany } from '@/lib/company-context';
 
 /*interface DeficiencyType {
   id: string;
@@ -27,7 +28,10 @@ const DeficiencyTypesPage: React.FC = () => {
   const [editingItem, setEditingItem] = useState<DeficiencyType | null>(null);
   const [formData, setFormData] = useState<Partial<DeficiencyType>>({});
 
-  const { data = [], isLoading } = useDeficiencyTypes();
+  const { selectedCompany } = useCompany();
+  const deficiencyTypesQuery = useDeficiencyTypes();
+  const data = deficiencyTypesQuery.data || [];
+  const isLoading = deficiencyTypesQuery.isLoading;
   const createMutation = useCreateDeficiencyType();
   const updateMutation = useUpdateDeficiencyType();
   const deleteMutation = useDeleteDeficiencyType();
@@ -44,31 +48,32 @@ const DeficiencyTypesPage: React.FC = () => {
       sortable: true,
     },
     {
-      key: 'categoria',
-      label: 'Categoria',
+      key: 'tipo',
+      label: 'Tipo',
       render: (value: string) => {
-        const categoriaLabels = {
+        const tipoLabels = {
           fisica: 'Física',
-          mental: 'Mental',
           visual: 'Visual',
           auditiva: 'Auditiva',
           intelectual: 'Intelectual',
+          mental: 'Mental',
           multipla: 'Múltipla',
+          outra: 'Outra',
         };
-        return categoriaLabels[value as keyof typeof categoriaLabels] || value;
+        return tipoLabels[value as keyof typeof tipoLabels] || value;
       },
     },
     {
       key: 'grau',
       label: 'Grau',
       render: (value: string) => {
-        const grauLabels = {
+        const grauLabels: Record<string, string> = {
           leve: 'Leve',
-          moderado: 'Moderado',
-          severo: 'Severo',
-          profundo: 'Profundo',
+          moderada: 'Moderada',
+          severa: 'Severa',
+          profunda: 'Profunda',
         };
-        return grauLabels[value as keyof typeof grauLabels] || value;
+        return (value && grauLabels[value]) || value || 'Não especificado';
       },
     },
     {
@@ -100,29 +105,31 @@ const DeficiencyTypesPage: React.FC = () => {
       placeholder: 'Descrição do tipo de deficiência',
     },
     {
-      name: 'categoria',
-      label: 'Categoria',
+      name: 'tipo',
+      label: 'Tipo',
       type: 'select' as const,
       required: true,
       options: [
         { value: 'fisica', label: 'Física' },
-        { value: 'mental', label: 'Mental' },
         { value: 'visual', label: 'Visual' },
         { value: 'auditiva', label: 'Auditiva' },
         { value: 'intelectual', label: 'Intelectual' },
+        { value: 'mental', label: 'Mental' },
         { value: 'multipla', label: 'Múltipla' },
+        { value: 'outra', label: 'Outra' },
       ],
     },
     {
       name: 'grau',
       label: 'Grau',
       type: 'select' as const,
-      required: true,
+      required: false,
       options: [
+        { value: '', label: 'Não especificado' },
         { value: 'leve', label: 'Leve' },
-        { value: 'moderado', label: 'Moderado' },
-        { value: 'severo', label: 'Severo' },
-        { value: 'profundo', label: 'Profundo' },
+        { value: 'moderada', label: 'Moderada' },
+        { value: 'severa', label: 'Severa' },
+        { value: 'profunda', label: 'Profunda' },
       ],
     },
     {
@@ -138,8 +145,8 @@ const DeficiencyTypesPage: React.FC = () => {
       codigo: '',
       nome: '',
       descricao: '',
-      categoria: 'fisica',
-      grau: 'leve',
+      tipo: 'fisica',
+      grau: undefined,
       ativo: true,
     });
     setIsModalOpen(true);

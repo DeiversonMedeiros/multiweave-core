@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useCreateFgtsConfig, useUpdateFgtsConfig } from '@/hooks/rh/useFgtsConfig';
 import { FgtsConfig, FgtsConfigCreateData } from '@/integrations/supabase/rh-types';
 import { validateFgtsConfig } from '@/services/rh/fgtsConfigService';
+import { getContractTypes } from '@/services/rh/employmentContractsService';
 import { toast } from 'sonner';
 
 interface FgtsConfigFormProps {
@@ -30,6 +31,7 @@ export default function FgtsConfigForm({ isOpen, onClose, mode, config }: FgtsCo
     teto_salario: 0,
     valor_minimo_contribuicao: 0,
     multa_rescisao: 0.4, // 40% padrão
+    tipo_contrato: null, // NULL = configuração geral
     ativo: true,
   });
   const [errors, setErrors] = useState<string[]>([]);
@@ -53,6 +55,7 @@ export default function FgtsConfigForm({ isOpen, onClose, mode, config }: FgtsCo
         teto_salario: config.teto_salario || 0,
         valor_minimo_contribuicao: config.valor_minimo_contribuicao || 0,
         multa_rescisao: config.multa_rescisao || 0,
+        tipo_contrato: config.tipo_contrato || null,
         ativo: config.ativo,
       });
     } else {
@@ -68,6 +71,7 @@ export default function FgtsConfigForm({ isOpen, onClose, mode, config }: FgtsCo
         teto_salario: 0,
         valor_minimo_contribuicao: 0,
         multa_rescisao: 0.4,
+        tipo_contrato: null,
         ativo: true,
       });
     }
@@ -291,6 +295,33 @@ export default function FgtsConfigForm({ isOpen, onClose, mode, config }: FgtsCo
               />
               <p className="text-xs text-muted-foreground">
                 Valor mínimo para contribuição
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Tipo de Contrato */}
+            <div className="space-y-2">
+              <Label htmlFor="tipo_contrato">Tipo de Contrato (Opcional)</Label>
+              <Select
+                value={formData.tipo_contrato || ''}
+                onValueChange={(value) => handleInputChange('tipo_contrato', value === '' ? null : value)}
+                disabled={isDisabled}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Configuração Geral (aplica a todos)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Configuração Geral (aplica a todos)</SelectItem>
+                  {getContractTypes().map((tipo) => (
+                    <SelectItem key={tipo.value} value={tipo.value}>
+                      {tipo.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Deixe vazio para configuração geral. Selecione um tipo para configuração específica.
               </p>
             </div>
           </div>

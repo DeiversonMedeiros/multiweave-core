@@ -18,7 +18,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Building2 } from 'lucide-react';
 
 interface DynamicMenuProps {
   className?: string;
@@ -109,14 +108,12 @@ export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
   return (
     <Sidebar collapsible="icon" className={`border-r border-sidebar-border ${className}`}>
       <SidebarContent className="sidebar-scrollbar">
-        <div className="p-4 flex items-center gap-2">
-          <Building2 className="h-8 w-8 text-sidebar-primary" />
-          {open && (
-            <div className="flex flex-col">
-              <span className="text-lg font-bold text-sidebar-foreground">MultiWeave</span>
-              <span className="text-xs text-sidebar-foreground/60">ERP System</span>
-            </div>
-          )}
+        <div className="p-4 flex items-center justify-center">
+          <img
+            src="/logo-vision.png"
+            alt="Vision ERP"
+            className={`transition-all duration-200 ${open ? 'h-12' : 'h-10'} w-auto`}
+          />
         </div>
 
         <SidebarGroup>

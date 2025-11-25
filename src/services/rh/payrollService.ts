@@ -148,19 +148,40 @@ export const PayrollService = {
                recordDate.getFullYear() === params.year;
       });
 
+      // Verificar se funcionário tem banco de horas ativo
+      const { data: bankHoursConfig } = await supabase
+        .from('rh.bank_hours_config')
+        .select('has_bank_hours, is_active')
+        .eq('employee_id', params.employeeId)
+        .eq('company_id', params.companyId)
+        .single();
+
+      const hasActiveBankHours = bankHoursConfig?.has_bank_hours && bankHoursConfig?.is_active;
+
       // Calcular horas trabalhadas
       const totalHours = monthRecords?.reduce((sum, record) => {
         return sum + (record.horas_trabalhadas || 0);
       }, 0) || 0;
 
-      const overtimeHours = monthRecords?.reduce((sum, record) => {
-        return sum + (record.horas_extras || 0);
-      }, 0) || 0;
+      // Se funcionário tem banco de horas ativo, horas extras vão para o banco (não são pagas)
+      // Se não tem banco de horas ativo, horas extras são pagas normalmente
+      const overtimeHours = hasActiveBankHours 
+        ? 0  // Horas extras vão para o banco de horas, não são pagas na folha
+        : monthRecords?.reduce((sum, record) => {
+            // Apenas contar horas extras positivas de registros aprovados
+            return sum + ((record.horas_extras && record.horas_extras > 0 && record.status === 'aprovado') ? record.horas_extras : 0);
+          }, 0) || 0;
 
-      // Buscar benefícios que entram no cálculo da folha
+      // Calcular datas do período (mês de referência)
+      const startDate = new Date(params.year, params.month - 1, 1);
+      const endDate = new Date(params.year, params.month, 0); // Último dia do mês
+
+      // Buscar benefícios que entram no cálculo da folha (com cálculo de dias reais)
       const { data: payrollBenefits } = await supabase.rpc('get_employee_payroll_benefits', {
         company_id_param: params.companyId,
-        employee_id_param: params.employeeId
+        employee_id_param: params.employeeId,
+        month_param: params.month,
+        year_param: params.year
       });
       
       const activeBenefits = payrollBenefits || [];
@@ -186,8 +207,9 @@ export const PayrollService = {
       const overtimeValue = overtimeHours * (baseSalary / 160); // 160h = 1 mês
       
       // Calcular total de benefícios que entram na folha (benefícios tradicionais + convênios médicos)
+      // Usar calculated_value se disponível, senão usar custom_value
       const traditionalBenefitsTotal = activeBenefits.reduce((sum, benefit) => {
-        return sum + (benefit.custom_value || 0);
+        return sum + (benefit.calculated_value || benefit.custom_value || 0);
       }, 0);
 
       const medicalBenefitsTotal = activeMedicalBenefits.reduce((sum, benefit) => {
@@ -210,6 +232,11 @@ export const PayrollService = {
       
       const netSalary = totalEarnings - totalDiscounts;
 
+      // Calcular horas extras totais (para registro, mesmo que não sejam pagas)
+      const totalOvertimeHoursInRecords = monthRecords?.reduce((sum, record) => {
+        return sum + ((record.horas_extras && record.horas_extras > 0 && record.status === 'aprovado') ? record.horas_extras : 0);
+      }, 0) || 0;
+
       // Criar registro de folha
       const payrollData: PayrollInsert = {
         employee_id: params.employeeId,
@@ -217,8 +244,8 @@ export const PayrollService = {
         ano_referencia: params.year,
         salario_base: baseSalary,
         horas_trabalhadas: totalHours,
-        horas_extras: overtimeHours,
-        valor_horas_extras: overtimeValue,
+        horas_extras: hasActiveBankHours ? totalOvertimeHoursInRecords : overtimeHours, // Total para registro (pode ser diferente do valor pago)
+        valor_horas_extras: overtimeValue, // Valor pago (0 se tem banco de horas ativo)
         total_beneficios_tradicionais: traditionalBenefitsTotal,
         total_beneficios_convenios_medicos: medicalBenefitsTotal,
         total_descontos_convenios_medicos: medicalDiscountsTotal,
@@ -288,6 +315,10 @@ export const PayrollService = {
     year: number;
   }): Promise<Payroll[]> => {
     try {
+      // Importar serviços necessários (lazy import para evitar dependência circular)
+      const { FinancialIntegrationService } = await import('@/services/rh/financialIntegrationService');
+      const { EntityService } = await import('@/services/generic/entityService');
+      
       // Buscar todos os funcionários ativos
       const { data: employees } = await supabase.rpc('get_employees_by_string', {
         company_id_param: params.companyId
@@ -296,6 +327,15 @@ export const PayrollService = {
       const activeEmployees = (employees as Employee[])?.filter(emp => emp.status === 'ativo') || [];
       
       const payrolls: Payroll[] = [];
+      
+      // Verificar configuração de integração financeira (uma vez para todos)
+      const integrationService = FinancialIntegrationService.getInstance();
+      let integrationConfig: any = null;
+      try {
+        integrationConfig = await integrationService.getIntegrationConfig(params.companyId);
+      } catch (configError) {
+        console.warn('Não foi possível carregar configuração de integração financeira:', configError);
+      }
       
       for (const employee of activeEmployees) {
         try {
@@ -306,6 +346,37 @@ export const PayrollService = {
             year: params.year
           });
           payrolls.push(payroll);
+
+          // Criar conta a pagar automaticamente se a folha foi processada e a configuração estiver habilitada
+          if (payroll && (payroll.status === 'processado' || payroll.status === 'pago') && integrationConfig?.autoCreateAP) {
+            try {
+              const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+              const monthName = monthNames[(payroll.mes_referencia || 1) - 1];
+              const period = `${monthName}/${payroll.ano_referencia}`;
+              
+              // Calcular data de vencimento
+              const dueDate = new Date();
+              dueDate.setDate(dueDate.getDate() + (integrationConfig.defaultDueDate || 5));
+              
+              await integrationService.createAccountPayable(
+                params.companyId,
+                {
+                  payrollId: payroll.id,
+                  employeeId: employee.id,
+                  employeeName: employee.nome || 'Funcionário',
+                  netSalary: payroll.salario_liquido || 0,
+                  period: period,
+                  dueDate: dueDate.toISOString().split('T')[0],
+                  costCenter: employee.cost_center_id || undefined
+                },
+                integrationConfig
+              );
+            } catch (apError) {
+              console.error(`Erro ao criar conta a pagar para funcionário ${employee.nome}:`, apError);
+              // Não falhar o processamento da folha se a conta a pagar falhar
+            }
+          }
         } catch (error) {
           console.error(`Erro ao processar folha do funcionário ${employee.nome}:`, error);
           // Continua processando outros funcionários
@@ -318,5 +389,16 @@ export const PayrollService = {
       console.error('Erro ao processar folha da empresa:', error);
       throw error;
     }
+  },
+
+  /**
+   * Alias para processCompanyPayroll (compatibilidade)
+   */
+  processAllPayroll: async (params: {
+    companyId: string;
+    month: number;
+    year: number;
+  }): Promise<Payroll[]> => {
+    return this.processCompanyPayroll(params);
   }
 };

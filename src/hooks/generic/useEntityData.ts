@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { EntityService, EntityListParams, EntityFilters } from '@/services/generic/entityService';
+import { queryConfig } from '@/lib/react-query-config';
 
 // =====================================================
 // HOOK GENÉRICO PARA QUALQUER ENTIDADE
@@ -13,6 +14,9 @@ export function useEntityData<T = any>(params: EntityListParams) {
   const queryKey = [params.schema, params.table, params.companyId, cleanFilters, params.page, params.pageSize];
   console.log('🔍 [DEBUG] useEntityData - queryKey:', queryKey);
   
+  // Validar se companyId é válido (não vazio e não undefined)
+  const isValidCompanyId = params.companyId && params.companyId.trim() !== '';
+  
   const query = useQuery({
     queryKey,
     queryFn: () => {
@@ -20,8 +24,8 @@ export function useEntityData<T = any>(params: EntityListParams) {
       console.log('🔍 [DEBUG] useEntityData - queryFn params:', params);
       return EntityService.list<T>(params);
     },
-    enabled: !!params.companyId,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+    enabled: isValidCompanyId,
+    ...queryConfig.semiStatic,
     retry: 3,
     retryDelay: 1000,
   });
@@ -134,7 +138,7 @@ export function useSearchEntity<T = any>(
     queryKey: [schema, table, 'search', companyId, searchTerm, additionalFilters],
     queryFn: () => EntityService.search<T>(schema, table, companyId, searchTerm, additionalFilters),
     enabled: !!companyId && !!searchTerm,
-    staleTime: 2 * 60 * 1000, // 2 minutos
+    ...queryConfig.dynamic,
   });
 }
 

@@ -11,25 +11,15 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
-
-interface ExameData {
-  id: string;
-  funcionario_nome: string;
-  funcionario_matricula: string;
-  tipo_exame: string;
-  data_agendamento: string;
-  data_vencimento: string;
-  status: 'agendado' | 'realizado' | 'vencido' | 'pendente';
-  observacoes?: string;
-  dias_para_vencimento: number;
-}
+import { useExamesGestor, ExameData } from '@/hooks/portal-gestor/useExamesGestor';
 
 const AcompanhamentoExames: React.FC = () => {
   const navigate = useNavigate();
@@ -37,49 +27,8 @@ const AcompanhamentoExames: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [tipoFilter, setTipoFilter] = useState<string>('todos');
 
-  // Mock data - em produção virá do Supabase
-  const examesData: ExameData[] = [
-    {
-      id: '1',
-      funcionario_nome: 'João Silva',
-      funcionario_matricula: '001',
-      tipo_exame: 'Exame Admissional',
-      data_agendamento: '2025-01-15',
-      data_vencimento: '2025-01-15',
-      status: 'realizado',
-      dias_para_vencimento: 0
-    },
-    {
-      id: '2',
-      funcionario_nome: 'Maria Santos',
-      funcionario_matricula: '002',
-      tipo_exame: 'Exame Periódico',
-      data_agendamento: '2025-01-20',
-      data_vencimento: '2025-01-20',
-      status: 'agendado',
-      dias_para_vencimento: 10
-    },
-    {
-      id: '3',
-      funcionario_nome: 'Pedro Costa',
-      funcionario_matricula: '003',
-      tipo_exame: 'Exame Demissional',
-      data_agendamento: '2025-01-05',
-      data_vencimento: '2025-01-05',
-      status: 'vencido',
-      dias_para_vencimento: -5
-    },
-    {
-      id: '4',
-      funcionario_nome: 'Ana Oliveira',
-      funcionario_matricula: '004',
-      tipo_exame: 'Exame de Retorno ao Trabalho',
-      data_agendamento: '2025-01-18',
-      data_vencimento: '2025-01-18',
-      status: 'pendente',
-      dias_para_vencimento: 8
-    }
-  ];
+  // Buscar dados reais do banco
+  const { data: examesData = [], isLoading, error } = useExamesGestor();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -141,6 +90,38 @@ const AcompanhamentoExames: React.FC = () => {
 
   const stats = getEstatisticas();
 
+  // Loading state
+  if (isLoading) {
+    return (
+      <RequireEntity entityName="exam_management" action="read">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>Carregando exames...</span>
+          </div>
+        </div>
+      </RequireEntity>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <RequireEntity entityName="exam_management" action="read">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Erro ao carregar exames</h3>
+            <p className="text-gray-600 mb-4">Não foi possível carregar os dados dos exames.</p>
+            <Button onClick={() => window.location.reload()}>
+              Tentar novamente
+            </Button>
+          </div>
+        </div>
+      </RequireEntity>
+    );
+  }
+
   return (
     <RequireEntity entityName="exam_management" action="read">
       <div className="space-y-6">
@@ -158,7 +139,7 @@ const AcompanhamentoExames: React.FC = () => {
       </div>
 
       {/* Estatísticas */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total de Exames</CardTitle>
@@ -256,7 +237,7 @@ const AcompanhamentoExames: React.FC = () => {
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Buscar</label>
               <Input
