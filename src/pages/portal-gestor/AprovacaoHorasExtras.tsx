@@ -29,7 +29,11 @@ export interface OvertimeRecordDetails {
   entrada_extra1?: string;
   saida_extra1?: string;
   horas_trabalhadas: number;
-  horas_extras: number;
+  horas_extras: number; // Mantido para compatibilidade
+  horas_extras_50?: number;
+  horas_extras_100?: number;
+  horas_para_banco?: number;
+  horas_para_pagamento?: number;
   horas_faltas: number;
   status: 'pendente' | 'aprovado' | 'rejeitado';
   observacoes?: string;
@@ -107,9 +111,14 @@ export default function AprovacaoHorasExtras() {
         observacoes: aprovacaoObservacoes || undefined
       });
 
+      const totalExtras = (selectedRecord.horas_extras_50 || 0) + (selectedRecord.horas_extras_100 || 0) || selectedRecord.horas_extras;
+      const extras50 = selectedRecord.horas_extras_50 ? `${selectedRecord.horas_extras_50.toFixed(1)}h (50%)` : '';
+      const extras100 = selectedRecord.horas_extras_100 ? `${selectedRecord.horas_extras_100.toFixed(1)}h (100%)` : '';
+      const extrasDesc = extras50 && extras100 ? `${extras50} e ${extras100}` : extras50 || extras100 || `${selectedRecord.horas_extras.toFixed(1)}h`;
+      
       toast({
         title: "Hora extra aprovada!",
-        description: `O registro de ponto com ${selectedRecord.horas_extras}h de hora extra foi aprovado com sucesso.`,
+        description: `O registro de ponto com ${extrasDesc} de hora extra foi aprovado com sucesso.`,
       });
 
       setIsAprovacaoDialogOpen(false);
@@ -338,10 +347,32 @@ export default function AprovacaoHorasExtras() {
                         <span className="font-medium">{record.horas_trabalhadas.toFixed(2)}h</span>
                       </TableCell>
                       <TableCell>
-                        <Badge className="bg-orange-100 text-orange-800 border-orange-200">
-                          <TrendingUp className="w-3 h-3 mr-1" />
-                          {record.horas_extras.toFixed(2)}h
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          {/* Mostrar horas separadas se disponível */}
+                          {((record.horas_extras_50 && record.horas_extras_50 > 0) || 
+                            (record.horas_extras_100 && record.horas_extras_100 > 0)) ? (
+                            <>
+                              {record.horas_extras_50 && record.horas_extras_50 > 0 && (
+                                <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">
+                                  <TrendingUp className="w-3 h-3 mr-1" />
+                                  {record.horas_extras_50.toFixed(2)}h (50% - Banco)
+                                </Badge>
+                              )}
+                              {record.horas_extras_100 && record.horas_extras_100 > 0 && (
+                                <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs">
+                                  <TrendingUp className="w-3 h-3 mr-1" />
+                                  {record.horas_extras_100.toFixed(2)}h (100% - Pagamento)
+                                </Badge>
+                              )}
+                            </>
+                          ) : (
+                            // Fallback para registros antigos
+                            <Badge className="bg-orange-100 text-orange-800 border-orange-200">
+                              <TrendingUp className="w-3 h-3 mr-1" />
+                              {record.horas_extras.toFixed(2)}h
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(record.status)}>
@@ -548,8 +579,31 @@ export default function AprovacaoHorasExtras() {
                   <p className="text-sm font-bold text-blue-600">{selectedRecord.horas_trabalhadas.toFixed(2)}h</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-gray-600">Hora Extra</Label>
-                  <p className="text-sm font-bold text-orange-600">{selectedRecord.horas_extras.toFixed(2)}h</p>
+                  <Label className="text-sm font-medium text-gray-600">Horas Extras</Label>
+                  <div className="space-y-1">
+                    {/* Mostrar horas separadas se disponível */}
+                    {((selectedRecord.horas_extras_50 && selectedRecord.horas_extras_50 > 0) || 
+                      (selectedRecord.horas_extras_100 && selectedRecord.horas_extras_100 > 0)) ? (
+                      <>
+                        {selectedRecord.horas_extras_50 && selectedRecord.horas_extras_50 > 0 && (
+                          <p className="text-xs text-blue-600">
+                            {selectedRecord.horas_extras_50.toFixed(2)}h (50% - Banco)
+                          </p>
+                        )}
+                        {selectedRecord.horas_extras_100 && selectedRecord.horas_extras_100 > 0 && (
+                          <p className="text-xs text-orange-600">
+                            {selectedRecord.horas_extras_100.toFixed(2)}h (100% - Pagamento)
+                          </p>
+                        )}
+                        <p className="text-sm font-bold text-orange-700 pt-1 border-t">
+                          Total: {((selectedRecord.horas_extras_50 || 0) + (selectedRecord.horas_extras_100 || 0)).toFixed(2)}h
+                        </p>
+                      </>
+                    ) : (
+                      // Fallback para registros antigos
+                      <p className="text-sm font-bold text-orange-600">{selectedRecord.horas_extras.toFixed(2)}h</p>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Horas Faltas</Label>

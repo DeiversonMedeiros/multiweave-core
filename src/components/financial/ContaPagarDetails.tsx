@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Label } from '@/components/ui/label';
 import { 
   X, 
   Edit, 
@@ -22,7 +23,9 @@ import {
   FileText,
   AlertTriangle,
   Clock,
-  User
+  User,
+  RotateCcw,
+  Ban
 } from 'lucide-react';
 import { ContaPagar } from '@/integrations/supabase/financial-types';
 import { format } from 'date-fns';
@@ -35,6 +38,8 @@ interface ContaPagarDetailsProps {
   onDelete: (conta: ContaPagar) => void;
   onApprove: (conta: ContaPagar) => void;
   onReject: (conta: ContaPagar) => void;
+  onReprovar?: (conta: ContaPagar) => void;
+  onSuspender?: (conta: ContaPagar) => void;
   onPay: (conta: ContaPagar) => void;
   canEdit: boolean;
   canDelete: boolean;
@@ -48,6 +53,8 @@ export function ContaPagarDetails({
   onDelete,
   onApprove,
   onReject,
+  onReprovar,
+  onSuspender,
   onPay,
   canEdit,
   canDelete,
@@ -316,6 +323,26 @@ export function ContaPagarDetails({
                   Rejeitar
                 </Button>
               </>
+            )}
+            {canApprove && onReprovar && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && (
+              <Button 
+                variant="outline" 
+                onClick={() => onReprovar(conta)}
+                className="text-orange-600 hover:text-orange-700"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Reprovar
+              </Button>
+            )}
+            {canApprove && onSuspender && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && (
+              <Button 
+                variant="outline" 
+                onClick={() => onSuspender(conta)}
+                className="text-red-600 hover:text-red-700"
+              >
+                <Ban className="h-4 w-4 mr-2" />
+                Suspender
+              </Button>
             )}
             {canEdit && conta.status === 'aprovado' && (
               <Button 

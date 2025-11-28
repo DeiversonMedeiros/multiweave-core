@@ -51,6 +51,11 @@ export interface ContaPagar {
   aprovacoes_rejeitadas?: number;
   nivel_atual_aprovacao?: number;
   proximo_aprovador_id?: string;
+  // Campos de alerta de vencimento
+  dias_ate_vencimento?: number;
+  tipo_alerta?: 'vencida' | 'vencendo_hoje' | 'vencendo_em_3_dias' | 'vencendo_em_7_dias' | 'sem_alerta';
+  esta_vencida?: boolean;
+  esta_proxima_vencer?: boolean;
 }
 
 export interface ContaPagarParcela {
@@ -354,6 +359,10 @@ export interface ContaPagarFilters {
   forma_pagamento?: string;
   conta_bancaria_id?: string;
   is_parcelada?: boolean;
+  // Filtros de vencimento
+  apenas_vencidas?: boolean;
+  apenas_proximas_vencer?: boolean;
+  dias_alerta?: number;
 }
 
 export interface ContaReceberFilters {

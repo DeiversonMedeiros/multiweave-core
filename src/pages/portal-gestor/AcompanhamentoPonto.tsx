@@ -512,14 +512,38 @@ const AcompanhamentoPonto: React.FC = () => {
                             {calculateTotalHours(ponto)}
                           </span>
                         </div>
-                        {ponto.horas_extras != null && Number(ponto.horas_extras) > 0 && (
+                        {/* Horas Extras - Mostrar separadamente se disponível */}
+                        {((ponto.horas_extras_50 && ponto.horas_extras_50 > 0) || 
+                          (ponto.horas_extras_100 && ponto.horas_extras_100 > 0)) ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            {ponto.horas_extras_50 && ponto.horas_extras_50 > 0 && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-500">Extras 50%:</span>
+                                <span className="font-medium text-blue-600">
+                                  +{ponto.horas_extras_50.toFixed(1)}h
+                                </span>
+                                <span className="text-xs text-gray-400">(Banco)</span>
+                              </div>
+                            )}
+                            {ponto.horas_extras_100 && ponto.horas_extras_100 > 0 && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-gray-500">Extras 100%:</span>
+                                <span className="font-medium text-orange-600">
+                                  +{ponto.horas_extras_100.toFixed(1)}h
+                                </span>
+                                <span className="text-xs text-gray-400">(Pagamento)</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : ponto.horas_extras != null && Number(ponto.horas_extras) > 0 ? (
+                          // Fallback para registros antigos
                           <div className="text-sm">
                             <span className="text-gray-500">Extras: </span>
                             <span className="font-medium text-orange-600">
                               +{Number(ponto.horas_extras).toFixed(1)}h
                             </span>
                           </div>
-                        )}
+                        ) : null}
                       </div>
                       
                       {ponto.observacoes && (

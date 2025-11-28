@@ -917,8 +917,15 @@ export interface TimeRecord {
   entrada_extra1?: string;
   saida_extra1?: string;
   horas_trabalhadas: number;
-  horas_extras: number;
+  horas_extras: number; // Mantido para compatibilidade
+  horas_extras_50?: number; // Horas extras com adicional de 50% (vão para banco)
+  horas_extras_100?: number; // Horas extras com adicional de 100% (pagamento direto)
+  horas_para_banco?: number; // Horas que vão para o banco de horas
+  horas_para_pagamento?: number; // Horas que devem ser pagas diretamente
   horas_faltas: number;
+  is_feriado?: boolean; // Indica se o dia é feriado
+  is_domingo?: boolean; // Indica se o dia é domingo
+  is_dia_folga?: boolean; // Indica se é dia de folga do funcionário
   status: 'pendente' | 'aprovado' | 'rejeitado' | 'corrigido';
   observacoes?: string;
   aprovado_por?: string;

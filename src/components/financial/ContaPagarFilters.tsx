@@ -340,6 +340,59 @@ export function ContaPagarFilters({ filters, onFiltersChange, onClose }: ContaPa
                 Apenas contas parceladas
               </Label>
             </div>
+
+            {/* Filtros de Vencimento */}
+            <div className="space-y-2 pt-4 border-t">
+              <Label className="text-base font-semibold">Filtros de Vencimento</Label>
+              
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="apenas_vencidas"
+                  checked={filters.apenas_vencidas === true}
+                  onCheckedChange={(checked) => {
+                    handleFilterChange('apenas_vencidas', checked === true ? true : undefined);
+                    if (checked) {
+                      handleFilterChange('apenas_proximas_vencer', undefined);
+                    }
+                  }}
+                />
+                <Label htmlFor="apenas_vencidas" className="cursor-pointer">
+                  Apenas contas vencidas
+                </Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="apenas_proximas_vencer"
+                  checked={filters.apenas_proximas_vencer === true}
+                  onCheckedChange={(checked) => {
+                    handleFilterChange('apenas_proximas_vencer', checked === true ? true : undefined);
+                    if (checked) {
+                      handleFilterChange('apenas_vencidas', undefined);
+                    }
+                  }}
+                />
+                <Label htmlFor="apenas_proximas_vencer" className="cursor-pointer">
+                  Apenas contas próximas a vencer
+                </Label>
+              </div>
+
+              <div>
+                <Label htmlFor="dias_alerta">Dias de alerta para "próximo a vencer"</Label>
+                <Input
+                  id="dias_alerta"
+                  type="number"
+                  min="1"
+                  max="30"
+                  placeholder="7"
+                  value={filters.dias_alerta || 7}
+                  onChange={(e) => handleFilterChange('dias_alerta', e.target.value ? parseInt(e.target.value) : 7)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Contas que vencem dentro deste número de dias serão marcadas como "próximas a vencer"
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Botões */}

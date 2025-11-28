@@ -74,10 +74,10 @@ const menuItems = [
     description: 'Solicite e acompanhe suas férias'
   },
   {
-    title: 'Holerites',
+    title: 'Contracheques',
     href: '/portal-colaborador/holerites',
     icon: FileText,
-    description: 'Visualize seus holerites'
+    description: 'Visualize seus contracheques'
   },
   {
     title: 'Reembolsos',

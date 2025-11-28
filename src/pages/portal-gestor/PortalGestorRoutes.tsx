@@ -14,6 +14,7 @@ import AprovacaoHorasExtras from './AprovacaoHorasExtras';
 import AprovacaoAssinaturasPonto from './AprovacaoAssinaturasPonto';
 import AcompanhamentoPonto from './AcompanhamentoPonto';
 import AcompanhamentoExames from './AcompanhamentoExames';
+import AcompanhamentoBancoHoras from './AcompanhamentoBancoHoras';
 
 const PortalGestorRoutes: React.FC = () => {
   return (
@@ -33,6 +34,7 @@ const PortalGestorRoutes: React.FC = () => {
         <Route path="aprovacoes/assinaturas-ponto" element={<AprovacaoAssinaturasPonto />} />
         <Route path="acompanhamento/ponto" element={<AcompanhamentoPonto />} />
         <Route path="acompanhamento/exames" element={<AcompanhamentoExames />} />
+        <Route path="acompanhamento/banco-horas" element={<AcompanhamentoBancoHoras />} />
       </Route>
     </Routes>
   );

@@ -129,18 +129,47 @@ export function useBankHoursBalance(companyId: string, employeeId?: string) {
   const fetchBalances = async () => {
     try {
       setLoading(true);
-      const filters = employeeId ? { employee_id: employeeId } : {};
       
-      const result = await EntityService.list({
-        schema: 'rh',
-        table: 'bank_hours_balance',
-        companyId: companyId,
-        filters: filters,
-        orderBy: 'last_calculation_date',
-        orderDirection: 'DESC'
-      });
+      // Usar função RPC que retorna saldos com dados dos funcionários
+      const { data, error } = await (supabase as any)
+        .rpc('get_bank_hours_balances_with_employees', {
+          p_company_id: companyId,
+        });
+
+      if (error) {
+        console.error('[useBankHoursBalance] Erro na RPC:', error);
+        throw error;
+      }
+
+      // Mapear dados da RPC para o formato esperado
+      const mappedBalances = (data || []).map((item: any) => ({
+        id: item.id,
+        employee_id: item.employee_id,
+        company_id: item.company_id,
+        current_balance: item.current_balance,
+        accumulated_hours: item.accumulated_hours,
+        compensated_hours: item.compensated_hours,
+        expired_hours: item.expired_hours,
+        last_calculation_date: item.last_calculation_date,
+        next_expiration_date: item.next_expiration_date,
+        is_locked: item.is_locked,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        // Incluir dados do funcionário
+        employee: item.employee_nome ? {
+          id: item.employee_id,
+          nome: item.employee_nome,
+          matricula: item.employee_matricula,
+          cpf: item.employee_cpf,
+        } : undefined,
+      }));
+
+      // Filtrar por employee_id se especificado
+      const filteredBalances = employeeId 
+        ? mappedBalances.filter((b: any) => b.employee_id === employeeId)
+        : mappedBalances;
       
-      setBalances(result.data || []);
+      setBalances(filteredBalances);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar saldos');
     } finally {
@@ -196,34 +225,64 @@ export function useBankHoursTransactions(companyId: string, employeeId?: string)
   }) => {
     try {
       setLoading(true);
-      const queryFilters: any = {};
       
-      if (employeeId) {
-        queryFilters.employee_id = employeeId;
+      // Usar função RPC que retorna transações com dados dos funcionários
+      const { data, error } = await (supabase as any)
+        .rpc('get_bank_hours_transactions_with_employees', {
+          p_company_id: companyId,
+          p_employee_id: employeeId || null,
+        });
+
+      if (error) {
+        console.error('[useBankHoursTransactions] Erro na RPC:', error);
+        throw error;
       }
-      
+
+      // Mapear dados da RPC para o formato esperado
+      let mappedTransactions = (data || []).map((item: any) => ({
+        id: item.id,
+        employee_id: item.employee_id,
+        company_id: item.company_id,
+        transaction_type: item.transaction_type,
+        transaction_date: item.transaction_date,
+        hours_amount: item.hours_amount,
+        time_record_id: item.time_record_id,
+        reference_period_start: item.reference_period_start,
+        reference_period_end: item.reference_period_end,
+        description: item.description,
+        compensation_rate: item.compensation_rate,
+        is_automatic: item.is_automatic,
+        created_by: item.created_by,
+        approved_by: item.approved_by,
+        approved_at: item.approved_at,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        overtime_percentage: item.overtime_percentage,
+        expires_at: item.expires_at,
+        is_paid: item.is_paid,
+        closure_id: item.closure_id,
+        // Incluir dados do funcionário
+        employee: item.employee_nome ? {
+          id: item.employee_id,
+          nome: item.employee_nome,
+          matricula: item.employee_matricula,
+        } : undefined,
+      }));
+
+      // Aplicar filtros adicionais no frontend (já que a RPC não suporta todos os filtros)
       if (filters?.startDate) {
-        queryFilters.transaction_date_gte = filters.startDate;
+        mappedTransactions = mappedTransactions.filter(t => t.transaction_date >= filters.startDate!);
       }
       
       if (filters?.endDate) {
-        queryFilters.transaction_date_lte = filters.endDate;
+        mappedTransactions = mappedTransactions.filter(t => t.transaction_date <= filters.endDate!);
       }
       
       if (filters?.transactionType) {
-        queryFilters.transaction_type = filters.transactionType;
+        mappedTransactions = mappedTransactions.filter(t => t.transaction_type === filters.transactionType);
       }
-
-      const result = await EntityService.list({
-        schema: 'rh',
-        table: 'bank_hours_transactions',
-        companyId: companyId,
-        filters: queryFilters,
-        orderBy: 'transaction_date',
-        orderDirection: 'DESC'
-      });
       
-      setTransactions(result.data || []);
+      setTransactions(mappedTransactions);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar transações');
     } finally {
@@ -278,6 +337,8 @@ export function useBankHoursCalculations(companyId: string) {
   const fetchCalculations = async () => {
     try {
       setLoading(true);
+      console.log('[useBankHoursCalculations] 🔍 Buscando cálculos:', { companyId });
+      
       const result = await EntityService.list({
         schema: 'rh',
         table: 'bank_hours_calculations',
@@ -286,8 +347,19 @@ export function useBankHoursCalculations(companyId: string) {
         orderDirection: 'DESC'
       });
       
+      console.log('[useBankHoursCalculations] ✅ Cálculos recebidos:', {
+        total: result.data?.length || 0,
+        calculations: result.data?.map((c: any) => ({
+          id: c.id,
+          date: c.calculation_date,
+          status: c.status,
+          employees: c.employees_processed
+        }))
+      });
+      
       setCalculations(result.data || []);
     } catch (err) {
+      console.error('[useBankHoursCalculations] ❌ Erro ao carregar cálculos:', err);
       setError(err instanceof Error ? err.message : 'Erro ao carregar cálculos');
     } finally {
       setLoading(false);

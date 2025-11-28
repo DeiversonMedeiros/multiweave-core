@@ -147,10 +147,10 @@ export const useMenu = () => {
         },
         {
           id: 'colaborador-holerites',
-          title: 'Holerites',
+          title: 'Contracheques',
           url: '/portal-colaborador/holerites',
           icon: FileText,
-          description: 'Visualização de holerites',
+          description: 'Visualização de contracheques',
           requiresPermission: { type: 'module', name: 'portal_colaborador', action: 'read' }
         },
         {

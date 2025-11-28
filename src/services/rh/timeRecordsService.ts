@@ -97,7 +97,14 @@ export const TimeRecordsService = {
         // garantir números para evitar quebras de UI (supabase retorna numeric como string)
         horas_trabalhadas: r.horas_trabalhadas != null ? Number(r.horas_trabalhadas) : r.horas_trabalhadas,
         horas_extras: r.horas_extras != null ? Number(r.horas_extras) : r.horas_extras,
+        horas_extras_50: r.horas_extras_50 != null ? Number(r.horas_extras_50) : r.horas_extras_50,
+        horas_extras_100: r.horas_extras_100 != null ? Number(r.horas_extras_100) : r.horas_extras_100,
+        horas_para_banco: r.horas_para_banco != null ? Number(r.horas_para_banco) : r.horas_para_banco,
+        horas_para_pagamento: r.horas_para_pagamento != null ? Number(r.horas_para_pagamento) : r.horas_para_pagamento,
         horas_faltas: r.horas_faltas != null ? Number(r.horas_faltas) : r.horas_faltas,
+        is_feriado: r.is_feriado || false,
+        is_domingo: r.is_domingo || false,
+        is_dia_folga: r.is_dia_folga || false,
         // Processar arrays JSON
         all_photos: allPhotos,
         all_locations: allLocations,

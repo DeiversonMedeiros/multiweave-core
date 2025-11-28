@@ -19,6 +19,7 @@ import {
   FileText,
   Calendar,
   Clock,
+  Clock3,
   DollarSign,
   Stethoscope,
   Laptop,
@@ -115,6 +116,12 @@ const menuItems = [
     href: '/portal-gestor/acompanhamento/exames',
     icon: Stethoscope,
     description: 'Controle de exames médicos'
+  },
+  {
+    title: 'Banco de Horas',
+    href: '/portal-gestor/acompanhamento/banco-horas',
+    icon: Clock3,
+    description: 'Acompanhamento de banco de horas dos funcionários'
   }
 ];
 

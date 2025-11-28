@@ -25,7 +25,7 @@ export default function HoleritesPage() {
   // Buscar funcionário
   const { data: employee } = useEmployeeByUserId(user?.id || '');
 
-  // Buscar holerites
+  // Buscar contracheques
   const { data: payrollSlips, isLoading } = useQuery({
     queryKey: ['payroll-slips', employee?.id],
     queryFn: async () => {
@@ -62,7 +62,7 @@ export default function HoleritesPage() {
       link.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Erro ao baixar holerite:', error);
+      console.error('Erro ao baixar contracheque:', error);
     }
   };
 
@@ -80,18 +80,18 @@ export default function HoleritesPage() {
       <div className="p-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Holerites</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Contracheques</h1>
         <p className="text-gray-600">
-          Visualize e baixe seus holerites
+          Visualize e baixe seus contracheques
         </p>
       </div>
 
-      {/* Lista de holerites */}
+      {/* Lista de contracheques */}
       <Card>
         <CardHeader>
-          <CardTitle>Seus Holerites</CardTitle>
+          <CardTitle>Seus Contracheques</CardTitle>
           <CardDescription>
-            Histórico de holerites disponíveis para download
+            Histórico de contracheques disponíveis para download
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -108,7 +108,7 @@ export default function HoleritesPage() {
                     </div>
                     <div>
                       <p className="font-medium">
-                        Holerite - {slip.mes_referencia.toString().padStart(2, '0')}/{slip.ano_referencia}
+                        Contracheque - {slip.mes_referencia.toString().padStart(2, '0')}/{slip.ano_referencia}
                       </p>
                       <p className="text-sm text-gray-600">
                         Salário líquido: R$ {slip.salario_liquido?.toFixed(2) || '0,00'}
@@ -138,7 +138,7 @@ export default function HoleritesPage() {
           ) : (
             <div className="text-center py-8">
               <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600">Nenhum holerite encontrado</p>
+              <p className="text-gray-600">Nenhum contracheque encontrado</p>
             </div>
           )}
         </CardContent>

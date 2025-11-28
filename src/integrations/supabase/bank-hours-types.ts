@@ -66,6 +66,11 @@ export interface BankHoursTransaction {
   approved_at?: string;
   created_at: string;
   updated_at: string;
+  // Novos campos CLT
+  overtime_percentage?: number; // 50 ou 100
+  expires_at?: string; // Data de expiração (6 meses)
+  is_paid?: boolean; // Se foi pago no fechamento
+  closure_id?: string; // ID do fechamento semestral
   // Relacionamentos
   employee?: {
     id: string;
@@ -76,6 +81,8 @@ export interface BankHoursTransaction {
     id: string;
     data_registro: string;
     horas_extras: number;
+    horas_extras_50?: number;
+    horas_extras_100?: number;
   };
 }
 
@@ -190,7 +197,7 @@ export const BANK_HOURS_DEFAULTS: BankHoursDefaults = {
   compensation_rate: 1.00,
   auto_compensate: false,
   compensation_priority: 'fifo',
-  expires_after_months: 12,
+  expires_after_months: 6, // Atualizado para 6 meses conforme CLT
   allow_negative_balance: false,
 };
 
@@ -214,3 +221,55 @@ export const CALCULATION_STATUS = {
   FAILED: 'failed',
   CANCELLED: 'cancelled',
 } as const;
+
+// =====================================================
+// TIPOS PARA FECHAMENTO SEMESTRAL E EVENTOS FINANCEIROS
+// =====================================================
+
+export interface BankHoursClosure {
+  id: string;
+  employee_id: string;
+  company_id: string;
+  closure_date: string;
+  period_start: string;
+  period_end: string;
+  positive_balance_paid: number;
+  negative_balance_zeroed: number;
+  total_hours_50_paid: number;
+  total_hours_100_paid: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  error_message?: string;
+  created_by?: string;
+  approved_by?: string;
+  approved_at?: string;
+  created_at: string;
+  updated_at: string;
+  // Relacionamentos
+  employee?: {
+    id: string;
+    nome: string;
+    matricula?: string;
+  };
+}
+
+export interface PayrollOvertimeEvent {
+  id: string;
+  employee_id: string;
+  company_id: string;
+  closure_id?: string;
+  payroll_period: string; // Formato: YYYY-MM
+  event_date: string;
+  hours_50_amount: number;
+  hours_100_amount: number;
+  total_value: number;
+  status: 'pending' | 'processed' | 'paid' | 'cancelled';
+  created_at: string;
+  updated_at: string;
+  // Relacionamentos
+  employee?: {
+    id: string;
+    nome: string;
+    matricula?: string;
+  };
+  closure?: BankHoursClosure;
+}

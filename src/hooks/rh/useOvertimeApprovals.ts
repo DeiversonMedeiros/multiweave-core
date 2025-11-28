@@ -75,8 +75,13 @@ export function useOvertimeApprovalsStats() {
 
     return {
       total_pendentes: pendingRecords.length || 0,
-      total_horas_extras: pendingRecords.reduce((acc: number, record: any) => 
-        acc + (Number(record.horas_extras) || 0), 0),
+      total_horas_extras: pendingRecords.reduce((acc: number, record: any) => {
+        // Considerar horas separadas se disponível, senão usar horas_extras
+        const horas50 = Number(record.horas_extras_50) || 0;
+        const horas100 = Number(record.horas_extras_100) || 0;
+        const horasTotal = horas50 + horas100 || Number(record.horas_extras) || 0;
+        return acc + horasTotal;
+      }, 0),
       por_funcionario: pendingRecords.reduce((acc: any, record: any) => {
         const employeeId = record.employee_id;
         if (!acc[employeeId]) {
@@ -88,7 +93,11 @@ export function useOvertimeApprovalsStats() {
           };
         }
         acc[employeeId].total_registros += 1;
-        acc[employeeId].total_horas += Number(record.horas_extras) || 0;
+        // Considerar horas separadas se disponível
+        const horas50 = Number(record.horas_extras_50) || 0;
+        const horas100 = Number(record.horas_extras_100) || 0;
+        const horasTotal = horas50 + horas100 || Number(record.horas_extras) || 0;
+        acc[employeeId].total_horas += horasTotal;
         return acc;
       }, {})
     };

@@ -10,6 +10,7 @@ import { useCompany } from '@/lib/company-context';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ContaPagar, ContaPagarFormData, ContaPagarFilters } from '@/integrations/supabase/financial-types';
 import { supabase } from '@/integrations/supabase/client';
+import { calculateDueDateStatus } from '@/utils/financial/dueDateUtils';
 
 interface UseContasPagarReturn {
   contasPagar: ContaPagar[];
@@ -22,6 +23,8 @@ interface UseContasPagarReturn {
   deleteContaPagar: (id: string) => Promise<void>;
   approveContaPagar: (id: string, observacoes?: string) => Promise<void>;
   rejectContaPagar: (id: string, observacoes?: string) => Promise<void>;
+  reprovarContaPagar: (id: string, observacoes?: string) => Promise<void>;
+  suspenderContaPagar: (id: string, observacoes?: string) => Promise<void>;
   payContaPagar: (id: string, dataPagamento: string, valorPago: number) => Promise<void>;
   refresh: () => Promise<void>;
   canCreate: boolean;
@@ -233,7 +236,37 @@ export function useContasPagar(): UseContasPagarReturn {
         filteredData = filteredData.filter(conta => conta.is_parcelada === filters.is_parcelada);
       }
       
-      setContasPagar(filteredData);
+      // Calcular status de vencimento para cada conta
+      const diasAlerta = filters.dias_alerta || 7;
+      const contasComAlerta = filteredData.map(conta => {
+        const dueDateStatus = calculateDueDateStatus(
+          conta.data_vencimento,
+          conta.status,
+          conta.data_pagamento,
+          diasAlerta
+        );
+        
+        return {
+          ...conta,
+          dias_ate_vencimento: dueDateStatus.dias_ate_vencimento,
+          tipo_alerta: dueDateStatus.tipo_alerta,
+          esta_vencida: dueDateStatus.esta_vencida,
+          esta_proxima_vencer: dueDateStatus.esta_proxima_vencer,
+        };
+      });
+      
+      // Aplicar filtros de vencimento
+      let contasFiltradas = contasComAlerta;
+      
+      if (filters.apenas_vencidas) {
+        contasFiltradas = contasFiltradas.filter(conta => conta.esta_vencida);
+      }
+      
+      if (filters.apenas_proximas_vencer) {
+        contasFiltradas = contasFiltradas.filter(conta => conta.esta_proxima_vencer || conta.esta_vencida);
+      }
+      
+      setContasPagar(contasFiltradas);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
@@ -374,6 +407,60 @@ export function useContasPagar(): UseContasPagarReturn {
     }
   };
 
+  // Reprovar conta a pagar (resetar aprovações e voltar para primeira etapa)
+  const reprovarContaPagar = async (id: string, observacoes?: string) => {
+    if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+
+    try {
+      // Obter usuário atual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const { data, error } = await supabase.rpc('reprovar_conta_pagar', {
+        p_conta_pagar_id: id,
+        p_company_id: selectedCompany.id,
+        p_reprovado_por: user.id,
+        p_observacoes: observacoes || null,
+      });
+
+      if (error) {
+        console.error('Erro ao reprovar conta a pagar:', error);
+        throw new Error(`Erro ao reprovar conta a pagar: ${error.message}`);
+      }
+
+      await loadContasPagar();
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  // Suspender conta a pagar (cancelar e finalizar processo)
+  const suspenderContaPagar = async (id: string, observacoes?: string) => {
+    if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+
+    try {
+      // Obter usuário atual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const { data, error } = await supabase.rpc('suspender_conta_pagar', {
+        p_conta_pagar_id: id,
+        p_company_id: selectedCompany.id,
+        p_suspenso_por: user.id,
+        p_observacoes: observacoes || null,
+      });
+
+      if (error) {
+        console.error('Erro ao suspender conta a pagar:', error);
+        throw new Error(`Erro ao suspender conta a pagar: ${error.message}`);
+      }
+
+      await loadContasPagar();
+    } catch (err) {
+      throw err;
+    }
+  };
+
   // Pagar conta a pagar
   const payContaPagar = async (id: string, dataPagamento: string, valorPago: number) => {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
@@ -423,6 +510,8 @@ export function useContasPagar(): UseContasPagarReturn {
     deleteContaPagar,
     approveContaPagar,
     rejectContaPagar,
+    reprovarContaPagar,
+    suspenderContaPagar,
     payContaPagar,
     refresh,
     canCreate,

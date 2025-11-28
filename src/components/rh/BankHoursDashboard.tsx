@@ -384,6 +384,16 @@ export function BankHoursDashboard({ companyId }: BankHoursDashboardProps) {
                 <div className="flex items-center justify-center p-8">
                   <Clock className="h-8 w-8 animate-spin" />
                 </div>
+              ) : calculations.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-8 text-center">
+                  <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-lg font-medium text-muted-foreground mb-2">
+                    Nenhum cálculo encontrado
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Execute um cálculo usando o botão "Executar Cálculo" acima para ver o histórico aqui.
+                  </p>
+                </div>
               ) : (
                 <div className="space-y-4">
                   {calculations.map((calculation) => (
