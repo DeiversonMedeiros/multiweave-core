@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,9 +26,10 @@ import { useNavigate } from 'react-router-dom';
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useTimeRecords } from '@/hooks/rh/useTimeRecords';
+import { useTimeRecordsPaginated } from '@/hooks/rh/useTimeRecords';
 import { TimeRecord } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
+import { useAuth } from '@/lib/auth-context';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatDateOnly } from '@/lib/utils';
@@ -36,6 +37,7 @@ import { formatDateOnly } from '@/lib/utils';
 const AcompanhamentoPonto: React.FC = () => {
   const navigate = useNavigate();
   const { selectedCompany } = useCompany();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [periodoFilter, setPeriodoFilter] = useState<string>('mes_atual');
@@ -71,11 +73,46 @@ const AcompanhamentoPonto: React.FC = () => {
   };
 
   const dateRange = getDateRange();
-  const { data: pontoData = [], isLoading } = useTimeRecords({
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading
+  } = useTimeRecordsPaginated({
     startDate: dateRange.start,
     endDate: dateRange.end,
     status: statusFilter !== 'todos' ? statusFilter : undefined,
+    pageSize: 30, // Carregar 30 registros por vez
+    managerUserId: user?.id, // Filtrar apenas registros dos funcionários gerenciados pelo gestor logado
   });
+
+  // Combinar todas as páginas em um único array
+  const pontoData = data?.pages.flatMap(page => page.data) || [];
+
+  // Observer para scroll infinito
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      if (observerTarget.current) {
+        observer.unobserve(observerTarget.current);
+      }
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -733,6 +770,17 @@ const AcompanhamentoPonto: React.FC = () => {
                   </div>
                 );
               })}
+              
+              {/* Observer para scroll infinito */}
+              <div ref={observerTarget} className="h-4" />
+              
+              {/* Indicador de carregamento */}
+              {isFetchingNextPage && (
+                <div className="flex items-center justify-center py-4">
+                  <Clock className="h-5 w-5 animate-spin mr-2" />
+                  <span className="text-sm text-gray-500">Carregando mais registros...</span>
+                </div>
+              )}
             </div>
           )}
 

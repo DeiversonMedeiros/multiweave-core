@@ -1,9 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
-import { EntityService } from '@/services/generic/entityService';
-import { supabase } from '@/integrations/supabase/client';
+import { useTimeRecordsPaginated } from '@/hooks/rh/useTimeRecords';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -72,38 +70,48 @@ export default function HistoricoMarcacoesPage() {
   // Buscar dados do funcionário
   const { data: employee } = useEmployeeByUserId(user?.id || '');
 
-  // Buscar histórico de marcações usando função RPC
-  const { data: timeRecords, isLoading, error } = useQuery({
-    queryKey: ['rh', 'time-records', selectedCompany?.id, employee?.id, filters],
-    queryFn: async () => {
-      if (!selectedCompany?.id || !employee?.id) return [];
-      const { data, error } = await supabase.rpc('get_time_records_simple', {
-        company_id_param: selectedCompany.id
-      });
-      if (error) {
-        console.error('Erro ao buscar registros de ponto:', error);
-        throw error;
-      }
-      let filteredData = data || [];
-      filteredData = filteredData.filter(record => record.employee_id === employee.id);
-      if (filters.startDate) {
-        filteredData = filteredData.filter(record => 
-          record.data_registro >= filters.startDate
-        );
-      }
-      if (filters.endDate) {
-        filteredData = filteredData.filter(record => 
-          record.data_registro <= filters.endDate
-        );
-      }
-      if (filters.status !== 'all') {
-        filteredData = filteredData.filter(record => record.status === filters.status);
-      }
-      return filteredData as TimeRecord[];
-    },
-    enabled: !!selectedCompany?.id && !!employee?.id,
-    staleTime: 2 * 60 * 1000,
+  // Buscar histórico de marcações com paginação otimizada
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    error
+  } = useTimeRecordsPaginated({
+    employeeId: employee?.id,
+    startDate: filters.startDate,
+    endDate: filters.endDate,
+    status: filters.status !== 'all' ? filters.status : undefined,
+    pageSize: 30, // Carregar 30 registros por vez
   });
+
+  // Combinar todas as páginas em um único array
+  const timeRecords = data?.pages.flatMap(page => page.data) || [];
+
+  // Observer para scroll infinito
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      if (observerTarget.current) {
+        observer.unobserve(observerTarget.current);
+      }
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const getStatusIcon = (status: TimeRecordStatus) => {
     switch (status) {
@@ -675,6 +683,17 @@ export default function HistoricoMarcacoesPage() {
                     </div>
                   </div>
                 ))}
+                
+                {/* Observer para scroll infinito */}
+                <div ref={observerTarget} className="h-4" />
+                
+                {/* Indicador de carregamento */}
+                {isFetchingNextPage && (
+                  <div className="flex items-center justify-center py-4">
+                    <Clock className="h-5 w-5 animate-spin mr-2" />
+                    <span className="text-sm text-gray-500">Carregando mais registros...</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">

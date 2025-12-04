@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +40,7 @@ import { TableActions } from '@/components/rh/TableActions';
 import { TimeRecord } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useTimeRecords } from '@/hooks/rh/useTimeRecords';
+import { useTimeRecordsPaginated, useDeleteTimeRecord, useApproveTimeRecord, useRejectTimeRecord } from '@/hooks/rh/useTimeRecords';
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { RequireEntity } from '@/components/RequireAuth';
 import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
@@ -54,7 +54,10 @@ import { formatDateOnly } from '@/lib/utils';
 export default function TimeRecordsPageNew() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
-  const [filters, setFilters] = useState<any>({});
+  const [filters, setFilters] = useState<any>({
+    startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 90 dias atrás
+    endDate: new Date().toISOString().split('T')[0] // Hoje
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<TimeRecord | null>(null);
@@ -65,64 +68,59 @@ export default function TimeRecordsPageNew() {
   const [expandedAddresses, setExpandedAddresses] = useState<Set<string>>(new Set());
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
 
-  // Hooks usando função específica para registros de ponto
-  const { data: records = [], isLoading, error } = useTimeRecords({
+  // Usar paginação infinita otimizada
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    refetch,
+    error
+  } = useTimeRecordsPaginated({
     startDate: filters.startDate,
     endDate: filters.endDate,
-    status: filters.status,
-    employeeId: filters.employeeId
+    status: filters.status !== 'all' ? filters.status : undefined,
+    employeeId: filters.employeeId,
+    pageSize: 50, // Carregar 50 registros por vez
   });
 
-  // Debug logs: acompanhar dados recebidos e campos de localização/foto
-  useEffect(() => {
-    console.group('[TimeRecordsPageNew] records fetch');
-    console.log('records.length:', records?.length || 0);
-    if (records && records.length > 0) {
-      const sample = records[0] as any;
-      console.log('sample record fields:', {
-        id: sample.id,
-        data_registro: sample.data_registro,
-        employee_nome: sample.employee_nome,
-        // Localização
-        entrada_latitude: sample.entrada_latitude,
-        entrada_longitude: sample.entrada_longitude,
-        entrada_endereco: sample.entrada_endereco,
-        latitude: sample.latitude,
-        longitude: sample.longitude,
-        endereco: sample.endereco,
-        all_locations: sample.all_locations,
-        all_locations_type: typeof sample.all_locations,
-        // Foto
-        foto_url: sample.foto_url,
-        first_event_photo_url: sample.first_event_photo_url,
-        all_photos: sample.all_photos,
-        all_photos_type: typeof sample.all_photos,
-        localizacao_type: sample.localizacao_type,
-      });
-      
-      // Log detalhado de all_photos se existir
-      if (sample.all_photos) {
-        console.log('all_photos detalhado:', {
-          isArray: Array.isArray(sample.all_photos),
-          length: Array.isArray(sample.all_photos) ? sample.all_photos.length : 'not array',
-          content: sample.all_photos
-        });
-      }
-      
-      // Log detalhado de all_locations se existir
-      if (sample.all_locations) {
-        console.log('all_locations detalhado:', {
-          isArray: Array.isArray(sample.all_locations),
-          length: Array.isArray(sample.all_locations) ? sample.all_locations.length : 'not array',
-          content: sample.all_locations
-        });
-      }
-    }
-    console.groupEnd();
-  }, [records]);
+  // Combinar todas as páginas em um único array
+  const records = data?.pages.flatMap(page => page.data) || [];
   const createRecord = useCreateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
   const updateRecord = useUpdateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
-  const deleteRecord = useDeleteEntity('rh', 'time_records', selectedCompany?.id || '');
+  const deleteRecordMutation = useDeleteTimeRecord();
+  const approveRecordMutation = useApproveTimeRecord();
+  const rejectRecordMutation = useRejectTimeRecord();
+
+  // Observer para scroll infinito
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      if (observerTarget.current) {
+        observer.unobserve(observerTarget.current);
+      }
+    };
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Refetch quando filtros mudarem
+  useEffect(() => {
+    refetch();
+  }, [filters.startDate, filters.endDate, filters.status, filters.employeeId, refetch]);
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -158,9 +156,28 @@ export default function TimeRecordsPageNew() {
   const handleDelete = async (record: TimeRecord) => {
     if (window.confirm(`Tem certeza que deseja excluir este registro de ponto?`)) {
       try {
-        await deleteRecord.mutateAsync(record.id);
+        await deleteRecordMutation.mutateAsync(record.id);
       } catch (error) {
         console.error('Erro ao excluir registro:', error);
+      }
+    }
+  };
+
+  const handleApprove = async (record: TimeRecord) => {
+    try {
+      await approveRecordMutation.mutateAsync({ id: record.id });
+    } catch (error) {
+      console.error('Erro ao aprovar registro:', error);
+    }
+  };
+
+  const handleReject = async (record: TimeRecord) => {
+    const reason = prompt('Motivo da rejeição:');
+    if (reason) {
+      try {
+        await rejectRecordMutation.mutateAsync({ id: record.id, observacoes: reason });
+      } catch (error) {
+        console.error('Erro ao rejeitar registro:', error);
       }
     }
   };
@@ -175,7 +192,7 @@ export default function TimeRecordsPageNew() {
       } else if (modalMode === 'edit' && selectedRecord) {
         await updateRecord.mutateAsync({
           id: selectedRecord.id,
-          updatedEntity: data
+          data: data
         });
       }
       setIsModalOpen(false);
@@ -265,55 +282,12 @@ export default function TimeRecordsPageNew() {
   };
 
   const getLocationForRecord = (record: TimeRecord) => {
-    // PRIORIDADE: all_locations (vindas de time_record_events via RPC) > campos diretos (entrada_latitude, etc.)
-    console.group(`[TimeRecordsPageNew] 📍 PROCESSANDO LOCALIZAÇÕES PARA REGISTRO ${record.id}`);
-    
-    let allLocations = (record as any).all_locations;
-    console.log('[TimeRecordsPageNew] all_locations RAW (antes do parse):', {
-      tipo: typeof allLocations,
-      valor: allLocations,
-      isArray: Array.isArray(allLocations),
-      length: Array.isArray(allLocations) ? allLocations.length : 'N/A',
-    });
-    
-    if (typeof allLocations === 'string') {
-      try {
-        allLocations = JSON.parse(allLocations);
-        console.log('[TimeRecordsPageNew] ✅ all_locations parseado com sucesso:', {
-          tipo: typeof allLocations,
-          isArray: Array.isArray(allLocations),
-          length: Array.isArray(allLocations) ? allLocations.length : 'N/A',
-        });
-      } catch (e) {
-        console.error('[TimeRecordsPageNew] ❌ Erro ao parsear all_locations:', e, { all_locations: allLocations });
-        allLocations = null;
-      }
-    }
-    
-    // PRIORIDADE 1: Buscar localização da ENTRADA em all_locations (vindas de time_record_events)
-    if (allLocations && Array.isArray(allLocations) && allLocations.length > 0) {
-      console.log('[TimeRecordsPageNew] Detalhes das localizações:', allLocations.map((loc: any, i: number) => ({
-        index: i,
-        id: loc?.id,
-        event_type: loc?.event_type,
-        event_at: loc?.event_at,
-        latitude: loc?.latitude,
-        longitude: loc?.longitude,
-        endereco: loc?.endereco,
-        source: loc?.source,
-      })));
-      
+    // Prioridade: usar all_locations se disponível, senão usar campos diretos
+    if (record.all_locations && Array.isArray(record.all_locations) && record.all_locations.length > 0) {
       // Buscar primeiro evento do tipo 'entrada'
-      const entradaLocation = allLocations.find((loc: any) => loc.event_type === 'entrada');
+      const entradaLocation = record.all_locations.find((loc: any) => loc.event_type === 'entrada');
       
       if (entradaLocation) {
-        console.log(`[TimeRecordsPageNew] ✅ usando localização de ENTRADA de all_locations para registro ${record.id}:`, {
-          event_type: entradaLocation.event_type,
-          latitude: entradaLocation.latitude,
-          longitude: entradaLocation.longitude,
-          endereco: entradaLocation.endereco,
-        });
-        console.groupEnd();
         return {
           latitude: entradaLocation.latitude,
           longitude: entradaLocation.longitude,
@@ -324,15 +298,8 @@ export default function TimeRecordsPageNew() {
       }
       
       // Se não encontrar entrada, usar primeira localização disponível
-      const firstLocation = allLocations[0];
+      const firstLocation = record.all_locations[0];
       if (firstLocation && (firstLocation.latitude || firstLocation.longitude || firstLocation.endereco)) {
-        console.log(`[TimeRecordsPageNew] ⚠️ usando primeira localização de all_locations (não é entrada) para registro ${record.id}:`, {
-          event_type: firstLocation.event_type,
-          latitude: firstLocation.latitude,
-          longitude: firstLocation.longitude,
-          endereco: firstLocation.endereco,
-        });
-        console.groupEnd();
         return {
           latitude: firstLocation.latitude,
           longitude: firstLocation.longitude,
@@ -343,28 +310,11 @@ export default function TimeRecordsPageNew() {
       }
     }
     
-    // PRIORIDADE 2: Fallback para campos diretos (entrada_latitude, entrada_longitude, entrada_endereco)
+    // Fallback para campos diretos
     const lat = record.entrada_latitude || (record as any).latitude;
     const lng = record.entrada_longitude || (record as any).longitude;
     const addr = record.entrada_endereco || (record as any).endereco || record.endereco;
     
-    if (lat || lng || addr) {
-      console.log(`[TimeRecordsPageNew] ⚠️ usando campos diretos de localização (fallback) para registro ${record.id}:`, {
-        latitude: lat,
-        longitude: lng,
-        endereco: addr,
-      });
-    } else {
-      console.warn(`[TimeRecordsPageNew] ❌ NENHUMA localização encontrada para registro ${record.id}`, {
-        all_locations: (record as any).all_locations,
-        all_locations_type: typeof (record as any).all_locations,
-        entrada_latitude: record.entrada_latitude,
-        entrada_longitude: record.entrada_longitude,
-        entrada_endereco: record.entrada_endereco,
-      });
-    }
-    
-    console.groupEnd();
     return {
       latitude: lat,
       longitude: lng,
@@ -375,7 +325,10 @@ export default function TimeRecordsPageNew() {
   };
 
   const resetFilters = () => {
-    setFilters({});
+    setFilters({
+      startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0]
+    });
     setSearchTerm('');
   };
 
@@ -527,48 +480,24 @@ export default function TimeRecordsPageNew() {
                     : undefined;
                 
                 // Processar fotos - buscar de múltiplas fontes
-                // PRIORIDADE: all_photos (vindas de time_record_event_photos via RPC) > first_event_photo_url > foto_url
-                console.group(`[TimeRecordsPageNew] 🖼️ PROCESSANDO FOTOS PARA REGISTRO ${record.id}`);
-                
+                // Prioridade: all_photos (vindas de time_record_event_photos via RPC) > first_event_photo_url > foto_url
                 let allPhotos = (record as any).all_photos;
-                console.log('[TimeRecordsPageNew] all_photos RAW (antes do parse):', {
-                  tipo: typeof allPhotos,
-                  valor: allPhotos,
-                  isArray: Array.isArray(allPhotos),
-                  length: Array.isArray(allPhotos) ? allPhotos.length : 'N/A',
-                });
                 
                 if (typeof allPhotos === 'string') {
                   try {
                     allPhotos = JSON.parse(allPhotos);
-                    console.log('[TimeRecordsPageNew] ✅ all_photos parseado com sucesso:', {
-                      tipo: typeof allPhotos,
-                      isArray: Array.isArray(allPhotos),
-                      length: Array.isArray(allPhotos) ? allPhotos.length : 'N/A',
-                    });
                   } catch (e) {
-                    console.error('[TimeRecordsPageNew] ❌ Erro ao parsear all_photos:', e, { all_photos: allPhotos });
                     allPhotos = null;
                   }
                 }
                 
                 let photos: Array<any> = [];
                 
-                // PRIORIDADE 1: Usar all_photos se disponível (vem de time_record_event_photos)
+                // Prioridade 1: Usar all_photos se disponível (vem de time_record_event_photos)
                 if (allPhotos && Array.isArray(allPhotos) && allPhotos.length > 0) {
                   photos = allPhotos;
-                  console.log(`[TimeRecordsPageNew] ✅ usando ${photos.length} foto(s) de all_photos para registro ${record.id}`);
-                  console.log('[TimeRecordsPageNew] Detalhes das fotos:', photos.map((p: any, i: number) => ({
-                    index: i,
-                    id: p?.id,
-                    photo_url: p?.photo_url,
-                    event_type: p?.event_type,
-                    event_at: p?.event_at,
-                    has_signed_thumb: !!p?.signed_thumb_url,
-                    has_signed_full: !!p?.signed_full_url,
-                  })));
                 } else {
-                  // PRIORIDADE 2: Fallback para first_event_photo_url (primeira foto do primeiro evento)
+                  // Prioridade 2: Fallback para first_event_photo_url (primeira foto do primeiro evento)
                   const fallbackPhotoUrl = record.first_event_photo_url || (record as any).foto_url || record.foto_url;
                   if (fallbackPhotoUrl) {
                     photos = [{
@@ -576,33 +505,11 @@ export default function TimeRecordsPageNew() {
                       signed_thumb_url: (record as any).first_event_thumb_url || (record as any).foto_thumb_url,
                       signed_full_url: (record as any).first_event_full_url || (record as any).foto_full_url,
                     }];
-                    console.log(`[TimeRecordsPageNew] ⚠️ usando fallback first_event_photo_url para registro ${record.id}`);
-                  } else {
-                    console.warn(`[TimeRecordsPageNew] ❌ NENHUMA foto encontrada para registro ${record.id}`, {
-                      all_photos: (record as any).all_photos,
-                      all_photos_type: typeof (record as any).all_photos,
-                      first_event_photo_url: record.first_event_photo_url,
-                      foto_url: (record as any).foto_url,
-                    });
                   }
                 }
                 
                 const firstPhoto = photos.length > 0 ? photos[0] : null;
                 const hasMultiplePhotos = photos.length > 1;
-                
-                console.log('[TimeRecordsPageNew] 📊 RESUMO FINAL DAS FOTOS:', {
-                  total_fotos: photos.length,
-                  tem_multiplas: hasMultiplePhotos,
-                  primeira_foto: firstPhoto ? {
-                    photo_url: firstPhoto.photo_url,
-                    event_type: firstPhoto.event_type,
-                    has_signed_thumb: !!firstPhoto.signed_thumb_url,
-                    has_signed_full: !!firstPhoto.signed_full_url,
-                  } : null,
-                  fonte: allPhotos && Array.isArray(allPhotos) ? 'all_photos array' : 'fallback fields',
-                });
-                
-                console.groupEnd();
 
                 // Helper para obter URL da foto
                 const getPhotoUrl = (photo: any) => {
@@ -1016,6 +923,30 @@ export default function TimeRecordsPageNew() {
                   </div>
                 );
               })}
+              
+              {/* Observer para scroll infinito */}
+              <div ref={observerTarget} className="h-4" />
+              
+              {/* Indicador de carregamento */}
+              {isFetchingNextPage && (
+                <div className="flex items-center justify-center py-4">
+                  <Clock className="h-5 w-5 animate-spin mr-2" />
+                  <span className="text-sm text-gray-500">Carregando mais registros...</span>
+                </div>
+              )}
+              
+              {/* Botão "Carregar mais" como fallback */}
+              {hasNextPage && !isFetchingNextPage && (
+                <div className="flex justify-center py-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => fetchNextPage()}
+                    className="w-full max-w-xs"
+                  >
+                    Carregar mais registros
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-8">

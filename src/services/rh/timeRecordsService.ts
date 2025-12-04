@@ -48,7 +48,181 @@ export const TimeRecordsService = {
     return rows;
   },
   /**
+   * Lista registros de ponto com paginação no servidor (otimizado para reduzir egress)
+   */
+  listPaginated: async (params: {
+    companyId: string;
+    pageOffset?: number;
+    pageLimit?: number;
+    employeeId?: string;
+    startDate?: string;
+    endDate?: string;
+    status?: string;
+    managerUserId?: string;
+  }): Promise<{ data: TimeRecord[]; totalCount: number }> => {
+    const { data, error } = await supabase.rpc('get_time_records_paginated', {
+      company_id_param: params.companyId,
+      page_offset: params.pageOffset || 0,
+      page_limit: params.pageLimit || 50,
+      employee_id_filter: params.employeeId || null,
+      start_date_filter: params.startDate || null,
+      end_date_filter: params.endDate || null,
+      status_filter: params.status || null,
+      manager_user_id_filter: params.managerUserId || null,
+    });
+
+    if (error) {
+      console.error('[TimeRecordsService.listPaginated] error:', error);
+      throw error;
+    }
+
+    if (!data || data.length === 0) {
+      return { data: [], totalCount: 0 };
+    }
+
+    // O último registro contém o total_count (todos os registros têm o mesmo valor)
+    const totalCount = data[0]?.total_count || 0;
+
+    // Processar dados
+    const processedData = data.map((r: any) => {
+      // Processar all_photos e all_locations se vierem como string JSON
+      let allPhotos = r.all_photos;
+      if (typeof allPhotos === 'string') {
+        try {
+          allPhotos = JSON.parse(allPhotos);
+        } catch (e) {
+          allPhotos = null;
+        }
+      }
+      
+      let allLocations = r.all_locations;
+      if (typeof allLocations === 'string') {
+        try {
+          allLocations = JSON.parse(allLocations);
+        } catch (e) {
+          allLocations = null;
+        }
+      }
+      
+      return {
+        ...r,
+        horas_trabalhadas: r.horas_trabalhadas != null ? Number(r.horas_trabalhadas) : r.horas_trabalhadas,
+        horas_extras: r.horas_extras != null ? Number(r.horas_extras) : r.horas_extras,
+        horas_extras_50: r.horas_extras_50 != null ? Number(r.horas_extras_50) : r.horas_extras_50,
+        horas_extras_100: r.horas_extras_100 != null ? Number(r.horas_extras_100) : r.horas_extras_100,
+        horas_para_banco: r.horas_para_banco != null ? Number(r.horas_para_banco) : r.horas_para_banco,
+        horas_para_pagamento: r.horas_para_pagamento != null ? Number(r.horas_para_pagamento) : r.horas_para_pagamento,
+        horas_faltas: r.horas_faltas != null ? Number(r.horas_faltas) : r.horas_faltas,
+        is_feriado: r.is_feriado || false,
+        is_domingo: r.is_domingo || false,
+        is_dia_folga: r.is_dia_folga || false,
+        all_photos: allPhotos,
+        all_locations: allLocations,
+      };
+    });
+
+    // Gerar signed URLs para todas as fotos em all_photos
+    try {
+      for (const rec of processedData) {
+        if (rec.all_photos && Array.isArray(rec.all_photos) && rec.all_photos.length > 0) {
+          for (let i = 0; i < rec.all_photos.length; i++) {
+            const photo = rec.all_photos[i];
+            if (!photo || !photo.photo_url) {
+              continue;
+            }
+            
+            // Extrair path relativo do photo_url
+            const rawUrl: string = photo.photo_url;
+            let cleanPath = '';
+            
+            // Se já é um path relativo (formato: uuid/filename ou /uuid/filename)
+            if (!/^https?:\/\//i.test(rawUrl)) {
+              // É um path relativo, usar diretamente
+              cleanPath = rawUrl.replace(/^\//, '').split('?')[0].trim();
+            } else {
+              // É uma URL completa, tentar extrair o path
+              const objectPublicMatch = rawUrl.match(/\/storage\/v1\/object\/public\/time-record-photos\/(.+?)(?:\?|$)/);
+              if (objectPublicMatch) {
+                cleanPath = objectPublicMatch[1];
+              } else {
+                const objectSignMatch = rawUrl.match(/\/storage\/v1\/object\/sign\/time-record-photos\/(.+?)(?:\?|$)/);
+                if (objectSignMatch) {
+                  cleanPath = objectSignMatch[1];
+                } else {
+                  // Tentar extrair de URL completa do Supabase
+                  const supabaseMatch = rawUrl.match(/time-record-photos[\/](.+?)(?:\?|$)/);
+                  if (supabaseMatch) {
+                    cleanPath = supabaseMatch[1];
+                  } else {
+                    // Última tentativa: extrair UUID e nome do arquivo do final da URL
+                    try {
+                      const urlObj = new URL(rawUrl);
+                      const pathParts = urlObj.pathname.split('/');
+                      const bucketIndex = pathParts.findIndex(p => p === 'time-record-photos');
+                      if (bucketIndex >= 0 && bucketIndex < pathParts.length - 1) {
+                        cleanPath = pathParts.slice(bucketIndex + 1).join('/');
+                      } else {
+                        // Tentar extrair UUID e filename do final
+                        const fileMatch = rawUrl.match(/([a-f0-9-]{36})\/([^\/\?]+)$/i);
+                        if (fileMatch) {
+                          cleanPath = `${fileMatch[1]}/${fileMatch[2]}`;
+                        } else {
+                          continue;
+                        }
+                      }
+                    } catch {
+                      continue;
+                    }
+                  }
+                }
+              }
+            }
+            
+            if (!cleanPath) continue;
+            
+            try {
+              
+              const { data: signedThumb, error: signThumbErr } = await supabase
+                .storage
+                .from('time-record-photos')
+                .createSignedUrl(cleanPath, 3600, {
+                  transform: { width: 96, height: 96, resize: 'contain' as any }
+                });
+              const { data: signedFull, error: signFullErr } = await supabase
+                .storage
+                .from('time-record-photos')
+                .createSignedUrl(cleanPath, 3600);
+              
+              if (!signThumbErr && signedThumb) {
+                rec.all_photos[i] = {
+                  ...photo,
+                  signed_thumb_url: signedThumb.signedUrl
+                };
+              }
+              if (!signFullErr && signedFull) {
+                rec.all_photos[i] = {
+                  ...rec.all_photos[i],
+                  signed_full_url: signedFull.signedUrl
+                };
+              }
+            } catch (e: any) {
+              // Silenciosamente ignorar erros de signed URL
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Silenciosamente ignorar erros de signed URL
+    }
+
+    return {
+      data: processedData,
+      totalCount: Number(totalCount),
+    };
+  },
+  /**
    * Lista todos os registros de ponto de uma empresa
+   * @deprecated Use listPaginated para melhor performance
    */
   list: async (params: { 
     employeeId?: string;
