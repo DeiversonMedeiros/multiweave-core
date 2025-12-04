@@ -55,7 +55,7 @@ export function useTimeRecords(params: {
 
 /**
  * Hook para listar registros de ponto com paginação infinita (otimizado)
- * Usa get_time_records_simple com paginação manual no cliente para melhor performance
+ * Usa paginação no servidor para reduzir significativamente o uso de egress
  */
 export function useTimeRecordsPaginated(params: {
   employeeId?: string;
@@ -63,65 +63,42 @@ export function useTimeRecordsPaginated(params: {
   endDate?: string;
   status?: string;
   pageSize?: number;
+  managerUserId?: string;
 }) {
   const { selectedCompany } = useCompany();
-  const { pageSize = 50, employeeId, startDate, endDate, status } = params;
+  const { pageSize = 50, employeeId, startDate, endDate, status, managerUserId } = params;
 
   return useInfiniteQuery({
-    queryKey: ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize],
+    queryKey: ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId],
     queryFn: async ({ pageParam = 0 }): Promise<{
       data: TimeRecord[];
       nextCursor?: number;
       hasMore: boolean;
+      totalCount: number;
     }> => {
       if (!selectedCompany?.id) {
-        return { data: [], hasMore: false };
+        return { data: [], hasMore: false, totalCount: 0 };
       }
 
-      // Buscar todos os registros filtrados usando a função otimizada
-      // A função get_time_records_simple já aplica filtros no servidor
-      const allRecords = await TimeRecordsService.list({
+      // Buscar registros paginados do servidor
+      const result = await TimeRecordsService.listPaginated({
         companyId: selectedCompany.id,
+        pageOffset: pageParam as number,
+        pageLimit: pageSize,
         employeeId,
         startDate,
         endDate,
         status,
+        managerUserId,
       });
 
-      // Aplicar paginação no cliente
-      const startIndex = pageParam as number;
-      const endIndex = startIndex + pageSize;
-      const paginatedData = allRecords.slice(startIndex, endIndex);
-      const hasMore = endIndex < allRecords.length;
-
-      // Processar dados
-      const items = paginatedData.map((record: any) => {
-        // Processar all_photos e all_locations se vierem como string JSON
-        if (typeof record.all_photos === 'string') {
-          try {
-            record.all_photos = JSON.parse(record.all_photos);
-          } catch (e) {
-            record.all_photos = null;
-          }
-        }
-        if (typeof record.all_locations === 'string') {
-          try {
-            record.all_locations = JSON.parse(record.all_locations);
-          } catch (e) {
-            record.all_locations = null;
-          }
-        }
-        // Garantir números
-        if (record.horas_trabalhadas != null) record.horas_trabalhadas = Number(record.horas_trabalhadas);
-        if (record.horas_extras != null) record.horas_extras = Number(record.horas_extras);
-        if (record.horas_faltas != null) record.horas_faltas = Number(record.horas_faltas);
-        return record;
-      });
+      const hasMore = (pageParam as number) + pageSize < result.totalCount;
 
       return {
-        data: items,
-        nextCursor: hasMore ? endIndex : undefined,
+        data: result.data,
+        nextCursor: hasMore ? ((pageParam as number) + pageSize) : undefined,
         hasMore,
+        totalCount: result.totalCount,
       };
     },
     getNextPageParam: (lastPage) => {
