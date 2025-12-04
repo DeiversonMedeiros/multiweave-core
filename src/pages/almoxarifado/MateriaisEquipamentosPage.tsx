@@ -39,6 +39,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
   const [filterClasse, setFilterClasse] = useState<string>('todos');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialEquipamento | null>(null);
+  const [viewingMaterial, setViewingMaterial] = useState<MaterialEquipamento | null>(null);
 
   // Hooks para dados reais
   const {
@@ -109,6 +110,10 @@ const MateriaisEquipamentosPage: React.FC = () => {
   const handleNewMaterial = () => {
     setEditingMaterial(null);
     setIsModalOpen(true);
+  };
+
+  const handleViewMaterial = (material: MaterialEquipamento) => {
+    setViewingMaterial(material);
   };
 
   const getLocalizacaoDisplay = (material: MaterialEquipamento) => {
@@ -259,9 +264,16 @@ const MateriaisEquipamentosPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {material.descricao}
-                      </h3>
+                      <div>
+                        {material.nome && (
+                          <h3 className="text-lg font-semibold text-gray-900">
+                            {material.nome}
+                          </h3>
+                        )}
+                        <p className={`text-sm ${material.nome ? 'text-gray-600' : 'text-lg font-semibold text-gray-900'}`}>
+                          {material.descricao}
+                        </p>
+                      </div>
                       <Badge variant={material.tipo === 'equipamento' ? 'default' : material.tipo === 'produto' ? 'secondary' : 'outline'}>
                         {material.tipo === 'equipamento' ? 'Equipamento' : 
                          material.tipo === 'produto' ? 'Produto' : 
@@ -283,7 +295,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
                         <span className="font-medium">Unidade:</span> {material.unidade_medida}
                       </div>
                       <div>
-                        <span className="font-medium">Valor:</span> R$ {material.valor_unitario.toFixed(2)}
+                        <span className="font-medium">Valor:</span> R$ {(material.valor_unitario || 0).toFixed(2)}
                       </div>
                     </div>
 
@@ -327,7 +339,12 @@ const MateriaisEquipamentosPage: React.FC = () => {
                   </div>
 
                   <div className="flex space-x-2 ml-4">
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleViewMaterial(material)}
+                      title="Visualizar detalhes"
+                    >
                       <Eye className="h-4 w-4" />
                     </Button>
                     <Button 
@@ -383,6 +400,190 @@ const MateriaisEquipamentosPage: React.FC = () => {
         title={editingMaterial ? 'Editar Material' : 'Novo Material'}
         initialData={editingMaterial}
       />
+
+      {/* Modal de Visualização de Detalhes */}
+      {viewingMaterial && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div>
+                <CardTitle className="text-2xl">
+                  {viewingMaterial.nome || viewingMaterial.descricao}
+                </CardTitle>
+                {viewingMaterial.nome && (
+                  <CardDescription className="mt-1">{viewingMaterial.descricao}</CardDescription>
+                )}
+              </div>
+              <Button variant="outline" onClick={() => setViewingMaterial(null)}>
+                Fechar
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Badges de Status */}
+              <div className="flex gap-2">
+                <Badge variant={viewingMaterial.tipo === 'equipamento' ? 'default' : viewingMaterial.tipo === 'produto' ? 'secondary' : 'outline'}>
+                  {viewingMaterial.tipo === 'equipamento' ? 'Equipamento' : 
+                   viewingMaterial.tipo === 'produto' ? 'Produto' : 
+                   viewingMaterial.tipo === 'servico' ? 'Serviço' : 'Material'}
+                </Badge>
+                <Badge variant={viewingMaterial.status === 'ativo' ? 'default' : 'destructive'}>
+                  {viewingMaterial.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                </Badge>
+              </div>
+
+              {/* Informações Básicas */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Informações Básicas</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <span className="font-medium text-gray-600">Código Interno:</span>
+                    <p className="text-gray-900">{viewingMaterial.codigo_interno}</p>
+                  </div>
+                  {viewingMaterial.nome && (
+                    <div>
+                      <span className="font-medium text-gray-600">Nome:</span>
+                      <p className="text-gray-900">{viewingMaterial.nome}</p>
+                    </div>
+                  )}
+                  <div>
+                    <span className="font-medium text-gray-600">Descrição:</span>
+                    <p className="text-gray-900">{viewingMaterial.descricao}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Classe:</span>
+                    <p className="text-gray-900">{viewingMaterial.classe || 'Não informado'}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Unidade de Medida:</span>
+                    <p className="text-gray-900">{viewingMaterial.unidade_medida}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Valor Unitário:</span>
+                    <p className="text-gray-900">R$ {(viewingMaterial.valor_unitario || 0).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Equipamento Próprio:</span>
+                    <p className="text-gray-900">{viewingMaterial.equipamento_proprio ? 'Sim' : 'Não'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informações Fiscais */}
+              {(viewingMaterial.ncm || viewingMaterial.cfop || viewingMaterial.cst) && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Informações Fiscais</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded">
+                    {viewingMaterial.ncm && (
+                      <div>
+                        <span className="font-medium text-gray-600">NCM:</span>
+                        <p className="text-gray-900">{viewingMaterial.ncm}</p>
+                      </div>
+                    )}
+                    {viewingMaterial.cfop && (
+                      <div>
+                        <span className="font-medium text-gray-600">CFOP:</span>
+                        <p className="text-gray-900">{viewingMaterial.cfop}</p>
+                      </div>
+                    )}
+                    {viewingMaterial.cst && (
+                      <div>
+                        <span className="font-medium text-gray-600">CST:</span>
+                        <p className="text-gray-900">{viewingMaterial.cst}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Estoque e Localização */}
+              {(() => {
+                const estoqueStatus = getEstoqueStatus(viewingMaterial);
+                return (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Estoque e Localização</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <span className="font-medium text-gray-600">Estoque Mínimo:</span>
+                    <p className="text-gray-900">{viewingMaterial.estoque_minimo}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Estoque Máximo:</span>
+                    <p className="text-gray-900">{viewingMaterial.estoque_maximo || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Estoque Atual:</span>
+                    <p className={`font-semibold ${estoqueStatus.color}`}>
+                      {viewingMaterial.estoque_atual?.quantidade_atual || 0}
+                    </p>
+                    {viewingMaterial.estoque_atual && (
+                      <>
+                        <p className="text-sm text-gray-500">
+                          Reservado: {viewingMaterial.estoque_atual.quantidade_reservada || 0}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Disponível: {viewingMaterial.estoque_atual.quantidade_disponivel || 0}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-600">Localização:</span>
+                    <p className="text-gray-900">{getLocalizacaoDisplay(viewingMaterial)}</p>
+                  </div>
+                  {viewingMaterial.validade_dias && viewingMaterial.validade_dias > 0 && (
+                    <div>
+                      <span className="font-medium text-gray-600">Validade (dias):</span>
+                      <p className="text-gray-900">{viewingMaterial.validade_dias} dias</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+                );
+              })()}
+
+              {/* Imagem */}
+              {viewingMaterial.imagem_url && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Imagem</h3>
+                  <div className="flex justify-center">
+                    <img 
+                      src={viewingMaterial.imagem_url} 
+                      alt={viewingMaterial.nome || viewingMaterial.descricao}
+                      className="max-w-md max-h-64 object-contain rounded border"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Observações */}
+              {viewingMaterial.observacoes && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Observações</h3>
+                  <p className="text-gray-700 whitespace-pre-wrap">{viewingMaterial.observacoes}</p>
+                </div>
+              )}
+
+              {/* Datas */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Informações do Sistema</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
+                  <div>
+                    <span className="font-medium">Criado em:</span>
+                    <p>{new Date(viewingMaterial.created_at).toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div>
+                    <span className="font-medium">Atualizado em:</span>
+                    <p>{new Date(viewingMaterial.updated_at).toLocaleString('pt-BR')}</p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       </div>
     </RequireEntity>
   );

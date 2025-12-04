@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,9 +14,13 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Package, MapPin, Settings, Image as ImageIcon } from 'lucide-react';
+import { Package, MapPin, Settings, Image as ImageIcon, Loader2, X, Upload } from 'lucide-react';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useLocalizacoesFisicas } from '@/hooks/almoxarifado/useLocalizacoesFisicas';
+import { STORAGE_BUCKETS } from '@/config/storage';
+import { useCompany } from '@/lib/company-context';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface FormModalProps {
   isOpen: boolean;
@@ -36,9 +40,103 @@ const FormModal: React.FC<FormModalProps> = ({
   const { data: almoxarifados = [] } = useAlmoxarifados();
   const [selectedAlmoxarifado, setSelectedAlmoxarifado] = useState<string>('');
   const { localizacoes, getLocalizacaoString } = useLocalizacoesFisicas(selectedAlmoxarifado);
+  const { selectedCompany } = useCompany();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // Função para obter o próximo código interno do backend
+  const getNextCodigoInterno = async () => {
+    if (!selectedCompany?.id) return '1';
+    
+    try {
+      // Chamar RPC do backend para obter próximo código
+      const { data, error } = await supabase.rpc(
+        'get_next_codigo_interno_material',
+        { p_company_id: selectedCompany.id }
+      );
+      
+      if (error) {
+        console.error('Erro ao obter próximo código interno:', error);
+        throw error;
+      }
+      
+      // Retornar o código do JSONB
+      return data?.proximoCodigo || '1';
+    } catch (error) {
+      console.error('Erro ao gerar código interno:', error);
+      // Fallback: retornar 1 em caso de erro
+      return '1';
+    }
+  };
+
+  
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    if (!selectedCompany?.id) {
+      toast.error('Empresa não selecionada');
+      return;
+    }
+
+    // Validar tipo de arquivo
+    const acceptedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!acceptedTypes.includes(file.type)) {
+      toast.error('Tipo de arquivo não suportado. Use JPG, PNG ou WEBP.');
+      return;
+    }
+
+    // Validar tamanho (5MB)
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > 5) {
+      toast.error('Arquivo muito grande. Tamanho máximo: 5MB');
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      // Gerar nome único para o arquivo
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      // Estrutura: {company_id}/{filename}
+      const filePath = `${selectedCompany.id}/${fileName}`;
+
+      // Upload para o Supabase Storage
+      const { data, error } = await supabase.storage
+        .from(STORAGE_BUCKETS.MATERIALS)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      // Obter URL pública da imagem
+      const { data: publicData } = supabase.storage
+        .from(STORAGE_BUCKETS.MATERIALS)
+        .getPublicUrl(filePath);
+
+      const imageUrl = publicData.publicUrl;
+      handleInputChange('imagem_url', imageUrl);
+      toast.success('Imagem enviada com sucesso!');
+    } catch (error: any) {
+      console.error('Erro no upload:', error);
+      toast.error(error.message || 'Erro ao fazer upload da imagem. Tente novamente.');
+    } finally {
+      setIsUploading(false);
+      // Limpar o input para permitir selecionar o mesmo arquivo novamente
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const [formData, setFormData] = useState({
     codigo_interno: initialData?.codigo_interno || '',
+    nome: initialData?.nome || '',
     descricao: initialData?.descricao || '',
     tipo: initialData?.tipo || 'produto',
     classe: initialData?.classe || '',
@@ -57,6 +155,72 @@ const FormModal: React.FC<FormModalProps> = ({
     cst: initialData?.cst || ''
   });
 
+  // Resetar formulário e gerar código interno quando abrir para novo material
+  useEffect(() => {
+    if (isOpen) {
+      if (!initialData) {
+        // Novo material - resetar formulário e gerar código interno
+        getNextCodigoInterno().then(nextCode => {
+          setFormData({
+            codigo_interno: nextCode,
+            nome: '',
+            descricao: '',
+            tipo: 'produto',
+            classe: '',
+            unidade_medida: '',
+            status: 'ativo',
+            equipamento_proprio: true,
+            estoque_minimo: 0,
+            estoque_maximo: 0,
+            valor_unitario: 0,
+            validade_dias: 0,
+            localizacao_id: '',
+            observacoes: '',
+            imagem_url: '',
+            ncm: '',
+            cfop: '',
+            cst: ''
+          });
+          setSelectedAlmoxarifado('');
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        });
+      } else {
+        // Editar material - usar dados iniciais
+        setFormData({
+          codigo_interno: initialData.codigo_interno || '',
+          nome: initialData.nome || '',
+          descricao: initialData.descricao || '',
+          tipo: initialData.tipo || 'produto',
+          classe: initialData.classe || '',
+          unidade_medida: initialData.unidade_medida || '',
+          status: initialData.status || 'ativo',
+          equipamento_proprio: initialData.equipamento_proprio ?? true,
+          estoque_minimo: initialData.estoque_minimo || 0,
+          estoque_maximo: initialData.estoque_maximo || 0,
+          valor_unitario: initialData.valor_unitario || 0,
+          validade_dias: initialData.validade_dias || 0,
+          localizacao_id: initialData.localizacao_id || '',
+          observacoes: initialData.observacoes || '',
+          imagem_url: initialData.imagem_url || '',
+          ncm: initialData.ncm || '',
+          cfop: initialData.cfop || '',
+          cst: initialData.cst || ''
+        });
+        // Encontrar o almoxarifado da localização se houver
+        if (initialData.localizacao_id && localizacoes.length > 0) {
+          const localizacao = localizacoes.find(loc => loc.id === initialData.localizacao_id);
+          if (localizacao?.almoxarifado_id) {
+            setSelectedAlmoxarifado(localizacao.almoxarifado_id);
+          }
+        } else {
+          setSelectedAlmoxarifado('');
+        }
+      }
+    }
+  }, [isOpen, initialData?.id]); // Usar apenas o ID do initialData para evitar loops
+
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({
       ...prev,
@@ -64,9 +228,44 @@ const FormModal: React.FC<FormModalProps> = ({
     }));
   };
 
+  const handleImageButtonClick = () => {
+    if (!isUploading) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleRemoveImage = () => {
+    handleInputChange('imagem_url', '');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    toast.success('Imagem removida');
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    
+    // Validações obrigatórias
+    if (!formData.descricao || formData.descricao.trim() === '') {
+      toast.error('A descrição é obrigatória');
+      return;
+    }
+    
+    if (!formData.codigo_interno || formData.codigo_interno.trim() === '') {
+      toast.error('O código interno é obrigatório');
+      return;
+    }
+    
+    // Converter strings vazias para null/undefined para campos opcionais
+    const cleanedData = Object.entries(formData).reduce((acc, [key, value]) => {
+      if (value === '' && (key === 'localizacao_id' || key === 'imagem_url' || key === 'ncm' || key === 'cfop' || key === 'cst' || key === 'classe' || key === 'nome' || key === 'observacoes')) {
+        acc[key] = null;
+      } else {
+        acc[key] = value;
+      }
+      return acc;
+    }, {} as any);
+    onSubmit(cleanedData);
     onClose();
   };
 
@@ -116,9 +315,16 @@ const FormModal: React.FC<FormModalProps> = ({
                         id="codigo_interno"
                         value={formData.codigo_interno}
                         onChange={(e) => handleInputChange('codigo_interno', e.target.value)}
-                        placeholder="Ex: MAT001"
+                        placeholder="Gerado automaticamente"
                         required
+                        readOnly
+                        disabled
+                        className="bg-gray-100 cursor-not-allowed"
+                        title="O código interno é gerado automaticamente e não pode ser alterado"
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Código gerado automaticamente pelo sistema
+                      </p>
                     </div>
                     <div>
                       <Label htmlFor="tipo">Tipo *</Label>
@@ -136,6 +342,17 @@ const FormModal: React.FC<FormModalProps> = ({
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="nome">Nome do Item</Label>
+                    <Input
+                      id="nome"
+                      value={formData.nome}
+                      onChange={(e) => handleInputChange('nome', e.target.value)}
+                      placeholder="Nome do material/equipamento"
+                      maxLength={255}
+                    />
                   </div>
 
                   <div>
@@ -255,18 +472,83 @@ const FormModal: React.FC<FormModalProps> = ({
                   </div>
 
                   <div>
-                    <Label htmlFor="imagem_url">URL da Imagem</Label>
-                    <div className="flex space-x-2">
-                      <Input
-                        id="imagem_url"
-                        value={formData.imagem_url}
-                        onChange={(e) => handleInputChange('imagem_url', e.target.value)}
-                        placeholder="https://exemplo.com/imagem.jpg"
-                      />
-                      <Button type="button" variant="outline">
-                        <ImageIcon className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    <Label>Imagem do Material</Label>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/webp"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                    
+                    {formData.imagem_url ? (
+                      <div className="mt-2 space-y-2">
+                        <div className="relative inline-block">
+                          <img 
+                            src={formData.imagem_url} 
+                            alt="Preview" 
+                            className="max-w-xs max-h-48 object-contain rounded border"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon"
+                            className="absolute top-0 right-0 h-6 w-6 rounded-full"
+                            onClick={handleRemoveImage}
+                            disabled={isUploading}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <Button 
+                          type="button" 
+                          variant="outline"
+                          onClick={handleImageButtonClick}
+                          disabled={isUploading}
+                          className="w-full sm:w-auto"
+                        >
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-4 w-4 mr-2" />
+                              Substituir Imagem
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-2">
+                        <Button 
+                          type="button" 
+                          variant="outline"
+                          onClick={handleImageButtonClick}
+                          disabled={isUploading}
+                          className="w-full sm:w-auto"
+                        >
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : (
+                            <>
+                              <ImageIcon className="h-4 w-4 mr-2" />
+                              Inserir Imagem
+                            </>
+                          )}
+                        </Button>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Formatos aceitos: JPG, PNG, WEBP (máx. 5MB)
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>

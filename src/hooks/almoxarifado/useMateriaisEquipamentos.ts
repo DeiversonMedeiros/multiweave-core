@@ -7,6 +7,7 @@ export interface MaterialEquipamento {
   company_id: string;
   material_id?: string;
   codigo_interno: string;
+  nome?: string;
   descricao: string;
   tipo: 'produto' | 'servico' | 'equipamento';
   classe?: string;
@@ -22,6 +23,7 @@ export interface MaterialEquipamento {
   ncm?: string;
   cfop?: string;
   cst?: string;
+  observacoes?: string;
   created_at: string;
   updated_at: string;
   localizacao?: {
@@ -41,6 +43,7 @@ export interface MaterialEquipamento {
 
 export interface CreateMaterialData {
   codigo_interno: string;
+  nome?: string;
   descricao: string;
   tipo: 'produto' | 'servico' | 'equipamento';
   classe?: string;
@@ -56,6 +59,7 @@ export interface CreateMaterialData {
   ncm?: string;
   cfop?: string;
   cst?: string;
+  observacoes?: string;
 }
 
 export const useMateriaisEquipamentos = () => {
