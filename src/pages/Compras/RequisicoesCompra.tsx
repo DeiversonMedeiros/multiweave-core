@@ -391,7 +391,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
   const projects = projectsData?.data || [];
   const [formData, setFormData] = useState({
     data_necessidade: '',
-    prioridade: 'Normal',
+    prioridade: 'normal',
     centro_custo_id: '',
     projeto_id: '',
     tipo_requisicao: 'reposicao' as 'reposicao' | 'compra_direta' | 'emergencial',
@@ -431,27 +431,51 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await createMutation.mutateAsync({
-      data_necessidade: formData.data_necessidade,
-      prioridade: formData.prioridade,
-      centro_custo_id: formData.centro_custo_id,
-      projeto_id: formData.projeto_id || undefined,
-      tipo_requisicao: formData.tipo_requisicao,
-      destino_almoxarifado_id:
-        formData.tipo_requisicao === 'reposicao' ? formData.destino_almoxarifado_id : undefined,
-      local_entrega: formData.tipo_requisicao === 'compra_direta' ? formData.local_entrega : undefined,
-      justificativa: formData.observacoes,
-      observacoes: formData.observacoes,
-      itens: formData.itens.map((item) => ({
-        material_id: item.material_id,
-        quantidade: item.quantidade,
-        unidade_medida: item.unidade,
-        valor_unitario_estimado: item.valor_medio || item.valor_unitario || 0,
-        observacoes: item.observacoes,
-        almoxarifado_id: formData.destino_almoxarifado_id || undefined,
-      })),
-    });
-    onClose();
+    
+    // Validações obrigatórias conforme constraint do banco
+    if (formData.tipo_requisicao === 'reposicao' && !formData.destino_almoxarifado_id) {
+      toast.error('Selecione o almoxarifado de destino para requisições de reposição');
+      return;
+    }
+    
+    if (formData.tipo_requisicao === 'compra_direta' && !formData.local_entrega) {
+      toast.error('Informe o local de entrega para compras diretas');
+      return;
+    }
+    
+    if (formData.itens.length === 0) {
+      toast.error('Adicione pelo menos um item à solicitação');
+      return;
+    }
+    
+    try {
+      await createMutation.mutateAsync({
+        data_necessidade: formData.data_necessidade,
+        prioridade: formData.prioridade,
+        centro_custo_id: formData.centro_custo_id,
+        projeto_id: formData.projeto_id || undefined,
+        tipo_requisicao: formData.tipo_requisicao,
+        destino_almoxarifado_id:
+          formData.tipo_requisicao === 'reposicao' ? formData.destino_almoxarifado_id : undefined,
+        local_entrega: formData.tipo_requisicao === 'compra_direta' ? formData.local_entrega : undefined,
+        justificativa: formData.observacoes,
+        observacoes: formData.observacoes,
+        itens: formData.itens.map((item) => ({
+          material_id: item.material_id,
+          quantidade: item.quantidade,
+          unidade_medida: item.unidade,
+          valor_unitario_estimado: item.valor_medio || item.valor_unitario || 0,
+          observacoes: item.observacoes,
+          almoxarifado_id: formData.destino_almoxarifado_id || undefined,
+        })),
+      });
+      onClose();
+    } catch (error: any) {
+      // Erro já será tratado pelo hook de mutação
+      console.error('Erro ao criar solicitação:', error);
+      const errorMessage = error?.message || error?.error?.message || 'Erro desconhecido ao criar solicitação';
+      toast.error(`Erro: ${errorMessage}`);
+    }
   };
 
   const addItem = () => {
@@ -546,10 +570,10 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Baixa">Baixa</SelectItem>
-                  <SelectItem value="Normal">Normal</SelectItem>
-                  <SelectItem value="Alta">Alta</SelectItem>
-                  <SelectItem value="Urgente">Urgente</SelectItem>
+                  <SelectItem value="baixa">Baixa</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="alta">Alta</SelectItem>
+                  <SelectItem value="urgente">Urgente</SelectItem>
                 </SelectContent>
               </Select>
             </div>

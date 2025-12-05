@@ -19,21 +19,25 @@ DECLARE
     v_valor_medio DECIMAL(15,2);
 BEGIN
     -- Buscar valor médio das últimas compras aprovadas do material
+    -- Primeiro limitar as entradas, depois calcular a média
     SELECT COALESCE(
-        AVG(ei.valor_unitario),
+        AVG(sub.valor_unitario),
         0
     )
     INTO v_valor_medio
-    FROM almoxarifado.entrada_itens ei
-    INNER JOIN almoxarifado.entradas_materiais em 
-        ON em.id = ei.entrada_id
-    WHERE ei.material_equipamento_id = p_material_id
-    AND em.company_id = p_company_id
-    AND em.status = 'aprovado'
-    AND ei.valor_unitario IS NOT NULL
-    AND ei.valor_unitario > 0
-    ORDER BY em.data_entrada DESC, em.created_at DESC
-    LIMIT p_limit_compras;
+    FROM (
+        SELECT ei.valor_unitario
+        FROM almoxarifado.entrada_itens ei
+        INNER JOIN almoxarifado.entradas_materiais em 
+            ON em.id = ei.entrada_id
+        WHERE ei.material_equipamento_id = p_material_id
+        AND em.company_id = p_company_id
+        AND em.status = 'aprovado'
+        AND ei.valor_unitario IS NOT NULL
+        AND ei.valor_unitario > 0
+        ORDER BY em.data_entrada DESC, em.created_at DESC
+        LIMIT p_limit_compras
+    ) sub;
     
     RETURN COALESCE(v_valor_medio, 0);
 EXCEPTION

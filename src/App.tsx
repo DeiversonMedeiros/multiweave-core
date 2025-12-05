@@ -48,6 +48,8 @@ import InventarioPage from "./pages/almoxarifado/InventarioPage";
 import RelatoriosPage from "./pages/almoxarifado/RelatoriosPage";
 import EstoqueAtualPage from "./pages/almoxarifado/EstoqueAtualPage";
 import TestPage from "./pages/almoxarifado/TestPage";
+import AlmoxarifadosPage from "./pages/almoxarifado/AlmoxarifadosPage";
+import LocalizacoesFisicasPage from "./pages/almoxarifado/LocalizacoesFisicasPage";
 import ConfiguracoesAprovacaoPage from "./pages/configuracoes/ConfiguracoesAprovacaoPage";
 // Imports das páginas de Compras
 import RequisicoesCompra from "./pages/Compras/RequisicoesCompra";
@@ -217,6 +219,8 @@ function App() {
                 <Route path="/almoxarifado/checklist" element={<div className="text-2xl font-bold">Checklist de Recebimento - Em desenvolvimento</div>} />
                 <Route path="/almoxarifado/historico" element={<HistoricoMovimentacoesPage />} />
                 <Route path="/almoxarifado/relatorios" element={<RelatoriosPage />} />
+                <Route path="/almoxarifado/almoxarifados" element={<AlmoxarifadosPage />} />
+                <Route path="/almoxarifado/localizacoes" element={<LocalizacoesFisicasPage />} />
                 <Route path="/almoxarifado/test" element={<TestPage />} />
                 <Route path="/frota/*" element={<FrotaRoutes />} />
                 <Route path="/logistica" element={<div className="text-2xl font-bold">Logística - Em desenvolvimento</div>} />

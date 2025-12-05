@@ -488,7 +488,13 @@ export const EntityService = {
 
       if (error) {
         console.error(`❌ ERRO ao criar item em ${schema}.${table}:`, error);
-        throw error;
+        console.error(`❌ Detalhes do erro:`, {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw new Error(error.message || `Erro ao criar item em ${schema}.${table}: ${JSON.stringify(error)}`);
       }
 
       console.log('✅ SUCESSO ao criar item:', result);
