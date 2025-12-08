@@ -54,8 +54,9 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
   });
 
   // Hooks para dados
-  const { data: users = [] } = useUsers();
-  const { data: costCenters = [] } = useCostCenters();
+  const { users = [] } = useUsers();
+  const { data: costCentersData } = useCostCenters();
+  const costCenters = costCentersData?.data || [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
