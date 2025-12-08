@@ -9,11 +9,12 @@ import { useCompany } from '@/lib/company-context';
  */
 export function usePendingSignatures() {
   const { selectedCompany } = useCompany();
+  const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['pending-signatures', selectedCompany?.id],
-    queryFn: () => timeRecordSignatureService.getPendingSignatures(selectedCompany?.id || ''),
-    enabled: !!selectedCompany?.id,
+    queryKey: ['pending-signatures', selectedCompany?.id, user?.id],
+    queryFn: () => timeRecordSignatureService.getPendingSignatures(selectedCompany?.id || '', user?.id),
+    enabled: !!selectedCompany?.id && !!user?.id,
     staleTime: 1 * 60 * 1000, // 1 minuto
     refetchInterval: 30 * 1000, // Refetch a cada 30 segundos
   });

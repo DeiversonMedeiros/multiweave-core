@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, FileText, Clock, CheckCircle, XCircle, AlertTriangle, Calendar } from 'lucide-react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Loader2, FileText, Clock, CheckCircle, XCircle, AlertTriangle, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { timeRecordSignatureService, TimeRecordSignature } from '@/services/rh/timeRecordSignatureService';
 import { useMultiTenancy } from '@/hooks/useMultiTenancy';
 import { useEmployeeByUserId } from '@/hooks/rh/useEmployeeByUserId';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useMonthlyTimeRecords, TimeRecord } from '@/hooks/rh/useMonthlyTimeRecords';
 
 // Removido interface duplicada - usando a do service
 
@@ -30,44 +32,117 @@ export default function TimeRecordSignaturePage() {
 
   // Buscar funcionário pelo user_id
   const { data: employee, isLoading: employeeLoading } = useEmployeeByUserId(user?.id || '');
-
+  
+  // Debug: Log para verificar dados
   useEffect(() => {
-    if (currentCompany?.id && employee?.id) {
-      loadSignatures();
-    }
-  }, [currentCompany?.id, employee?.id]);
+    console.log('🔍 [TimeRecordSignaturePage] Debug:', {
+      userId: user?.id,
+      currentCompanyId: currentCompany?.id,
+      employee: employee,
+      employeeLoading,
+      selectedCompanyFromHook: employee ? 'found' : 'not found'
+    });
+  }, [user?.id, currentCompany?.id, employee, employeeLoading]);
 
-  const loadSignatures = async () => {
+  const loadSignatures = useCallback(async () => {
     try {
       setLoading(true);
       
-      if (!currentCompany?.id) {
+      const companyId = currentCompany?.id;
+      const employeeId = employee?.id;
+      
+      if (!companyId) {
         toast({
           title: 'Erro',
           description: 'Empresa não selecionada.',
           variant: 'destructive',
         });
+        setLoading(false);
         return;
       }
 
-      if (!employee?.id) {
+      if (!employeeId) {
         toast({
           title: 'Erro',
           description: 'Funcionário não encontrado.',
           variant: 'destructive',
         });
+        setLoading(false);
         return;
       }
 
+      console.log('📡 [TimeRecordSignaturePage] Buscando assinaturas:', { employeeId, companyId });
+
+      // Verificar configuração primeiro
+      const config = await timeRecordSignatureService.getConfig(companyId);
+      console.log('🔍 [TimeRecordSignaturePage] Configuração:', {
+        isEnabled: config.is_enabled,
+        signaturePeriodDays: config.signature_period_days,
+        autoCloseMonth: config.auto_close_month
+      });
+
       // Buscar assinaturas reais do banco
       const signaturesData = await timeRecordSignatureService.getEmployeeSignatures(
-        employee.id,
-        currentCompany.id
+        employeeId,
+        companyId
       );
+
+      console.log('✅ [TimeRecordSignaturePage] Assinaturas recebidas:', {
+        count: signaturesData.length,
+        signatures: signaturesData.map(s => ({
+          id: s.id,
+          month_year: s.month_year,
+          status: s.status,
+          expires_at: s.expires_at
+        }))
+      });
+
+      // Se não há assinaturas e a funcionalidade está habilitada, verificar se precisa criar
+      if (signaturesData.length === 0 && config.is_enabled) {
+        console.log('⚠️ [TimeRecordSignaturePage] Nenhuma assinatura encontrada, mas funcionalidade está habilitada');
+        console.log('💡 [TimeRecordSignaturePage] Pode ser necessário chamar create_monthly_signature_records para o mês atual');
+        
+        // Tentar criar assinaturas para o mês atual e anterior
+        try {
+          const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+          const lastMonth = new Date();
+          lastMonth.setMonth(lastMonth.getMonth() - 1);
+          const lastMonthStr = lastMonth.toISOString().slice(0, 7);
+          
+          console.log('🔄 [TimeRecordSignaturePage] Tentando criar assinaturas para:', { currentMonth, lastMonthStr });
+          
+          // Chamar RPC para criar assinaturas (se a função existir)
+          const { data: currentResult, error: currentError } = await (supabase.rpc as any)('create_monthly_signature_records', {
+            p_company_id: companyId,
+            p_month_year: currentMonth
+          });
+          
+          console.log('📊 [TimeRecordSignaturePage] Resultado criação mês atual:', { data: currentResult, error: currentError });
+          
+          // Tentar mês anterior também
+          const { data: lastResult, error: lastError } = await (supabase.rpc as any)('create_monthly_signature_records', {
+            p_company_id: companyId,
+            p_month_year: lastMonthStr
+          });
+          
+          console.log('📊 [TimeRecordSignaturePage] Resultado criação mês anterior:', { data: lastResult, error: lastError });
+          
+          // Se criou assinaturas, buscar novamente
+          if (currentResult || lastResult) {
+            console.log('🔄 [TimeRecordSignaturePage] Assinaturas criadas, buscando novamente...');
+            const newSignatures = await timeRecordSignatureService.getEmployeeSignatures(employeeId, companyId);
+            console.log('✅ [TimeRecordSignaturePage] Novas assinaturas encontradas:', newSignatures.length);
+            setSignatures(newSignatures);
+            return;
+          }
+        } catch (error) {
+          console.error('❌ [TimeRecordSignaturePage] Erro ao tentar criar assinaturas:', error);
+        }
+      }
 
       setSignatures(signaturesData);
     } catch (error) {
-      console.error('Erro ao carregar assinaturas:', error);
+      console.error('❌ [TimeRecordSignaturePage] Erro ao carregar assinaturas:', error);
       toast({
         title: 'Erro',
         description: 'Não foi possível carregar as assinaturas.',
@@ -76,7 +151,70 @@ export default function TimeRecordSignaturePage() {
     } finally {
       setLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCompany?.id, employee?.id]);
+
+  // Usar useRef para rastrear se já carregou para evitar loops
+  const hasLoadedRef = useRef(false);
+  const lastCompanyIdRef = useRef<string | null>(null);
+  const lastEmployeeIdRef = useRef<string | null>(null);
+  const isLoadingRef = useRef(false);
+
+  useEffect(() => {
+    // Se ainda está carregando o employee, aguardar
+    if (employeeLoading) {
+      console.log('⏳ [TimeRecordSignaturePage] Aguardando employee carregar...');
+      return;
+    }
+
+    // Se não há company ou employee, finalizar loading
+    if (!currentCompany?.id || !employee?.id) {
+      console.log('⚠️ [TimeRecordSignaturePage] Dados faltando:', {
+        company: currentCompany?.id,
+        employee: employee?.id
+      });
+      setLoading(false);
+      hasLoadedRef.current = false;
+      lastCompanyIdRef.current = null;
+      lastEmployeeIdRef.current = null;
+      return;
+    }
+
+    // Verificar se os IDs mudaram (nova empresa ou novo employee)
+    const companyChanged = lastCompanyIdRef.current !== currentCompany.id;
+    const employeeChanged = lastEmployeeIdRef.current !== employee.id;
+    const shouldLoad = (companyChanged || employeeChanged || !hasLoadedRef.current) && 
+                       currentCompany?.id && 
+                       employee?.id && 
+                       !isLoadingRef.current;
+
+    console.log('🔍 [TimeRecordSignaturePage] Verificando se deve carregar:', {
+      companyChanged,
+      employeeChanged,
+      hasLoaded: hasLoadedRef.current,
+      isLoading: isLoadingRef.current,
+      shouldLoad,
+      companyId: currentCompany.id,
+      employeeId: employee.id
+    });
+
+    // Se os IDs mudaram ou ainda não carregou, e não está carregando, carregar assinaturas
+    if (shouldLoad) {
+      console.log('✅ [TimeRecordSignaturePage] Carregando assinaturas...');
+      hasLoadedRef.current = true;
+      lastCompanyIdRef.current = currentCompany.id;
+      lastEmployeeIdRef.current = employee.id;
+      isLoadingRef.current = true;
+      
+      loadSignatures().finally(() => {
+        isLoadingRef.current = false;
+        console.log('✅ [TimeRecordSignaturePage] Assinaturas carregadas');
+      });
+    } else {
+      console.log('⏭️ [TimeRecordSignaturePage] Pulando carregamento (já carregado ou em progresso)');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCompany?.id, employee?.id, employeeLoading]);
 
   const handleSign = async (signatureId: string) => {
     try {
@@ -169,41 +307,6 @@ export default function TimeRecordSignaturePage() {
     return new Date(expiresAt) < new Date();
   };
 
-  if (loading || employeeLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  // Se não há funcionário associado ao usuário
-  if (!employee) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Assinatura de Ponto</h1>
-            <p className="text-muted-foreground">
-              Assine seus registros de ponto mensais
-            </p>
-          </div>
-        </div>
-
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <AlertTriangle className="h-12 w-12 text-yellow-500 mb-4" />
-            <h3 className="text-lg font-semibold mb-2">Funcionário não encontrado</h3>
-            <p className="text-muted-foreground text-center">
-              Não foi possível encontrar um funcionário associado ao seu usuário. 
-              Entre em contato com o administrador do sistema.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -228,71 +331,18 @@ export default function TimeRecordSignaturePage() {
       ) : (
         <div className="grid gap-4">
           {signatures.map((signature) => (
-            <Card key={signature.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5" />
-                    {formatMonthYear(signature.month_year)}
-                  </CardTitle>
-                  <Badge variant={getStatusVariant(signature.status)}>
-                    {getStatusIcon(signature.status)}
-                    <span className="ml-1">{getStatusText(signature.status)}</span>
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium">Status:</span>
-                    <span className="ml-2">{getStatusText(signature.status)}</span>
-                  </div>
-                  <div>
-                    <span className="font-medium">Expira em:</span>
-                    <span className="ml-2">{formatDate(signature.expires_at)}</span>
-                  </div>
-                  {signature.signature_timestamp && (
-                    <div>
-                      <span className="font-medium">Assinado em:</span>
-                      <span className="ml-2">{formatDate(signature.signature_timestamp)}</span>
-                    </div>
-                  )}
-                  {signature.manager_approved_at && (
-                    <div>
-                      <span className="font-medium">Aprovado em:</span>
-                      <span className="ml-2">{formatDate(signature.manager_approved_at)}</span>
-                    </div>
-                  )}
-                </div>
-
-                {signature.rejection_reason && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      <strong>Motivo da rejeição:</strong> {signature.rejection_reason}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {isExpired(signature.expires_at) && signature.status === 'pending' && (
-                  <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>
-                      Esta assinatura expirou e não pode mais ser assinada.
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {signature.status === 'pending' && !isExpired(signature.expires_at) && (
-                  <div className="flex gap-2">
-                    <Button onClick={() => handleSign(signature.id)}>
-                      <FileText className="mr-2 h-4 w-4" />
-                      Assinar Registro
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <SignatureCardWithRecords 
+              key={signature.id} 
+              signature={signature}
+              employeeId={employee?.id}
+              onSign={handleSign}
+              formatMonthYear={formatMonthYear}
+              formatDate={formatDate}
+              getStatusIcon={getStatusIcon}
+              getStatusText={getStatusText}
+              getStatusVariant={getStatusVariant}
+              isExpired={isExpired}
+            />
           ))}
         </div>
       )}
@@ -305,5 +355,301 @@ export default function TimeRecordSignaturePage() {
         </AlertDescription>
       </Alert>
     </div>
+  );
+}
+
+// Componente para exibir card de assinatura com registros
+interface SignatureCardWithRecordsProps {
+  signature: TimeRecordSignature;
+  employeeId?: string;
+  onSign: (signatureId: string) => void;
+  formatMonthYear: (monthYear: string) => string;
+  formatDate: (dateString: string) => string;
+  getStatusIcon: (status: string) => React.ReactNode;
+  getStatusText: (status: string) => string;
+  getStatusVariant: (status: string) => "default" | "secondary" | "destructive" | "outline";
+  isExpired: (expiresAt: string) => boolean;
+}
+
+function SignatureCardWithRecords({
+  signature,
+  employeeId,
+  onSign,
+  formatMonthYear,
+  formatDate,
+  getStatusIcon,
+  getStatusText,
+  getStatusVariant,
+  isExpired
+}: SignatureCardWithRecordsProps) {
+  const [showRecords, setShowRecords] = useState(true);
+  const [year, month] = signature.month_year.split('-').map(Number);
+  
+  const { data: monthlyRecords, isLoading: recordsLoading } = useMonthlyTimeRecords(year, month);
+
+  const formatTime = (time?: string) => {
+    if (!time) return '-';
+    try {
+      // Se for formato TIME do PostgreSQL (HH:MM:SS ou HH:MM:SS.microseconds)
+      // ou formato simples (HH:MM), retornar apenas HH:MM
+      if (time.match(/^\d{1,2}:\d{2}(:\d{2})?(\.\d+)?$/)) {
+        // Extrair apenas HH:MM
+        const parts = time.split(':');
+        if (parts.length >= 2) {
+          const hours = parts[0].padStart(2, '0');
+          const minutes = parts[1].padStart(2, '0');
+          return `${hours}:${minutes}`;
+        }
+        return time;
+      }
+      // Se for timestamp completo (ISO string), extrair apenas hora
+      const date = new Date(time);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      }
+      // Se não conseguir converter, retornar como está
+      return time;
+    } catch {
+      return time || '-';
+    }
+  };
+
+  const formatHours = (hours?: number) => {
+    if (!hours && hours !== 0) return '-';
+    return `${hours.toFixed(2)}h`;
+  };
+
+  const formatDateShort = (dateString: string) => {
+    try {
+      // Se já estiver no formato YYYY-MM-DD, formatar diretamente
+      if (dateString && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = dateString.split('-');
+        return `${day}/${month}`;
+      }
+      // Tentar converter para Date
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit'
+        });
+      }
+      return dateString || '-';
+    } catch {
+      return dateString || '-';
+    }
+  };
+
+  const getDayOfWeek = (dateString: string) => {
+    try {
+      // Se já estiver no formato YYYY-MM-DD, usar diretamente
+      if (dateString && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const date = new Date(dateString + 'T00:00:00');
+        if (!isNaN(date.getTime())) {
+          const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+          return days[date.getDay()];
+        }
+      }
+      // Tentar converter para Date
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+        return days[date.getDay()];
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  };
+
+  const recordsArray = monthlyRecords 
+    ? Object.entries(monthlyRecords.recordsByDate)
+        .map(([date, record]) => ({ ...record, data_registro: date }))
+        .sort((a, b) => a.data_registro.localeCompare(b.data_registro))
+    : [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            {formatMonthYear(signature.month_year)}
+          </CardTitle>
+          <Badge variant={getStatusVariant(signature.status)}>
+            {getStatusIcon(signature.status)}
+            <span className="ml-1">{getStatusText(signature.status)}</span>
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="font-medium">Status:</span>
+            <span className="ml-2">{getStatusText(signature.status)}</span>
+          </div>
+          <div>
+            <span className="font-medium">Expira em:</span>
+            <span className="ml-2">{formatDate(signature.expires_at)}</span>
+          </div>
+          {signature.signature_timestamp && (
+            <div>
+              <span className="font-medium">Assinado em:</span>
+              <span className="ml-2">{formatDate(signature.signature_timestamp)}</span>
+            </div>
+          )}
+          {signature.manager_approved_at && (
+            <div>
+              <span className="font-medium">Aprovado em:</span>
+              <span className="ml-2">{formatDate(signature.manager_approved_at)}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Resumo do mês */}
+        {monthlyRecords && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
+            <div>
+              <div className="text-xs text-muted-foreground">Dias Trabalhados</div>
+              <div className="text-lg font-semibold">{monthlyRecords.workedDays}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Total de Horas</div>
+              <div className="text-lg font-semibold">{monthlyRecords.totalHours.toFixed(2)}h</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Horas Extras</div>
+              <div className="text-lg font-semibold text-green-600">{monthlyRecords.extraHours.toFixed(2)}h</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Horas Faltantes</div>
+              <div className="text-lg font-semibold text-red-600">{monthlyRecords.missingHours.toFixed(2)}h</div>
+            </div>
+          </div>
+        )}
+
+        {/* Botão para mostrar/ocultar registros */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowRecords(!showRecords)}
+          className="w-full"
+        >
+          {showRecords ? (
+            <>
+              <ChevronUp className="mr-2 h-4 w-4" />
+              Ocultar Registros
+            </>
+          ) : (
+            <>
+              <ChevronDown className="mr-2 h-4 w-4" />
+              Mostrar Registros ({recordsArray.length})
+            </>
+          )}
+        </Button>
+
+        {/* Tabela de registros */}
+        {showRecords && (
+          <div className="border rounded-lg overflow-hidden">
+            {recordsLoading ? (
+              <div className="flex items-center justify-center p-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <span className="ml-2">Carregando registros...</span>
+              </div>
+            ) : recordsArray.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-8 text-muted-foreground">
+                <FileText className="h-8 w-8 mb-2" />
+                <p>Nenhum registro de ponto encontrado para este mês.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Entrada</TableHead>
+                      <TableHead>Saída Almoço</TableHead>
+                      <TableHead>Retorno Almoço</TableHead>
+                      <TableHead>Saída</TableHead>
+                      <TableHead>Horas</TableHead>
+                      <TableHead>Extras</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recordsArray.map((record) => (
+                      <TableRow key={record.id || record.data_registro}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">
+                              {formatDateShort(record.data_registro)}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {getDayOfWeek(record.data_registro)}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{formatTime(record.entrada)}</TableCell>
+                        <TableCell>{formatTime(record.saida_almoco)}</TableCell>
+                        <TableCell>{formatTime(record.entrada_almoco)}</TableCell>
+                        <TableCell>{formatTime(record.saida)}</TableCell>
+                        <TableCell>{formatHours(record.horas_trabalhadas)}</TableCell>
+                        <TableCell>
+                          {record.horas_extras ? (
+                            <span className="text-green-600 font-medium">
+                              {formatHours(record.horas_extras)}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={
+                              record.status === 'aprovado' ? 'default' :
+                              record.status === 'rejeitado' ? 'destructive' :
+                              'secondary'
+                            }
+                          >
+                            {record.status || 'Pendente'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {signature.rejection_reason && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <strong>Motivo da rejeição:</strong> {signature.rejection_reason}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {isExpired(signature.expires_at) && signature.status === 'pending' && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Esta assinatura expirou e não pode mais ser assinada.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {signature.status === 'pending' && !isExpired(signature.expires_at) && (
+          <div className="flex gap-2">
+            <Button onClick={() => onSign(signature.id)}>
+              <FileText className="mr-2 h-4 w-4" />
+              Assinar Registro
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

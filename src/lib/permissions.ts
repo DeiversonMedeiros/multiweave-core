@@ -36,6 +36,7 @@ export const PERMISSION_CONFIG = {
     'projetos': ['read', 'create', 'edit', 'delete'],
     'materiais_equipamentos': ['read', 'create', 'edit', 'delete'],
     'parceiros': ['read', 'create', 'edit', 'delete'],
+    'services': ['read', 'create', 'edit', 'delete'],
     'centros_custo': ['read', 'create', 'edit', 'delete'],
     'unidades': ['read', 'create', 'edit', 'delete'],
     
@@ -206,6 +207,11 @@ export const PERMISSION_CONFIG = {
       name: 'Parceiros',
       description: 'Entidade de parceiros',
       table: 'partners'
+    },
+    'services': {
+      name: 'Serviços',
+      description: 'Entidade de serviços',
+      table: 'services'
     },
     'centros_custo': {
       name: 'Centros de Custo',

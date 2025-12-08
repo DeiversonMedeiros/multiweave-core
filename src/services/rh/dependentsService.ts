@@ -90,11 +90,17 @@ export const DependentsService = {
    * Cria um novo dependente
    */
   create: async (dependent: DependentCreateData, companyId: string): Promise<Dependent> => {
+    // Garantir que o status seja 'ativo' se não foi especificado
+    const dependentData = {
+      ...dependent,
+      status: dependent.status || 'ativo'
+    };
+    
     return await EntityService.create<Dependent>({
       schema: 'rh',
       table: 'dependents',
       companyId,
-      data: dependent
+      data: dependentData
     });
   },
 

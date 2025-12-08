@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   EmployeeMedicalPlan, 
   EmployeePlanDependent,
@@ -13,6 +13,8 @@ import {
   useUpdateEmployeePlanDependent,
   useDeleteEmployeePlanDependent
 } from '@/hooks/rh/useMedicalAgreements';
+import { getPlanValueByAge, calculateAge, formatCurrency } from '@/services/rh/medicalAgreementsService';
+import { useCompany } from '@/lib/company-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -97,6 +99,7 @@ export function EmployeePlanDependentsManager({
     !planDependents?.some(planDep => planDep.nome === empDep.nome)
   ) || [];
 
+  // Função auxiliar para obter label do parentesco
   const getParentescoLabel = (parentesco: string) => {
     const parentescoTypes = getParentescoTypes();
     return parentescoTypes.find(p => p.value === parentesco)?.label || parentesco;
@@ -429,18 +432,122 @@ function AddDependentForm({
   onCancel, 
   isLoading = false 
 }: AddDependentFormProps) {
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
+  
+  // Log completo do employeePlan recebido
+  console.log('📋 [AddDependentForm] employeePlan recebido:', {
+    employeePlan,
+    hasPlan: !!employeePlan.plan,
+    plan: employeePlan.plan,
+    planId: employeePlan.plan?.id,
+    planIdFromEmployeePlan: employeePlan.plan_id,
+    employeePlanKeys: Object.keys(employeePlan)
+  });
+  
   const [valorMensal, setValorMensal] = useState(employeePlan.plan?.valor_dependente || 0);
   const [dataInclusao, setDataInclusao] = useState(new Date().toISOString().split('T')[0]);
   const [observacoes, setObservacoes] = useState('');
 
+  // Função auxiliar para obter label do parentesco
+  const getParentescoLabel = (parentesco: string) => {
+    const parentescoTypes = getParentescoTypes();
+    return parentescoTypes.find(p => p.value === parentesco)?.label || parentesco;
+  };
+
+  // Calcular valor baseado na idade do dependente automaticamente
+  useEffect(() => {
+    // Usar plan_id diretamente se plan não estiver disponível
+    const planId = employeePlan.plan?.id || employeePlan.plan_id;
+    
+    console.log('🔄 [AddDependentForm] useEffect disparado:', {
+      hasPlanId: !!planId,
+      planId: planId,
+      planIdFromPlan: employeePlan.plan?.id,
+      planIdFromEmployeePlan: employeePlan.plan_id,
+      planObject: employeePlan.plan,
+      hasDataNascimento: !!employeeDependent?.data_nascimento,
+      dataNascimento: employeeDependent?.data_nascimento,
+      hasCompanyId: !!companyId,
+      companyId,
+      employeePlanKeys: Object.keys(employeePlan)
+    });
+    
+    if (planId && employeeDependent?.data_nascimento && companyId) {
+      const updateValue = async () => {
+        try {
+          console.log('🚀 [AddDependentForm] Iniciando cálculo de valor...');
+          
+          const idade = calculateAge(employeeDependent.data_nascimento);
+          console.log('📊 [AddDependentForm] Idade calculada:', {
+            dataNascimento: employeeDependent.data_nascimento,
+            idade,
+            tipo: typeof idade
+          });
+          
+          if (idade === null || idade === undefined) {
+            console.warn('⚠️ [AddDependentForm] Idade é null/undefined, não é possível calcular valor');
+            setValorMensal(0);
+            return;
+          }
+          
+          console.log('📊 [AddDependentForm] Chamando getPlanValueByAge:', {
+            planId: planId,
+            idade,
+            tipo: 'dependente',
+            companyId
+          });
+          
+          const valorBase = await getPlanValueByAge(
+            planId,
+            idade,
+            'dependente',
+            companyId
+          );
+          
+          console.log('💰 [AddDependentForm] Valor retornado:', {
+            valorBase,
+            tipo: typeof valorBase,
+            isZero: valorBase === 0
+          });
+          
+          setValorMensal(valorBase);
+        } catch (error) {
+          console.error('❌ [AddDependentForm] Erro ao calcular valor do dependente:', error);
+          console.error('❌ [AddDependentForm] Stack trace:', error instanceof Error ? error.stack : 'N/A');
+          // Em caso de erro, usar 0
+          setValorMensal(0);
+        }
+      };
+      updateValue();
+    } else {
+      console.warn('⚠️ [AddDependentForm] Condições não atendidas:', {
+        hasPlanId: !!employeePlan.plan?.id,
+        hasDataNascimento: !!employeeDependent?.data_nascimento,
+        hasCompanyId: !!companyId
+      });
+      // Se não tem data de nascimento, usar 0
+      setValorMensal(0);
+    }
+  }, [employeePlan.plan?.id, employeePlan.plan_id, employeeDependent?.data_nascimento, companyId]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Remover formatação do CPF (apenas números)
+    const cpfLimpo = employeeDependent.cpf ? employeeDependent.cpf.replace(/\D/g, '') : undefined;
+    
+    console.log('💾 [AddDependentForm] Salvando dependente:', {
+      cpfOriginal: employeeDependent.cpf,
+      cpfLimpo,
+      valorMensal
+    });
     
     const data: EmployeePlanDependentCreateData = {
       company_id: employeePlan.company_id,
       employee_plan_id: employeePlan.id,
       nome: employeeDependent.nome,
-      cpf: employeeDependent.cpf,
+      cpf: cpfLimpo,
       data_nascimento: employeeDependent.data_nascimento,
       parentesco: employeeDependent.parentesco,
       status: 'ativo',
@@ -472,22 +579,31 @@ function AddDependentForm({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="valor-mensal">Valor Mensal *</Label>
-        <Input
-          id="valor-mensal"
-          type="number"
-          step="0.01"
-          min="0"
-          value={valorMensal}
-          onChange={(e) => setValorMensal(Number(e.target.value))}
-          placeholder="Valor mensal do dependente"
-          required
-        />
-        <p className="text-sm text-muted-foreground">
-          Valor sugerido: R$ {employeePlan.plan?.valor_dependente?.toFixed(2).replace('.', ',')}
-        </p>
-      </div>
+      {/* Informação sobre o valor calculado */}
+      {employeeDependent?.data_nascimento && (() => {
+        const idade = calculateAge(employeeDependent.data_nascimento);
+        return idade !== null ? (
+          <div className="space-y-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <Label className="text-sm font-medium text-blue-900">Valor Mensal Calculado</Label>
+            <p className="text-sm text-blue-700">
+              <strong>Idade:</strong> {idade} anos
+            </p>
+            <p className="text-sm text-blue-700">
+              <strong>Valor:</strong> {formatCurrency(valorMensal)}
+            </p>
+            <p className="text-xs text-blue-600 mt-1">
+              O valor é calculado automaticamente baseado na idade do dependente e nas faixas etárias cadastradas no plano.
+            </p>
+          </div>
+        ) : null;
+      })()}
+      {!employeeDependent?.data_nascimento && (
+        <div className="space-y-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-700">
+            <strong>Atenção:</strong> Para calcular o valor mensal, é necessário que o dependente tenha data de nascimento cadastrada.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="data-inclusao">Data de Inclusão *</Label>
@@ -540,14 +656,43 @@ function EditDependentForm({
   onCancel, 
   isLoading = false 
 }: EditDependentFormProps) {
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const [valorMensal, setValorMensal] = useState(planDependent?.valor_mensal || 0);
   const [status, setStatus] = useState(planDependent?.status || 'ativo');
+  
+  // Recalcular valor quando a data de nascimento mudar
+  useEffect(() => {
+    if (employeePlan.plan?.id && planDependent?.data_nascimento && companyId) {
+      const updateValue = async () => {
+        try {
+          const idade = calculateAge(planDependent.data_nascimento);
+          const valorBase = await getPlanValueByAge(
+            employeePlan.plan.id,
+            idade,
+            'dependente',
+            companyId
+          );
+          setValorMensal(valorBase);
+        } catch (error) {
+          console.error('Erro ao calcular valor do dependente:', error);
+          setValorMensal(planDependent?.valor_mensal || 0);
+        }
+      };
+      updateValue();
+    }
+  }, [employeePlan.plan?.id, planDependent?.data_nascimento, companyId]);
   const [dataExclusao, setDataExclusao] = useState(planDependent?.data_exclusao || '');
   const [motivoExclusao, setMotivoExclusao] = useState(planDependent?.motivo_exclusao || '');
   const [observacoes, setObservacoes] = useState(planDependent?.observacoes || '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    console.log('💾 [EditDependentForm] Salvando atualização:', {
+      valorMensal,
+      status
+    });
     
     const data: EmployeePlanDependentUpdateData = {
       valor_mensal: valorMensal,
@@ -571,19 +716,31 @@ function EditDependentForm({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="valor-mensal">Valor Mensal *</Label>
-        <Input
-          id="valor-mensal"
-          type="number"
-          step="0.01"
-          min="0"
-          value={valorMensal}
-          onChange={(e) => setValorMensal(Number(e.target.value))}
-          placeholder="Valor mensal do dependente"
-          required
-        />
-      </div>
+      {/* Informação sobre o valor calculado */}
+      {planDependent?.data_nascimento && employeePlan.plan?.id && (() => {
+        const idade = calculateAge(planDependent.data_nascimento);
+        return idade !== null ? (
+          <div className="space-y-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <Label className="text-sm font-medium text-blue-900">Valor Mensal Calculado</Label>
+            <p className="text-sm text-blue-700">
+              <strong>Idade:</strong> {idade} anos
+            </p>
+            <p className="text-sm text-blue-700">
+              <strong>Valor:</strong> {formatCurrency(valorMensal)}
+            </p>
+            <p className="text-xs text-blue-600 mt-1">
+              O valor é calculado automaticamente baseado na idade do dependente e nas faixas etárias cadastradas no plano.
+            </p>
+          </div>
+        ) : null;
+      })()}
+      {(!planDependent?.data_nascimento || !employeePlan.plan?.id) && (
+        <div className="space-y-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p className="text-sm text-yellow-700">
+            <strong>Atenção:</strong> Para calcular o valor mensal, é necessário que o dependente tenha data de nascimento cadastrada.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="status">Status *</Label>

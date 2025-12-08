@@ -2,7 +2,6 @@
 // SERVIÇO PARA CONVÊNIOS MÉDICOS E ODONTOLÓGICOS
 // =====================================================
 
-import { supabase } from '@/integrations/supabase/client';
 import {
   MedicalAgreement,
   MedicalAgreementCreateData,
@@ -23,6 +22,10 @@ import {
   MedicalPlanPricingHistory,
   MedicalPlanPricingHistoryCreateData,
   MedicalPlanPricingHistoryFilters,
+  MedicalPlanAgeRange,
+  MedicalPlanAgeRangeCreateData,
+  MedicalPlanAgeRangeUpdateData,
+  MedicalPlanAgeRangeFilters,
 } from '@/integrations/supabase/rh-types';
 import { EntityService } from '@/services/generic/entityService';
 
@@ -73,14 +76,19 @@ export async function getMedicalAgreementById(
 }
 
 export async function createMedicalAgreement(
-  agreementData: MedicalAgreementCreateData
+  agreementData: Omit<MedicalAgreementCreateData, 'company_id'>,
+  companyId: string
 ): Promise<MedicalAgreement> {
   try {
+    const dataWithCompanyId = {
+      ...agreementData,
+      company_id: companyId
+    };
     return await EntityService.create<MedicalAgreement>({
       schema: SCHEMA,
       table: 'medical_agreements',
-      companyId: agreementData.company_id,
-      data: agreementData
+      companyId,
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error('Erro no serviço de criação de convênio médico:', error);
@@ -89,15 +97,20 @@ export async function createMedicalAgreement(
 }
 
 export async function updateMedicalAgreement(
-  agreementData: MedicalAgreementUpdateData
+  agreementData: Omit<MedicalAgreementUpdateData, 'company_id'>,
+  companyId: string
 ): Promise<MedicalAgreement> {
   try {
+    const dataWithCompanyId = {
+      ...agreementData,
+      company_id: companyId
+    };
     return await EntityService.update<MedicalAgreement>({
       schema: SCHEMA,
       table: 'medical_agreements',
-      companyId: agreementData.company_id,
+      companyId,
       id: agreementData.id,
-      data: agreementData
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error(`Erro no serviço de atualização de convênio médico com ID ${agreementData.id}:`, error);
@@ -155,13 +168,27 @@ export async function getMedicalPlanById(
   id: string
 ): Promise<MedicalPlan | null> {
   try {
-    return await EntityService.getById<MedicalPlan>({
+    const plan = await EntityService.getById<MedicalPlan>({
       schema: SCHEMA,
       table: 'medical_plans',
       companyId,
-      id,
-      foreignTable: 'rh.medical_agreements(id, nome, tipo)'
+      id
     });
+    
+    // Se o plano foi encontrado e tem agreement_id, buscar o convênio
+    if (plan && plan.agreement_id) {
+      try {
+        const agreement = await getMedicalAgreementById(companyId, plan.agreement_id);
+        if (agreement) {
+          plan.agreement = agreement;
+        }
+      } catch (error) {
+        console.warn(`Erro ao buscar convênio para o plano ${id}:`, error);
+        // Continuar mesmo se não conseguir buscar o convênio
+      }
+    }
+    
+    return plan;
   } catch (error) {
     console.error(`Erro ao buscar plano médico com ID ${id}:`, error);
     throw error;
@@ -169,14 +196,19 @@ export async function getMedicalPlanById(
 }
 
 export async function createMedicalPlan(
-  planData: MedicalPlanCreateData
+  planData: Omit<MedicalPlanCreateData, 'company_id'>,
+  companyId: string
 ): Promise<MedicalPlan> {
   try {
+    const dataWithCompanyId = {
+      ...planData,
+      company_id: companyId
+    };
     return await EntityService.create<MedicalPlan>({
       schema: SCHEMA,
       table: 'medical_plans',
-      companyId: planData.company_id,
-      data: planData
+      companyId,
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error('Erro no serviço de criação de plano médico:', error);
@@ -185,15 +217,20 @@ export async function createMedicalPlan(
 }
 
 export async function updateMedicalPlan(
-  planData: MedicalPlanUpdateData
+  planData: Omit<MedicalPlanUpdateData, 'company_id'>,
+  companyId: string
 ): Promise<MedicalPlan> {
   try {
+    const dataWithCompanyId = {
+      ...planData,
+      company_id: companyId
+    };
     return await EntityService.update<MedicalPlan>({
       schema: SCHEMA,
       table: 'medical_plans',
-      companyId: planData.company_id,
+      companyId,
       id: planData.id,
-      data: planData
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error(`Erro no serviço de atualização de plano médico com ID ${planData.id}:`, error);
@@ -234,8 +271,30 @@ export async function getEmployeeMedicalPlans(
       filters,
       orderBy: 'data_inicio',
       orderDirection: 'DESC',
-      foreignTable: 'rh.employees(id, nome, matricula), rh.medical_plans(id, nome, categoria)'
+      foreignTable: 'rh.employees(id, nome, matricula), rh.medical_plans(id, nome, categoria, agreement_id)'
     });
+    
+    // Garantir que os planos venham com os agreements populados
+    if (result.data && result.data.length > 0) {
+      const plansWithAgreements = await Promise.all(
+        result.data.map(async (employeePlan) => {
+          // Se o plano não veio populado ou não tem agreement, buscar separadamente
+          if (employeePlan.plan_id && (!employeePlan.plan || !employeePlan.plan.agreement)) {
+            const plan = await getMedicalPlanById(companyId, employeePlan.plan_id);
+            if (plan) {
+              employeePlan.plan = plan;
+            }
+          }
+          return employeePlan;
+        })
+      );
+      
+      return {
+        data: plansWithAgreements,
+        totalCount: result.totalCount,
+      };
+    }
+    
     return {
       data: result.data,
       totalCount: result.totalCount,
@@ -251,28 +310,51 @@ export async function getEmployeeMedicalPlanById(
   id: string
 ): Promise<EmployeeMedicalPlan | null> {
   try {
-    return await EntityService.getById<EmployeeMedicalPlan>({
+    const result = await EntityService.getById<EmployeeMedicalPlan>({
       schema: SCHEMA,
       table: 'employee_medical_plans',
       companyId,
-      id,
-      foreignTable: 'rh.employees(id, nome, matricula), rh.medical_plans(id, nome, categoria)'
+      id
     });
+    
+    console.log('📋 [getEmployeeMedicalPlanById] Resultado:', {
+      id: result?.id,
+      plan_id: result?.plan_id,
+      hasPlan: !!result?.plan,
+      plan: result?.plan
+    });
+    
+    // Se o plan não veio populado, buscar separadamente
+    if (result && result.plan_id && !result.plan) {
+      console.log('🔄 [getEmployeeMedicalPlanById] Plan não veio populado, buscando separadamente...');
+      const plan = await getMedicalPlanById(companyId, result.plan_id);
+      if (plan) {
+        result.plan = plan;
+        console.log('✅ [getEmployeeMedicalPlanById] Plan carregado:', plan);
+      }
+    }
+    
+    return result;
   } catch (error) {
-    console.error(`Erro ao buscar adesão médica com ID ${id}:`, error);
+    console.error(`❌ [getEmployeeMedicalPlanById] Erro ao buscar adesão médica com ID ${id}:`, error);
     throw error;
   }
 }
 
 export async function createEmployeeMedicalPlan(
-  employeePlanData: EmployeeMedicalPlanCreateData
+  employeePlanData: Omit<EmployeeMedicalPlanCreateData, 'company_id'>,
+  companyId: string
 ): Promise<EmployeeMedicalPlan> {
   try {
+    const dataWithCompanyId = {
+      ...employeePlanData,
+      company_id: companyId
+    };
     return await EntityService.create<EmployeeMedicalPlan>({
       schema: SCHEMA,
       table: 'employee_medical_plans',
-      companyId: employeePlanData.company_id,
-      data: employeePlanData
+      companyId,
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error('Erro no serviço de criação de adesão médica:', error);
@@ -281,15 +363,20 @@ export async function createEmployeeMedicalPlan(
 }
 
 export async function updateEmployeeMedicalPlan(
-  employeePlanData: EmployeeMedicalPlanUpdateData
+  employeePlanData: Omit<EmployeeMedicalPlanUpdateData, 'company_id'>,
+  companyId: string
 ): Promise<EmployeeMedicalPlan> {
   try {
+    const dataWithCompanyId = {
+      ...employeePlanData,
+      company_id: companyId
+    };
     return await EntityService.update<EmployeeMedicalPlan>({
       schema: SCHEMA,
       table: 'employee_medical_plans',
-      companyId: employeePlanData.company_id,
+      companyId,
       id: employeePlanData.id,
-      data: employeePlanData
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error(`Erro no serviço de atualização de adesão médica com ID ${employeePlanData.id}:`, error);
@@ -361,14 +448,19 @@ export async function getEmployeePlanDependentById(
 }
 
 export async function createEmployeePlanDependent(
-  dependentData: EmployeePlanDependentCreateData
+  dependentData: Omit<EmployeePlanDependentCreateData, 'company_id'>,
+  companyId: string
 ): Promise<EmployeePlanDependent> {
   try {
+    const dataWithCompanyId = {
+      ...dependentData,
+      company_id: companyId
+    };
     return await EntityService.create<EmployeePlanDependent>({
       schema: SCHEMA,
       table: 'employee_plan_dependents',
-      companyId: dependentData.company_id,
-      data: dependentData
+      companyId,
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error('Erro no serviço de criação de dependente médico:', error);
@@ -377,15 +469,20 @@ export async function createEmployeePlanDependent(
 }
 
 export async function updateEmployeePlanDependent(
-  dependentData: EmployeePlanDependentUpdateData
+  dependentData: Omit<EmployeePlanDependentUpdateData, 'company_id'>,
+  companyId: string
 ): Promise<EmployeePlanDependent> {
   try {
+    const dataWithCompanyId = {
+      ...dependentData,
+      company_id: companyId
+    };
     return await EntityService.update<EmployeePlanDependent>({
       schema: SCHEMA,
       table: 'employee_plan_dependents',
-      companyId: dependentData.company_id,
+      companyId,
       id: dependentData.id,
-      data: dependentData
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error(`Erro no serviço de atualização de dependente médico com ID ${dependentData.id}:`, error);
@@ -439,14 +536,19 @@ export async function getMedicalPlanPricingHistory(
 }
 
 export async function createMedicalPlanPricingHistory(
-  pricingData: MedicalPlanPricingHistoryCreateData
+  pricingData: Omit<MedicalPlanPricingHistoryCreateData, 'company_id'>,
+  companyId: string
 ): Promise<MedicalPlanPricingHistory> {
   try {
+    const dataWithCompanyId = {
+      ...pricingData,
+      company_id: companyId
+    };
     return await EntityService.create<MedicalPlanPricingHistory>({
       schema: SCHEMA,
       table: 'medical_plan_pricing_history',
-      companyId: pricingData.company_id,
-      data: pricingData
+      companyId,
+      data: dataWithCompanyId
     });
   } catch (error) {
     console.error('Erro no serviço de criação de histórico de preços médicos:', error);
@@ -457,6 +559,372 @@ export async function createMedicalPlanPricingHistory(
 // =====================================================
 // FUNÇÕES UTILITÁRIAS
 // =====================================================
+
+// =====================================================
+// FAIXAS ETÁRIAS DE PLANOS MÉDICOS
+// =====================================================
+
+export async function getMedicalPlanAgeRanges(
+  companyId: string,
+  filters: MedicalPlanAgeRangeFilters = {}
+): Promise<{ data: MedicalPlanAgeRange[]; totalCount: number }> {
+  try {
+    console.log('🔍 [getMedicalPlanAgeRanges] Buscando faixas etárias:', {
+      companyId,
+      filters
+    });
+    
+    // Buscar todas as faixas da empresa primeiro (sem filtros específicos)
+    const result = await EntityService.list<MedicalPlanAgeRange>({
+      schema: SCHEMA,
+      table: 'medical_plan_age_ranges',
+      companyId,
+      filters: {}, // Buscar todas primeiro
+      orderBy: 'ordem',
+      orderDirection: 'ASC'
+    });
+    
+    console.log('📦 [getMedicalPlanAgeRanges] Todas as faixas encontradas:', {
+      totalCount: result.totalCount,
+      dataLength: result.data.length,
+      data: result.data.map(r => ({
+        id: r.id,
+        plan_id: r.plan_id,
+        idade_min: r.idade_min,
+        idade_max: r.idade_max,
+        valor_titular: r.valor_titular,
+        valor_dependente: r.valor_dependente,
+        ativo: r.ativo
+      }))
+    });
+    
+    // Aplicar filtros manualmente
+    let filteredData = result.data;
+    
+    if (filters.plan_id) {
+      filteredData = filteredData.filter(range => range.plan_id === filters.plan_id);
+      console.log('🔍 [getMedicalPlanAgeRanges] Após filtrar por plan_id:', {
+        plan_id: filters.plan_id,
+        filteredCount: filteredData.length
+      });
+    }
+    
+    if (filters.ativo !== undefined) {
+      filteredData = filteredData.filter(range => range.ativo === filters.ativo);
+      console.log('🔍 [getMedicalPlanAgeRanges] Após filtrar por ativo:', {
+        ativo: filters.ativo,
+        filteredCount: filteredData.length
+      });
+    }
+    
+    console.log('✅ [getMedicalPlanAgeRanges] Resultado final:', {
+      totalCount: filteredData.length,
+      dataLength: filteredData.length,
+      data: filteredData.map(r => ({
+        id: r.id,
+        plan_id: r.plan_id,
+        idade_min: r.idade_min,
+        idade_max: r.idade_max,
+        valor_titular: r.valor_titular,
+        valor_dependente: r.valor_dependente,
+        ativo: r.ativo
+      }))
+    });
+    
+    return {
+      data: filteredData,
+      totalCount: filteredData.length,
+    };
+  } catch (error) {
+    console.error('❌ [getMedicalPlanAgeRanges] Erro ao buscar faixas etárias:', error);
+    throw error;
+  }
+}
+
+export async function getMedicalPlanAgeRangeById(
+  companyId: string,
+  id: string
+): Promise<MedicalPlanAgeRange | null> {
+  try {
+    return await EntityService.getById<MedicalPlanAgeRange>({
+      schema: SCHEMA,
+      table: 'medical_plan_age_ranges',
+      id,
+      companyId
+    });
+  } catch (error) {
+    console.error(`Erro ao buscar faixa etária com ID ${id}:`, error);
+    throw error;
+  }
+}
+
+export async function createMedicalPlanAgeRange(
+  ageRangeData: Omit<MedicalPlanAgeRangeCreateData, 'company_id'>,
+  companyId: string
+): Promise<MedicalPlanAgeRange> {
+  try {
+    const dataWithCompanyId = {
+      ...ageRangeData,
+      company_id: companyId
+    };
+    return await EntityService.create<MedicalPlanAgeRange>({
+      schema: SCHEMA,
+      table: 'medical_plan_age_ranges',
+      companyId,
+      data: dataWithCompanyId
+    });
+  } catch (error) {
+    console.error('Erro no serviço de criação de faixa etária:', error);
+    throw error;
+  }
+}
+
+export async function updateMedicalPlanAgeRange(
+  ageRangeData: Omit<MedicalPlanAgeRangeUpdateData, 'company_id'>,
+  companyId: string
+): Promise<MedicalPlanAgeRange> {
+  try {
+    const { id, ...updateData } = ageRangeData;
+    const dataWithCompanyId = {
+      ...updateData,
+      company_id: companyId
+    };
+    return await EntityService.update<MedicalPlanAgeRange>({
+      schema: SCHEMA,
+      table: 'medical_plan_age_ranges',
+      id,
+      companyId,
+      data: dataWithCompanyId
+    });
+  } catch (error) {
+    console.error('Erro no serviço de atualização de faixa etária:', error);
+    throw error;
+  }
+}
+
+export async function deleteMedicalPlanAgeRange(
+  companyId: string,
+  id: string
+): Promise<void> {
+  try {
+    await EntityService.delete({
+      schema: SCHEMA,
+      table: 'medical_plan_age_ranges',
+      id,
+      companyId
+    });
+  } catch (error) {
+    console.error(`Erro ao excluir faixa etária com ID ${id}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Calcula a idade a partir de uma data de nascimento
+ */
+export function calculateAge(birthDate: string | Date | null | undefined): number | null {
+  console.log('🎂 [calculateAge] Entrada:', {
+    birthDate,
+    tipo: typeof birthDate,
+    isString: typeof birthDate === 'string',
+    isDate: birthDate instanceof Date
+  });
+  
+  if (!birthDate) {
+    console.warn('⚠️ [calculateAge] birthDate é null/undefined');
+    return null;
+  }
+  
+  const birth = typeof birthDate === 'string' ? new Date(birthDate) : birthDate;
+  console.log('📅 [calculateAge] Data convertida:', {
+    birth,
+    isValid: !isNaN(birth.getTime()),
+    timestamp: birth.getTime()
+  });
+  
+  if (isNaN(birth.getTime())) {
+    console.warn('⚠️ [calculateAge] Data inválida');
+    return null;
+  }
+  
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  
+  console.log('✅ [calculateAge] Idade calculada:', {
+    age,
+    today: today.toISOString(),
+    birth: birth.toISOString(),
+    monthDiff
+  });
+  
+  return age;
+}
+
+/**
+ * Obtém o valor do plano baseado na idade
+ * Primeiro tenta buscar em faixas etárias específicas, depois usa valor padrão
+ */
+export async function getPlanValueByAge(
+  planId: string,
+  age: number | null,
+  tipo: 'titular' | 'dependente' = 'titular',
+  companyId: string
+): Promise<number> {
+  console.log('🎯 [getPlanValueByAge] INÍCIO - Parâmetros recebidos:', {
+    planId,
+    age,
+    tipo,
+    companyId,
+    ageType: typeof age,
+    ageIsNull: age === null,
+    ageIsUndefined: age === undefined
+  });
+  
+  try {
+    // Se não tem idade, usar valor padrão
+    if (age === null || age === undefined) {
+      console.warn('⚠️ [getPlanValueByAge] Idade é null/undefined, buscando valor padrão do plano');
+      const plan = await EntityService.getById<MedicalPlan>({
+        schema: SCHEMA,
+        table: 'medical_plans',
+        id: planId,
+        companyId
+      });
+      
+      if (!plan) {
+        console.warn('⚠️ [getPlanValueByAge] Plano não encontrado');
+        return 0;
+      }
+      const valor = tipo === 'titular' ? plan.valor_titular : plan.valor_dependente;
+      console.log('💰 [getPlanValueByAge] Valor padrão do plano:', valor);
+      return valor;
+    }
+    
+    console.log('🔍 [getPlanValueByAge] Buscando faixas etárias...');
+    
+    // Buscar faixas etárias do plano (sem filtro ativo primeiro para debug)
+    const ageRangesResult = await getMedicalPlanAgeRanges(companyId, { 
+      plan_id: planId
+    });
+    
+    console.log('📦 [getPlanValueByAge] Resultado da busca de faixas:', {
+      totalEncontradas: ageRangesResult.data.length,
+      todasAsFaixas: ageRangesResult.data
+    });
+    
+    // Filtrar apenas as ativas manualmente
+    const ageRanges = {
+      data: ageRangesResult.data.filter(range => {
+        const isAtivo = range.ativo === true;
+        console.log('🔍 [getPlanValueByAge] Verificando faixa:', {
+          id: range.id,
+          plan_id: range.plan_id,
+          idade_min: range.idade_min,
+          idade_max: range.idade_max,
+          ativo: range.ativo,
+          isAtivo,
+          planIdMatch: range.plan_id === planId
+        });
+        return isAtivo;
+      }),
+      totalCount: ageRangesResult.data.filter(range => range.ativo === true).length
+    };
+    
+    console.log('✅ [getPlanValueByAge] Faixas ativas filtradas:', {
+      totalAgeRanges: ageRanges.data.length,
+      ageRanges: ageRanges.data.map(r => ({
+        id: r.id,
+        plan_id: r.plan_id,
+        idade_min: r.idade_min,
+        idade_max: r.idade_max,
+        valor_titular: r.valor_titular,
+        valor_dependente: r.valor_dependente,
+        ativo: r.ativo,
+        idadeDentroDaFaixa: age >= r.idade_min && age <= r.idade_max
+      }))
+    });
+    
+    // Procurar faixa que contém a idade
+    console.log('🔍 [getPlanValueByAge] Procurando faixa para idade:', age);
+    const matchingRange = ageRanges.data.find(range => {
+      const matches = age >= range.idade_min && age <= range.idade_max;
+      console.log('🔍 [getPlanValueByAge] Comparando:', {
+        idade: age,
+        idade_min: range.idade_min,
+        idade_max: range.idade_max,
+        condicao1: `${age} >= ${range.idade_min}`,
+        condicao1Result: age >= range.idade_min,
+        condicao2: `${age} <= ${range.idade_max}`,
+        condicao2Result: age <= range.idade_max,
+        matches
+      });
+      return matches;
+    });
+    
+    console.log('🎯 [getPlanValueByAge] Faixa encontrada:', matchingRange ? {
+      id: matchingRange.id,
+      idade_min: matchingRange.idade_min,
+      idade_max: matchingRange.idade_max,
+      valor_titular: matchingRange.valor_titular,
+      valor_dependente: matchingRange.valor_dependente,
+      valor_retornado: tipo === 'titular' ? matchingRange.valor_titular : matchingRange.valor_dependente
+    } : '❌ Nenhuma faixa encontrada');
+    
+    if (matchingRange) {
+      const valor = tipo === 'titular' 
+        ? matchingRange.valor_titular 
+        : matchingRange.valor_dependente;
+      console.log('✅ [getPlanValueByAge] Retornando valor da faixa:', valor);
+      return valor;
+    }
+    
+    // Se não encontrou faixa específica, usar valor padrão do plano
+    console.warn('⚠️ [getPlanValueByAge] Nenhuma faixa encontrada, usando valor padrão do plano');
+    const plan = await EntityService.getById<MedicalPlan>({
+      schema: SCHEMA,
+      table: 'medical_plans',
+      id: planId,
+      companyId
+    });
+    
+    if (!plan) {
+      console.warn('⚠️ [getPlanValueByAge] Plano não encontrado, retornando 0');
+      return 0;
+    }
+    
+    const valorPadrao = tipo === 'titular' ? plan.valor_titular : plan.valor_dependente;
+    console.log('💰 [getPlanValueByAge] Retornando valor padrão do plano:', valorPadrao);
+    return valorPadrao;
+  } catch (error) {
+    console.error('❌ [getPlanValueByAge] Erro ao buscar valor do plano por idade:', error);
+    console.error('❌ [getPlanValueByAge] Stack trace:', error instanceof Error ? error.stack : 'N/A');
+    // Em caso de erro, retornar valor padrão
+    try {
+      console.log('🔄 [getPlanValueByAge] Tentando buscar valor padrão do plano após erro...');
+      const plan = await EntityService.getById<MedicalPlan>({
+        schema: SCHEMA,
+        table: 'medical_plans',
+        id: planId,
+        companyId
+      });
+      if (!plan) {
+        console.warn('⚠️ [getPlanValueByAge] Plano não encontrado após erro, retornando 0');
+        return 0;
+      }
+      const valorPadrao = tipo === 'titular' ? plan.valor_titular : plan.valor_dependente;
+      console.log('💰 [getPlanValueByAge] Retornando valor padrão após erro:', valorPadrao);
+      return valorPadrao;
+    } catch (innerError) {
+      console.error('❌ [getPlanValueByAge] Erro ao buscar valor padrão:', innerError);
+      return 0;
+    }
+  }
+}
 
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -545,28 +1013,33 @@ export function getDependentParentescoLabel(parentesco: string): string {
 
 export async function getMedicalAgreementsStats(companyId: string): Promise<any> {
   try {
-    // Buscar estatísticas básicas
+    // Buscar estatísticas básicas usando EntityService
     const [agreementsResult, plansResult, employeePlansResult] = await Promise.all([
-      supabase
-        .from('rh.medical_agreements')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('ativo', true),
-      supabase
-        .from('rh.medical_plans')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('ativo', true),
-      supabase
-        .from('rh.employee_medical_plans')
-        .select('id, valor_mensal')
-        .eq('company_id', companyId)
-        .eq('status', 'ativo')
+      EntityService.list<MedicalAgreement>({
+        schema: SCHEMA,
+        table: 'medical_agreements',
+        companyId,
+        filters: { ativo: true },
+        orderBy: 'nome',
+        orderDirection: 'ASC'
+      }),
+      EntityService.list<MedicalPlan>({
+        schema: SCHEMA,
+        table: 'medical_plans',
+        companyId,
+        filters: { ativo: true },
+        orderBy: 'nome',
+        orderDirection: 'ASC'
+      }),
+      EntityService.list<EmployeeMedicalPlan>({
+        schema: SCHEMA,
+        table: 'employee_medical_plans',
+        companyId,
+        filters: { status: 'ativo' },
+        orderBy: 'data_inicio',
+        orderDirection: 'DESC'
+      })
     ]);
-
-    if (agreementsResult.error) throw agreementsResult.error;
-    if (plansResult.error) throw plansResult.error;
-    if (employeePlansResult.error) throw employeePlansResult.error;
 
     const totalAgreements = agreementsResult.data?.length || 0;
     const totalPlans = plansResult.data?.length || 0;

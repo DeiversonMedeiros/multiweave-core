@@ -41,6 +41,8 @@ import { NFeForm } from './NFeForm';
 import { NFSeForm } from './NFSeForm';
 import { SefazMonitor } from './SefazMonitor';
 import { EventosFiscais } from './EventosFiscais';
+import { useCompany } from '@/lib/company-context';
+import { EntityService } from '@/services/generic/entityService';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -49,6 +51,7 @@ interface FiscalPageProps {
 }
 
 export function FiscalPage({ className }: FiscalPageProps) {
+  const { selectedCompany } = useCompany();
   const {
     nfes,
     nfses,
@@ -198,31 +201,233 @@ export function FiscalPage({ className }: FiscalPageProps) {
     }
   };
 
+  // Função auxiliar para salvar itens da NFe
+  const saveNFeItens = async (nfeId: string, itens: any[], isEdit: boolean = false) => {
+    try {
+      if (!selectedCompany?.id) return;
+
+      const { supabase } = await import('@/integrations/supabase/client');
+      
+      // Deletar itens antigos se estiver editando
+      if (isEdit) {
+        await (supabase as any)
+          .from('financeiro.nfe_itens')
+          .delete()
+          .eq('nfe_id', nfeId);
+      }
+
+      // Inserir novos itens usando EntityService
+      for (const item of itens) {
+        await EntityService.create({
+          schema: 'financeiro',
+          table: 'nfe_itens',
+          companyId: selectedCompany.id,
+          data: {
+            ...item,
+            nfe_id: nfeId,
+            company_id: selectedCompany.id,
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao salvar itens da NFe:', error);
+      throw error;
+    }
+  };
+
+  // Função auxiliar para salvar itens da NFSe
+  const saveNFSeItens = async (nfseId: string, itens: any[], isEdit: boolean = false) => {
+    try {
+      if (!selectedCompany?.id) return;
+
+      const { supabase } = await import('@/integrations/supabase/client');
+      
+      // Deletar itens antigos se estiver editando
+      if (isEdit) {
+        await (supabase as any)
+          .from('financeiro.nfse_itens')
+          .delete()
+          .eq('nfse_id', nfseId);
+      }
+
+      // Inserir novos itens usando EntityService
+      for (const item of itens) {
+        await EntityService.create({
+          schema: 'financeiro',
+          table: 'nfse_itens',
+          companyId: selectedCompany.id,
+          data: {
+            ...item,
+            nfse_id: nfseId,
+            company_id: selectedCompany.id,
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao salvar itens da NFSe:', error);
+      throw error;
+    }
+  };
+
+  // Função auxiliar para salvar pagamentos da NFe
+  const saveNFePagamentos = async (nfeId: string, pagamentos: any[], isEdit: boolean = false) => {
+    try {
+      if (!selectedCompany?.id) return;
+
+      const { supabase } = await import('@/integrations/supabase/client');
+      
+      // Deletar pagamentos antigos se estiver editando
+      if (isEdit) {
+        await (supabase as any)
+          .from('financeiro.nfe_pagamentos')
+          .delete()
+          .eq('nfe_id', nfeId);
+      }
+
+      // Inserir novos pagamentos usando EntityService
+      for (const pagamento of pagamentos) {
+        await EntityService.create({
+          schema: 'financeiro',
+          table: 'nfe_pagamentos',
+          companyId: selectedCompany.id,
+          data: {
+            ...pagamento,
+            nfe_id: nfeId,
+            company_id: selectedCompany.id,
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao salvar pagamentos da NFe:', error);
+      throw error;
+    }
+  };
+
   const handleSaveNFe = async (data: any) => {
     try {
-      if (editingNFe) {
-        await updateNFe(editingNFe.id, data);
-      } else {
-        await createNFe(data);
+      const { itens, pagamentos, gerar_numero_automaticamente, configuracao_fiscal_id, ...nfeData } = data;
+      
+      // Gerar chave de acesso se não existir (formato simplificado)
+      if (!nfeData.chave_acesso && nfeData.numero_nfe && nfeData.serie) {
+        // Formato simplificado: 44 caracteres (será gerado corretamente na emissão real)
+        nfeData.chave_acesso = `${nfeData.numero_nfe}${nfeData.serie}${Date.now()}`.padEnd(44, '0').substring(0, 44);
       }
+
+      // Adicionar campos de controle
+      nfeData.numero_gerado_automaticamente = gerar_numero_automaticamente || false;
+      nfeData.configuracao_fiscal_id = configuracao_fiscal_id;
+
+      let nfeId: string;
+
+      if (editingNFe) {
+        await updateNFe(editingNFe.id, nfeData);
+        nfeId = editingNFe.id;
+        
+        // Salvar itens se houver
+        if (itens && itens.length > 0) {
+          await saveNFeItens(nfeId, itens, true);
+        }
+        
+        // Salvar pagamentos se houver
+        if (pagamentos && pagamentos.length > 0) {
+          await saveNFePagamentos(nfeId, pagamentos, true);
+        }
+      } else {
+        // Criar NFe e obter o ID
+        const createdNFe = await EntityService.create<NFe>({
+          schema: 'financeiro',
+          table: 'nfe',
+          companyId: selectedCompany?.id || '',
+          data: {
+            ...nfeData,
+            company_id: selectedCompany?.id,
+            status_sefaz: 'pendente',
+          }
+        });
+        
+        nfeId = createdNFe.id;
+        
+        // Salvar itens se houver
+        if (itens && itens.length > 0) {
+          await saveNFeItens(nfeId, itens, false);
+        }
+        
+        // Salvar pagamentos se houver
+        if (pagamentos && pagamentos.length > 0) {
+          await saveNFePagamentos(nfeId, pagamentos, false);
+        }
+      }
+      
       setShowNFeForm(false);
       setEditingNFe(null);
+      await refresh();
     } catch (error) {
       console.error('Erro ao salvar NFe:', error);
+      throw error;
     }
   };
 
   const handleSaveNFSe = async (data: any) => {
     try {
-      if (editingNFSe) {
-        await updateNFSe(editingNFSe.id, data);
-      } else {
-        await createNFSe(data);
+      const { itens, gerar_numero_automaticamente, configuracao_fiscal_id, ...nfseData } = data;
+      
+      // Gerar código de verificação se não existir (formato simplificado)
+      if (!nfseData.codigo_verificacao && nfseData.numero_nfse) {
+        // Formato simplificado (será gerado corretamente na emissão real)
+        nfseData.codigo_verificacao = `${nfseData.numero_nfse}${Date.now()}`.substring(0, 8);
       }
+
+      // Calcular valor líquido se não fornecido
+      if (!nfseData.valor_liquido) {
+        const valorServico = nfseData.valor_servico || 0;
+        const valorDeducoes = nfseData.valor_deducoes || 0;
+        const totalImpostos = (nfseData.valor_pis || 0) + (nfseData.valor_cofins || 0) + 
+                             (nfseData.valor_inss || 0) + (nfseData.valor_ir || 0) + 
+                             (nfseData.valor_csll || 0) + (nfseData.valor_iss || 0);
+        nfseData.valor_liquido = valorServico - valorDeducoes - totalImpostos;
+      }
+
+      // Adicionar campos de controle
+      nfseData.numero_gerado_automaticamente = gerar_numero_automaticamente || false;
+      nfseData.configuracao_fiscal_id = configuracao_fiscal_id;
+
+      let nfseId: string;
+
+      if (editingNFSe) {
+        await updateNFSe(editingNFSe.id, nfseData);
+        nfseId = editingNFSe.id;
+        
+        // Salvar itens se houver
+        if (itens && itens.length > 0) {
+          await saveNFSeItens(nfseId, itens, true);
+        }
+      } else {
+        // Criar NFSe e obter o ID
+        const createdNFSe = await EntityService.create<NFSe>({
+          schema: 'financeiro',
+          table: 'nfse',
+          companyId: selectedCompany?.id || '',
+          data: {
+            ...nfseData,
+            company_id: selectedCompany?.id,
+            status_sefaz: 'pendente',
+          }
+        });
+        
+        nfseId = createdNFSe.id;
+        
+        // Salvar itens se houver
+        if (itens && itens.length > 0) {
+          await saveNFSeItens(nfseId, itens, false);
+        }
+      }
+      
       setShowNFSeForm(false);
       setEditingNFSe(null);
+      await refresh();
     } catch (error) {
       console.error('Erro ao salvar NFS-e:', error);
+      throw error;
     }
   };
 

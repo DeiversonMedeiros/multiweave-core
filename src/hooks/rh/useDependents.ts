@@ -19,7 +19,8 @@ import { useToast } from '@/hooks/use-toast';
  * Hook para listar dependentes
  */
 export function useDependents(filters?: DependentFilters) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents', companyId, filters],
@@ -32,7 +33,8 @@ export function useDependents(filters?: DependentFilters) {
  * Hook para listar dependentes com informações do funcionário
  */
 export function useDependentsWithEmployee(filters?: DependentFilters) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents-with-employee', companyId, filters],
@@ -45,7 +47,8 @@ export function useDependentsWithEmployee(filters?: DependentFilters) {
  * Hook para buscar um dependente por ID
  */
 export function useDependent(id: string) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependent', id, companyId],
@@ -58,7 +61,8 @@ export function useDependent(id: string) {
  * Hook para buscar dependentes de um funcionário
  */
 export function useDependentsByEmployee(employeeId: string) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents-by-employee', employeeId, companyId],
@@ -71,7 +75,8 @@ export function useDependentsByEmployee(employeeId: string) {
  * Hook para buscar dependentes ativos de um funcionário
  */
 export function useActiveDependentsByEmployee(employeeId: string) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['active-dependents-by-employee', employeeId, companyId],
@@ -84,13 +89,18 @@ export function useActiveDependentsByEmployee(employeeId: string) {
  * Hook para criar dependente
  */
 export function useCreateDependent() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: (data: DependentCreateData) => 
-      DependentsService.create(data, companyId),
+    mutationFn: (data: DependentCreateData) => {
+      if (!companyId) {
+        throw new Error('Empresa não selecionada. Por favor, selecione uma empresa antes de criar um dependente.');
+      }
+      return DependentsService.create(data, companyId);
+    },
     onSuccess: (newDependent) => {
       // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['dependents', companyId] });
@@ -122,7 +132,8 @@ export function useCreateDependent() {
  * Hook para atualizar dependente
  */
 export function useUpdateDependent() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -161,7 +172,8 @@ export function useUpdateDependent() {
  * Hook para deletar dependente (soft delete)
  */
 export function useDeleteDependent() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -194,7 +206,8 @@ export function useDeleteDependent() {
  * Hook para ativar dependente
  */
 export function useActivateDependent() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -232,7 +245,8 @@ export function useActivateDependent() {
  * Hook para suspender dependente
  */
 export function useSuspendDependent() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -271,7 +285,8 @@ export function useSuspendDependent() {
  * Hook para buscar dependentes por parentesco
  */
 export function useDependentsByParentesco(parentesco: string) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents-by-parentesco', parentesco, companyId],
@@ -284,11 +299,12 @@ export function useDependentsByParentesco(parentesco: string) {
  * Hook para buscar dependentes com deficiência
  */
 export function useDependentsWithDeficiency() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents-with-deficiency', companyId],
-    queryFn: () => DependentsService.getWithDeficiencia(companyId),
+    queryFn: () => DependentsService.getWithDeficiency(companyId),
     enabled: !!companyId,
   });
 }
@@ -297,7 +313,8 @@ export function useDependentsWithDeficiency() {
  * Hook para buscar dependentes que necessitam cuidados especiais
  */
 export function useDependentsWithSpecialCare() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents-with-special-care', companyId],
@@ -310,7 +327,8 @@ export function useDependentsWithSpecialCare() {
  * Hook para buscar dependentes por faixa etária
  */
 export function useDependentsByAgeRange(minAge: number, maxAge: number) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents-by-age-range', minAge, maxAge, companyId],
@@ -323,7 +341,8 @@ export function useDependentsByAgeRange(minAge: number, maxAge: number) {
  * Hook para buscar dependentes que fazem aniversário em um mês específico
  */
 export function useDependentsByBirthMonth(month: number) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependents-by-birth-month', month, companyId],
@@ -336,7 +355,8 @@ export function useDependentsByBirthMonth(month: number) {
  * Hook para buscar dependentes que vão fazer aniversário nos próximos N dias
  */
 export function useUpcomingBirthdays(days: number = 30) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['upcoming-birthdays', days, companyId],
@@ -349,7 +369,8 @@ export function useUpcomingBirthdays(days: number = 30) {
  * Hook para contar dependentes por funcionário
  */
 export function useDependentCountByEmployee(employeeId: string) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependent-count-by-employee', employeeId, companyId],
@@ -362,7 +383,8 @@ export function useDependentCountByEmployee(employeeId: string) {
  * Hook para buscar estatísticas de dependentes
  */
 export function useDependentStats() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependent-stats', companyId],
@@ -375,7 +397,8 @@ export function useDependentStats() {
  * Hook para validar se um CPF já está cadastrado
  */
 export function useValidateCpf() {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useMutation({
     mutationFn: ({ cpf, excludeId }: { cpf: string; excludeId?: string }) => 
@@ -387,7 +410,8 @@ export function useValidateCpf() {
  * Hook para buscar dependente por CPF
  */
 export function useDependentByCpf(cpf: string) {
-  const { companyId } = useCompany();
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   return useQuery({
     queryKey: ['dependent-by-cpf', cpf, companyId],
@@ -406,8 +430,8 @@ export function useDependentManagement(employeeId?: string) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
-  // Queries
-  const dependentsQuery = useDependents(filters);
+  // Queries - usar useDependentsWithEmployee para incluir informações do funcionário
+  const dependentsQuery = useDependentsWithEmployee(filters);
   const dependentsByEmployeeQuery = employeeId ? useDependentsByEmployee(employeeId) : null;
   const statsQuery = useDependentStats();
 

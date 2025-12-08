@@ -18,6 +18,7 @@ import Perfis from "./pages/cadastros/Perfis";
 import CentrosCusto from "./pages/cadastros/CentrosCusto";
 import Projetos from "./pages/cadastros/Projetos";
 import Parceiros from "./pages/cadastros/Parceiros";
+import Servicos from "./pages/cadastros/Servicos";
 import UnitsPageNew from "./pages/rh/UnitsPageNew";
 import Permissions from "./pages/Permissions";
 import { MenuTest } from "./components/MenuTest";
@@ -188,6 +189,7 @@ function App() {
                 <Route path="/cadastros/centros-custo" element={<CentrosCusto />} />
                 <Route path="/cadastros/projetos" element={<Projetos />} />
                 <Route path="/cadastros/parceiros" element={<Parceiros />} />
+                <Route path="/cadastros/servicos" element={<Servicos />} />
                 <Route path="/cadastros/departamentos" element={<UnitsPageNew />} />
                 <Route path="/permissoes" element={<Permissions />} />
                 <Route path="/menu-test" element={<MenuTest />} />

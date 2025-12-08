@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase remote connection (contains sensitive credentials)
+supabase/REMOTE_CONNECTION.md

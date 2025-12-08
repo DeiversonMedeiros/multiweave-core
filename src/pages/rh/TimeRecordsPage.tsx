@@ -79,7 +79,7 @@ export default function TimeRecordsPage() {
     startDate: dateRange.start,
     endDate: dateRange.end,
     status: statusFilter || undefined,
-    employeeId: employeeFilter || undefined,
+    ...(employeeFilter && { employeeId: employeeFilter }),
     pageSize: 50, // Carregar 50 registros por vez
   });
 
@@ -685,7 +685,7 @@ export default function TimeRecordsPage() {
                             {calculateTotalHours(record)}
                           </span>
                         </div>
-                        {/* Horas Extras - Mostrar separadamente se disponível */}
+                        {/* Horas Extras ou Negativas */}
                         {((record.horas_extras_50 && record.horas_extras_50 > 0) || 
                           (record.horas_extras_100 && record.horas_extras_100 > 0)) ? (
                           <div className="flex items-center gap-2 text-sm">
@@ -714,6 +714,14 @@ export default function TimeRecordsPage() {
                             <span className="text-gray-500">Extras: </span>
                             <span className="font-medium text-orange-600">
                               +{Number(record.horas_extras).toFixed(1)}h
+                            </span>
+                          </div>
+                        ) : (record.horas_negativas && record.horas_negativas > 0) ? (
+                          // Mostrar horas negativas
+                          <div className="text-sm">
+                            <span className="text-gray-500">Negativas: </span>
+                            <span className="font-medium text-red-600">
+                              -{record.horas_negativas.toFixed(2)}h
                             </span>
                           </div>
                         ) : null}

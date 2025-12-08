@@ -60,8 +60,7 @@ import {
   Heart,
   Shield
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatDateOnly } from '@/lib/utils';
 
 interface DependentsListProps {
   dependents: DependentWithEmployee[];
@@ -94,7 +93,7 @@ export function DependentsList({
   const filteredDependents = dependents.filter(dependent => {
     const matchesSearch = 
       dependent.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      dependent.funcionario_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (dependent.funcionario_nome && dependent.funcionario_nome.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (dependent.cpf && dependent.cpf.includes(searchTerm)) ||
       (dependent.rg && dependent.rg.includes(searchTerm));
 
@@ -134,8 +133,7 @@ export function DependentsList({
   };
 
   const formatDate = (dateString?: string) => {
-    if (!dateString) return '-';
-    return format(new Date(dateString), 'dd/MM/yyyy', { locale: ptBR });
+    return formatDateOnly(dateString);
   };
 
   const handleDeleteClick = (dependent: Dependent) => {
@@ -248,7 +246,7 @@ export function DependentsList({
                         <User className="h-5 w-5" />
                         {dependent.nome}
                       </CardTitle>
-                      {showEmployeeInfo && (
+                      {showEmployeeInfo && dependent.funcionario_nome && (
                         <p className="text-sm text-muted-foreground">
                           Funcionário: {dependent.funcionario_nome}
                           {dependent.funcionario_matricula && ` (${dependent.funcionario_matricula})`}

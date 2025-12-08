@@ -10,17 +10,29 @@
 // NOVOS TIPOS - FASE 1: ESTRUTURA ORGANIZACIONAL
 // =====================================================
 
+// Interface para horários de um dia específico
+export interface DaySchedule {
+  hora_inicio: string; // TIME format
+  hora_fim: string; // TIME format
+  intervalo_inicio?: string; // TIME format
+  intervalo_fim?: string; // TIME format
+  horas_diarias: number;
+}
+
+// Tipo para horários por dia da semana (1=Segunda, 2=Terça, etc.)
+export type HorariosPorDia = Record<string, DaySchedule>;
+
 export interface WorkShift {
   id: string;
   company_id: string;
   nome: string;
   codigo?: string;
   descricao?: string;
-  hora_inicio: string; // TIME format
-  hora_fim: string; // TIME format
-  intervalo_inicio?: string; // TIME format
-  intervalo_fim?: string; // TIME format
-  horas_diarias: number;
+  hora_inicio: string; // TIME format (horário padrão)
+  hora_fim: string; // TIME format (horário padrão)
+  intervalo_inicio?: string; // TIME format (intervalo padrão)
+  intervalo_fim?: string; // TIME format (intervalo padrão)
+  horas_diarias: number; // Horas diárias padrão
   dias_semana: number[]; // 1=Segunda, 2=Terça, etc.
   tipo_turno: 'normal' | 'noturno' | 'rotativo';
   tipo_escala: 'fixa' | 'flexivel_6x1' | 'flexivel_5x2' | 'flexivel_4x3' | 'escala_12x36' | 'escala_24x48' | 'personalizada';
@@ -31,6 +43,7 @@ export interface WorkShift {
   template_escala: boolean; // Indica se é um template reutilizável
   tolerancia_entrada: number; // minutos
   tolerancia_saida: number; // minutos
+  horarios_por_dia?: HorariosPorDia; // Horários específicos por dia da semana
   status: 'ativo' | 'inativo';
   created_at: string;
   updated_at: string;
@@ -922,6 +935,7 @@ export interface TimeRecord {
   horas_extras_100?: number; // Horas extras com adicional de 100% (pagamento direto)
   horas_para_banco?: number; // Horas que vão para o banco de horas
   horas_para_pagamento?: number; // Horas que devem ser pagas diretamente
+  horas_negativas?: number; // Horas negativas quando trabalhou menos que o esperado
   horas_faltas: number;
   is_feriado?: boolean; // Indica se o dia é feriado
   is_domingo?: boolean; // Indica se o dia é domingo
@@ -2121,6 +2135,44 @@ export interface MedicalPlanFilters {
   categoria?: string;
   ativo?: boolean;
   nome?: string;
+}
+
+// =====================================================
+// FAIXAS ETÁRIAS DE PLANOS MÉDICOS
+// =====================================================
+
+export interface MedicalPlanAgeRange {
+  id: string;
+  company_id: string;
+  plan_id: string;
+  idade_min: number;
+  idade_max: number;
+  valor_titular: number;
+  valor_dependente: number;
+  ordem: number;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MedicalPlanAgeRangeCreateData {
+  company_id: string;
+  plan_id: string;
+  idade_min: number;
+  idade_max: number;
+  valor_titular: number;
+  valor_dependente: number;
+  ordem?: number;
+  ativo?: boolean;
+}
+
+export interface MedicalPlanAgeRangeUpdateData extends Partial<MedicalPlanAgeRangeCreateData> {
+  id: string;
+}
+
+export interface MedicalPlanAgeRangeFilters {
+  plan_id?: string;
+  ativo?: boolean;
 }
 
 export interface EmployeeMedicalPlan {

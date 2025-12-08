@@ -87,7 +87,7 @@ class TimeRecordSignatureService {
     
     try {
       // Usar RPC direto para atualizar a configuração
-      const { data, error } = await supabase.rpc('update_time_record_signature_config', {
+      const { data, error } = await (supabase.rpc as any)('update_time_record_signature_config', {
         p_id: config.id,
         p_company_id: config.company_id,
         p_is_enabled: config.is_enabled,
@@ -114,6 +114,8 @@ class TimeRecordSignatureService {
 
   // Assinaturas
   async getEmployeeSignatures(employeeId: string, companyId: string): Promise<TimeRecordSignature[]> {
+    console.log('🔍 [SERVICE] getEmployeeSignatures chamado:', { employeeId, companyId });
+    
     const result = await EntityService.list({
       schema: 'rh',
       table: 'time_record_signatures',
@@ -123,10 +125,19 @@ class TimeRecordSignatureService {
       orderDirection: 'DESC'
     });
 
+    console.log('🔍 [SERVICE] Resultado da busca de assinaturas:', {
+      hasError: !!result.error,
+      error: result.error,
+      dataLength: result.data?.length || 0,
+      data: result.data
+    });
+
     if (result.error) {
+      console.error('❌ [SERVICE] Erro ao buscar assinaturas:', result.error);
       throw new Error(`Erro ao buscar assinaturas: ${result.error.message}`);
     }
 
+    console.log('✅ [SERVICE] Assinaturas encontradas:', result.data?.length || 0);
     return result.data || [];
   }
 
@@ -227,9 +238,19 @@ class TimeRecordSignatureService {
   /**
    * Busca assinaturas de ponto pendentes de aprovação do gestor
    */
-  async getPendingSignatures(companyId: string): Promise<any[]> {
-    const { data, error } = await supabase.rpc('get_pending_signatures', {
-      p_company_id: companyId
+  async getPendingSignatures(companyId: string, userId?: string): Promise<any[]> {
+    if (!userId) {
+      // Se não tiver userId, buscar do usuário atual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        throw new Error('Usuário não autenticado');
+      }
+      userId = user.id;
+    }
+
+    const { data, error } = await (supabase.rpc as any)('get_pending_signatures', {
+      p_company_id: companyId,
+      p_user_id: userId
     });
 
     if (error) {
@@ -244,7 +265,7 @@ class TimeRecordSignatureService {
    * Aprova uma assinatura de ponto usando RPC
    */
   async approveSignatureRPC(signatureId: string, approvedBy: string, observacoes?: string): Promise<boolean> {
-    const { data, error } = await supabase.rpc('approve_time_record_signature', {
+    const { data, error } = await (supabase.rpc as any)('approve_time_record_signature', {
       p_signature_id: signatureId,
       p_approved_by: approvedBy,
       p_observacoes: observacoes || null
@@ -262,7 +283,7 @@ class TimeRecordSignatureService {
    * Rejeita uma assinatura de ponto usando RPC
    */
   async rejectSignatureRPC(signatureId: string, rejectedBy: string, rejectionReason: string): Promise<boolean> {
-    const { data, error } = await supabase.rpc('reject_time_record_signature', {
+    const { data, error } = await (supabase.rpc as any)('reject_time_record_signature', {
       p_signature_id: signatureId,
       p_rejected_by: rejectedBy,
       p_rejection_reason: rejectionReason
@@ -276,21 +297,13 @@ class TimeRecordSignatureService {
     return data as boolean;
   }
 
-  // Geração de assinaturas
-  async generateMonthlySignatures(companyId: string, monthYear: string): Promise<void> {
-    const { error } = await supabase.rpc('generate_monthly_signatures', {
-      p_company_id: companyId,
-      p_month_year: monthYear
-    });
-
-    if (error) {
-      throw new Error(`Erro ao gerar assinaturas mensais: ${error.message}`);
-    }
-  }
+  // Método removido: generateMonthlySignatures
+  // Use unlockSignaturesForMonth() ao invés, que já cria os registros
+  // e controla a liberação/bloqueio de forma mais completa.
 
   // Processamento de assinaturas expiradas
   async processExpiredSignatures(): Promise<void> {
-    const { error } = await supabase.rpc('process_expired_signatures');
+    const { error } = await (supabase.rpc as any)('process_expired_signatures');
 
     if (error) {
       throw new Error(`Erro ao processar assinaturas expiradas: ${error.message}`);
@@ -299,7 +312,7 @@ class TimeRecordSignatureService {
 
   // Estatísticas
   async getSignatureStats(companyId: string, monthYear?: string): Promise<any> {
-    const { data, error } = await supabase.rpc('get_signature_stats', {
+    const { data, error } = await (supabase.rpc as any)('get_signature_stats', {
       p_company_id: companyId,
       p_month_year: monthYear
     });
@@ -347,6 +360,132 @@ class TimeRecordSignatureService {
     if (result.error) {
       throw new Error(`Erro ao marcar notificação como lida: ${result.error.message}`);
     }
+  }
+
+  // =====================================================
+  // CONTROLE DE LIBERAÇÃO/BLOQUEIO POR MÊS/ANO
+  // =====================================================
+
+  /**
+   * Libera assinaturas para um mês/ano específico
+   */
+  async unlockSignaturesForMonth(
+    companyId: string,
+    monthYear: string,
+    notes?: string
+  ): Promise<any> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await (supabase.rpc as any)('unlock_signatures_for_month', {
+      p_company_id: companyId,
+      p_month_year: monthYear,
+      p_unlocked_by: user.id,
+      p_notes: notes || null
+    });
+
+    if (error) {
+      console.error('Erro ao liberar assinaturas:', error);
+      throw new Error(`Erro ao liberar assinaturas: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Bloqueia assinaturas para um mês/ano específico
+   */
+  async lockSignaturesForMonth(
+    companyId: string,
+    monthYear: string,
+    notes?: string
+  ): Promise<any> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await (supabase.rpc as any)('lock_signatures_for_month', {
+      p_company_id: companyId,
+      p_month_year: monthYear,
+      p_locked_by: user.id,
+      p_notes: notes || null
+    });
+
+    if (error) {
+      console.error('Erro ao bloquear assinaturas:', error);
+      throw new Error(`Erro ao bloquear assinaturas: ${error.message}`);
+    }
+
+    return data;
+  }
+
+  /**
+   * Busca estatísticas detalhadas de assinaturas para um mês/ano
+   */
+  async getMonthStats(companyId: string, monthYear: string): Promise<any> {
+    const { data, error } = await (supabase.rpc as any)('get_signature_month_stats', {
+      p_company_id: companyId,
+      p_month_year: monthYear
+    });
+
+    if (error) {
+      console.error('Erro ao buscar estatísticas do mês:', error);
+      throw new Error(`Erro ao buscar estatísticas: ${error.message}`);
+    }
+
+    return data || {
+      month_year: monthYear,
+      is_locked: false,
+      total_employees: 0,
+      total_signatures: 0,
+      signed_count: 0,
+      pending_count: 0,
+      expired_count: 0,
+      approved_count: 0,
+      rejected_count: 0,
+      not_signed_count: 0
+    };
+  }
+
+  /**
+   * Lista funcionários que assinaram/não assinaram para um mês/ano
+   */
+  async getEmployeeSignatureList(companyId: string, monthYear: string): Promise<any[]> {
+    const { data, error } = await (supabase.rpc as any)('get_signature_employee_list', {
+      p_company_id: companyId,
+      p_month_year: monthYear
+    });
+
+    if (error) {
+      console.error('Erro ao buscar lista de funcionários:', error);
+      throw new Error(`Erro ao buscar lista de funcionários: ${error.message}`);
+    }
+
+    return (data || []) as any[];
+  }
+
+  /**
+   * Busca apenas o status de liberação/bloqueio de um mês/ano
+   */
+  async getMonthStatus(companyId: string, monthYear: string): Promise<any> {
+    const { data, error } = await (supabase.rpc as any)('get_signature_month_status', {
+      p_company_id: companyId,
+      p_month_year: monthYear
+    });
+
+    if (error) {
+      console.error('Erro ao buscar status do mês:', error);
+      throw new Error(`Erro ao buscar status do mês: ${error.message}`);
+    }
+
+    return data || {
+      month_year: monthYear,
+      is_locked: false,
+      has_control: false
+    };
   }
 }
 

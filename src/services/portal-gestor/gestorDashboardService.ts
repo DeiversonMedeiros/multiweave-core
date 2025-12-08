@@ -34,8 +34,15 @@ export interface RecentActivity {
  */
 export async function getGestorDashboardStats(companyId: string): Promise<DashboardStats> {
   try {
+    // Obter o usuário atual
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
     const { data, error } = await supabase.rpc('get_gestor_dashboard_stats', {
-      company_uuid: companyId
+      company_uuid: companyId,
+      p_user_id: user.id
     });
 
     if (error) {

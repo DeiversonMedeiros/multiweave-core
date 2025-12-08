@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { WorkShift, getShiftTypes, getWeekDays, getScaleTypes } from '@/integrations/supabase/rh-types';
+import { WorkShift, getShiftTypes, getWeekDays, getScaleTypes, DaySchedule, HorariosPorDia } from '@/integrations/supabase/rh-types';
 
 interface WorkShiftFormProps {
   workShift?: WorkShift | null;
@@ -44,6 +44,8 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
     status: 'ativo' as 'ativo' | 'inativo',
   });
 
+  const [useHorariosPorDia, setUseHorariosPorDia] = useState(false);
+  const [horariosPorDia, setHorariosPorDia] = useState<HorariosPorDia>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Expor função de submit via ref
@@ -77,6 +79,15 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
         tolerancia_saida: workShift.tolerancia_saida,
         status: workShift.status,
       });
+      
+      // Verificar se tem horários por dia configurados
+      if (workShift.horarios_por_dia && Object.keys(workShift.horarios_por_dia).length > 0) {
+        setUseHorariosPorDia(true);
+        setHorariosPorDia(workShift.horarios_por_dia);
+      } else {
+        setUseHorariosPorDia(false);
+        setHorariosPorDia({});
+      }
     }
   }, [workShift]);
 
@@ -94,6 +105,59 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
       : formData.dias_semana.filter(d => d !== dia);
     
     handleInputChange('dias_semana', newDias);
+    
+    // Se usar horários por dia, remover horário do dia desmarcado
+    if (useHorariosPorDia && !checked) {
+      const newHorarios = { ...horariosPorDia };
+      delete newHorarios[dia.toString()];
+      setHorariosPorDia(newHorarios);
+    }
+  };
+
+  // Função para calcular horas diárias baseado em horários
+  const calculateHorasDiarias = (horaInicio: string, horaFim: string, intervaloInicio?: string, intervaloFim?: string): number => {
+    if (!horaInicio || !horaFim) return 0;
+    
+    const startMinutes = timeToMinutes(horaInicio);
+    const endMinutes = timeToMinutes(horaFim);
+    let duration = calculateShiftDuration(horaInicio, horaFim);
+    
+    // Subtrair intervalo de almoço se existir
+    if (intervaloInicio && intervaloFim) {
+      const intervalDuration = calculateShiftDuration(intervaloInicio, intervaloFim);
+      duration -= intervalDuration;
+    }
+    
+    return Math.round((duration / 60) * 10) / 10; // Arredondar para 1 casa decimal
+  };
+
+  // Handler para atualizar horário de um dia específico
+  const handleDayScheduleChange = (dia: number, field: keyof DaySchedule, value: string | number) => {
+    const diaKey = dia.toString();
+    const currentSchedule = horariosPorDia[diaKey] || {
+      hora_inicio: formData.hora_inicio,
+      hora_fim: formData.hora_fim,
+      intervalo_inicio: formData.intervalo_inicio || '',
+      intervalo_fim: formData.intervalo_fim || '',
+      horas_diarias: formData.horas_diarias,
+    };
+    
+    const updatedSchedule = { ...currentSchedule, [field]: value };
+    
+    // Recalcular horas_diarias se horários mudarem
+    if (field === 'hora_inicio' || field === 'hora_fim' || field === 'intervalo_inicio' || field === 'intervalo_fim') {
+      updatedSchedule.horas_diarias = calculateHorasDiarias(
+        updatedSchedule.hora_inicio,
+        updatedSchedule.hora_fim,
+        updatedSchedule.intervalo_inicio,
+        updatedSchedule.intervalo_fim
+      );
+    }
+    
+    setHorariosPorDia({
+      ...horariosPorDia,
+      [diaKey]: updatedSchedule,
+    });
   };
 
   const handleTipoEscalaChange = (tipo: string) => {
@@ -139,52 +203,104 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
       newErrors.nome = 'Nome é obrigatório';
     }
 
-    if (!formData.hora_inicio) {
-      newErrors.hora_inicio = 'Hora de início é obrigatória';
-    }
-
-    if (!formData.hora_fim) {
-      newErrors.hora_fim = 'Hora de fim é obrigatória';
-    }
-
-    // Validação de horários permitindo cruzamento de meia-noite
-    if (formData.hora_inicio && formData.hora_fim) {
-      const startMinutes = timeToMinutes(formData.hora_inicio);
-      const endMinutes = timeToMinutes(formData.hora_fim);
-      
-      // Não permitir que sejam iguais (turno de 0 horas)
-      if (startMinutes === endMinutes) {
-        newErrors.hora_fim = 'Hora de fim deve ser diferente da hora de início';
-      } else {
-        // Calcular duração considerando possível cruzamento de meia-noite
-        const duration = calculateShiftDuration(formData.hora_inicio, formData.hora_fim);
+    // Validação diferente se usar horários por dia
+    if (useHorariosPorDia) {
+      // Validar cada dia selecionado
+      formData.dias_semana.forEach((diaNum) => {
+        const diaKey = diaNum.toString();
+        const daySchedule = horariosPorDia[diaKey];
         
-        // Validar que a duração seja razoável (máximo 24 horas, mínimo 1 minuto)
-        if (duration <= 0) {
-          newErrors.hora_fim = 'Duração do turno deve ser maior que zero';
-        } else if (duration > 24 * 60) {
-          newErrors.hora_fim = 'Duração do turno não pode exceder 24 horas';
+        if (!daySchedule) {
+          newErrors[`horario_dia_${diaNum}`] = `Configure os horários para ${getWeekDays().find(d => d.value === diaNum)?.label}`;
+          return;
+        }
+        
+        if (!daySchedule.hora_inicio) {
+          newErrors[`hora_inicio_${diaNum}`] = 'Hora de início é obrigatória';
+        }
+        
+        if (!daySchedule.hora_fim) {
+          newErrors[`hora_fim_${diaNum}`] = 'Hora de fim é obrigatória';
+        }
+        
+        // Validar horários do dia
+        if (daySchedule.hora_inicio && daySchedule.hora_fim) {
+          const startMinutes = timeToMinutes(daySchedule.hora_inicio);
+          const endMinutes = timeToMinutes(daySchedule.hora_fim);
+          
+          if (startMinutes === endMinutes) {
+            newErrors[`hora_fim_${diaNum}`] = 'Hora de fim deve ser diferente da hora de início';
+          } else {
+            const duration = calculateShiftDuration(daySchedule.hora_inicio, daySchedule.hora_fim);
+            
+            if (duration <= 0) {
+              newErrors[`hora_fim_${diaNum}`] = 'Duração do turno deve ser maior que zero';
+            } else if (duration > 24 * 60) {
+              newErrors[`hora_fim_${diaNum}`] = 'Duração do turno não pode exceder 24 horas';
+            }
+          }
+        }
+        
+        // Validar intervalo do dia
+        if (daySchedule.intervalo_inicio && daySchedule.intervalo_fim) {
+          const intervalDuration = calculateShiftDuration(daySchedule.intervalo_inicio, daySchedule.intervalo_fim);
+          
+          if (intervalDuration <= 0) {
+            newErrors[`intervalo_fim_${diaNum}`] = 'Duração do intervalo deve ser maior que zero';
+          } else if (intervalDuration > 8 * 60) {
+            newErrors[`intervalo_fim_${diaNum}`] = 'Duração do intervalo não pode exceder 8 horas';
+          }
+        }
+      });
+    } else {
+      // Validação padrão (horários únicos)
+      if (!formData.hora_inicio) {
+        newErrors.hora_inicio = 'Hora de início é obrigatória';
+      }
+
+      if (!formData.hora_fim) {
+        newErrors.hora_fim = 'Hora de fim é obrigatória';
+      }
+
+      // Validação de horários permitindo cruzamento de meia-noite
+      if (formData.hora_inicio && formData.hora_fim) {
+        const startMinutes = timeToMinutes(formData.hora_inicio);
+        const endMinutes = timeToMinutes(formData.hora_fim);
+        
+        // Não permitir que sejam iguais (turno de 0 horas)
+        if (startMinutes === endMinutes) {
+          newErrors.hora_fim = 'Hora de fim deve ser diferente da hora de início';
+        } else {
+          // Calcular duração considerando possível cruzamento de meia-noite
+          const duration = calculateShiftDuration(formData.hora_inicio, formData.hora_fim);
+          
+          // Validar que a duração seja razoável (máximo 24 horas, mínimo 1 minuto)
+          if (duration <= 0) {
+            newErrors.hora_fim = 'Duração do turno deve ser maior que zero';
+          } else if (duration > 24 * 60) {
+            newErrors.hora_fim = 'Duração do turno não pode exceder 24 horas';
+          }
         }
       }
-    }
 
-    // Validação de intervalo considerando cruzamento de meia-noite
-    if (formData.intervalo_inicio && formData.intervalo_fim) {
-      const intervalStartMinutes = timeToMinutes(formData.intervalo_inicio);
-      const intervalEndMinutes = timeToMinutes(formData.intervalo_fim);
-      
-      // Não permitir que sejam iguais
-      if (intervalStartMinutes === intervalEndMinutes) {
-        newErrors.intervalo_fim = 'Fim do intervalo deve ser diferente do início';
-      } else {
-        // Calcular duração considerando possível cruzamento de meia-noite
-        const intervalDuration = calculateShiftDuration(formData.intervalo_inicio, formData.intervalo_fim);
+      // Validação de intervalo considerando cruzamento de meia-noite
+      if (formData.intervalo_inicio && formData.intervalo_fim) {
+        const intervalStartMinutes = timeToMinutes(formData.intervalo_inicio);
+        const intervalEndMinutes = timeToMinutes(formData.intervalo_fim);
         
-        // Validar que a duração seja razoável (máximo 8 horas de intervalo)
-        if (intervalDuration <= 0) {
-          newErrors.intervalo_fim = 'Duração do intervalo deve ser maior que zero';
-        } else if (intervalDuration > 8 * 60) {
-          newErrors.intervalo_fim = 'Duração do intervalo não pode exceder 8 horas';
+        // Não permitir que sejam iguais
+        if (intervalStartMinutes === intervalEndMinutes) {
+          newErrors.intervalo_fim = 'Fim do intervalo deve ser diferente do início';
+        } else {
+          // Calcular duração considerando possível cruzamento de meia-noite
+          const intervalDuration = calculateShiftDuration(formData.intervalo_inicio, formData.intervalo_fim);
+          
+          // Validar que a duração seja razoável (máximo 8 horas de intervalo)
+          if (intervalDuration <= 0) {
+            newErrors.intervalo_fim = 'Duração do intervalo deve ser maior que zero';
+          } else if (intervalDuration > 8 * 60) {
+            newErrors.intervalo_fim = 'Duração do intervalo não pode exceder 8 horas';
+          }
         }
       }
     }
@@ -226,7 +342,18 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
     
     if (validateForm()) {
       console.log('🔍 [DEBUG] WorkShiftForm - Enviando dados para onSave:', formData);
-      onSave(formData);
+      
+      // Preparar dados finais
+      const finalData = { ...formData };
+      
+      // Se usar horários por dia, incluir no payload
+      if (useHorariosPorDia && Object.keys(horariosPorDia).length > 0) {
+        finalData.horarios_por_dia = horariosPorDia;
+      } else {
+        finalData.horarios_por_dia = undefined;
+      }
+      
+      onSave(finalData);
     } else {
       console.log('🔍 [DEBUG] WorkShiftForm - Validação falhou, não enviando dados');
     }
@@ -286,73 +413,208 @@ export const WorkShiftForm = forwardRef<HTMLFormElement, WorkShiftFormProps & { 
           <CardTitle>Horários</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="hora_inicio">Hora de Início *</Label>
-              <Input
-                id="hora_inicio"
-                type="time"
-                value={formData.hora_inicio}
-                onChange={(e) => handleInputChange('hora_inicio', e.target.value)}
-                disabled={isReadOnly}
-                className={errors.hora_inicio ? 'border-red-500' : ''}
-              />
-              {errors.hora_inicio && <p className="text-sm text-red-500">{errors.hora_inicio}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="hora_fim">Hora de Fim *</Label>
-              <Input
-                id="hora_fim"
-                type="time"
-                value={formData.hora_fim}
-                onChange={(e) => handleInputChange('hora_fim', e.target.value)}
-                disabled={isReadOnly}
-                className={errors.hora_fim ? 'border-red-500' : ''}
-              />
-              {errors.hora_fim && <p className="text-sm text-red-500">{errors.hora_fim}</p>}
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="intervalo_inicio">Início do Intervalo</Label>
-              <Input
-                id="intervalo_inicio"
-                type="time"
-                value={formData.intervalo_inicio}
-                onChange={(e) => handleInputChange('intervalo_inicio', e.target.value)}
-                disabled={isReadOnly}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="intervalo_fim">Fim do Intervalo</Label>
-              <Input
-                id="intervalo_fim"
-                type="time"
-                value={formData.intervalo_fim}
-                onChange={(e) => handleInputChange('intervalo_fim', e.target.value)}
-                disabled={isReadOnly}
-                className={errors.intervalo_fim ? 'border-red-500' : ''}
-              />
-              {errors.intervalo_fim && <p className="text-sm text-red-500">{errors.intervalo_fim}</p>}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="horas_diarias">Horas Diárias</Label>
-            <Input
-              id="horas_diarias"
-              type="number"
-              step="0.5"
-              min="0"
-              max="24"
-              value={formData.horas_diarias}
-              onChange={(e) => handleInputChange('horas_diarias', parseFloat(e.target.value))}
+          {/* Opção para usar horários diferentes por dia */}
+          <div className="flex items-center space-x-2 pb-4 border-b">
+            <Checkbox
+              id="use_horarios_por_dia"
+              checked={useHorariosPorDia}
+              onCheckedChange={(checked) => {
+                const newValue = checked as boolean;
+                setUseHorariosPorDia(newValue);
+                
+                if (newValue) {
+                  // Inicializar horários por dia com valores padrão para cada dia selecionado
+                  const initialHorarios: HorariosPorDia = {};
+                  formData.dias_semana.forEach((diaNum) => {
+                    initialHorarios[diaNum.toString()] = {
+                      hora_inicio: formData.hora_inicio || '08:00',
+                      hora_fim: formData.hora_fim || '18:00',
+                      intervalo_inicio: formData.intervalo_inicio || '',
+                      intervalo_fim: formData.intervalo_fim || '',
+                      horas_diarias: calculateHorasDiarias(
+                        formData.hora_inicio || '08:00',
+                        formData.hora_fim || '18:00',
+                        formData.intervalo_inicio,
+                        formData.intervalo_fim
+                      ),
+                    };
+                  });
+                  setHorariosPorDia(initialHorarios);
+                } else {
+                  setHorariosPorDia({});
+                }
+              }}
               disabled={isReadOnly}
             />
+            <Label htmlFor="use_horarios_por_dia" className="cursor-pointer">
+              Configurar horários diferentes por dia da semana
+            </Label>
           </div>
+
+          {!useHorariosPorDia ? (
+            /* Horários Padrão (todos os dias iguais) */
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="hora_inicio">Hora de Início *</Label>
+                  <Input
+                    id="hora_inicio"
+                    type="time"
+                    value={formData.hora_inicio}
+                    onChange={(e) => handleInputChange('hora_inicio', e.target.value)}
+                    disabled={isReadOnly}
+                    className={errors.hora_inicio ? 'border-red-500' : ''}
+                  />
+                  {errors.hora_inicio && <p className="text-sm text-red-500">{errors.hora_inicio}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hora_fim">Hora de Fim *</Label>
+                  <Input
+                    id="hora_fim"
+                    type="time"
+                    value={formData.hora_fim}
+                    onChange={(e) => handleInputChange('hora_fim', e.target.value)}
+                    disabled={isReadOnly}
+                    className={errors.hora_fim ? 'border-red-500' : ''}
+                  />
+                  {errors.hora_fim && <p className="text-sm text-red-500">{errors.hora_fim}</p>}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="intervalo_inicio">Início do Intervalo</Label>
+                  <Input
+                    id="intervalo_inicio"
+                    type="time"
+                    value={formData.intervalo_inicio}
+                    onChange={(e) => handleInputChange('intervalo_inicio', e.target.value)}
+                    disabled={isReadOnly}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="intervalo_fim">Fim do Intervalo</Label>
+                  <Input
+                    id="intervalo_fim"
+                    type="time"
+                    value={formData.intervalo_fim}
+                    onChange={(e) => handleInputChange('intervalo_fim', e.target.value)}
+                    disabled={isReadOnly}
+                    className={errors.intervalo_fim ? 'border-red-500' : ''}
+                  />
+                  {errors.intervalo_fim && <p className="text-sm text-red-500">{errors.intervalo_fim}</p>}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="horas_diarias">Horas Diárias</Label>
+                <Input
+                  id="horas_diarias"
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="24"
+                  value={formData.horas_diarias}
+                  onChange={(e) => handleInputChange('horas_diarias', parseFloat(e.target.value))}
+                  disabled={isReadOnly}
+                />
+              </div>
+            </>
+          ) : (
+            /* Horários por Dia da Semana */
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Configure os horários para cada dia da semana selecionado. Os horários serão aplicados apenas aos dias marcados.
+              </p>
+              {formData.dias_semana.map((diaNum) => {
+                const diaKey = diaNum.toString();
+                const diaInfo = getWeekDays().find(d => d.value === diaNum);
+                const daySchedule = horariosPorDia[diaKey] || {
+                  hora_inicio: formData.hora_inicio || '08:00',
+                  hora_fim: formData.hora_fim || '18:00',
+                  intervalo_inicio: formData.intervalo_inicio || '',
+                  intervalo_fim: formData.intervalo_fim || '',
+                  horas_diarias: formData.horas_diarias || 8.0,
+                };
+                
+                return (
+                  <Card key={diaNum} className="p-4">
+                    <CardHeader className="p-0 pb-3">
+                      <CardTitle className="text-base">{diaInfo?.label}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0 space-y-3">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label htmlFor={`hora_inicio_${diaNum}`}>Hora de Início *</Label>
+                          <Input
+                            id={`hora_inicio_${diaNum}`}
+                            type="time"
+                            value={daySchedule.hora_inicio}
+                            onChange={(e) => handleDayScheduleChange(diaNum, 'hora_inicio', e.target.value)}
+                            disabled={isReadOnly}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`hora_fim_${diaNum}`}>Hora de Fim *</Label>
+                          <Input
+                            id={`hora_fim_${diaNum}`}
+                            type="time"
+                            value={daySchedule.hora_fim}
+                            onChange={(e) => handleDayScheduleChange(diaNum, 'hora_fim', e.target.value)}
+                            disabled={isReadOnly}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label htmlFor={`intervalo_inicio_${diaNum}`}>Início do Intervalo</Label>
+                          <Input
+                            id={`intervalo_inicio_${diaNum}`}
+                            type="time"
+                            value={daySchedule.intervalo_inicio || ''}
+                            onChange={(e) => handleDayScheduleChange(diaNum, 'intervalo_inicio', e.target.value)}
+                            disabled={isReadOnly}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`intervalo_fim_${diaNum}`}>Fim do Intervalo</Label>
+                          <Input
+                            id={`intervalo_fim_${diaNum}`}
+                            type="time"
+                            value={daySchedule.intervalo_fim || ''}
+                            onChange={(e) => handleDayScheduleChange(diaNum, 'intervalo_fim', e.target.value)}
+                            disabled={isReadOnly}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor={`horas_diarias_${diaNum}`}>Horas Diárias (calculado automaticamente)</Label>
+                        <Input
+                          id={`horas_diarias_${diaNum}`}
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="24"
+                          value={daySchedule.horas_diarias}
+                          onChange={(e) => handleDayScheduleChange(diaNum, 'horas_diarias', parseFloat(e.target.value) || 0)}
+                          disabled={isReadOnly}
+                          readOnly
+                          className="bg-muted"
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              <div className="pt-2 border-t">
+                <p className="text-sm font-medium">
+                  Total Semanal: {Object.values(horariosPorDia).reduce((sum, day) => sum + (day.horas_diarias || 0), 0).toFixed(1)} horas
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

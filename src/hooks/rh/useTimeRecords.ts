@@ -68,6 +68,22 @@ export function useTimeRecordsPaginated(params: {
   const { selectedCompany } = useCompany();
   const { pageSize = 50, employeeId, startDate, endDate, status, managerUserId } = params;
 
+  // Determinar se a query deve estar habilitada
+  // Security fix: Se employeeId ou managerUserId são passados como undefined,
+  // devemos esperar até que sejam definidos para evitar expor dados de todos os funcionários
+  // durante o carregamento inicial.
+  // 
+  // Nota: Se o parâmetro não for passado no objeto params, não será verificado
+  // (permite que páginas admin consultem todos os registros quando apropriado)
+  const hasEmployeeIdParam = 'employeeId' in params;
+  const hasManagerUserIdParam = 'managerUserId' in params;
+  
+  // Se o parâmetro foi explicitamente passado (mesmo que undefined), 
+  // requeremos que seja truthy antes de habilitar a query
+  const isEnabled = !!selectedCompany?.id && 
+    (!hasEmployeeIdParam || !!employeeId) && 
+    (!hasManagerUserIdParam || !!managerUserId);
+
   return useInfiniteQuery({
     queryKey: ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId],
     queryFn: async ({ pageParam = 0 }): Promise<{
@@ -104,7 +120,7 @@ export function useTimeRecordsPaginated(params: {
     getNextPageParam: (lastPage) => {
       return lastPage.hasMore ? lastPage.nextCursor : undefined;
     },
-    enabled: !!selectedCompany?.id,
+    enabled: isEnabled,
     initialPageParam: 0,
     ...queryConfig.dynamic,
   });

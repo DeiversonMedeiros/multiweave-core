@@ -477,7 +477,7 @@ export default function HistoricoMarcacoesPage() {
                             {calculateTotalHours(record)}
                           </span>
                         </div>
-                        {/* Horas Extras - Mostrar separadamente se disponível */}
+                        {/* Horas Extras ou Negativas */}
                         {(((record as any).horas_extras_50 && (record as any).horas_extras_50 > 0) || 
                           ((record as any).horas_extras_100 && (record as any).horas_extras_100 > 0)) ? (
                           <div className="flex items-center gap-2 text-sm">
@@ -506,6 +506,14 @@ export default function HistoricoMarcacoesPage() {
                             <span className="text-gray-500">Extras: </span>
                             <span className="font-medium text-orange-600">
                               +{Number((record as any).horas_extras).toFixed(1)}h
+                            </span>
+                          </div>
+                        ) : ((record as any).horas_negativas && (record as any).horas_negativas > 0) ? (
+                          // Mostrar horas negativas
+                          <div className="text-sm">
+                            <span className="text-gray-500">Negativas: </span>
+                            <span className="font-medium text-red-600">
+                              -{(record as any).horas_negativas.toFixed(2)}h
                             </span>
                           </div>
                         ) : null}

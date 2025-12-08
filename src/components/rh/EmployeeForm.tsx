@@ -38,6 +38,73 @@ import { Calendar, MapPin, Phone, Mail, User, Building, DollarSign, AlertCircle,
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { EmployeeDocumentsTab } from '@/components/rh/EmployeeDocumentsTab';
+import { useDependentsByEmployee } from '@/hooks/rh/useDependents';
+import { DependentsList } from '@/components/rh/DependentsList';
+import { Users } from 'lucide-react';
+
+// =====================================================
+// COMPONENTE PARA ABA DE DEPENDENTES (MODO VIEW)
+// =====================================================
+
+function EmployeeDependentsViewTab({ employeeId, employeeName, employeeMatricula }: { 
+  employeeId: string;
+  employeeName?: string;
+  employeeMatricula?: string;
+}) {
+  const { data: dependents, isLoading } = useDependentsByEmployee(employeeId);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Carregando dependentes...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!dependents || dependents.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <Users className="h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Nenhum dependente cadastrado</h3>
+          <p className="text-muted-foreground text-center">
+            Este funcionário ainda não possui dependentes cadastrados.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Converter para DependentWithEmployee (adicionar campos do funcionário)
+  const dependentsWithEmployee = dependents.map(dep => ({
+    ...dep,
+    funcionario_nome: employeeName || '',
+    funcionario_matricula: employeeMatricula,
+    funcionario_cpf: ''
+  }));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Dependentes do Funcionário</h3>
+          <p className="text-sm text-muted-foreground">
+            Total: {dependents.length} dependente{dependents.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+      </div>
+      
+      <DependentsList
+        dependents={dependentsWithEmployee}
+        isLoading={isLoading}
+        showEmployeeInfo={false}
+      />
+    </div>
+  );
+}
 
 // =====================================================
 // SCHEMA DE VALIDAÇÃO
@@ -540,7 +607,7 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-9 mb-8 gap-1">
+          <TabsList className={`grid w-full ${mode === 'view' ? 'grid-cols-10' : 'grid-cols-9'} mb-8 gap-1`}>
             <TabsTrigger 
               value="personal" 
               className={`text-sm px-2 py-2 relative ${tabsWithErrors.includes('personal') ? 'text-red-600 font-semibold' : ''}`}
@@ -653,6 +720,16 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
                 Anexos
               </span>
             </TabsTrigger>
+            {mode === 'view' && (
+              <TabsTrigger 
+                value="dependents" 
+                className="text-sm px-2 py-2"
+              >
+                <span className="flex items-center gap-1">
+                  Dependentes
+                </span>
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* DADOS PESSOAIS */}
@@ -2544,6 +2621,17 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
               mode={mode}
             />
           </TabsContent>
+
+          {/* DEPENDENTES - Apenas no modo view */}
+          {mode === 'view' && employee?.id && (
+            <TabsContent value="dependents" className="space-y-4">
+              <EmployeeDependentsViewTab 
+                employeeId={employee.id}
+                employeeName={employee.nome}
+                employeeMatricula={employee.matricula}
+              />
+            </TabsContent>
+          )}
         </Tabs>
 
         {/* BOTÕES REMOVIDOS - FormModal controla as ações */}

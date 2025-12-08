@@ -19,7 +19,7 @@ const MedicalAgreementNewPage: React.FC = () => {
   const navigate = useNavigate();
   const createMutation = useCreateMedicalAgreement();
 
-  const handleSubmit = async (data: MedicalAgreementCreateData) => {
+  const handleSubmit = async (data: Omit<MedicalAgreementCreateData, 'company_id'>) => {
     try {
       await createMutation.mutateAsync(data);
       navigate('/rh/medical-agreements');

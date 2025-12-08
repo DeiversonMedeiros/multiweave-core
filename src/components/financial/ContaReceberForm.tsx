@@ -47,6 +47,16 @@ const contaReceberSchema = z.object({
   conta_bancaria_id: z.string().optional(),
   observacoes: z.string().optional(),
   anexos: z.array(z.string()).optional(),
+  // Novos campos
+  condicao_recebimento: z.number().refine((val) => !val || [30, 45, 60, 90].includes(val), {
+    message: 'Condição de recebimento deve ser 30, 45, 60 ou 90 dias',
+  }).optional(),
+  valor_pis: z.number().min(0, 'Valor do PIS não pode ser negativo').optional(),
+  valor_cofins: z.number().min(0, 'Valor do COFINS não pode ser negativo').optional(),
+  valor_csll: z.number().min(0, 'Valor do CSLL não pode ser negativo').optional(),
+  valor_ir: z.number().min(0, 'Valor do IR não pode ser negativo').optional(),
+  valor_inss: z.number().min(0, 'Valor do INSS não pode ser negativo').optional(),
+  valor_iss: z.number().min(0, 'Valor do ISS não pode ser negativo').optional(),
 });
 
 type ContaReceberFormValues = z.infer<typeof contaReceberSchema>;
@@ -88,6 +98,13 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
       conta_bancaria_id: '',
       observacoes: '',
       anexos: [],
+      condicao_recebimento: undefined,
+      valor_pis: 0,
+      valor_cofins: 0,
+      valor_csll: 0,
+      valor_ir: 0,
+      valor_inss: 0,
+      valor_iss: 0,
     },
   });
 
@@ -148,6 +165,13 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
         conta_bancaria_id: conta.conta_bancaria_id || '',
         observacoes: conta.observacoes || '',
         anexos: conta.anexos || [],
+        condicao_recebimento: conta.condicao_recebimento,
+        valor_pis: conta.valor_pis || 0,
+        valor_cofins: conta.valor_cofins || 0,
+        valor_csll: conta.valor_csll || 0,
+        valor_ir: conta.valor_ir || 0,
+        valor_inss: conta.valor_inss || 0,
+        valor_iss: conta.valor_iss || 0,
       });
     }
   }, [conta, form]);
@@ -361,6 +385,37 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
 
                     <FormField
                       control={form.control}
+                      name="condicao_recebimento"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Condição de Recebimento</FormLabel>
+                          <Select 
+                            onValueChange={(value) => field.onChange(value ? parseInt(value) : undefined)} 
+                            defaultValue={field.value?.toString()}
+                            value={field.value?.toString()}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione a condição" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="30">30 dias</SelectItem>
+                              <SelectItem value="45">45 dias</SelectItem>
+                              <SelectItem value="60">60 dias</SelectItem>
+                              <SelectItem value="90">90 dias</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>
+                            Prazo para recebimento em dias
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
                       name="data_emissao"
                       render={({ field }) => (
                         <FormItem>
@@ -413,6 +468,132 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                       )}
                     />
                   </div>
+
+                  {/* Seção de Impostos */}
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className="text-lg font-semibold mb-4">Impostos</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="valor_pis"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>PIS</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0,00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="valor_cofins"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>COFINS</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0,00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="valor_csll"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CSLL</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0,00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="valor_ir"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>IR</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0,00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="valor_inss"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>INSS</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0,00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="valor_iss"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>ISS</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0,00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
                 </TabsContent>
 
                 {/* Complementar */}
@@ -453,7 +634,14 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Departamento</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                          <Select 
+                            onValueChange={(value) => {
+                              const selectedUnit = (unitsData || []).find((u: any) => u.id === value);
+                              field.onChange(selectedUnit?.nome || value);
+                            }} 
+                            defaultValue={field.value ? (unitsData || []).find((u: any) => u.nome === field.value)?.id : undefined}
+                            value={field.value ? (unitsData || []).find((u: any) => u.nome === field.value)?.id : undefined}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Selecione o departamento" />
@@ -464,7 +652,7 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                                 <SelectItem value="loading" disabled>Carregando...</SelectItem>
                               ) : (
                                 (unitsData || []).map((unit) => (
-                                  <SelectItem key={unit.id} value={unit.nome}>
+                                  <SelectItem key={unit.id} value={unit.id}>
                                     {unit.nome}
                                   </SelectItem>
                                 ))

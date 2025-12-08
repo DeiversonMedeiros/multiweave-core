@@ -254,18 +254,37 @@ export const EntityService = {
 
   /**
    * Busca um item específico por ID
+   * Aceita tanto parâmetros posicionais quanto objeto
    */
   getById: async <T = any>(
-    schema: string,
-    table: string,
-    id: string,
-    companyId: string
+    schemaOrParams: string | { schema: string; table: string; id: string; companyId: string },
+    table?: string,
+    id?: string,
+    companyId?: string
   ): Promise<T | null> => {
+    let schema: string;
+    let tableName: string;
+    let itemId: string;
+    let companyIdParam: string;
+
+    // Verificar se é objeto ou parâmetros posicionais
+    if (typeof schemaOrParams === 'object') {
+      schema = schemaOrParams.schema;
+      tableName = schemaOrParams.table;
+      itemId = schemaOrParams.id;
+      companyIdParam = schemaOrParams.companyId;
+    } else {
+      schema = schemaOrParams;
+      tableName = table!;
+      itemId = id!;
+      companyIdParam = companyId!;
+    }
+
     const result = await EntityService.list<T>({
       schema,
-      table,
-      companyId,
-      filters: { id }
+      table: tableName,
+      companyId: companyIdParam,
+      filters: { id: itemId }
     });
 
     return result.data.length > 0 ? result.data[0] : null;
@@ -281,6 +300,11 @@ export const EntityService = {
     data: Partial<T>;
   }): Promise<T> => {
     const { schema, table, companyId, data } = params;
+    
+    // Validar companyId para schemas não-públicos
+    if (schema !== 'public' && !companyId) {
+      throw new Error(`companyId é obrigatório para criar itens no schema '${schema}'. Tabela: ${table}`);
+    }
     
     // Para schemas que não sejam 'public', usar RPC function
     if (schema !== 'public') {

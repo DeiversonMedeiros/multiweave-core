@@ -13,13 +13,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { EmployeeMedicalPlan, EmployeeMedicalPlanCreateData, EmployeeMedicalPlanUpdateData, MedicalPlan } from '@/integrations/supabase/rh-types';
-import { usePlanStatuses, useMedicalPlans } from '@/hooks/rh/useMedicalAgreements';
+import { EmployeeMedicalPlan, EmployeeMedicalPlanCreateData, EmployeeMedicalPlanUpdateData, MedicalPlan, MedicalAgreement } from '@/integrations/supabase/rh-types';
+import { usePlanStatuses, useMedicalPlans, useMedicalAgreements } from '@/hooks/rh/useMedicalAgreements';
 import { useEmployees } from '@/hooks/rh/useEmployees';
-import { formatCurrency } from '@/services/rh/medicalAgreementsService';
+import { formatCurrency, getPlanValueByAge, calculateAge } from '@/services/rh/medicalAgreementsService';
+import { useCompany } from '@/lib/company-context';
 
 const formSchema = z.object({
   employee_id: z.string().uuid({ message: 'Funcionário é obrigatório.' }),
+  agreement_id: z.string().uuid({ message: 'Convênio é obrigatório.' }),
   plan_id: z.string().uuid({ message: 'Plano é obrigatório.' }),
   data_inicio: z.string().min(1, 'Data de início é obrigatória.'),
   data_fim: z.string().optional(),
@@ -48,8 +50,23 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
 }) => {
   const planStatuses = usePlanStatuses();
   const { data: employees } = useEmployees();
-  const { data: plans } = useMedicalPlans({ ativo: true });
+  const { data: agreements } = useMedicalAgreements({ ativo: true });
+  const { data: allPlans } = useMedicalPlans({ ativo: true });
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
   const [selectedPlan, setSelectedPlan] = useState<MedicalPlan | null>(null);
+
+  // Buscar agreement_id do plano quando há initialData
+  const initialAgreementId = React.useMemo(() => {
+    if (initialData?.plan?.agreement_id) {
+      return initialData.plan.agreement_id;
+    }
+    if (initialData?.plan_id && allPlans) {
+      const plan = allPlans.find(p => p.id === initialData.plan_id);
+      return plan?.agreement_id || '';
+    }
+    return '';
+  }, [initialData, allPlans]);
 
   const {
     register,
@@ -61,6 +78,7 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
     resolver: zodResolver(formSchema),
     defaultValues: {
       employee_id: initialData?.employee_id || '',
+      agreement_id: initialAgreementId,
       plan_id: initialData?.plan_id || '',
       data_inicio: initialData?.data_inicio?.split('T')[0] || '',
       data_fim: initialData?.data_fim?.split('T')[0] || '',
@@ -73,39 +91,99 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
     },
   });
 
+  const watchedEmployeeId = watch('employee_id');
+  const watchedAgreementId = watch('agreement_id');
   const watchedPlanId = watch('plan_id');
   const watchedDescontoAplicado = watch('desconto_aplicado');
   const watchedValorManual = watch('valor_manual');
 
-  // Atualizar plano selecionado quando o ID muda
+  // Filtrar planos baseado no convênio selecionado
+  const filteredPlans = React.useMemo(() => {
+    if (!watchedAgreementId || !allPlans) {
+      return [];
+    }
+    return allPlans.filter(plan => plan.agreement_id === watchedAgreementId);
+  }, [watchedAgreementId, allPlans]);
+
+  // Limpar plano quando convênio mudar
   useEffect(() => {
-    if (watchedPlanId && plans) {
-      const plan = plans.find(p => p.id === watchedPlanId);
-      setSelectedPlan(plan || null);
-      
-      // Atualizar valor mensal baseado no plano selecionado (apenas se não foi editado manualmente)
-      if (plan && !watchedValorManual) {
-        const valorBase = plan.valor_titular;
-        const desconto = watchedDescontoAplicado || 0;
-        const valorFinal = valorBase * (1 - desconto / 100);
-        setValue('valor_mensal', valorFinal);
+    if (watchedAgreementId && watchedPlanId) {
+      const currentPlan = filteredPlans.find(p => p.id === watchedPlanId);
+      if (!currentPlan) {
+        // Se o plano atual não pertence ao convênio selecionado, limpar
+        setValue('plan_id', '');
+        setSelectedPlan(null);
       }
     }
-  }, [watchedPlanId, plans, watchedDescontoAplicado, watchedValorManual, setValue]);
+  }, [watchedAgreementId, filteredPlans, watchedPlanId, setValue]);
 
-  // Recalcular valor quando desconto muda (apenas se não foi editado manualmente)
+  // Atualizar plano selecionado quando o ID muda
   useEffect(() => {
-    if (selectedPlan && !watchedValorManual) {
-      const valorBase = selectedPlan.valor_titular;
-      const desconto = watchedDescontoAplicado || 0;
-      const valorFinal = valorBase * (1 - desconto / 100);
-      setValue('valor_mensal', valorFinal);
+    if (watchedPlanId && filteredPlans) {
+      const plan = filteredPlans.find(p => p.id === watchedPlanId);
+      setSelectedPlan(plan || null);
+      
+      // Atualizar valor mensal baseado no plano selecionado e idade do funcionário (apenas se não foi editado manualmente)
+      if (plan && !watchedValorManual && watchedEmployeeId && companyId) {
+        const updateValue = async () => {
+          try {
+            // Buscar funcionário para obter data de nascimento
+            const employee = employees?.find(emp => emp.id === watchedEmployeeId);
+            const idade = employee?.data_nascimento ? calculateAge(employee.data_nascimento) : null;
+            
+            // Buscar valor do plano baseado na idade
+            const valorBase = await getPlanValueByAge(plan.id, idade, 'titular', companyId);
+            const desconto = watchedDescontoAplicado || 0;
+            const valorFinal = valorBase * (1 - desconto / 100);
+            setValue('valor_mensal', valorFinal);
+          } catch (error) {
+            console.error('Erro ao calcular valor do plano:', error);
+            // Em caso de erro, deixar valor como 0 e informar ao usuário
+            setValue('valor_mensal', 0);
+          }
+        };
+        updateValue();
+      } else if (plan && !watchedValorManual) {
+        // Se não tem funcionário selecionado, deixar como 0 até selecionar
+        setValue('valor_mensal', 0);
+      }
+    } else {
+      setSelectedPlan(null);
     }
-  }, [watchedDescontoAplicado, selectedPlan, watchedValorManual, setValue]);
+  }, [watchedPlanId, filteredPlans, watchedDescontoAplicado, watchedValorManual, watchedEmployeeId, employees, companyId, setValue]);
+
+  // Recalcular valor quando desconto ou funcionário muda (apenas se não foi editado manualmente)
+  useEffect(() => {
+    if (selectedPlan && !watchedValorManual && watchedEmployeeId && companyId) {
+      const updateValue = async () => {
+        try {
+          // Buscar funcionário para obter data de nascimento
+          const employee = employees?.find(emp => emp.id === watchedEmployeeId);
+          const idade = employee?.data_nascimento ? calculateAge(employee.data_nascimento) : null;
+          
+          // Buscar valor do plano baseado na idade
+          const valorBase = await getPlanValueByAge(selectedPlan.id, idade, 'titular', companyId);
+          const desconto = watchedDescontoAplicado || 0;
+          const valorFinal = valorBase * (1 - desconto / 100);
+          setValue('valor_mensal', valorFinal);
+        } catch (error) {
+          console.error('Erro ao calcular valor do plano:', error);
+          // Em caso de erro, deixar valor como 0
+          setValue('valor_mensal', 0);
+        }
+      };
+      updateValue();
+    } else if (selectedPlan && !watchedValorManual) {
+      // Se não tem funcionário selecionado, deixar como 0 até selecionar
+      setValue('valor_mensal', 0);
+    }
+  }, [watchedDescontoAplicado, selectedPlan, watchedValorManual, watchedEmployeeId, employees, companyId, setValue]);
 
   const handleFormSubmit = (data: FormData) => {
+    // Remover campos que não existem na tabela (valor_manual e agreement_id são apenas para UI)
+    const { valor_manual, agreement_id, ...dataWithoutExtraFields } = data;
     const submitData = {
-      ...data,
+      ...dataWithoutExtraFields,
       data_fim: data.data_fim || undefined,
       motivo_suspensao: data.motivo_suspensao || undefined,
       observacoes: data.observacoes || undefined,
@@ -157,22 +235,58 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="agreement_id">Convênio *</Label>
+              <Select
+                value={watch('agreement_id')}
+                onValueChange={(value) => {
+                  setValue('agreement_id', value);
+                  // Limpar plano quando convênio mudar
+                  setValue('plan_id', '');
+                  setSelectedPlan(null);
+                }}
+              >
+                <SelectTrigger className={errors.agreement_id ? 'border-red-500' : ''}>
+                  <SelectValue placeholder="Selecione o convênio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {agreements && agreements.length > 0 ? agreements.map((agreement) => (
+                    <SelectItem key={agreement.id} value={agreement.id}>
+                      {agreement.nome}
+                    </SelectItem>
+                  )) : (
+                    <SelectItem value="no-agreements" disabled>
+                      Nenhum convênio encontrado
+                    </SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {errors.agreement_id && (
+                <p className="text-sm text-red-500">{errors.agreement_id.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="plan_id">Plano *</Label>
               <Select
                 value={watch('plan_id')}
                 onValueChange={(value) => setValue('plan_id', value)}
+                disabled={!watchedAgreementId}
               >
                 <SelectTrigger className={errors.plan_id ? 'border-red-500' : ''}>
-                  <SelectValue placeholder="Selecione o plano" />
+                  <SelectValue placeholder={watchedAgreementId ? "Selecione o plano" : "Selecione primeiro o convênio"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {plans && plans.length > 0 ? plans.map((plan) => (
+                  {filteredPlans && filteredPlans.length > 0 ? filteredPlans.map((plan) => (
                     <SelectItem key={plan.id} value={plan.id}>
-                      {plan.nome} - {plan.agreement?.nome} ({formatCurrency(plan.valor_titular)})
+                      {plan.nome}
                     </SelectItem>
-                  )) : (
+                  )) : watchedAgreementId ? (
                     <SelectItem value="no-plans" disabled>
-                      Nenhum plano encontrado
+                      Nenhum plano encontrado para este convênio
+                    </SelectItem>
+                  ) : (
+                    <SelectItem value="select-agreement" disabled>
+                      Selecione um convênio primeiro
                     </SelectItem>
                   )}
                 </SelectContent>
@@ -239,7 +353,13 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Convênio</label>
-                <p className="text-sm">{selectedPlan.agreement?.nome}</p>
+                <p className="text-sm">
+                  {watchedAgreementId && agreements
+                    ? agreements.find(a => a.id === watchedAgreementId)?.nome || 
+                      selectedPlan.agreement?.nome || 
+                      'N/A'
+                    : selectedPlan.agreement?.nome || 'N/A'}
+                </p>
               </div>
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Categoria</label>
@@ -247,7 +367,31 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
               </div>
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Valor Base</label>
-                <p className="text-sm font-medium">{formatCurrency(selectedPlan.valor_titular)}</p>
+                <p className="text-sm font-medium">
+                  {watchedEmployeeId && employees
+                    ? (() => {
+                        const employee = employees.find(emp => emp.id === watchedEmployeeId);
+                        const idade = employee?.data_nascimento ? calculateAge(employee.data_nascimento) : null;
+                        // O valor será calculado dinamicamente baseado na idade e faixas etárias
+                        return idade !== null 
+                          ? `Será calculado pela idade (${idade} anos)`
+                          : 'Será calculado pela idade';
+                      })()
+                    : 'Será calculado pela idade'}
+                </p>
+                {watchedEmployeeId && employees && (() => {
+                  const employee = employees.find(emp => emp.id === watchedEmployeeId);
+                  const idade = employee?.data_nascimento ? calculateAge(employee.data_nascimento) : null;
+                  return idade !== null ? (
+                    <p className="text-xs text-muted-foreground">
+                      O valor será determinado pela faixa etária correspondente à idade de {idade} anos
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Informe a data de nascimento do funcionário para calcular o valor
+                    </p>
+                  );
+                })()}
               </div>
             </div>
             {selectedPlan.descricao && (
@@ -326,22 +470,37 @@ const EmployeeMedicalPlanForm: React.FC<EmployeeMedicalPlanFormProps> = ({
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-blue-700">Valor base do plano:</span>
-                  <span className="font-medium">{formatCurrency(selectedPlan.valor_titular)}</span>
+                  <span className="font-medium">
+                    {watchedEmployeeId && employees
+                      ? (() => {
+                          const employee = employees.find(emp => emp.id === watchedEmployeeId);
+                          const idade = employee?.data_nascimento ? calculateAge(employee.data_nascimento) : null;
+                          return idade !== null 
+                            ? `Calculado pela faixa etária (idade: ${idade} anos)`
+                            : 'Será calculado pela faixa etária';
+                        })()
+                      : 'Será calculado pela faixa etária'}
+                  </span>
                 </div>
                 {watchedDescontoAplicado > 0 && (
                   <div className="flex justify-between">
                     <span className="text-blue-700">Desconto aplicado ({watchedDescontoAplicado}%):</span>
                     <span className="font-medium text-red-600">
-                      -{formatCurrency(selectedPlan.valor_titular * (watchedDescontoAplicado / 100))}
+                      Será aplicado sobre o valor da faixa etária
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between border-t border-blue-200 pt-1">
                   <span className="text-blue-900 font-medium">Valor final:</span>
                   <span className="font-bold text-blue-900">
-                    {formatCurrency(selectedPlan.valor_titular * (1 - watchedDescontoAplicado / 100))}
+                    {watch('valor_mensal') > 0 
+                      ? formatCurrency(watch('valor_mensal'))
+                      : 'Será calculado automaticamente'}
                   </span>
                 </div>
+                <p className="text-xs text-blue-600 mt-2">
+                  O valor é calculado automaticamente baseado na idade do funcionário e nas faixas etárias cadastradas no plano.
+                </p>
               </div>
             </div>
           )}

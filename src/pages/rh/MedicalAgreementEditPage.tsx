@@ -17,7 +17,7 @@ const MedicalAgreementEditPage: React.FC = () => {
   const { data: agreement, isLoading, error } = useMedicalAgreement(id!);
   const updateMutation = useUpdateMedicalAgreement();
 
-  const handleSubmit = async (data: MedicalAgreementUpdateData) => {
+  const handleSubmit = async (data: Omit<MedicalAgreementUpdateData, 'company_id'>) => {
     try {
       await updateMutation.mutateAsync(data);
       navigate('/rh/medical-agreements');

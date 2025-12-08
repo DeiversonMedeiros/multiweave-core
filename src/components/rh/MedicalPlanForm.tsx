@@ -15,6 +15,8 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MedicalPlan, MedicalPlanCreateData, MedicalPlanUpdateData } from '@/integrations/supabase/rh-types';
 import { usePlanCategories, useMedicalAgreements } from '@/hooks/rh/useMedicalAgreements';
+import { MedicalPlanAgeRangesManager } from '@/components/rh/MedicalPlanAgeRangesManager';
+import { useCompany } from '@/lib/company-context';
 
 const formSchema = z.object({
   agreement_id: z.string().uuid({ message: 'Convênio é obrigatório.' }),
@@ -28,8 +30,9 @@ const formSchema = z.object({
   faixa_etaria_min: z.number().min(0, 'Idade mínima deve ser maior ou igual a 0.').default(0),
   faixa_etaria_max: z.number().min(0, 'Idade máxima deve ser maior ou igual a 0.').default(99),
   limite_dependentes: z.number().min(0, 'Limite de dependentes deve ser maior ou igual a 0.').default(0),
-  valor_titular: z.number().min(0, 'Valor do titular deve ser maior ou igual a 0.'),
-  valor_dependente: z.number().min(0, 'Valor do dependente deve ser maior ou igual a 0.'),
+  // Valores agora são definidos apenas por faixas etárias
+  valor_titular: z.number().min(0, 'Valor do titular deve ser maior ou igual a 0.').default(0),
+  valor_dependente: z.number().min(0, 'Valor do dependente deve ser maior ou igual a 0.').default(0),
   valor_familia: z.number().min(0, 'Valor família deve ser maior ou igual a 0.').optional(),
   desconto_funcionario: z.number().min(0, 'Desconto funcionário deve ser maior ou igual a 0.').max(100, 'Desconto não pode ser maior que 100%.').default(0),
   desconto_dependente: z.number().min(0, 'Desconto dependente deve ser maior ou igual a 0.').max(100, 'Desconto não pode ser maior que 100%.').default(0),
@@ -54,6 +57,8 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
 }) => {
   const planCategories = usePlanCategories();
   const { data: agreements } = useMedicalAgreements({ ativo: true });
+  const { selectedCompany } = useCompany();
+  const companyId = selectedCompany?.id || '';
 
   const {
     register,
@@ -86,14 +91,15 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
   });
 
   const watchedAtivo = watch('ativo');
-  const watchedValorTitular = watch('valor_titular');
-  const watchedValorDependente = watch('valor_dependente');
   const watchedDescontoFuncionario = watch('desconto_funcionario');
   const watchedDescontoDependente = watch('desconto_dependente');
 
   const handleFormSubmit = (data: FormData) => {
     const submitData = {
       ...data,
+      // Valores padrão serão usados apenas se não houver faixas etárias cadastradas
+      valor_titular: 0,
+      valor_dependente: 0,
       valor_familia: data.valor_familia || undefined,
       data_inicio_vigencia: data.data_inicio_vigencia || undefined,
       data_fim_vigencia: data.data_fim_vigencia || undefined,
@@ -101,10 +107,6 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
     };
     onSubmit(submitData as MedicalPlanCreateData | MedicalPlanUpdateData);
   };
-
-  // Calcular valores com desconto
-  const valorTitularComDesconto = watchedValorTitular * (1 - watchedDescontoFuncionario / 100);
-  const valorDependenteComDesconto = watchedValorDependente * (1 - watchedDescontoDependente / 100);
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
@@ -275,72 +277,21 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
         </CardContent>
       </Card>
 
-      {/* Valores */}
+      {/* Nota sobre valores por faixa etária */}
       <Card>
         <CardHeader>
-          <CardTitle>Valores Base do Plano</CardTitle>
+          <CardTitle>Valores do Plano</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <CardContent>
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-blue-700">
-              <strong>Importante:</strong> Estes são os valores base do plano. Os valores finais para cada funcionário serão calculados automaticamente considerando os descontos aplicados.
+              <strong>Importante:</strong> Os valores deste plano devem ser definidos através das <strong>Faixas Etárias</strong> abaixo. 
+              Após salvar o plano, você poderá adicionar faixas etárias com valores específicos para cada idade.
             </p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="valor_titular">Valor Base Titular (R$) *</Label>
-              <Input
-                id="valor_titular"
-                type="number"
-                step="0.01"
-                {...register('valor_titular', { valueAsNumber: true })}
-                min="0"
-                className={errors.valor_titular ? 'border-red-500' : ''}
-              />
-              {errors.valor_titular && (
-                <p className="text-sm text-red-500">{errors.valor_titular.message}</p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Valor mensal para o funcionário titular
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="valor_dependente">Valor Base Dependente (R$) *</Label>
-              <Input
-                id="valor_dependente"
-                type="number"
-                step="0.01"
-                {...register('valor_dependente', { valueAsNumber: true })}
-                min="0"
-                className={errors.valor_dependente ? 'border-red-500' : ''}
-              />
-              {errors.valor_dependente && (
-                <p className="text-sm text-red-500">{errors.valor_dependente.message}</p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Valor mensal para cada dependente
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="valor_familia">Valor Família (R$)</Label>
-              <Input
-                id="valor_familia"
-                type="number"
-                step="0.01"
-                {...register('valor_familia', { valueAsNumber: true })}
-                min="0"
-                className={errors.valor_familia ? 'border-red-500' : ''}
-              />
-              {errors.valor_familia && (
-                <p className="text-sm text-red-500">{errors.valor_familia.message}</p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Valor mensal para família completa (opcional)
-              </p>
-            </div>
+            <p className="text-sm text-blue-600 mt-2">
+              Se não houver faixas etárias cadastradas, será usado um valor padrão de R$ 0,00. 
+              Certifique-se de cadastrar pelo menos uma faixa etária após criar o plano.
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -452,6 +403,14 @@ const MedicalPlanForm: React.FC<MedicalPlanFormProps> = ({
           </div>
         </CardContent>
       </Card>
+
+      {/* Gerenciamento de Faixas Etárias (apenas para planos existentes) */}
+      {initialData?.id && companyId && (
+        <MedicalPlanAgeRangesManager
+          planId={initialData.id}
+          companyId={companyId}
+        />
+      )}
 
       {/* Botões de Ação */}
       <div className="flex justify-end gap-4">

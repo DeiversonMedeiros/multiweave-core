@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, Users, Shield, DollarSign, FolderKanban, UserCircle, Package, Building } from "lucide-react";
+import { Building2, Users, Shield, DollarSign, FolderKanban, UserCircle, Package, Building, Wrench } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const cadastros = [
@@ -46,11 +46,18 @@ const cadastros = [
     color: "text-secondary",
   },
   {
+    title: "Serviços",
+    description: "Cadastro de serviços vinculados a projetos e clientes",
+    icon: Wrench,
+    path: "/cadastros/servicos",
+    color: "text-primary",
+  },
+  {
     title: "Materiais/Serviços",
     description: "Produtos, serviços e matérias-primas",
     icon: Package,
     path: "/cadastros/materiais",
-    color: "text-primary",
+    color: "text-secondary",
   },
   {
     title: "Departamentos",

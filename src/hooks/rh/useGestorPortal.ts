@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { EntityService } from '@/services/generic/entityService';
+import { useAuth } from '@/lib/auth-context';
 
 // LOG DE VERSÃO - Se você ver este log, o código novo está carregado
 console.log('🆕🆕🆕 [useGestorPortal] CÓDIGO NOVO CARREGADO - Versão com call_schema_rpc', new Date().toISOString());
@@ -76,11 +77,17 @@ export interface MedicalCertificate {
   data_fim: string;
   dias_afastamento: number;
   tipo_atestado: string;
+  numero_atestado?: string;
+  medico_nome?: string;
+  crm_crmo?: string;
+  cid_codigo?: string;
+  cid_descricao?: string;
   observacoes?: string;
   anexo_url?: string;
   status: 'pendente' | 'aprovado' | 'rejeitado';
   aprovado_por?: string;
   aprovado_em?: string;
+  data_aprovacao?: string;
   created_at: string;
 }
 
@@ -138,6 +145,7 @@ export interface AttendanceCorrection {
 
 // Hook para gerenciar férias
 export const useVacationRequests = (companyId: string) => {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [ferias, setFerias] = useState<FeriasItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,139 +156,52 @@ export const useVacationRequests = (companyId: string) => {
       setLoading(true);
       setError(null);
 
-      // Buscar férias usando EntityService
-      const vacationsResult = await EntityService.list({
-        schema: 'rh',
-        table: 'vacations',
-        companyId: companyId,
-        orderBy: 'created_at',
-        orderDirection: 'DESC'
-      });
-
-      if (!vacationsResult.data || vacationsResult.data.length === 0) {
+      if (!user?.id) {
+        setError('Usuário não autenticado');
         setFerias([]);
         return;
       }
 
-      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
-      const employeesResult = await EntityService.list({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId
-      });
-      
-      // Filtrar apenas os funcionários necessários
-      const employeeIds = new Set(vacationsResult.data.map(v => v.employee_id).filter(Boolean));
-
-      // Mapear funcionários por ID (apenas os que estão nas férias)
-      const employeeMap = new Map();
-      employeesResult.data?.forEach(emp => {
-        if (employeeIds.has(emp.id)) {
-          employeeMap.set(emp.id, emp);
+      // Buscar férias usando função RPC que filtra por gestor
+      const { data: vacationsData, error: rpcError } = await (supabase.rpc as any)(
+        'get_vacations_for_manager',
+        {
+          p_company_id: companyId,
+          p_user_id: user.id
         }
-      });
+      );
 
-      // Buscar períodos aquisitivos para todas as férias
-      const employeeIdsForEntitlements = new Set(vacationsResult.data.map(v => v.employee_id).filter(Boolean));
-      const entitlementsResult = await EntityService.list({
-        schema: 'rh',
-        table: 'vacation_entitlements',
-        companyId: companyId,
-        filters: {}
-      });
+      if (rpcError) {
+        throw rpcError;
+      }
 
-      // Criar mapa de períodos aquisitivos por employee_id e data_inicio
-      const entitlementsMap = new Map<string, any>();
-      entitlementsResult.data?.forEach((ent: any) => {
-        if (employeeIdsForEntitlements.has(ent.employee_id)) {
-          const key = `${ent.employee_id}_${ent.ano_aquisitivo}`;
-          if (!entitlementsMap.has(key) || ent.ano_aquisitivo > entitlementsMap.get(key)?.ano_aquisitivo) {
-            entitlementsMap.set(key, ent);
-          }
-        }
-      });
+      if (!vacationsData || vacationsData.length === 0) {
+        setFerias([]);
+        return;
+      }
 
-      const formattedData = await Promise.all(vacationsResult.data.map(async (item) => {
-        const employee = employeeMap.get(item.employee_id);
-        
-        // Buscar período aquisitivo relacionado às férias
-        let periodoAquisitivo: any = null;
-        if (item.data_inicio) {
-          const employeeEntitlements = entitlementsResult.data?.filter((ent: any) => 
-            ent.employee_id === item.employee_id
-          ) || [];
-          
-          // Se a férias já foi aprovada, buscar o período que tem dias_gozados correspondentes
-          // ou que foi atualizado próximo à data de aprovação
-          if (item.status === 'aprovado' && item.aprovado_em) {
-            // Buscar período que tem dias_gozados >= dias_solicitados (indicando que foi usado)
-            const periodosComDiasGozados = employeeEntitlements.filter((ent: any) => 
-              ent.dias_gozados > 0
-            );
-            
-            if (periodosComDiasGozados.length > 0) {
-              // Ordenar por updated_at mais recente (mais provável de ser o período usado)
-              periodosComDiasGozados.sort((a: any, b: any) => {
-                const dateA = new Date(a.updated_at || 0).getTime();
-                const dateB = new Date(b.updated_at || 0).getTime();
-                return dateB - dateA;
-              });
-              
-              // Verificar se algum período tem dias_gozados que corresponde aos dias solicitados
-              const periodoCorrespondente = periodosComDiasGozados.find((ent: any) => 
-                ent.dias_gozados >= item.dias_solicitados
-              );
-              
-              if (periodoCorrespondente) {
-                periodoAquisitivo = periodoCorrespondente;
-              } else {
-                // Se não encontrou correspondência exata, usar o mais recente com dias gozados
-                periodoAquisitivo = periodosComDiasGozados[0];
-              }
-            }
-          }
-          
-          // Se ainda não encontrou, buscar período que contém a data de início
-          if (!periodoAquisitivo) {
-            const matchingEntitlements = employeeEntitlements.filter((ent: any) => 
-              ent.data_inicio_periodo <= item.data_inicio &&
-              ent.data_fim_periodo >= item.data_inicio
-            );
-            
-            if (matchingEntitlements.length > 0) {
-              periodoAquisitivo = matchingEntitlements[0];
-            }
-          }
-          
-          // Se ainda não encontrou, buscar o período mais recente do funcionário
-          if (!periodoAquisitivo && employeeEntitlements.length > 0) {
-            employeeEntitlements.sort((a: any, b: any) => b.ano_aquisitivo - a.ano_aquisitivo);
-            periodoAquisitivo = employeeEntitlements[0];
-          }
-        }
-        
-        return {
-          id: item.id,
-          employee_id: item.employee_id,
-          funcionario_nome: employee?.nome || 'N/A',
-          funcionario_matricula: employee?.matricula || 'N/A',
-          tipo: item.tipo,
-          data_inicio: item.data_inicio,
-          data_fim: item.data_fim,
-          dias_solicitados: item.dias_solicitados,
-          status: item.status,
-          observacoes: item.observacoes,
-          anexos: item.anexos,
-          solicitado_por: item.solicitado_por,
-          aprovado_por: item.aprovado_por,
-          aprovado_em: item.aprovado_em,
-          created_at: item.created_at,
-          saldo_ferias_disponivel: 30, // Mock - calcular baseado no banco de horas
-          conflitos: [], // Mock - implementar lógica de conflitos
-          ano_aquisitivo: periodoAquisitivo?.ano_aquisitivo,
-          periodo_aquisitivo_inicio: periodoAquisitivo?.data_inicio_periodo,
-          periodo_aquisitivo_fim: periodoAquisitivo?.data_fim_periodo
-        };
+      // A função RPC já retorna os dados formatados com funcionario_nome, funcionario_matricula e período aquisitivo
+      const formattedData = vacationsData.map((item: any) => ({
+        id: item.id,
+        employee_id: item.employee_id,
+        funcionario_nome: item.funcionario_nome || 'N/A',
+        funcionario_matricula: item.funcionario_matricula || 'N/A',
+        tipo: item.tipo,
+        data_inicio: item.data_inicio,
+        data_fim: item.data_fim,
+        dias_solicitados: item.dias_solicitados,
+        status: item.status,
+        observacoes: item.observacoes,
+        anexos: item.anexos,
+        solicitado_por: item.solicitado_por,
+        aprovado_por: item.aprovado_por,
+        aprovado_em: item.aprovado_em,
+        created_at: item.created_at,
+        saldo_ferias_disponivel: item.saldo_ferias_disponivel || 30,
+        conflitos: [], // Mock - implementar lógica de conflitos
+        ano_aquisitivo: item.ano_aquisitivo,
+        periodo_aquisitivo_inicio: item.periodo_aquisitivo_inicio,
+        periodo_aquisitivo_fim: item.periodo_aquisitivo_fim
       }));
 
       setFerias(formattedData);
@@ -439,10 +360,10 @@ export const useVacationRequests = (companyId: string) => {
   };
 
   useEffect(() => {
-    if (companyId) {
+    if (companyId && user?.id) {
       fetchFerias();
     }
-  }, [companyId]);
+  }, [companyId, user?.id]);
 
   return { 
     ferias, 
@@ -567,6 +488,7 @@ export const useCompensationRequests = (companyId: string) => {
 
 // Hook para gerenciar atestados médicos
 export const useMedicalCertificates = (companyId: string) => {
+  const { user } = useAuth();
   const [certificates, setCertificates] = useState<MedicalCertificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -576,57 +498,52 @@ export const useMedicalCertificates = (companyId: string) => {
       setLoading(true);
       setError(null);
 
-      // Buscar atestados usando EntityService
-      const certificatesResult = await EntityService.list({
-        schema: 'rh',
-        table: 'medical_certificates',
-        companyId: companyId,
-        orderBy: 'created_at',
-        orderDirection: 'DESC'
-      });
-
-      if (!certificatesResult.data || certificatesResult.data.length === 0) {
+      if (!user?.id) {
+        setError('Usuário não autenticado');
         setCertificates([]);
         return;
       }
 
-      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
-      const employeesResult = await EntityService.list({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId
-      });
-      
-      // Filtrar apenas os funcionários necessários
-      const employeeIds = new Set(certificatesResult.data.map(c => c.employee_id).filter(Boolean));
-
-      // Mapear funcionários por ID (apenas os que estão nos atestados)
-      const employeeMap = new Map();
-      employeesResult.data?.forEach(emp => {
-        if (employeeIds.has(emp.id)) {
-          employeeMap.set(emp.id, emp);
+      // Buscar atestados usando função RPC que filtra por gestor
+      const { data: certificatesData, error: rpcError } = await (supabase.rpc as any)(
+        'get_medical_certificates_for_manager',
+        {
+          p_company_id: companyId,
+          p_user_id: user.id
         }
-      });
+      );
 
-      const formattedData = certificatesResult.data.map(item => {
-        const employee = employeeMap.get(item.employee_id);
-        return {
-          id: item.id,
-          employee_id: item.employee_id,
-          funcionario_nome: employee?.nome || 'N/A',
-          funcionario_matricula: employee?.matricula || 'N/A',
-          data_inicio: item.data_inicio,
-          data_fim: item.data_fim,
-          dias_afastamento: item.dias_afastamento,
-          tipo_atestado: item.tipo_atestado,
-          observacoes: item.observacoes,
-          anexo_url: item.anexo_url,
-          status: item.status,
-          aprovado_por: item.aprovado_por,
-          aprovado_em: item.aprovado_em,
-          created_at: item.created_at
-        };
-      });
+      if (rpcError) {
+        throw rpcError;
+      }
+
+      if (!certificatesData || certificatesData.length === 0) {
+        setCertificates([]);
+        return;
+      }
+
+      // A função RPC já retorna os dados formatados com funcionario_nome e funcionario_matricula
+      const formattedData = certificatesData.map((item: any) => ({
+        id: item.id,
+        employee_id: item.employee_id,
+        funcionario_nome: item.funcionario_nome || 'N/A',
+        funcionario_matricula: item.funcionario_matricula || 'N/A',
+        data_inicio: item.data_inicio,
+        data_fim: item.data_fim,
+        dias_afastamento: item.dias_afastamento,
+        tipo_atestado: item.tipo_atestado,
+        numero_atestado: item.numero_atestado,
+        medico_nome: item.medico_nome,
+        crm_crmo: item.crm_crmo,
+        cid_codigo: item.cid_codigo,
+        cid_descricao: item.cid_descricao,
+        observacoes: item.observacoes,
+        anexo_url: item.anexo_url,
+        status: item.status,
+        aprovado_por: item.aprovado_por,
+        aprovado_em: item.aprovado_em,
+        created_at: item.created_at
+      }));
 
       setCertificates(formattedData);
     } catch (err) {
@@ -660,10 +577,10 @@ export const useMedicalCertificates = (companyId: string) => {
   };
 
   useEffect(() => {
-    if (companyId) {
+    if (companyId && user?.id) {
       fetchCertificates();
     }
-  }, [companyId]);
+  }, [companyId, user?.id]);
 
   return { 
     certificates, 
@@ -677,6 +594,7 @@ export const useMedicalCertificates = (companyId: string) => {
 
 // Hook para gerenciar reembolsos
 export const useReimbursementRequests = (companyId: string) => {
+  const { user } = useAuth();
   const [reimbursements, setReimbursements] = useState<ReimbursementRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -686,59 +604,49 @@ export const useReimbursementRequests = (companyId: string) => {
       setLoading(true);
       setError(null);
 
-      // Buscar reembolsos usando EntityService
-      const reimbursementsResult = await EntityService.list({
-        schema: 'rh',
-        table: 'reimbursement_requests',
-        companyId: companyId,
-        orderBy: 'created_at',
-        orderDirection: 'DESC'
-      });
-
-      if (!reimbursementsResult.data || reimbursementsResult.data.length === 0) {
+      if (!user?.id) {
+        setError('Usuário não autenticado');
         setReimbursements([]);
         return;
       }
 
-      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
-      const employeesResult = await EntityService.list({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId
-      });
-      
-      // Filtrar apenas os funcionários necessários
-      const employeeIds = new Set(reimbursementsResult.data.map(r => r.employee_id).filter(Boolean));
-
-      // Mapear funcionários por ID (apenas os que estão nos reembolsos)
-      const employeeMap = new Map();
-      employeesResult.data?.forEach(emp => {
-        if (employeeIds.has(emp.id)) {
-          employeeMap.set(emp.id, emp);
+      // Buscar reembolsos usando função RPC que filtra por gestor
+      const { data: reimbursementsData, error: rpcError } = await (supabase.rpc as any)(
+        'get_reimbursements_for_manager',
+        {
+          p_company_id: companyId,
+          p_user_id: user.id
         }
-      });
+      );
 
-      const formattedData = reimbursementsResult.data.map(item => {
-        const employee = employeeMap.get(item.employee_id);
-        return {
-          id: item.id,
-          employee_id: item.employee_id,
-          funcionario_nome: employee?.nome || 'N/A',
-          funcionario_matricula: employee?.matricula || 'N/A',
-          tipo_despesa: item.tipo_despesa,
-          valor: item.valor_solicitado || item.valor || 0,
-          valor_solicitado: item.valor_solicitado || item.valor || 0,
-          data_despesa: item.data_despesa,
-          descricao: item.descricao,
-          anexo_url: item.comprovante_url || item.anexo_url,
-          status: item.status,
-          solicitado_por: item.solicitado_por,
-          aprovado_por: item.aprovado_por,
-          aprovado_em: item.aprovado_em,
-          observacoes: item.observacoes,
-          created_at: item.created_at
-        };
-      });
+      if (rpcError) {
+        throw rpcError;
+      }
+
+      if (!reimbursementsData || reimbursementsData.length === 0) {
+        setReimbursements([]);
+        return;
+      }
+
+      // A função RPC já retorna os dados formatados com funcionario_nome e funcionario_matricula
+      const formattedData = reimbursementsData.map((item: any) => ({
+        id: item.id,
+        employee_id: item.employee_id,
+        funcionario_nome: item.funcionario_nome || 'N/A',
+        funcionario_matricula: item.funcionario_matricula || 'N/A',
+        tipo_despesa: item.tipo_despesa,
+        valor: item.valor || 0,
+        valor_solicitado: item.valor_solicitado || item.valor || 0,
+        data_despesa: item.data_despesa,
+        descricao: item.descricao,
+        anexo_url: item.anexo_url,
+        status: item.status,
+        solicitado_por: item.solicitado_por,
+        aprovado_por: item.aprovado_por,
+        aprovado_em: item.aprovado_em,
+        observacoes: item.observacoes,
+        created_at: item.created_at
+      }));
 
       setReimbursements(formattedData);
     } catch (err) {
@@ -772,10 +680,10 @@ export const useReimbursementRequests = (companyId: string) => {
   };
 
   useEffect(() => {
-    if (companyId) {
+    if (companyId && user?.id) {
       fetchReimbursements();
     }
-  }, [companyId]);
+  }, [companyId, user?.id]);
 
   return { 
     reimbursements, 
@@ -789,6 +697,7 @@ export const useReimbursementRequests = (companyId: string) => {
 
 // Hook para gerenciar equipamentos
 export const useEquipmentRentals = (companyId: string) => {
+  const { user } = useAuth();
   const [equipments, setEquipments] = useState<EquipmentRental[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -798,56 +707,46 @@ export const useEquipmentRentals = (companyId: string) => {
       setLoading(true);
       setError(null);
 
-      // Buscar equipamentos usando EntityService
-      const equipmentsResult = await EntityService.list({
-        schema: 'rh',
-        table: 'equipment_rental_approvals',
-        companyId: companyId,
-        orderBy: 'created_at',
-        orderDirection: 'DESC'
-      });
-
-      if (!equipmentsResult.data || equipmentsResult.data.length === 0) {
+      if (!user?.id) {
+        setError('Usuário não autenticado');
         setEquipments([]);
         return;
       }
 
-      // Buscar todos os funcionários da empresa (EntityService não suporta filtro 'in')
-      const employeesResult = await EntityService.list({
-        schema: 'rh',
-        table: 'employees',
-        companyId: companyId
-      });
-      
-      // Filtrar apenas os funcionários necessários
-      const employeeIds = new Set(equipmentsResult.data.map(e => e.employee_id).filter(Boolean));
-
-      // Mapear funcionários por ID (apenas os que estão nos equipamentos)
-      const employeeMap = new Map();
-      employeesResult.data?.forEach(emp => {
-        if (employeeIds.has(emp.id)) {
-          employeeMap.set(emp.id, emp);
+      // Buscar equipamentos usando função RPC que filtra por gestor
+      const { data: equipmentsData, error: rpcError } = await (supabase.rpc as any)(
+        'get_equipment_rentals_for_manager',
+        {
+          p_company_id: companyId,
+          p_user_id: user.id
         }
-      });
+      );
 
-      const formattedData = equipmentsResult.data.map(item => {
-        const employee = employeeMap.get(item.employee_id);
-        return {
-          id: item.id,
-          employee_id: item.employee_id,
-          funcionario_nome: employee?.nome || 'N/A',
-          funcionario_matricula: employee?.matricula || 'N/A',
-          equipamento: item.equipamento,
-          data_inicio: item.data_inicio,
-          data_fim: item.data_fim,
-          motivo: item.motivo,
-          status: item.status,
-          aprovado_por: item.aprovado_por,
-          aprovado_em: item.aprovado_em,
-          observacoes: item.observacoes,
-          created_at: item.created_at
-        };
-      });
+      if (rpcError) {
+        throw rpcError;
+      }
+
+      if (!equipmentsData || equipmentsData.length === 0) {
+        setEquipments([]);
+        return;
+      }
+
+      // A função RPC já retorna os dados formatados com funcionario_nome e funcionario_matricula
+      const formattedData = equipmentsData.map((item: any) => ({
+        id: item.id,
+        employee_id: item.employee_id,
+        funcionario_nome: item.funcionario_nome || 'N/A',
+        funcionario_matricula: item.funcionario_matricula || 'N/A',
+        equipamento: item.equipamento,
+        data_inicio: item.data_inicio,
+        data_fim: item.data_fim,
+        motivo: item.motivo,
+        status: item.status,
+        aprovado_por: item.aprovado_por,
+        aprovado_em: item.aprovado_em,
+        observacoes: item.observacoes,
+        created_at: item.created_at
+      }));
 
       setEquipments(formattedData);
     } catch (err) {
@@ -860,7 +759,7 @@ export const useEquipmentRentals = (companyId: string) => {
 
   const approveEquipment = async (equipmentId: string, approvedBy: string, observacoes?: string) => {
     try {
-      const { data, error } = await supabase.rpc('approve_equipment', {
+      const { data, error } = await (supabase.rpc as any)('approve_equipment', {
         equipment_id: equipmentId,
         approved_by: approvedBy,
         observacoes: observacoes || null
@@ -884,7 +783,7 @@ export const useEquipmentRentals = (companyId: string) => {
         throw new Error('Observações são obrigatórias para rejeitar uma solicitação.');
       }
 
-      const { data, error } = await supabase.rpc('reject_equipment', {
+      const { data, error } = await (supabase.rpc as any)('reject_equipment', {
         equipment_id: equipmentId,
         rejected_by: rejectedBy,
         observacoes: observacoes
@@ -903,10 +802,10 @@ export const useEquipmentRentals = (companyId: string) => {
   };
 
   useEffect(() => {
-    if (companyId) {
+    if (companyId && user?.id) {
       fetchEquipments();
     }
-  }, [companyId]);
+  }, [companyId, user?.id]);
 
   return { 
     equipments, 

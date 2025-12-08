@@ -39,6 +39,8 @@ import MedicalAgreementNewPage from './MedicalAgreementNewPage';
 import MedicalAgreementEditPage from './MedicalAgreementEditPage';
 import MedicalAgreementDetailPage from './MedicalAgreementDetailPage';
 import MedicalPlanNewPage from './MedicalPlanNewPage';
+import MedicalPlanDetailPage from './MedicalPlanDetailPage';
+import MedicalPlanEditPage from './MedicalPlanEditPage';
 import EmployeeMedicalPlanNewPage from './EmployeeMedicalPlanNewPage';
 import EmployeeDeductionsPage from './EmployeeDeductionsPage';
 import EquipmentRentalMonthlyPaymentsPage from './EquipmentRentalMonthlyPaymentsPage';
@@ -297,8 +299,8 @@ export function RHRoutesNew() {
       <Route path="/medical-agreements/:id" element={<MedicalAgreementDetailPage />} />
       <Route path="/medical-agreements/:id/edit" element={<MedicalAgreementEditPage />} />
       <Route path="/medical-plans/new" element={<MedicalPlanNewPage />} />
-      <Route path="/medical-plans/:id" element={<MedicalAgreementsPage />} />
-      <Route path="/medical-plans/:id/edit" element={<MedicalAgreementsPage />} />
+      <Route path="/medical-plans/:id" element={<MedicalPlanDetailPage />} />
+      <Route path="/medical-plans/:id/edit" element={<MedicalPlanEditPage />} />
       <Route path="/employee-medical-plans/new" element={<EmployeeMedicalPlanNewPage />} />
       <Route path="/employee-medical-plans/:id" element={<MedicalAgreementsPage />} />
       <Route path="/employee-medical-plans/:id/edit" element={<MedicalAgreementsPage />} />

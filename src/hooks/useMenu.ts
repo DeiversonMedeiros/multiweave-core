@@ -47,7 +47,8 @@ import {
   History,
   Edit,
   AlertTriangle,
-  Plug
+  Plug,
+  Wrench
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -303,6 +304,14 @@ export const useMenu = () => {
           icon: Handshake,
           description: 'Gestão de parceiros',
           requiresPermission: { type: 'module', name: 'partners', action: 'read' }
+        },
+        {
+          id: 'servicos',
+          title: 'Serviços',
+          url: '/cadastros/servicos',
+          icon: Wrench,
+          description: 'Cadastro de serviços vinculados a projetos e clientes',
+          requiresPermission: { type: 'entity', name: 'services', action: 'read' }
         },
         {
           id: 'centros-custo',

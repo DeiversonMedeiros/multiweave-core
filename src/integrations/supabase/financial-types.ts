@@ -112,6 +112,14 @@ export interface ContaReceber {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Novos campos
+  condicao_recebimento?: number; // 30, 45, 60 ou 90 dias
+  valor_pis?: number;
+  valor_cofins?: number;
+  valor_csll?: number;
+  valor_ir?: number;
+  valor_inss?: number;
+  valor_iss?: number;
 }
 
 export interface Borderos {
@@ -194,6 +202,85 @@ export interface NFe {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Novos campos
+  cliente_id?: string;
+  cliente_nome?: string;
+  cliente_cnpj?: string;
+  cliente_email?: string;
+  cliente_telefone?: string;
+  cliente_endereco?: string;
+  cliente_cidade?: string;
+  cliente_uf?: string;
+  cliente_cep?: string;
+  conta_receber_id?: string;
+  criar_conta_receber?: boolean;
+  condicao_recebimento?: number;
+  configuracao_fiscal_id?: string;
+  numero_protocolo?: string;
+  data_autorizacao?: string;
+  numero_gerado_automaticamente?: boolean;
+  // Campos de regime tributário
+  regime_tributacao?: 'simples_nacional' | 'simples_nacional_icms_municipal' | 'regime_normal';
+  // Campos de tipo e finalidade da operação
+  tipo_operacao?: 'entrada' | 'saida';
+  finalidade?: 'normal' | 'complementar' | 'ajuste' | 'devolucao' | 'remessa';
+  natureza_operacao?: string;
+  // Campos de pagamento
+  forma_pagamento?: string;
+  valor_entrada?: number;
+  quantidade_parcelas?: number;
+  // Campos de transporte
+  modalidade_frete?: 'por_conta_emitente' | 'por_conta_destinatario' | 'por_conta_terceiros' | 'sem_frete';
+  transportador_id?: string;
+  transportador_nome?: string;
+  transportador_cnpj?: string;
+  transportador_ie?: string;
+  transportador_endereco?: string;
+  transportador_cidade?: string;
+  transportador_uf?: string;
+  veiculo_placa?: string;
+  veiculo_uf?: string;
+  veiculo_rntc?: string;
+  quantidade_volumes?: number;
+  especie_volumes?: string;
+  marca_volumes?: string;
+  numeracao_volumes?: string;
+  peso_bruto?: number;
+  peso_liquido?: number;
+  // Campos detalhados de ICMS
+  modalidade_icms?: string;
+  cst_icms?: string;
+  base_calculo_icms?: number;
+  aliquota_icms?: number;
+  valor_icms_st?: number;
+  base_calculo_icms_st?: number;
+  aliquota_icms_st?: number;
+  percentual_reducao_base_icms?: number;
+  percentual_mva_icms_st?: number;
+  // Campos detalhados de IPI
+  enquadramento_ipi?: string;
+  cst_ipi?: string;
+  base_calculo_ipi?: number;
+  aliquota_ipi?: number;
+  valor_ipi_tributado?: number;
+  valor_ipi_isento?: number;
+  valor_ipi_outros?: number;
+  // Campos de informações complementares
+  informacoes_fisco?: string;
+  informacoes_complementares?: string;
+}
+
+export interface NFePagamento {
+  id?: string;
+  nfe_id?: string;
+  company_id?: string;
+  numero_parcela: number;
+  forma_pagamento?: string;
+  valor_parcela: number;
+  data_vencimento?: string;
+  observacoes?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PlanoContas {
@@ -319,6 +406,14 @@ export interface ContaReceberFormData {
   conta_bancaria_id?: string;
   observacoes?: string;
   anexos?: string[];
+  // Novos campos
+  condicao_recebimento?: number; // 30, 45, 60 ou 90 dias
+  valor_pis?: number;
+  valor_cofins?: number;
+  valor_csll?: number;
+  valor_ir?: number;
+  valor_inss?: number;
+  valor_iss?: number;
 }
 
 export interface FluxoCaixaFormData {
@@ -577,7 +672,7 @@ export interface NFSe {
   id: string;
   company_id: string;
   numero_nfse: string;
-  codigo_verificacao: string;
+  codigo_verificacao?: string;
   data_emissao: string;
   data_competencia: string;
   valor_servico: number;
@@ -597,6 +692,52 @@ export interface NFSe {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Novos campos
+  cliente_id?: string;
+  cliente_nome?: string;
+  cliente_cnpj?: string;
+  cliente_email?: string;
+  cliente_telefone?: string;
+  cliente_endereco?: string;
+  cliente_cidade?: string;
+  cliente_uf?: string;
+  cliente_cep?: string;
+  conta_receber_id?: string;
+  criar_conta_receber?: boolean;
+  condicao_recebimento?: number;
+  configuracao_fiscal_id?: string;
+  numero_protocolo?: string;
+  data_autorizacao?: string;
+  numero_gerado_automaticamente?: boolean;
+  // Campos de regime tributário
+  regime_tributacao?: 'simples_nacional' | 'simples_nacional_issqn_municipal' | 'regime_normal';
+  // Campos de ISSQN
+  aliquota_iss?: number;
+  base_calculo_iss?: number;
+  municipio_incidencia_iss?: string;
+  codigo_municipio_iss?: string;
+  retencao_iss_na_fonte?: boolean;
+  responsavel_recolhimento_iss?: 'prestador' | 'tomador' | 'intermediario';
+  valor_iss_retencao?: number;
+  exigibilidade_iss?: '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+  // Campos de intermediário
+  intermediario_id?: string;
+  intermediario_nome?: string;
+  intermediario_cnpj?: string;
+  intermediario_inscricao_municipal?: string;
+  intermediario_endereco?: string;
+  intermediario_cidade?: string;
+  intermediario_uf?: string;
+  intermediario_cep?: string;
+  intermediario_email?: string;
+  intermediario_telefone?: string;
+  // Campos de retenção de impostos federais
+  retencao_impostos_federais?: boolean;
+  valor_ir_retencao?: number;
+  valor_pis_retencao?: number;
+  valor_cofins_retencao?: number;
+  valor_csll_retencao?: number;
+  valor_inss_retencao?: number;
 }
 
 export interface SefazStatus {
@@ -719,26 +860,189 @@ export interface ManifestacaoDestinatario {
 // TIPOS PARA FORMULÁRIOS FISCAIS
 // =====================================================
 
+export interface NFeItem {
+  id?: string;
+  nfe_id?: string;
+  company_id?: string;
+  numero_item: number;
+  codigo_produto?: string;
+  descricao: string;
+  ncm?: string;
+  cfop?: string;
+  unidade?: string;
+  quantidade: number;
+  valor_unitario: number;
+  valor_total: number;
+  valor_desconto?: number;
+  valor_frete?: number;
+  valor_seguro?: number;
+  valor_outras_despesas?: number;
+  valor_icms?: number;
+  valor_ipi?: number;
+  valor_pis?: number;
+  valor_cofins?: number;
+  informacoes_adicionais?: string;
+}
+
+export interface NFSeItem {
+  id?: string;
+  nfse_id?: string;
+  company_id?: string;
+  numero_item: number;
+  codigo_servico?: string;
+  descricao: string;
+  codigo_tributacao?: string;
+  unidade?: string;
+  quantidade: number;
+  valor_unitario: number;
+  valor_total: number;
+  valor_desconto?: number;
+  valor_deducoes?: number;
+  valor_iss?: number;
+  valor_pis?: number;
+  valor_cofins?: number;
+  valor_inss?: number;
+  valor_ir?: number;
+  valor_csll?: number;
+  informacoes_adicionais?: string;
+}
+
 export interface NFeFormData {
-  numero_nfe: string;
-  serie: string;
+  numero_nfe?: string;
+  serie?: string;
   data_emissao: string;
   data_saida?: string;
   valor_total: number;
-  valor_icms: number;
-  valor_ipi: number;
-  valor_pis: number;
-  valor_cofins: number;
+  valor_icms?: number;
+  valor_ipi?: number;
+  valor_pis?: number;
+  valor_cofins?: number;
   observacoes?: string;
+  // Novos campos
+  cliente_id?: string;
+  cliente_nome?: string;
+  cliente_cnpj?: string;
+  cliente_email?: string;
+  cliente_telefone?: string;
+  cliente_endereco?: string;
+  cliente_cidade?: string;
+  cliente_uf?: string;
+  cliente_cep?: string;
+  criar_conta_receber?: boolean;
+  condicao_recebimento?: number;
+  configuracao_fiscal_id?: string;
+  gerar_numero_automaticamente?: boolean;
+  itens?: NFeItem[];
+  // Campos de regime tributário
+  regime_tributacao?: 'simples_nacional' | 'simples_nacional_icms_municipal' | 'regime_normal';
+  // Campos de tipo e finalidade da operação
+  tipo_operacao?: 'entrada' | 'saida';
+  finalidade?: 'normal' | 'complementar' | 'ajuste' | 'devolucao' | 'remessa';
+  natureza_operacao?: string;
+  // Campos de pagamento
+  forma_pagamento?: string;
+  valor_entrada?: number;
+  quantidade_parcelas?: number;
+  pagamentos?: NFePagamento[];
+  // Campos de transporte
+  modalidade_frete?: 'por_conta_emitente' | 'por_conta_destinatario' | 'por_conta_terceiros' | 'sem_frete';
+  transportador_id?: string;
+  transportador_nome?: string;
+  transportador_cnpj?: string;
+  transportador_ie?: string;
+  transportador_endereco?: string;
+  transportador_cidade?: string;
+  transportador_uf?: string;
+  veiculo_placa?: string;
+  veiculo_uf?: string;
+  veiculo_rntc?: string;
+  quantidade_volumes?: number;
+  especie_volumes?: string;
+  marca_volumes?: string;
+  numeracao_volumes?: string;
+  peso_bruto?: number;
+  peso_liquido?: number;
+  // Campos detalhados de ICMS
+  modalidade_icms?: string;
+  cst_icms?: string;
+  base_calculo_icms?: number;
+  aliquota_icms?: number;
+  valor_icms_st?: number;
+  base_calculo_icms_st?: number;
+  aliquota_icms_st?: number;
+  percentual_reducao_base_icms?: number;
+  percentual_mva_icms_st?: number;
+  // Campos detalhados de IPI
+  enquadramento_ipi?: string;
+  cst_ipi?: string;
+  base_calculo_ipi?: number;
+  aliquota_ipi?: number;
+  valor_ipi_tributado?: number;
+  valor_ipi_isento?: number;
+  valor_ipi_outros?: number;
+  // Campos de informações complementares
+  informacoes_fisco?: string;
+  informacoes_complementares?: string;
 }
 
 export interface NFSeFormData {
-  numero_nfse: string;
+  numero_nfse?: string;
   data_emissao: string;
   data_competencia: string;
   valor_servico: number;
   valor_deducoes?: number;
+  valor_pis?: number;
+  valor_cofins?: number;
+  valor_inss?: number;
+  valor_ir?: number;
+  valor_csll?: number;
+  valor_iss?: number;
+  valor_liquido?: number;
   observacoes?: string;
+  // Novos campos
+  cliente_id?: string;
+  cliente_nome?: string;
+  cliente_cnpj?: string;
+  cliente_email?: string;
+  cliente_telefone?: string;
+  cliente_endereco?: string;
+  cliente_cidade?: string;
+  cliente_uf?: string;
+  cliente_cep?: string;
+  criar_conta_receber?: boolean;
+  condicao_recebimento?: number;
+  configuracao_fiscal_id?: string;
+  gerar_numero_automaticamente?: boolean;
+  itens?: NFSeItem[];
+  // Campos de regime tributário
+  regime_tributacao?: 'simples_nacional' | 'simples_nacional_issqn_municipal' | 'regime_normal';
+  // Campos de ISSQN
+  aliquota_iss?: number;
+  base_calculo_iss?: number;
+  municipio_incidencia_iss?: string;
+  codigo_municipio_iss?: string;
+  retencao_iss_na_fonte?: boolean;
+  responsavel_recolhimento_iss?: 'prestador' | 'tomador' | 'intermediario';
+  valor_iss_retencao?: number;
+  exigibilidade_iss?: '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+  // Campos de intermediário
+  intermediario_id?: string;
+  intermediario_nome?: string;
+  intermediario_cnpj?: string;
+  intermediario_inscricao_municipal?: string;
+  intermediario_endereco?: string;
+  intermediario_cidade?: string;
+  intermediario_uf?: string;
+  intermediario_cep?: string;
+  intermediario_email?: string;
+  intermediario_telefone?: string;
+  // Campos de retenção de impostos federais
+  retencao_impostos_federais?: boolean;
+  valor_ir_retencao?: number;
+  valor_pis_retencao?: number;
+  valor_cofins_retencao?: number;
+  valor_csll_retencao?: number;
+  valor_inss_retencao?: number;
 }
 
 export interface ConfiguracaoFiscalFormData {

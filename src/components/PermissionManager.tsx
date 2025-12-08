@@ -80,6 +80,7 @@ export const PermissionManager: React.FC = () => {
     'projetos',
     'materiais_equipamentos',
     'parceiros',
+    'services',
     'centros_custo',
     
     // Entidades RH
