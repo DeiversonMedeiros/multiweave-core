@@ -43,6 +43,8 @@ import { toast } from 'sonner';
 import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useActiveProjects } from '@/hooks/useProjects';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
+import { useServicesByProject } from '@/hooks/useServices';
+import { useUsers } from '@/hooks/useUsers';
 
 interface RequisicaoItem {
   id: string;
@@ -108,6 +110,9 @@ export default function RequisicoesCompraPage() {
           <DialogContent className="max-w-5xl w-[95vw] max-h-[90vh] flex flex-col p-0 overflow-hidden">
             <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
               <DialogTitle>Nova Solicitação de Compra</DialogTitle>
+              <DialogDescription>
+                Preencha os dados para criar uma nova solicitação de compra
+              </DialogDescription>
             </DialogHeader>
             <NovaSolicitacaoForm onClose={() => setShowNovaSolicitacao(false)} />
           </DialogContent>
@@ -121,7 +126,20 @@ export default function RequisicoesCompraPage() {
 function RequisicoesList() {
   const { canEditEntity, canDeleteEntity } = usePermissions();
   const { data: requisicoes = [], isLoading } = usePurchaseRequisitions();
+  const { users } = useUsers();
   const [search, setSearch] = useState('');
+  const [selectedRequisicao, setSelectedRequisicao] = useState<any>(null);
+  const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  
+  // Criar mapa de IDs de usuários para nomes
+  const usersMap = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach(user => {
+      map.set(user.id, user.nome);
+    });
+    return map;
+  }, [users]);
 
   const getStatusBadge = (workflow: string) => {
     switch (workflow) {
@@ -233,15 +251,30 @@ function RequisicoesList() {
                       })}`
                     : '--'}
                 </TableCell>
-                <TableCell>{requisicao.solicitante_nome || requisicao.solicitante_id}</TableCell>
+                <TableCell>{usersMap.get(requisicao.solicitante_id) || requisicao.solicitante_nome || requisicao.solicitante_id}</TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setSelectedRequisicao(requisicao);
+                        setShowViewDialog(true);
+                      }}
+                    >
                       <Eye className="h-4 w-4" />
                     </Button>
 
                     <PermissionGuard entity="solicitacoes_compra" action="edit" fallback={null}>
-                      <Button variant="outline" size="sm" disabled={!canEditEntity}>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        disabled={!canEditEntity}
+                        onClick={() => {
+                          setSelectedRequisicao(requisicao);
+                          setShowEditDialog(true);
+                        }}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
                     </PermissionGuard>
@@ -263,6 +296,95 @@ function RequisicoesList() {
           )}
         </TableBody>
       </Table>
+      
+      {/* Dialog de Visualização */}
+      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalhes da Solicitação</DialogTitle>
+            <DialogDescription>
+              Visualize os detalhes completos da solicitação de compra
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRequisicao && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Número</Label>
+                  <p className="font-medium">{selectedRequisicao.numero_requisicao}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <div>{getStatusBadge(selectedRequisicao.workflow_state || selectedRequisicao.status)}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Data Solicitação</Label>
+                  <p>{selectedRequisicao.data_solicitacao ? new Date(selectedRequisicao.data_solicitacao).toLocaleDateString('pt-BR') : '--'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Data Necessidade</Label>
+                  <p>{selectedRequisicao.data_necessidade ? new Date(selectedRequisicao.data_necessidade).toLocaleDateString('pt-BR') : '--'}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Solicitante</Label>
+                  <p>{usersMap.get(selectedRequisicao.solicitante_id) || selectedRequisicao.solicitante_nome || selectedRequisicao.solicitante_id}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Prioridade</Label>
+                  <Badge variant={selectedRequisicao.prioridade === 'Alta' || selectedRequisicao.prioridade === 'Urgente' ? 'destructive' : 'secondary'}>
+                    {selectedRequisicao.prioridade}
+                  </Badge>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Valor Total Estimado</Label>
+                  <p className="font-medium">
+                    {selectedRequisicao.valor_total_estimado
+                      ? `R$ ${Number(selectedRequisicao.valor_total_estimado).toLocaleString('pt-BR', {
+                          minimumFractionDigits: 2,
+                        })}`
+                      : '--'}
+                  </p>
+                </div>
+              </div>
+              {selectedRequisicao.observacoes && (
+                <div>
+                  <Label className="text-muted-foreground">Observações</Label>
+                  <p className="text-sm">{selectedRequisicao.observacoes}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog de Edição - Por enquanto apenas mostra mensagem */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Solicitação</DialogTitle>
+            <DialogDescription>
+              Funcionalidade de edição em desenvolvimento
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRequisicao && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                A edição de solicitações de compra será implementada em breve.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Número</Label>
+                  <p className="font-medium">{selectedRequisicao.numero_requisicao}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <div>{getStatusBadge(selectedRequisicao.workflow_state || selectedRequisicao.status)}</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -388,18 +510,54 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
   const { data: almoxarifados = [] } = useAlmoxarifados();
   
   const costCenters = costCentersData?.data || [];
-  const projects = projectsData?.data || [];
+  const allProjects = projectsData?.data || [];
+  
   const [formData, setFormData] = useState({
     data_necessidade: '',
     prioridade: 'normal',
     centro_custo_id: '',
     projeto_id: '',
-    tipo_requisicao: 'reposicao' as 'reposicao' | 'compra_direta' | 'emergencial',
+    service_id: '',
+    tipo_requisicao: '' as '' | 'reposicao' | 'compra_direta' | 'emergencial',
     destino_almoxarifado_id: '',
     local_entrega: '',
     observacoes: '',
     itens: [] as RequisicaoItem[],
   });
+  
+  // Estados para busca nos selects
+  const [costCenterSearch, setCostCenterSearch] = useState('');
+  const [projectSearch, setProjectSearch] = useState('');
+  
+  // Filtrar centros de custo pela busca
+  const filteredCostCenters = useMemo(() => {
+    if (!costCenterSearch) return costCenters;
+    const searchLower = costCenterSearch.toLowerCase();
+    return costCenters.filter((cc: any) => 
+      cc.codigo?.toLowerCase().includes(searchLower) || 
+      cc.nome?.toLowerCase().includes(searchLower)
+    );
+  }, [costCenters, costCenterSearch]);
+  
+  // Filtrar projetos pelo centro de custo selecionado
+  const projects = useMemo(() => {
+    if (!formData.centro_custo_id) return [];
+    return allProjects.filter((proj: any) => proj.cost_center_id === formData.centro_custo_id);
+  }, [allProjects, formData.centro_custo_id]);
+  
+  // Filtrar projetos pela busca
+  const filteredProjects = useMemo(() => {
+    if (!projectSearch) return projects;
+    const searchLower = projectSearch.toLowerCase();
+    return projects.filter((proj: any) => 
+      proj.codigo?.toLowerCase().includes(searchLower) || 
+      proj.nome?.toLowerCase().includes(searchLower)
+    );
+  }, [projects, projectSearch]);
+  
+  // Buscar serviços do projeto selecionado
+  const { data: servicesData } = useServicesByProject(formData.projeto_id || undefined);
+  const services = servicesData?.data || [];
 
   // Função para buscar valor médio das últimas compras
   const getMaterialAveragePrice = async (materialId: string): Promise<number> => {
@@ -432,7 +590,33 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validações obrigatórias conforme constraint do banco
+    // Validações obrigatórias
+    if (!formData.data_necessidade) {
+      toast.error('Selecione a data de necessidade');
+      return;
+    }
+    
+    if (!formData.tipo_requisicao) {
+      toast.error('Selecione o tipo da requisição');
+      return;
+    }
+    
+    if (!formData.centro_custo_id) {
+      toast.error('Selecione o centro de custo');
+      return;
+    }
+    
+    if (!formData.projeto_id) {
+      toast.error('Selecione o projeto');
+      return;
+    }
+    
+    if (!formData.service_id) {
+      toast.error('Selecione o serviço');
+      return;
+    }
+    
+    // Validações condicionais conforme tipo de requisição
     if (formData.tipo_requisicao === 'reposicao' && !formData.destino_almoxarifado_id) {
       toast.error('Selecione o almoxarifado de destino para requisições de reposição');
       return;
@@ -453,8 +637,9 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
         data_necessidade: formData.data_necessidade,
         prioridade: formData.prioridade,
         centro_custo_id: formData.centro_custo_id,
-        projeto_id: formData.projeto_id || undefined,
-        tipo_requisicao: formData.tipo_requisicao,
+        projeto_id: formData.projeto_id,
+        service_id: formData.service_id || undefined,
+        tipo_requisicao: formData.tipo_requisicao as 'reposicao' | 'compra_direta' | 'emergencial',
         destino_almoxarifado_id:
           formData.tipo_requisicao === 'reposicao' ? formData.destino_almoxarifado_id : undefined,
         local_entrega: formData.tipo_requisicao === 'compra_direta' ? formData.local_entrega : undefined,
@@ -550,7 +735,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
           {/* Primeira linha: Data, Prioridade, Tipo */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="data_necessidade">Data de Necessidade</Label>
+              <Label htmlFor="data_necessidade">Data de Necessidade *</Label>
               <Input
                 id="data_necessidade"
                 type="date"
@@ -579,15 +764,16 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tipo_requisicao">Tipo da Requisição</Label>
+              <Label htmlFor="tipo_requisicao">Tipo da Requisição *</Label>
               <Select
-                value={formData.tipo_requisicao}
+                value={formData.tipo_requisicao || undefined}
                 onValueChange={(value: 'reposicao' | 'compra_direta' | 'emergencial') =>
                   setFormData(prev => ({ ...prev, tipo_requisicao: value }))
                 }
+                required
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Selecione o tipo de requisição" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="reposicao">
@@ -613,48 +799,141 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Segunda linha: Centro de Custo, Projeto, Almoxarifado/Local */}
+          {/* Segunda linha: Centro de Custo, Projeto, Serviço */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="centro_custo">Centro de Custo</Label>
+              <Label htmlFor="centro_custo">Centro de Custo *</Label>
               <Select
                 value={formData.centro_custo_id || undefined}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, centro_custo_id: value }))}
+                onValueChange={(value) => {
+                  // Limpar projeto e serviço quando mudar o centro de custo
+                  setFormData(prev => ({ 
+                    ...prev, 
+                    centro_custo_id: value,
+                    projeto_id: '',
+                    service_id: ''
+                  }));
+                  setCostCenterSearch(''); // Limpar busca ao selecionar
+                }}
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setCostCenterSearch(''); // Limpar busca ao fechar
+                  }
+                }}
+                required
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o centro de custo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {costCenters.length === 0 ? (
-                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum centro de custo disponível</div>
-                  ) : (
-                    costCenters.map((cc) => (
-                      <SelectItem key={cc.id} value={cc.id || 'unknown'}>
-                        {cc.codigo} - {cc.nome}
-                      </SelectItem>
-                    ))
-                  )}
+                  <div className="px-2 py-1.5 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar centro de custo..."
+                        value={costCenterSearch}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          setCostCenterSearch(e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="pl-8 h-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-[200px] overflow-y-auto">
+                    {filteredCostCenters.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum centro de custo encontrado</div>
+                    ) : (
+                      filteredCostCenters.map((cc) => (
+                        <SelectItem key={cc.id} value={cc.id || 'unknown'}>
+                          {cc.codigo} - {cc.nome}
+                        </SelectItem>
+                      ))
+                    )}
+                  </div>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="projeto_id">Projeto (opcional)</Label>
+              <Label htmlFor="projeto_id">Projeto *</Label>
               <Select
-                value={formData.projeto_id || 'none'}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, projeto_id: value === 'none' ? '' : value }))}
+                value={formData.projeto_id || undefined}
+                onValueChange={(value) => {
+                  // Limpar serviço quando mudar o projeto
+                  setFormData(prev => ({ 
+                    ...prev, 
+                    projeto_id: value,
+                    service_id: ''
+                  }));
+                  setProjectSearch(''); // Limpar busca ao selecionar
+                }}
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setProjectSearch(''); // Limpar busca ao fechar
+                  }
+                }}
+                disabled={!formData.centro_custo_id}
+                required
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione o projeto (opcional)" />
+                  <SelectValue placeholder={formData.centro_custo_id ? "Selecione o projeto" : "Selecione primeiro o centro de custo"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Nenhum projeto</SelectItem>
-                  {projects.length === 0 ? (
-                    <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum projeto disponível</div>
+                  <div className="px-2 py-1.5 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar projeto..."
+                        value={projectSearch}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          setProjectSearch(e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="pl-8 h-9"
+                        disabled={!formData.centro_custo_id}
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-[200px] overflow-y-auto">
+                    {filteredProjects.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        {formData.centro_custo_id ? "Nenhum projeto encontrado" : "Selecione primeiro o centro de custo"}
+                      </div>
+                    ) : (
+                      filteredProjects.map((proj) => (
+                        <SelectItem key={proj.id} value={proj.id || 'unknown'}>
+                          {proj.codigo} - {proj.nome}
+                        </SelectItem>
+                      ))
+                    )}
+                  </div>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="service_id">Serviço *</Label>
+              <Select
+                value={formData.service_id || undefined}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, service_id: value || '' }))}
+                disabled={!formData.projeto_id}
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={formData.projeto_id ? "Selecione o serviço" : "Selecione primeiro o projeto"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {services.length === 0 ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                      {formData.projeto_id ? "Nenhum serviço disponível para este projeto" : "Selecione primeiro o projeto"}
+                    </div>
                   ) : (
-                    projects.map((proj) => (
-                      <SelectItem key={proj.id} value={proj.id || 'unknown'}>
-                        {proj.codigo} - {proj.nome}
+                    services.map((service) => (
+                      <SelectItem key={service.id} value={service.id || 'unknown'}>
+                        {service.codigo} - {service.nome}
                       </SelectItem>
                     ))
                   )}
@@ -664,10 +943,11 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
 
             {formData.tipo_requisicao === 'reposicao' && (
               <div className="space-y-2">
-                <Label htmlFor="destino_almoxarifado_id">Almoxarifado / Localização</Label>
+                <Label htmlFor="destino_almoxarifado_id">Almoxarifado / Localização *</Label>
                 <Select
                   value={formData.destino_almoxarifado_id || undefined}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, destino_almoxarifado_id: value }))}
+                  required
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o almoxarifado" />
@@ -689,7 +969,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
 
             {formData.tipo_requisicao === 'compra_direta' && (
               <div className="space-y-2">
-                <Label htmlFor="local_entrega">Local de Entrega</Label>
+                <Label htmlFor="local_entrega">Local de Entrega *</Label>
                 <Select
                   value={formData.local_entrega && ['Almoxarifado Central', 'Obra Principal', 'Escritório', 'Depósito'].includes(formData.local_entrega) ? formData.local_entrega : (formData.local_entrega ? 'custom' : undefined)}
                   onValueChange={(value) => {
@@ -699,6 +979,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                       setFormData(prev => ({ ...prev, local_entrega: value }));
                     }
                   }}
+                  required
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o local de entrega" />
@@ -722,6 +1003,9 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                     className="mt-2"
                     required
                   />
+                )}
+                {formData.local_entrega && ['Almoxarifado Central', 'Obra Principal', 'Escritório', 'Depósito'].includes(formData.local_entrega) && (
+                  <p className="text-xs text-muted-foreground mt-1">Local selecionado: {formData.local_entrega}</p>
                 )}
               </div>
             )}

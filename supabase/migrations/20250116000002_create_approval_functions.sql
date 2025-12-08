@@ -35,7 +35,7 @@ BEGIN
             WHERE id = p_processo_id AND company_id = p_company_id;
             
         WHEN 'requisicao_compra' THEN
-            SELECT valor_total, centro_custo_id, solicitante_id
+            SELECT valor_total_estimado, centro_custo_id, solicitante_id
             INTO processo_valor, processo_centro_custo_id, processo_usuario_id
             FROM compras.requisicoes_compra
             WHERE id = p_processo_id AND company_id = p_company_id;

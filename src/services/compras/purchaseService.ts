@@ -48,6 +48,7 @@ export interface PurchaseRequisitionInput {
   prioridade: string;
   centro_custo_id: string;
   projeto_id?: string | null;
+  service_id?: string | null;
   tipo_requisicao: 'reposicao' | 'compra_direta' | 'emergencial';
   destino_almoxarifado_id?: string | null;
   local_entrega?: string | null;
