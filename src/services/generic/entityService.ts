@@ -432,6 +432,21 @@ export const EntityService = {
       // NÃO incluir company_id no data_param para evitar duplicação
       const dataWithoutCompany = { ...data };
       delete (dataWithoutCompany as any).company_id;
+      
+      // Filtrar campos que não existem na tabela (campos conhecidos que causam problemas)
+      // Nota: observacoes agora existe na tabela materiais_equipamentos, não precisa filtrar
+
+      // Converter strings vazias para null em campos opcionais (UUID, TEXT, etc)
+      // Isso evita erros ao tentar inserir strings vazias em campos que esperam null
+      Object.keys(dataWithoutCompany).forEach(key => {
+        const value = (dataWithoutCompany as any)[key];
+        // Se for string vazia e o campo terminar com _id (UUID opcional) ou for um campo de texto opcional
+        if (typeof value === 'string' && value.trim() === '') {
+          if (key.endsWith('_id') || key === 'imagem_url' || key === 'ncm' || key === 'cfop' || key === 'cst' || key === 'classe') {
+            (dataWithoutCompany as any)[key] = null;
+          }
+        }
+      });
 
       // Log detalhado para debug
       console.log('🔍 [DEBUG] create_entity_data:', {
@@ -497,7 +512,13 @@ export const EntityService = {
 
       if (error) {
         console.error(`❌ ERRO ao criar item em ${schema}.${table}:`, error);
-        throw error;
+        console.error(`❌ Detalhes do erro:`, {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw new Error(error.message || `Erro ao criar item em ${schema}.${table}: ${JSON.stringify(error)}`);
       }
 
       console.log('✅ SUCESSO ao criar item:', result);

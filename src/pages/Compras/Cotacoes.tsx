@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { RequireAuth } from '@/components/RequireAuth';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -22,21 +22,9 @@ import {
   AlertCircle,
   FileText
 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-
-interface Cotacao {
-  id: string;
-  numero_cotacao: string;
-  data_cotacao: string;
-  data_vencimento: string;
-  status: string;
-  fornecedor_nome: string;
-  valor_total: number;
-  requisicao_id: string;
-  observacoes?: string;
-  created_at: string;
-}
+import { useToast } from '@/hooks/use-toast';
+import { useQuotes } from '@/hooks/compras/useComprasData';
 
 // Componente principal protegido por permissões
 export default function CotacoesPage() {
@@ -71,25 +59,8 @@ export default function CotacoesPage() {
 // Componente da lista de cotações
 function CotacoesList() {
   const { canEditEntity, canDeleteEntity } = usePermissions();
-  const [cotacoes, setCotacoes] = useState<Cotacao[]>([]);
-
-  // Dados de exemplo
-  useEffect(() => {
-    setCotacoes([
-      {
-        id: '1',
-        numero_cotacao: 'COT-2025-001',
-        data_cotacao: '2025-01-20',
-        data_vencimento: '2025-01-25',
-        status: 'Pendente',
-        fornecedor_nome: 'Fornecedor ABC Ltda',
-        valor_total: 1450.00,
-        requisicao_id: 'REQ-2025-001',
-        observacoes: 'Cotação para material de manutenção',
-        created_at: '2025-01-20T10:00:00Z'
-      }
-    ]);
-  }, []);
+  const { data: cotacoes = [], isLoading } = useQuotes();
+  const [search, setSearch] = useState('');
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -104,11 +75,23 @@ function CotacoesList() {
     }
   };
 
+  const filtered = useMemo(() => {
+    if (!search) return cotacoes;
+    return cotacoes.filter((cotacao: any) =>
+      cotacao.numero_cotacao?.toLowerCase().includes(search.toLowerCase()) ||
+      cotacao.status?.toLowerCase().includes(search.toLowerCase()),
+    );
+  }, [cotacoes, search]);
+
   return (
     <div className="space-y-4">
       <div className="flex gap-4">
         <div className="flex-1">
-          <Input placeholder="Buscar cotações..." />
+          <Input
+            placeholder="Buscar cotações..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </div>
         <Button variant="outline">
           <Filter className="h-4 w-4 mr-2" />
@@ -134,51 +117,68 @@ function CotacoesList() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {cotacoes.map((cotacao) => (
-            <TableRow key={cotacao.id}>
-              <TableCell className="font-medium">{cotacao.numero_cotacao}</TableCell>
-              <TableCell>{new Date(cotacao.data_cotacao).toLocaleDateString('pt-BR')}</TableCell>
-              <TableCell>{new Date(cotacao.data_vencimento).toLocaleDateString('pt-BR')}</TableCell>
-              <TableCell>{getStatusBadge(cotacao.status)}</TableCell>
-              <TableCell>{cotacao.fornecedor_nome}</TableCell>
-              <TableCell>R$ {cotacao.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-              <TableCell>
-                <Badge variant="outline">
-                  <FileText className="h-3 w-3 mr-1" />
-                  {cotacao.requisicao_id}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm">
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  
-                  {/* Botão de editar protegido por permissão */}
-                  <PermissionGuard 
-                    entity="cotacoes" 
-                    action="edit"
-                    fallback={null}
-                  >
-                    <Button variant="outline" size="sm">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  </PermissionGuard>
-                  
-                  {/* Botão de excluir protegido por permissão */}
-                  <PermissionGuard 
-                    entity="cotacoes" 
-                    action="delete"
-                    fallback={null}
-                  >
-                    <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </PermissionGuard>
-                </div>
+          {isLoading ? (
+            <TableRow>
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
+                Carregando cotações...
               </TableCell>
             </TableRow>
-          ))}
+          ) : (
+            filtered.map((cotacao: any) => (
+              <TableRow key={cotacao.id}>
+                <TableCell className="font-medium">{cotacao.numero_cotacao}</TableCell>
+                <TableCell>
+                  {cotacao.data_cotacao
+                    ? new Date(cotacao.data_cotacao).toLocaleDateString('pt-BR')
+                    : '--'}
+                </TableCell>
+                <TableCell>
+                  {cotacao.data_validade
+                    ? new Date(cotacao.data_validade).toLocaleDateString('pt-BR')
+                    : '--'}
+                </TableCell>
+                <TableCell>{getStatusBadge(cotacao.workflow_state || cotacao.status)}</TableCell>
+                <TableCell>{cotacao.fornecedor_nome || cotacao.fornecedor_id}</TableCell>
+                <TableCell>
+                  {cotacao.valor_total
+                    ? `R$ ${Number(cotacao.valor_total).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                      })}`
+                    : '--'}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">
+                    <FileText className="h-3 w-3 mr-1" />
+                    {cotacao.requisicao_id || '—'}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm">
+                      <Eye className="h-4 w-4" />
+                    </Button>
+
+                    <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
+                      <Button variant="outline" size="sm" disabled={!canEditEntity}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </PermissionGuard>
+
+                    <PermissionGuard entity="cotacoes" action="delete" fallback={null}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700"
+                        disabled={!canDeleteEntity}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </PermissionGuard>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </div>

@@ -309,9 +309,20 @@ BEGIN
     RAISE EXCEPTION 'Nenhuma coluna especificada para inserção';
   END IF;
   
-  -- Construir SQL de inserção (RETURNING * e converter para JSONB depois)
+  -- Construir SQL de inserção usando subquery para evitar problemas com RETURNING *
+  -- Usar uma subquery com alias para garantir que apenas as colunas existentes sejam retornadas
   insert_sql := format(
-    'INSERT INTO %I.%I (%s) VALUES (%s) RETURNING *',
+    'INSERT INTO %I.%I (%s) VALUES (%s) RETURNING to_jsonb(t.*)',
+    schema_name_var,
+    table_name_var,
+    columns_list,
+    values_list
+  );
+  
+  -- Substituir 't.*' pelo alias correto usando uma subquery
+  -- Isso garante que apenas as colunas da tabela sejam retornadas, não de views ou triggers
+  insert_sql := format(
+    'WITH inserted AS (INSERT INTO %I.%I (%s) VALUES (%s) RETURNING *) SELECT to_jsonb(i.*) FROM inserted i',
     schema_name_var,
     table_name_var,
     columns_list,
@@ -323,17 +334,11 @@ BEGIN
   RAISE NOTICE 'columns_list: %', columns_list;
   RAISE NOTICE 'values_list: %', values_list;
   
-  -- Executar inserção e receber o record
-  EXECUTE insert_sql INTO result_record;
+  -- Executar inserção e receber o JSONB diretamente
+  EXECUTE insert_sql INTO result_json;
   
   RAISE NOTICE '=== RESULTADO DO INSERT ===';
-  RAISE NOTICE 'result_record recebido: %', result_record;
-  
-  -- Converter record para JSONB
-  result_json := to_jsonb(result_record);
-  
-  RAISE NOTICE '=== CONVERSÃO PARA JSONB ===';
-  RAISE NOTICE 'result_json: %', result_json;
+  RAISE NOTICE 'result_json recebido: %', result_json;
   RAISE NOTICE '=== FIM create_entity_data ===';
   
   RETURN result_json;

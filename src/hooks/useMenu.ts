@@ -504,6 +504,22 @@ export const useMenu = () => {
           requiresPermission: { type: 'module', name: 'almoxarifado', action: 'read' }
         },
         {
+          id: 'almoxarifado-almoxarifados',
+          title: 'Almoxarifados',
+          url: '/almoxarifado/almoxarifados',
+          icon: Building2,
+          description: 'Cadastro e gestão de almoxarifados',
+          requiresPermission: { type: 'entity', name: 'almoxarifados', action: 'read' }
+        },
+        {
+          id: 'almoxarifado-localizacoes',
+          title: 'Localizações Físicas',
+          url: '/almoxarifado/localizacoes',
+          icon: MapPin,
+          description: 'Gestão de localizações físicas dentro dos almoxarifados',
+          requiresPermission: { type: 'entity', name: 'localizacoes_fisicas', action: 'read' }
+        },
+        {
           id: 'almoxarifado-entradas',
           title: 'Entradas de Materiais',
           url: '/almoxarifado/entradas',

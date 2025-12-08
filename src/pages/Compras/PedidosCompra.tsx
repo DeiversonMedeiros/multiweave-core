@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { RequireAuth } from '@/components/RequireAuth';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -22,21 +22,9 @@ import {
   AlertCircle,
   ShoppingCart
 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-
-interface PedidoCompra {
-  id: string;
-  numero_pedido: string;
-  data_pedido: string;
-  data_entrega_prevista: string;
-  status: string;
-  fornecedor_nome: string;
-  valor_total: number;
-  cotacao_id: string;
-  observacoes?: string;
-  created_at: string;
-}
+import { useToast } from '@/hooks/use-toast';
+import { usePurchaseOrders } from '@/hooks/compras/useComprasData';
 
 // Componente principal protegido por permissões
 export default function PedidosCompraPage() {
@@ -71,25 +59,8 @@ export default function PedidosCompraPage() {
 // Componente da lista de pedidos
 function PedidosList() {
   const { canEditEntity, canDeleteEntity } = usePermissions();
-  const [pedidos, setPedidos] = useState<PedidoCompra[]>([]);
-
-  // Dados de exemplo
-  useEffect(() => {
-    setPedidos([
-      {
-        id: '1',
-        numero_pedido: 'PED-2025-001',
-        data_pedido: '2025-01-20',
-        data_entrega_prevista: '2025-01-30',
-        status: 'Pendente',
-        fornecedor_nome: 'Fornecedor ABC Ltda',
-        valor_total: 1450.00,
-        cotacao_id: 'COT-2025-001',
-        observacoes: 'Pedido baseado na cotação aprovada',
-        created_at: '2025-01-20T10:00:00Z'
-      }
-    ]);
-  }, []);
+  const { data: pedidos = [], isLoading } = usePurchaseOrders();
+  const [search, setSearch] = useState('');
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -106,11 +77,23 @@ function PedidosList() {
     }
   };
 
+  const filtered = useMemo(() => {
+    if (!search) return pedidos;
+    return pedidos.filter((pedido: any) =>
+      pedido.numero_pedido?.toLowerCase().includes(search.toLowerCase()) ||
+      pedido.status?.toLowerCase().includes(search.toLowerCase()),
+    );
+  }, [pedidos, search]);
+
   return (
     <div className="space-y-4">
       <div className="flex gap-4">
         <div className="flex-1">
-          <Input placeholder="Buscar pedidos..." />
+          <Input
+            placeholder="Buscar pedidos..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
         </div>
         <Button variant="outline">
           <Filter className="h-4 w-4 mr-2" />
@@ -136,51 +119,68 @@ function PedidosList() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {pedidos.map((pedido) => (
-            <TableRow key={pedido.id}>
-              <TableCell className="font-medium">{pedido.numero_pedido}</TableCell>
-              <TableCell>{new Date(pedido.data_pedido).toLocaleDateString('pt-BR')}</TableCell>
-              <TableCell>{new Date(pedido.data_entrega_prevista).toLocaleDateString('pt-BR')}</TableCell>
-              <TableCell>{getStatusBadge(pedido.status)}</TableCell>
-              <TableCell>{pedido.fornecedor_nome}</TableCell>
-              <TableCell>R$ {pedido.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</TableCell>
-              <TableCell>
-                <Badge variant="outline">
-                  <ShoppingCart className="h-3 w-3 mr-1" />
-                  {pedido.cotacao_id}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm">
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                  
-                  {/* Botão de editar protegido por permissão */}
-                  <PermissionGuard 
-                    entity="pedidos_compra" 
-                    action="edit"
-                    fallback={null}
-                  >
-                    <Button variant="outline" size="sm">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  </PermissionGuard>
-                  
-                  {/* Botão de excluir protegido por permissão */}
-                  <PermissionGuard 
-                    entity="pedidos_compra" 
-                    action="delete"
-                    fallback={null}
-                  >
-                    <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </PermissionGuard>
-                </div>
+          {isLoading ? (
+            <TableRow>
+              <TableCell colSpan={8} className="text-center text-muted-foreground">
+                Carregando pedidos...
               </TableCell>
             </TableRow>
-          ))}
+          ) : (
+            filtered.map((pedido: any) => (
+              <TableRow key={pedido.id}>
+                <TableCell className="font-medium">{pedido.numero_pedido}</TableCell>
+                <TableCell>
+                  {pedido.data_pedido
+                    ? new Date(pedido.data_pedido).toLocaleDateString('pt-BR')
+                    : '--'}
+                </TableCell>
+                <TableCell>
+                  {pedido.data_entrega_prevista
+                    ? new Date(pedido.data_entrega_prevista).toLocaleDateString('pt-BR')
+                    : '--'}
+                </TableCell>
+                <TableCell>{getStatusBadge(pedido.workflow_state || pedido.status)}</TableCell>
+                <TableCell>{pedido.fornecedor_nome || pedido.fornecedor_id}</TableCell>
+                <TableCell>
+                  {pedido.valor_total
+                    ? `R$ ${Number(pedido.valor_total).toLocaleString('pt-BR', {
+                        minimumFractionDigits: 2,
+                      })}`
+                    : '--'}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">
+                    <ShoppingCart className="h-3 w-3 mr-1" />
+                    {pedido.cotacao_id || '—'}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm">
+                      <Eye className="h-4 w-4" />
+                    </Button>
+
+                    <PermissionGuard entity="pedidos_compra" action="edit" fallback={null}>
+                      <Button variant="outline" size="sm" disabled={!canEditEntity}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </PermissionGuard>
+
+                    <PermissionGuard entity="pedidos_compra" action="delete" fallback={null}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700"
+                        disabled={!canDeleteEntity}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </PermissionGuard>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
         </TableBody>
       </Table>
     </div>
