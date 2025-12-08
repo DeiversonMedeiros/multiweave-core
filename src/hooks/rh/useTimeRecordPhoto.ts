@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { STORAGE_BUCKETS, IMAGE_UPLOAD_CONFIG } from '@/config/storage';
 import { useCompany } from '@/lib/company-context';
+import { compressImage, shouldCompressImage } from '@/lib/imageOptimization';
 
 export interface UseTimeRecordPhotoOptions {
   employeeId?: string;
@@ -78,6 +79,25 @@ export function useTimeRecordPhoto(options: UseTimeRecordPhotoOptions = {}) {
     setUploading(true);
 
     try {
+      // Comprimir e otimizar imagem antes do upload para reduzir egress
+      let fileToUpload = file;
+      try {
+        // Sempre comprimir para otimizar tamanho e reduzir egress
+        const optimized = await compressImage(file, {
+          maxWidth: 1280,  // Resolução adequada para fotos de registro de ponto
+          maxHeight: 1280,
+          quality: 0.75,   // Qualidade balanceada (75%)
+          format: 'jpeg'   // JPEG é mais eficiente para fotos
+        });
+        fileToUpload = optimized.file;
+        
+        const compressionInfo = `Imagem otimizada: ${(optimized.compressionRatio).toFixed(1)}% de redução (${(optimized.originalSize / 1024 / 1024).toFixed(2)}MB → ${(optimized.optimizedSize / 1024 / 1024).toFixed(2)}MB)`;
+        console.log('[useTimeRecordPhoto]', compressionInfo);
+      } catch (compressError) {
+        console.warn('[useTimeRecordPhoto] Erro ao comprimir imagem, usando original:', compressError);
+        // Continuar com arquivo original se compressão falhar
+      }
+
       // Gerar nome único para o arquivo
       const timestamp = Date.now();
       const randomString = Math.random().toString(36).substring(2, 9);
@@ -86,10 +106,10 @@ export function useTimeRecordPhoto(options: UseTimeRecordPhotoOptions = {}) {
       // Estrutura: {company_id}/{employee_id}/{filename}
       const filePath = `${selectedCompany.id}/${employeeId}/${fileName}`;
 
-      // Upload para o Supabase Storage
+      // Upload para o Supabase Storage (imagem já otimizada)
       const { data, error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKETS.TIME_RECORD_PHOTOS)
-        .upload(filePath, file, {
+        .upload(filePath, fileToUpload, {
           cacheControl: IMAGE_UPLOAD_CONFIG.CACHE_CONTROL,
           upsert: false
         });

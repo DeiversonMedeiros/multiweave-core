@@ -42,24 +42,22 @@ export function useImageUpload({
     setIsUploading(true);
 
     try {
-      // Comprimir imagem se necessário (arquivos > 1MB)
+      // Sempre comprimir imagem para otimizar tamanho e reduzir egress
       let fileToUpload = file;
-      if (shouldCompressImage(file, 1)) {
-        try {
-          const optimized = await compressImage(file, {
-            maxWidth: 1920,
-            maxHeight: 1080,
-            quality: 0.8,
-            format: 'jpeg'
-          });
-          fileToUpload = optimized.file;
-          
-          const compressionInfo = `Imagem comprimida: ${(optimized.compressionRatio).toFixed(1)}% de redução`;
-          console.log(compressionInfo);
-        } catch (compressError) {
-          console.warn('Erro ao comprimir imagem, usando original:', compressError);
-          // Continuar com arquivo original se compressão falhar
-        }
+      try {
+        const optimized = await compressImage(file, {
+          maxWidth: 1920,
+          maxHeight: 1080,
+          quality: 0.75,  // Qualidade otimizada (75%) para reduzir egress
+          format: 'jpeg'  // JPEG é mais eficiente
+        });
+        fileToUpload = optimized.file;
+        
+        const compressionInfo = `Imagem otimizada: ${(optimized.compressionRatio).toFixed(1)}% de redução (${(optimized.originalSize / 1024 / 1024).toFixed(2)}MB → ${(optimized.optimizedSize / 1024 / 1024).toFixed(2)}MB)`;
+        console.log('[useImageUpload]', compressionInfo);
+      } catch (compressError) {
+        console.warn('[useImageUpload] Erro ao comprimir imagem, usando original:', compressError);
+        // Continuar com arquivo original se compressão falhar
       }
 
       // Gerar nome único para o arquivo
