@@ -182,28 +182,19 @@ export const TimeRecordsService = {
             if (!cleanPath) continue;
             
             try {
-              
-              const { data: signedThumb, error: signThumbErr } = await supabase
-                .storage
-                .from('time-record-photos')
-                .createSignedUrl(cleanPath, 3600, {
-                  transform: { width: 96, height: 96, resize: 'contain' as any }
-                });
+              // Removido transform do Supabase - usar apenas signed URL sem transformação
+              // As imagens já devem estar otimizadas no upload
               const { data: signedFull, error: signFullErr } = await supabase
                 .storage
                 .from('time-record-photos')
                 .createSignedUrl(cleanPath, 3600);
               
-              if (!signThumbErr && signedThumb) {
-                rec.all_photos[i] = {
-                  ...photo,
-                  signed_thumb_url: signedThumb.signedUrl
-                };
-              }
               if (!signFullErr && signedFull) {
                 rec.all_photos[i] = {
                   ...rec.all_photos[i],
-                  signed_full_url: signedFull.signedUrl
+                  signed_full_url: signedFull.signedUrl,
+                  // Thumbnail será gerado no frontend quando necessário usando CSS ou canvas
+                  signed_thumb_url: signedFull.signedUrl
                 };
               }
             } catch (e: any) {
@@ -446,34 +437,24 @@ export const TimeRecordsService = {
             const cleanPath = relativePath.replace(/^\//, '').split('?')[0]; // Remove leading slash e query params
             console.log(`[TimeRecordsService.list] gerando signed URL para ${photoField}:`, { id: rec.id, cleanPath });
             
-            // Gerar duas URLs: thumbnail (96x96) e full size (para visualização)
-            const { data: signedThumb, error: signThumbErr } = await supabase
-              .storage
-              .from('time-record-photos')
-              .createSignedUrl(cleanPath, 3600, {
-                transform: { width: 96, height: 96, resize: 'contain' as any }
-              });
+            // Removido transform do Supabase - usar apenas signed URL sem transformação
+            // As imagens já devem estar otimizadas no upload
             const { data: signedFull, error: signFullErr } = await supabase
               .storage
               .from('time-record-photos')
               .createSignedUrl(cleanPath, 3600);
             
-            if (signThumbErr) {
-              console.warn(`[TimeRecordsService.list] erro ao gerar signed thumb url para ${photoField}`, { id: rec.id, cleanPath, signThumbErr });
-            } else {
-              (rec as any)[thumbField] = signedThumb?.signedUrl;
-            }
-            
             if (signFullErr) {
               console.warn(`[TimeRecordsService.list] erro ao gerar signed full url para ${photoField}`, { id: rec.id, cleanPath, signFullErr });
             } else {
-              // Armazenar URL completa assinada para visualização no modal
+              // Usar a mesma URL para thumb e full - thumbnail será gerado no frontend quando necessário
+              (rec as any)[thumbField] = signedFull?.signedUrl;
               const fullUrlField = thumbField === 'foto_thumb_url' ? 'foto_full_url' : 'first_event_full_url';
               (rec as any)[fullUrlField] = signedFull?.signedUrl;
             }
             
-            if (!signThumbErr && !signFullErr) {
-              console.log(`[TimeRecordsService.list] signed urls geradas para ${photoField}`, { id: rec.id, cleanPath, thumb: (rec as any)[thumbField], full: (rec as any)[thumbField === 'foto_thumb_url' ? 'foto_full_url' : 'first_event_full_url'] });
+            if (!signFullErr) {
+              console.log(`[TimeRecordsService.list] signed url gerada para ${photoField}`, { id: rec.id, cleanPath, url: (rec as any)[thumbField] });
             }
           } catch (e) {
             console.error(`[TimeRecordsService.list] exceção ao gerar signed url para ${photoField}`, { id: rec.id, relativePath, e });
@@ -524,40 +505,31 @@ export const TimeRecordsService = {
             
             try {
               const cleanPath = relativePath.replace(/^\//, '').split('?')[0];
-              console.log(`[TimeRecordsService.list] gerando signed URLs para foto ${i} em all_photos:`, { id: rec.id, cleanPath });
+              console.log(`[TimeRecordsService.list] gerando signed URL para foto ${i} em all_photos:`, { id: rec.id, cleanPath });
               
-              const { data: signedThumb, error: signThumbErr } = await supabase
-                .storage
-                .from('time-record-photos')
-                .createSignedUrl(cleanPath, 3600, {
-                  transform: { width: 96, height: 96, resize: 'contain' as any }
-                });
+              // Removido transform do Supabase - usar apenas signed URL sem transformação
+              // As imagens já devem estar otimizadas no upload
               const { data: signedFull, error: signFullErr } = await supabase
                 .storage
                 .from('time-record-photos')
                 .createSignedUrl(cleanPath, 3600);
               
-              if (!signThumbErr && signedThumb) {
-                rec.all_photos[i] = {
-                  ...photo,
-                  signed_thumb_url: signedThumb.signedUrl
-                };
-              }
               if (!signFullErr && signedFull) {
                 rec.all_photos[i] = {
-                  ...rec.all_photos[i],
+                  ...photo,
+                  // Usar a mesma URL para thumb e full - thumbnail será gerado no frontend quando necessário
+                  signed_thumb_url: signedFull.signedUrl,
                   signed_full_url: signedFull.signedUrl
                 };
               }
               
-              if (signThumbErr || signFullErr) {
-                console.warn(`[TimeRecordsService.list] erro ao gerar signed URLs para foto ${i}:`, { 
-                  signThumbErr: signThumbErr?.message, 
+              if (signFullErr) {
+                console.warn(`[TimeRecordsService.list] erro ao gerar signed URL para foto ${i}:`, { 
                   signFullErr: signFullErr?.message,
                   photo 
                 });
               } else {
-                console.log(`[TimeRecordsService.list] ✅ signed URLs geradas para foto ${i} em all_photos`);
+                console.log(`[TimeRecordsService.list] ✅ signed URL gerada para foto ${i} em all_photos`);
               }
             } catch (e: any) {
               console.warn(`[TimeRecordsService.list] exceção ao gerar signed URL para foto ${i} em all_photos:`, { photo, e: e?.message });

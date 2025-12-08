@@ -21,6 +21,7 @@ import { STORAGE_BUCKETS } from '@/config/storage';
 import { useCompany } from '@/lib/company-context';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { compressImage, shouldCompressImage } from '@/lib/imageOptimization';
 
 interface FormModalProps {
   isOpen: boolean;
@@ -96,16 +97,35 @@ const FormModal: React.FC<FormModalProps> = ({
     setIsUploading(true);
 
     try {
+      // Comprimir e otimizar imagem antes do upload para reduzir egress
+      let fileToUpload = file;
+      try {
+        // Sempre comprimir para otimizar tamanho e reduzir egress
+        const optimized = await compressImage(file, {
+          maxWidth: 1920,  // Resolução adequada para imagens de materiais
+          maxHeight: 1920,
+          quality: 0.8,    // Qualidade balanceada (80%)
+          format: 'jpeg'   // JPEG é mais eficiente
+        });
+        fileToUpload = optimized.file;
+        
+        const compressionInfo = `Imagem otimizada: ${(optimized.compressionRatio).toFixed(1)}% de redução`;
+        console.log('[FormModal]', compressionInfo);
+      } catch (compressError) {
+        console.warn('[FormModal] Erro ao comprimir imagem, usando original:', compressError);
+        // Continuar com arquivo original se compressão falhar
+      }
+
       // Gerar nome único para o arquivo
-      const fileExt = file.name.split('.').pop();
+      const fileExt = fileToUpload.name.split('.').pop();
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
       // Estrutura: {company_id}/{filename}
       const filePath = `${selectedCompany.id}/${fileName}`;
 
-      // Upload para o Supabase Storage
+      // Upload para o Supabase Storage (imagem já otimizada)
       const { data, error } = await supabase.storage
         .from(STORAGE_BUCKETS.MATERIALS)
-        .upload(filePath, file, {
+        .upload(filePath, fileToUpload, {
           cacheControl: '3600',
           upsert: false
         });
