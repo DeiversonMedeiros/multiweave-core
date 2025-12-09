@@ -65,6 +65,31 @@ export function useCreatePurchaseRequisition() {
   });
 }
 
+export function useUpdatePurchaseRequisition() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: PurchaseRequisitionInput }) => {
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      if (!user?.id) throw new Error('Usuário não autenticado');
+      return purchaseService.updateRequisition({
+        companyId: selectedCompany.id,
+        requisicaoId: id,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Requisição atualizada com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['compras', 'requisicoes'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Erro ao atualizar requisição');
+    },
+  });
+}
+
 export function useRequisitionWorkflow() {
   const queryClient = useQueryClient();
   const { user } = useAuth();

@@ -371,10 +371,25 @@ const CentralAprovacoesExpandida: React.FC = () => {
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <User className="h-4 w-4" />
-                        <span>ID da Solicitação: {approval.processo_id?.slice(0, 8) || 'N/A'}...</span>
-                      </div>
+                      {approval.numero_requisicao ? (
+                        <>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <User className="h-4 w-4" />
+                            <span>Requisição: {approval.numero_requisicao}</span>
+                          </div>
+                          {approval.solicitante_nome && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <User className="h-4 w-4" />
+                              <span>Solicitante: {approval.solicitante_nome}</span>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <User className="h-4 w-4" />
+                          <span>ID da Solicitação: {approval.processo_id?.slice(0, 8) || 'N/A'}...</span>
+                        </div>
+                      )}
                       {approval.transferido_em && (
                         <div className="flex items-center gap-2 text-sm text-blue-600">
                           <ArrowRight className="h-4 w-4" />

@@ -7,7 +7,7 @@ import { EntityService } from '@/services/generic/entityService';
 
 export interface AprovacaoItem {
   id: string;
-  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto' | 'registro_ponto' | 'assinatura_ponto';
+  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto' | 'registro_ponto' | 'assinatura_ponto' | 'requisicao_compra';
   funcionario_nome: string;
   funcionario_matricula: string;
   data_solicitacao: string;
@@ -44,11 +44,35 @@ export async function getAprovacoes(
   filters: AprovacaoFilters = {}
 ): Promise<AprovacaoItem[]> {
   try {
-    // Por enquanto, retornar array vazio para evitar erros PGRST205
-    // TODO: Implementar RPC functions para buscar aprovações
-    console.log('Buscando aprovações para companyId:', companyId, 'filters:', filters);
-    
-    return [];
+    // Obter o usuário atual
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    // Usar a função RPC que retorna aprovações formatadas
+    const { data, error } = await supabase.rpc('get_pending_approvals_for_user', {
+      p_user_id: user.id,
+      p_company_id: companyId
+    });
+
+    if (error) {
+      console.error('Erro ao buscar aprovações pendentes:', error);
+      throw error;
+    }
+
+    let aprovacoes = (data || []) as AprovacaoItem[];
+
+    // Aplicar filtros adicionais
+    if (filters.status && filters.status !== 'todos') {
+      aprovacoes = aprovacoes.filter(aprovacao => aprovacao.status === filters.status);
+    }
+
+    if (filters.tipo && filters.tipo !== 'todos') {
+      aprovacoes = aprovacoes.filter(aprovacao => aprovacao.tipo === filters.tipo);
+    }
+
+    return aprovacoes;
 
   } catch (error) {
     console.error('Erro ao buscar aprovações:', error);
@@ -146,6 +170,15 @@ export async function approveRequest(payload: { tipo: AprovacaoItem['tipo']; id:
         rpcFunction = 'approve_time_record_signature';
         rpcParams = { p_signature_id: id, p_approved_by: user.id, p_observacoes: observacoes };
         break;
+      case 'requisicao_compra':
+        rpcFunction = 'process_approval';
+        rpcParams = { 
+          p_aprovacao_id: id, 
+          p_status: 'aprovado', 
+          p_observacoes: observacoes || null,
+          p_aprovador_id: user.id
+        };
+        break;
       default:
         throw new Error(`Tipo de aprovação desconhecido: ${tipo}`);
     }
@@ -217,6 +250,15 @@ export async function rejectRequest(payload: { tipo: AprovacaoItem['tipo']; id: 
       case 'assinatura_ponto':
         rpcFunction = 'reject_time_record_signature';
         rpcParams = { p_signature_id: id, p_rejected_by: user.id, p_rejection_reason: observacoes };
+        break;
+      case 'requisicao_compra':
+        rpcFunction = 'process_approval';
+        rpcParams = { 
+          p_aprovacao_id: id, 
+          p_status: 'rejeitado', 
+          p_observacoes: observacoes,
+          p_aprovador_id: user.id
+        };
         break;
       default:
         throw new Error(`Tipo de rejeição desconhecido: ${tipo}`);

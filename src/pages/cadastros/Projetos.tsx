@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { formatDate } from "@/utils/dateUtils";
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -123,6 +124,7 @@ export default function Projetos() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProjeto, setEditingProjeto] = useState<Project | null>(null);
   const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
 
   const form = useForm<ProjectFormData>({
     resolver: zodResolver(projectSchema),
@@ -310,6 +312,12 @@ export default function Projetos() {
         toast.success("Projeto cadastrado!");
       }
 
+      // Invalidar cache do React Query para atualizar outras páginas
+      if (selectedCompany?.id) {
+        queryClient.invalidateQueries({ queryKey: ['public', 'projects', selectedCompany.id] });
+        queryClient.invalidateQueries({ queryKey: ['public', 'projects', 'active', selectedCompany.id] });
+      }
+
       setIsDialogOpen(false);
       fetchProjetos();
     } catch (error: any) {
@@ -334,6 +342,13 @@ export default function Projetos() {
         .eq("id", projeto.id);
 
       if (error) throw error;
+      
+      // Invalidar cache do React Query para atualizar outras páginas
+      if (selectedCompany?.id) {
+        queryClient.invalidateQueries({ queryKey: ['public', 'projects', selectedCompany.id] });
+        queryClient.invalidateQueries({ queryKey: ['public', 'projects', 'active', selectedCompany.id] });
+      }
+      
       toast.success("Projeto excluído!");
       fetchProjetos();
     } catch (error: any) {

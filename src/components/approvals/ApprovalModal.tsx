@@ -15,6 +15,7 @@ import {
   Building2
 } from 'lucide-react';
 import { Approval } from '@/services/approvals/approvalService';
+import { RequisicaoCompraDetails } from './RequisicaoCompraDetails';
 
 interface ApprovalModalProps {
   approval: Approval | null;
@@ -71,7 +72,7 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clock className="h-5 w-5" />
@@ -113,6 +114,13 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
               </div>
             </div>
           </div>
+
+          {/* Detalhes da Requisição de Compra */}
+          {approval.processo_tipo === 'requisicao_compra' && (
+            <div className="border-t pt-6">
+              <RequisicaoCompraDetails requisicaoId={approval.processo_id} />
+            </div>
+          )}
 
           {/* Transferência de Aprovação */}
           {approval.transferido_em && (
