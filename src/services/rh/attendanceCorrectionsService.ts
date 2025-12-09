@@ -167,17 +167,43 @@ export const AttendanceCorrectionsService = {
    * Aprova correção de ponto
    */
   approve: async (id: string, approvedBy: string, observacoes?: string): Promise<boolean> => {
+    console.log('🔍 [AttendanceCorrectionsService.approve] Iniciando aprovação:', {
+      correction_id: id,
+      approved_by: approvedBy,
+      observacoes
+    });
+
     const { data, error } = await supabase.rpc('approve_attendance_correction', {
       p_correction_id: id,
       p_approved_by: approvedBy,
       p_observacoes: observacoes
     });
 
+    console.log('📊 [AttendanceCorrectionsService.approve] Resposta RPC:', { data, error });
+
     if (error) {
-      throw new Error(`Erro ao aprovar correção: ${error.message}`);
+      console.error('[AttendanceCorrectionsService.approve] Erro na RPC:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
+
+      // Tratar erro 409 (Conflict) especificamente
+      if (error.code === '23505' || error.message?.includes('já foi aprovada') || error.message?.includes('já foi processada') || error.message?.includes('já foi rejeitada')) {
+        throw new Error('Esta correção já foi aprovada ou processada anteriormente.');
+      }
+      if (error.message?.includes('não está pendente')) {
+        throw new Error('Esta correção não está mais pendente e não pode ser aprovada.');
+      }
+      if (error.code === '42501' || error.message?.includes('não tem acesso')) {
+        throw new Error('Você não tem permissão para aprovar esta correção.');
+      }
+      throw new Error(`Erro ao aprovar correção: ${error.message}${error.hint ? ' (' + error.hint + ')' : ''}`);
     }
 
-    return data;
+    console.log('[AttendanceCorrectionsService.approve] Aprovacao bem-sucedida:', data);
+    return data === true;
   },
 
   /**

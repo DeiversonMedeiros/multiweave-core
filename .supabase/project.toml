@@ -1,0 +1,13 @@
+# Configuração do Projeto Supabase Remoto
+# Este arquivo mantém a referência ao projeto remoto
+
+project_id = "wmtftyaqucwfsnnjepiy"
+database_url = "postgresql://postgres:81hbcoNDXaGiPIpp!@db.wmtftyaqucwfsnnjepiy.supabase.co:5432/postgres"
+api_url = "https://wmtftyaqucwfsnnjepiy.supabase.co"
+
+[db]
+host = "db.wmtftyaqucwfsnnjepiy.supabase.co"
+port = 5432
+user = "postgres"
+database = "postgres"
+

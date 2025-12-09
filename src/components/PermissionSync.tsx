@@ -36,12 +36,22 @@ export const PermissionSync: React.FC = () => {
   const handleCheckInconsistencies = async () => {
     setIsLoading(true);
     try {
-      await checkPermissionInconsistencies();
-      toast({
-        title: 'Verificação Concluída',
-        description: 'Inconsistências verificadas. Verifique o console para detalhes.',
-        variant: 'default',
-      });
+      const foundInconsistencies = await checkPermissionInconsistencies();
+      if (foundInconsistencies && foundInconsistencies.length > 0) {
+        setInconsistencies(foundInconsistencies);
+        toast({
+          title: 'Inconsistências Encontradas',
+          description: `Foram encontradas ${foundInconsistencies.length} inconsistência(s). Verifique os detalhes abaixo.`,
+          variant: 'destructive',
+        });
+      } else {
+        setInconsistencies([]);
+        toast({
+          title: 'Verificação Concluída',
+          description: 'Nenhuma inconsistência encontrada!',
+          variant: 'default',
+        });
+      }
     } catch (error: any) {
       toast({
         title: 'Erro na Verificação',

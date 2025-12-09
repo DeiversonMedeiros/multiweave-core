@@ -45,6 +45,7 @@ export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
     const isExpanded = expandedItems.has(item.id);
     const indentClass = level > 0 ? `ml-${Math.min(level * 6, 24)}` : '';
     const isPortal = item.isPortal;
+    const isChildItem = level > 0;
 
     if (hasChildren) {
       return (
@@ -94,11 +95,13 @@ export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
             className={({ isActive }) =>
               isActive
                 ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                : isChildItem
+                ? "hover:bg-sidebar-accent/50 text-sidebar-foreground/70"
                 : "hover:bg-sidebar-accent/50"
             }
           >
-            <item.icon className="h-4 w-4" />
-            {open && <span>{item.title}</span>}
+            <item.icon className={`h-4 w-4 ${isChildItem ? 'text-sidebar-foreground/60' : ''}`} />
+            {open && <span className={isChildItem ? 'text-sidebar-foreground/70' : ''}>{item.title}</span>}
           </NavLink>
         </SidebarMenuButton>
       </SidebarMenuItem>

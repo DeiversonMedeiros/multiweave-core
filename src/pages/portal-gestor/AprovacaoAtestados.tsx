@@ -18,9 +18,14 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useMedicalCertificates } from '@/hooks/rh/useGestorPortal';
 import { useCompany } from '@/lib/company-context';
+import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 const AprovacaoAtestados: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pendente');
   const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
@@ -28,9 +33,11 @@ const AprovacaoAtestados: React.FC = () => {
   const [rejeicaoObservacoes, setRejeicaoObservacoes] = useState('');
   const [isAprovacaoDialogOpen, setIsAprovacaoDialogOpen] = useState(false);
   const [isRejeicaoDialogOpen, setIsRejeicaoDialogOpen] = useState(false);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const { selectedCompany } = useCompany();
-  const { certificates, loading, error, approveCertificate, rejectCertificate } = useMedicalCertificates(selectedCompany?.id || '');
+  const { certificates, loading, error, refetch: fetchCertificates } = useMedicalCertificates(selectedCompany?.id || '');
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -71,26 +78,74 @@ const AprovacaoAtestados: React.FC = () => {
   };
 
   const confirmarAprovacao = async () => {
-    if (selectedCertificate) {
-      try {
-        await approveCertificate(selectedCertificate.id, 'current-user-id', aprovacaoObservacoes);
-        setIsAprovacaoDialogOpen(false);
-        setSelectedCertificate(null);
-      } catch (error) {
-        console.error('Erro ao aprovar atestado:', error);
+    if (!selectedCertificate || !user?.id) return;
+
+    try {
+      setIsProcessing(true);
+      const { data, error: rpcError } = await supabase.rpc('approve_medical_certificate', {
+        p_certificate_id: selectedCertificate.id,
+        p_approved_by: user.id,
+        p_observacoes: aprovacaoObservacoes || null
+      });
+
+      if (rpcError) {
+        throw rpcError;
       }
+
+      toast({
+        title: "Atestado aprovado!",
+        description: `O atestado de ${selectedCertificate.funcionario_nome} foi aprovado com sucesso.`,
+      });
+
+      setIsAprovacaoDialogOpen(false);
+      setSelectedCertificate(null);
+      setAprovacaoObservacoes('');
+      await fetchCertificates();
+    } catch (error) {
+      console.error('Erro ao aprovar atestado:', error);
+      toast({
+        title: "Erro ao aprovar atestado",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const confirmarRejeicao = async () => {
-    if (selectedCertificate && rejeicaoObservacoes.trim()) {
-      try {
-        await rejectCertificate(selectedCertificate.id, 'current-user-id', rejeicaoObservacoes);
-        setIsRejeicaoDialogOpen(false);
-        setSelectedCertificate(null);
-      } catch (error) {
-        console.error('Erro ao rejeitar atestado:', error);
+    if (!selectedCertificate || !rejeicaoObservacoes.trim() || !user?.id) return;
+
+    try {
+      setIsProcessing(true);
+      const { data, error: rpcError } = await supabase.rpc('reject_medical_certificate', {
+        p_certificate_id: selectedCertificate.id,
+        p_rejected_by: user.id,
+        p_observacoes: rejeicaoObservacoes
+      });
+
+      if (rpcError) {
+        throw rpcError;
       }
+
+      toast({
+        title: "Atestado rejeitado!",
+        description: `O atestado de ${selectedCertificate.funcionario_nome} foi rejeitado.`,
+      });
+
+      setIsRejeicaoDialogOpen(false);
+      setSelectedCertificate(null);
+      setRejeicaoObservacoes('');
+      await fetchCertificates();
+    } catch (error) {
+      console.error('Erro ao rejeitar atestado:', error);
+      toast({
+        title: "Erro ao rejeitar atestado",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -251,7 +306,10 @@ const AprovacaoAtestados: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setSelectedCertificate(certificate)}
+                        onClick={() => {
+                          setSelectedCertificate(certificate);
+                          setIsDetailsDialogOpen(true);
+                        }}
                       >
                         <Eye className="h-4 w-4 mr-1" />
                         Ver Detalhes
@@ -263,6 +321,7 @@ const AprovacaoAtestados: React.FC = () => {
                             size="sm"
                             onClick={() => handleAprovar(certificate)}
                             className="bg-green-600 hover:bg-green-700"
+                            disabled={isProcessing}
                           >
                             <CheckCircle className="h-4 w-4 mr-1" />
                             Aprovar
@@ -271,6 +330,7 @@ const AprovacaoAtestados: React.FC = () => {
                             variant="destructive"
                             size="sm"
                             onClick={() => handleRejeitar(certificate)}
+                            disabled={isProcessing}
                           >
                             <XCircle className="h-4 w-4 mr-1" />
                             Rejeitar
@@ -327,11 +387,19 @@ const AprovacaoAtestados: React.FC = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAprovacaoDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsAprovacaoDialogOpen(false)}
+              disabled={isProcessing}
+            >
               Cancelar
             </Button>
-            <Button onClick={confirmarAprovacao} className="bg-green-600 hover:bg-green-700">
-              Confirmar Aprovação
+            <Button 
+              onClick={confirmarAprovacao} 
+              className="bg-green-600 hover:bg-green-700"
+              disabled={isProcessing}
+            >
+              {isProcessing ? 'Processando...' : 'Confirmar Aprovação'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -366,15 +434,149 @@ const AprovacaoAtestados: React.FC = () => {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsRejeicaoDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsRejeicaoDialogOpen(false)}
+              disabled={isProcessing}
+            >
               Cancelar
             </Button>
             <Button 
               onClick={confirmarRejeicao} 
               variant="destructive"
-              disabled={!rejeicaoObservacoes.trim()}
+              disabled={!rejeicaoObservacoes.trim() || isProcessing}
             >
-              Confirmar Rejeição
+              {isProcessing ? 'Processando...' : 'Confirmar Rejeição'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Detalhes */}
+      <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Detalhes do Atestado</DialogTitle>
+            <DialogDescription>
+              Informações completas do atestado médico
+            </DialogDescription>
+          </DialogHeader>
+          {selectedCertificate && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Funcionário</p>
+                  <p className="text-base">{selectedCertificate.funcionario_nome}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Matrícula</p>
+                  <p className="text-base">{selectedCertificate.funcionario_matricula}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Número do Atestado</p>
+                  <p className="text-base">{selectedCertificate.numero_atestado || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Tipo</p>
+                  <p className="text-base">{selectedCertificate.tipo_atestado || 'N/A'}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Data de Início</p>
+                  <p className="text-base">
+                    {new Date(selectedCertificate.data_inicio).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Data de Fim</p>
+                  <p className="text-base">
+                    {new Date(selectedCertificate.data_fim).toLocaleDateString('pt-BR')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Dias de Afastamento</p>
+                  <p className="text-base">{selectedCertificate.dias_afastamento} dias</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Status</p>
+                  <Badge className={getStatusColor(selectedCertificate.status)}>
+                    {selectedCertificate.status}
+                  </Badge>
+                </div>
+              </div>
+              
+              {selectedCertificate.medico_nome && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Médico</p>
+                  <p className="text-base">
+                    {selectedCertificate.medico_nome}
+                    {selectedCertificate.crm_crmo && ` - CRM/CRMO: ${selectedCertificate.crm_crmo}`}
+                  </p>
+                </div>
+              )}
+              
+              {selectedCertificate.cid_codigo && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">CID</p>
+                  <p className="text-base">
+                    {selectedCertificate.cid_codigo} - {selectedCertificate.cid_descricao}
+                  </p>
+                </div>
+              )}
+              
+              {selectedCertificate.observacoes && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Observações</p>
+                  <p className="text-base whitespace-pre-wrap">{selectedCertificate.observacoes}</p>
+                </div>
+              )}
+              
+              {selectedCertificate.anexo_url && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Anexo</p>
+                  <a 
+                    href={selectedCertificate.anexo_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Ver anexo
+                  </a>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Solicitado em</p>
+                  <p className="text-base">
+                    {new Date(selectedCertificate.created_at).toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+                {selectedCertificate.aprovado_em && (
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">Aprovado em</p>
+                    <p className="text-base">
+                      {new Date(selectedCertificate.aprovado_em).toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailsDialogOpen(false)}>
+              Fechar
             </Button>
           </DialogFooter>
         </DialogContent>

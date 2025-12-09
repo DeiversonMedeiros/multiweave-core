@@ -66,6 +66,16 @@ export const PERMISSION_CONFIG = {
     'configuracoes_aprovacao': ['read', 'create', 'edit', 'delete'], // Usa public.configuracoes_aprovacao_unificada
     'aprovacoes': ['read', 'create', 'edit', 'delete'], // Usa public.aprovacoes_unificada
     
+    // Entidades específicas dos Portais (criadas manualmente)
+    'approval_center': ['read', 'create', 'edit', 'delete'], // Portal Gestor - CentralAprovacoes.tsx
+    'approval_configs': ['read', 'create', 'edit', 'delete'], // Portal Gestor - CentralAprovacoesExpandida.tsx
+    'approvals': ['read', 'create', 'edit', 'delete'], // Portal Gestor - CentralAprovacoesExpandida.tsx
+    'exam_management': ['read', 'create', 'edit', 'delete'], // Portal Gestor - AcompanhamentoExames.tsx
+    'manager_dashboard': ['read', 'create', 'edit', 'delete'], // Portal Gestor - GestorDashboard.tsx
+    'portal_colaborador': ['read', 'create', 'edit', 'delete'], // Portal Colaborador - TestPortal.tsx
+    'time_tracking_management': ['read', 'create', 'edit', 'delete'], // Portal Gestor - AcompanhamentoPonto.tsx
+    'vacation_approvals': ['read', 'create', 'edit', 'delete'], // Portal Gestor - AprovacaoFerias.tsx
+    
     // Entidades Almoxarifado
     'estoque_atual': ['read', 'create', 'edit', 'delete'],
     'movimentacoes_estoque': ['read', 'create', 'edit', 'delete'],

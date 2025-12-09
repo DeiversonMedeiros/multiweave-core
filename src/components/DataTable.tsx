@@ -36,11 +36,34 @@ export function DataTable<T extends { id: string }>({
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
 
-  const filteredData = data.filter((item) =>
-    Object.values(item).some((value) =>
-      String(value).toLowerCase().includes(search.toLowerCase())
-    )
-  );
+  // Função recursiva para buscar valores em objetos aninhados
+  const searchInValue = (value: any, searchTerm: string): boolean => {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    // Se for um objeto, buscar recursivamente em seus valores
+    if (typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      return Object.values(value).some((nestedValue) =>
+        searchInValue(nestedValue, searchTerm)
+      );
+    }
+
+    // Se for um array, buscar em cada item
+    if (Array.isArray(value)) {
+      return value.some((item) => searchInValue(item, searchTerm));
+    }
+
+    // Para valores primitivos, fazer a busca
+    return String(value).toLowerCase().includes(searchTerm.toLowerCase());
+  };
+
+  const filteredData = data.filter((item) => {
+    if (!search.trim()) return true;
+    return Object.values(item).some((value) =>
+      searchInValue(value, search)
+    );
+  });
 
   return (
     <div className="space-y-4">

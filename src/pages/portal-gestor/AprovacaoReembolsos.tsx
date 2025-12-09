@@ -18,9 +18,13 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useReimbursementRequests } from '@/hooks/rh/useGestorPortal';
 import { useCompany } from '@/lib/company-context';
+import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/hooks/use-toast';
 
 const AprovacaoReembolsos: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pendente');
   const [selectedReimbursement, setSelectedReimbursement] = useState<any>(null);
@@ -82,26 +86,46 @@ const AprovacaoReembolsos: React.FC = () => {
   };
 
   const confirmarAprovacao = async () => {
-    if (selectedReimbursement) {
-      try {
-        await approveReimbursement(selectedReimbursement.id, 'current-user-id', aprovacaoObservacoes);
-        setIsAprovacaoDialogOpen(false);
-        setSelectedReimbursement(null);
-      } catch (error) {
-        console.error('Erro ao aprovar reembolso:', error);
-      }
+    if (!selectedReimbursement || !user?.id) return;
+    
+    try {
+      await approveReimbursement(selectedReimbursement.id, user.id, aprovacaoObservacoes);
+      toast({
+        title: "Reembolso aprovado!",
+        description: `O reembolso de ${selectedReimbursement.funcionario_nome} foi aprovado com sucesso.`,
+      });
+      setIsAprovacaoDialogOpen(false);
+      setSelectedReimbursement(null);
+      setAprovacaoObservacoes('');
+    } catch (error) {
+      console.error('Erro ao aprovar reembolso:', error);
+      toast({
+        title: "Erro ao aprovar reembolso",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
     }
   };
 
   const confirmarRejeicao = async () => {
-    if (selectedReimbursement && rejeicaoObservacoes.trim()) {
-      try {
-        await rejectReimbursement(selectedReimbursement.id, 'current-user-id', rejeicaoObservacoes);
-        setIsRejeicaoDialogOpen(false);
-        setSelectedReimbursement(null);
-      } catch (error) {
-        console.error('Erro ao rejeitar reembolso:', error);
-      }
+    if (!selectedReimbursement || !rejeicaoObservacoes.trim() || !user?.id) return;
+    
+    try {
+      await rejectReimbursement(selectedReimbursement.id, user.id, rejeicaoObservacoes);
+      toast({
+        title: "Reembolso rejeitado!",
+        description: `O reembolso de ${selectedReimbursement.funcionario_nome} foi rejeitado.`,
+      });
+      setIsRejeicaoDialogOpen(false);
+      setSelectedReimbursement(null);
+      setRejeicaoObservacoes('');
+    } catch (error) {
+      console.error('Erro ao rejeitar reembolso:', error);
+      toast({
+        title: "Erro ao rejeitar reembolso",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
     }
   };
 

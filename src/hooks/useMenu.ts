@@ -48,7 +48,9 @@ import {
   Edit,
   AlertTriangle,
   Plug,
-  Wrench
+  Wrench,
+  Laptop,
+  Clock3
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -214,11 +216,75 @@ export const useMenu = () => {
           requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
         },
         {
+          id: 'gestor-aprovacoes-rh',
+          title: 'Aprovações RH',
+          url: '/portal-gestor/aprovacoes/rh',
+          icon: UserCog,
+          description: 'Aprovações específicas do RH',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
+          id: 'gestor-aprovacao-ferias',
+          title: 'Aprovação de Férias',
+          url: '/portal-gestor/aprovacoes/ferias',
+          icon: Calendar,
+          description: 'Gerencie solicitações de férias',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
+          id: 'gestor-aprovacao-compensacoes',
+          title: 'Aprovação de Compensações',
+          url: '/portal-gestor/aprovacoes/compensacoes',
+          icon: Clock,
+          description: 'Banco de horas e compensações',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
+          id: 'gestor-aprovacao-reembolsos',
+          title: 'Aprovação de Reembolsos',
+          url: '/portal-gestor/aprovacoes/reembolsos',
+          icon: DollarSign,
+          description: 'Solicitações de reembolso',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
+          id: 'gestor-aprovacao-atestados',
+          title: 'Aprovação de Atestados',
+          url: '/portal-gestor/aprovacoes/atestados',
+          icon: Stethoscope,
+          description: 'Atestados médicos',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
+          id: 'gestor-aprovacao-equipamentos',
+          title: 'Aprovação de Equipamentos',
+          url: '/portal-gestor/aprovacoes/equipamentos',
+          icon: Laptop,
+          description: 'Solicitações de equipamentos',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
           id: 'gestor-correcoes-ponto',
           title: 'Correções de Ponto',
           url: '/portal-gestor/aprovacoes/correcoes-ponto',
           icon: Edit,
-          description: 'Aprovação de correções de registros de ponto',
+          description: 'Correções de registros',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
+          id: 'gestor-aprovacao-horas-extras',
+          title: 'Aprovação de Horas Extras',
+          url: '/portal-gestor/aprovacoes/horas-extras',
+          icon: TrendingUp,
+          description: 'Aprovar registros com hora extra',
+          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+        },
+        {
+          id: 'gestor-aprovacao-assinaturas-ponto',
+          title: 'Aprovação de Assinaturas de Ponto',
+          url: '/portal-gestor/aprovacoes/assinaturas-ponto',
+          icon: FileText,
+          description: 'Aprovar assinaturas de folha de ponto',
           requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
         },
         {
@@ -234,7 +300,7 @@ export const useMenu = () => {
               title: 'Acompanhamento de Ponto',
               url: '/portal-gestor/acompanhamento/ponto',
               icon: Clock,
-              description: 'Monitoramento de registros de ponto',
+              description: 'Monitoramento de frequência',
               requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
             },
             {
@@ -243,6 +309,14 @@ export const useMenu = () => {
               url: '/portal-gestor/acompanhamento/exames',
               icon: Stethoscope,
               description: 'Controle de exames médicos',
+              requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+            },
+            {
+              id: 'gestor-acompanhamento-banco-horas',
+              title: 'Banco de Horas',
+              url: '/portal-gestor/acompanhamento/banco-horas',
+              icon: Clock3,
+              description: 'Acompanhamento de banco de horas dos funcionários',
               requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
             }
           ]

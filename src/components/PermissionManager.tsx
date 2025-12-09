@@ -185,7 +185,17 @@ export const PermissionManager: React.FC = () => {
     'vehicle_maintenances', // Tabela: frota.vehicle_maintenances
     'vehicle_occurrences', // Tabela: frota.vehicle_occurrences
     'vehicle_requests', // Tabela: frota.vehicle_requests
-    'vehicle_images' // Tabela: frota.vehicle_images
+    'vehicle_images', // Tabela: frota.vehicle_images
+    
+    // Entidades específicas dos Portais (criadas manualmente)
+    'approval_center', // Usado em CentralAprovacoes.tsx
+    'approval_configs', // Usado em CentralAprovacoesExpandida.tsx
+    'approvals', // Usado em CentralAprovacoesExpandida.tsx
+    'exam_management', // Usado em AcompanhamentoExames.tsx
+    'manager_dashboard', // Usado em GestorDashboard.tsx
+    'portal_colaborador', // Usado em TestPortal.tsx
+    'time_tracking_management', // Usado em AcompanhamentoPonto.tsx
+    'vacation_approvals' // Usado em AprovacaoFerias.tsx
   ];
 
   useEffect(() => {
@@ -474,7 +484,16 @@ export const PermissionManager: React.FC = () => {
       'vehicle_maintenances': 'Manutenções (frota.vehicle_maintenances)',
       'vehicle_occurrences': 'Ocorrências (frota.vehicle_occurrences)',
       'vehicle_requests': 'Solicitações de Veículos (frota.vehicle_requests)',
-      'vehicle_images': 'Imagens de Veículos (frota.vehicle_images)'
+      'vehicle_images': 'Imagens de Veículos (frota.vehicle_images)',
+      // Entidades específicas dos Portais
+      'approval_center': 'Central de Aprovações (Portal Gestor)',
+      'approval_configs': 'Configurações de Aprovação (Portal Gestor)',
+      'approvals': 'Aprovações (Portal Gestor)',
+      'exam_management': 'Gestão de Exames (Portal Gestor)',
+      'manager_dashboard': 'Dashboard do Gestor (Portal Gestor)',
+      'portal_colaborador': 'Portal do Colaborador',
+      'time_tracking_management': 'Gestão de Registro de Ponto (Portal Gestor)',
+      'vacation_approvals': 'Aprovações de Férias (Portal Gestor)'
     };
     return entityNames[entityName] || entityName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   };

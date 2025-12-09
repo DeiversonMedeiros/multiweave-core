@@ -186,3 +186,4 @@ CREATE INDEX IF NOT EXISTS idx_nfe_transportador_id ON financeiro.nfe(transporta
 CREATE INDEX IF NOT EXISTS idx_nfe_pagamentos_nfe_id ON financeiro.nfe_pagamentos(nfe_id);
 
 
+

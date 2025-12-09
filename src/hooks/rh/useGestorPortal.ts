@@ -450,9 +450,14 @@ export const useCompensationRequests = (companyId: string) => {
 
   const approveCompensation = async (compensationId: string, approvedBy: string, observacoes?: string) => {
     try {
-      // TODO: Implementar aprovação via RPC function
-      console.log('Aprovar compensação:', { compensationId, approvedBy, observacoes });
+      const { data, error } = await (supabase.rpc as any)('approve_compensation', {
+        p_compensation_id: compensationId,
+        p_approved_by: approvedBy,
+        p_observacoes: observacoes || null
+      });
+      if (error) throw error;
       await fetchCompensations();
+      return data;
     } catch (err) {
       console.error('Erro ao aprovar compensação:', err);
       throw err;
@@ -461,9 +466,14 @@ export const useCompensationRequests = (companyId: string) => {
 
   const rejectCompensation = async (compensationId: string, rejectedBy: string, observacoes: string) => {
     try {
-      // TODO: Implementar rejeição via RPC function
-      console.log('Rejeitar compensação:', { compensationId, rejectedBy, observacoes });
+      const { data, error } = await (supabase.rpc as any)('reject_compensation', {
+        p_compensation_id: compensationId,
+        p_rejected_by: rejectedBy,
+        p_observacoes: observacoes
+      });
+      if (error) throw error;
       await fetchCompensations();
+      return data;
     } catch (err) {
       console.error('Erro ao rejeitar compensação:', err);
       throw err;
@@ -659,9 +669,14 @@ export const useReimbursementRequests = (companyId: string) => {
 
   const approveReimbursement = async (reimbursementId: string, approvedBy: string, observacoes?: string) => {
     try {
-      // TODO: Implementar aprovação via RPC function
-      console.log('Aprovar reembolso:', { reimbursementId, approvedBy, observacoes });
+      const { data, error } = await (supabase.rpc as any)('approve_reimbursement', {
+        p_reimbursement_id: reimbursementId,
+        p_approved_by: approvedBy,
+        p_observacoes: observacoes || null
+      });
+      if (error) throw error;
       await fetchReimbursements();
+      return data;
     } catch (err) {
       console.error('Erro ao aprovar reembolso:', err);
       throw err;
@@ -670,9 +685,14 @@ export const useReimbursementRequests = (companyId: string) => {
 
   const rejectReimbursement = async (reimbursementId: string, rejectedBy: string, observacoes: string) => {
     try {
-      // TODO: Implementar rejeição via RPC function
-      console.log('Rejeitar reembolso:', { reimbursementId, rejectedBy, observacoes });
+      const { data, error } = await (supabase.rpc as any)('reject_reimbursement', {
+        p_reimbursement_id: reimbursementId,
+        p_rejected_by: rejectedBy,
+        p_observacoes: observacoes
+      });
+      if (error) throw error;
       await fetchReimbursements();
+      return data;
     } catch (err) {
       console.error('Erro ao rejeitar reembolso:', err);
       throw err;

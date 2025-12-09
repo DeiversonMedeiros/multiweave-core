@@ -18,9 +18,13 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useCompensationRequests } from '@/hooks/rh/useGestorPortal';
 import { useCompany } from '@/lib/company-context';
+import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/hooks/use-toast';
 
 const AprovacaoCompensacoes: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pendente');
   const [selectedCompensation, setSelectedCompensation] = useState<any>(null);
@@ -83,26 +87,46 @@ const AprovacaoCompensacoes: React.FC = () => {
   };
 
   const confirmarAprovacao = async () => {
-    if (selectedCompensation) {
-      try {
-        await approveCompensation(selectedCompensation.id, 'current-user-id', aprovacaoObservacoes);
-        setIsAprovacaoDialogOpen(false);
-        setSelectedCompensation(null);
-      } catch (error) {
-        console.error('Erro ao aprovar compensação:', error);
-      }
+    if (!selectedCompensation || !user?.id) return;
+    
+    try {
+      await approveCompensation(selectedCompensation.id, user.id, aprovacaoObservacoes);
+      toast({
+        title: "Compensação aprovada!",
+        description: `A compensação de ${selectedCompensation.funcionario_nome} foi aprovada com sucesso.`,
+      });
+      setIsAprovacaoDialogOpen(false);
+      setSelectedCompensation(null);
+      setAprovacaoObservacoes('');
+    } catch (error) {
+      console.error('Erro ao aprovar compensação:', error);
+      toast({
+        title: "Erro ao aprovar compensação",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
     }
   };
 
   const confirmarRejeicao = async () => {
-    if (selectedCompensation && rejeicaoObservacoes.trim()) {
-      try {
-        await rejectCompensation(selectedCompensation.id, 'current-user-id', rejeicaoObservacoes);
-        setIsRejeicaoDialogOpen(false);
-        setSelectedCompensation(null);
-      } catch (error) {
-        console.error('Erro ao rejeitar compensação:', error);
-      }
+    if (!selectedCompensation || !rejeicaoObservacoes.trim() || !user?.id) return;
+    
+    try {
+      await rejectCompensation(selectedCompensation.id, user.id, rejeicaoObservacoes);
+      toast({
+        title: "Compensação rejeitada!",
+        description: `A compensação de ${selectedCompensation.funcionario_nome} foi rejeitada.`,
+      });
+      setIsRejeicaoDialogOpen(false);
+      setSelectedCompensation(null);
+      setRejeicaoObservacoes('');
+    } catch (error) {
+      console.error('Erro ao rejeitar compensação:', error);
+      toast({
+        title: "Erro ao rejeitar compensação",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
     }
   };
 

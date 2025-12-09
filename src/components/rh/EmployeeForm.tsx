@@ -251,7 +251,9 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
   // Hook para gerenciar vínculos usuário-funcionário
   const { availableUsers, isUserAlreadyLinked, users } = useEmployeeUser();
   
-  const positions = positionsData || [];
+  const positions = (positionsData || []).sort((a, b) => 
+    (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { sensitivity: 'base' })
+  );
   const units = unitsData || [];
   const workShifts = workShiftsData || [];
   const costCenters = costCentersData?.data || [];
