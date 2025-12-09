@@ -63,3 +63,4 @@ SELECT 'Empresa 3', COUNT(*) FROM public.cost_centers WHERE company_id = 'f83704
 
 
 
+

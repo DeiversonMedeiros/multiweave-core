@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
 
@@ -81,7 +82,7 @@ export default function Servicos() {
     if (!selectedCompany) return;
     
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("services")
         .select(`
           *,
@@ -100,7 +101,7 @@ export default function Servicos() {
         .order("codigo");
 
       if (error) throw error;
-      setServicos(data || []);
+      setServicos((data || []) as Service[]);
     } catch (error: any) {
       toast.error("Erro ao carregar serviços: " + error.message);
     } finally {
@@ -148,16 +149,50 @@ export default function Servicos() {
     }
   };
 
-  const handleNew = () => {
+  const handleNew = async () => {
     setEditingServico(null);
-    form.reset({ 
-      nome: "", 
-      codigo: "", 
-      descricao: "",
-      project_id: null, 
-      partner_id: null,
-      ativo: true 
-    });
+    
+    // Gerar código automaticamente quando criar novo serviço
+    if (selectedCompany) {
+      try {
+        const { data, error } = await (supabase as any).rpc('get_next_service_code', {
+          p_company_id: selectedCompany.id
+        });
+        
+        if (error) throw error;
+        
+        const codigoGerado = typeof data === 'string' ? data : (data || "");
+        
+        form.reset({ 
+          nome: "", 
+          codigo: codigoGerado, 
+          descricao: "",
+          project_id: null, 
+          partner_id: null,
+          ativo: true 
+        });
+      } catch (error: any) {
+        console.error("Erro ao gerar código do serviço:", error);
+        form.reset({ 
+          nome: "", 
+          codigo: "", 
+          descricao: "",
+          project_id: null, 
+          partner_id: null,
+          ativo: true 
+        });
+      }
+    } else {
+      form.reset({ 
+        nome: "", 
+        codigo: "", 
+        descricao: "",
+        project_id: null, 
+        partner_id: null,
+        ativo: true 
+      });
+    }
+    
     setIsDialogOpen(true);
   };
 
@@ -178,7 +213,7 @@ export default function Servicos() {
     if (!confirm(`Deseja realmente excluir o serviço "${servico.nome}"?`)) return;
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("services")
         .delete()
         .eq("id", servico.id);
@@ -206,7 +241,7 @@ export default function Servicos() {
       };
 
       if (editingServico) {
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from("services")
           .update(serviceData)
           .eq("id", editingServico.id);
@@ -214,7 +249,7 @@ export default function Servicos() {
         if (error) throw error;
         toast.success("Serviço atualizado!");
       } else {
-        const { error } = await supabase.from("services").insert([serviceData]);
+        const { error } = await (supabase as any).from("services").insert([serviceData]);
         if (error) throw error;
         toast.success("Serviço cadastrado!");
       }
@@ -253,6 +288,31 @@ export default function Servicos() {
         </Badge>
       ),
     },
+    {
+      header: "Ações",
+      accessor: (item: Service) => (
+        <div className="flex gap-2">
+          {canEditEntity('services') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleEdit(item)}
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+          )}
+          {canDeleteEntity('services') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleDelete(item)}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   if (loading) return <div>Carregando...</div>;
@@ -270,13 +330,10 @@ export default function Servicos() {
       <DataTable
         data={servicos}
         columns={columns}
-        onNew={handleNew}
-        onEdit={canEditEntity('services') ? handleEdit : undefined}
-        onDelete={canDeleteEntity('services') ? handleDelete : undefined}
+        onNew={canCreateEntity('services') ? handleNew : undefined}
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por código ou nome..."
         newButtonLabel="Novo Serviço"
-        showNewButton={canCreateEntity('services')}
       />
 
       <PermissionGuard entity="services" action="create">
@@ -297,7 +354,11 @@ export default function Servicos() {
                   <FormItem>
                     <FormLabel>Código *</FormLabel>
                     <FormControl>
-                      <Input {...field} />
+                      <Input 
+                        {...field} 
+                        readOnly={!editingServico} 
+                        className={!editingServico ? "bg-muted cursor-not-allowed" : ""} 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

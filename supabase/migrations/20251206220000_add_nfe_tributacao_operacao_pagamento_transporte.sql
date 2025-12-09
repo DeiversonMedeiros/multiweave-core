@@ -187,3 +187,4 @@ CREATE INDEX IF NOT EXISTS idx_nfe_pagamentos_nfe_id ON financeiro.nfe_pagamento
 
 
 
+
