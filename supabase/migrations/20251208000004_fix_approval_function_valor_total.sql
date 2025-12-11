@@ -101,3 +101,4 @@ $$;
 COMMENT ON FUNCTION public.get_required_approvers(VARCHAR, UUID, UUID) IS 
 'Função corrigida: usa valor_total_estimado em vez de valor_total para requisições de compra.';
 
+

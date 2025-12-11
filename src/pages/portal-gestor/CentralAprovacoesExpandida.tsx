@@ -59,19 +59,63 @@ const CentralAprovacoesExpandida: React.FC = () => {
   });
 
   const handleProcessApproval = async (status: 'aprovado' | 'rejeitado' | 'cancelado', observacoes: string) => {
-    if (!selectedApproval || !user?.id) return;
+    console.log('🔍 [CentralAprovacoesExpandida.handleProcessApproval] INÍCIO', {
+      status,
+      observacoes: observacoes?.substring(0, 100) || '(vazio)',
+      selectedApproval: selectedApproval ? {
+        id: selectedApproval.id,
+        processo_tipo: selectedApproval.processo_tipo,
+        processo_id: selectedApproval.processo_id
+      } : null,
+      user: user ? {
+        id: user.id,
+        email: user.email
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+
+    if (!selectedApproval) {
+      console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] selectedApproval está null!');
+      return;
+    }
+
+    if (!user?.id) {
+      console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] user.id está null ou undefined!', {
+        user,
+        userId: user?.id,
+        hasUser: !!user
+      });
+      return;
+    }
+
+    const mutationParams = {
+      aprovacao_id: selectedApproval.id,
+      status,
+      observacoes: observacoes || '',
+      aprovador_id: user.id
+    };
+
+    console.log('📤 [CentralAprovacoesExpandida.handleProcessApproval] Chamando mutation com:', {
+      ...mutationParams,
+      observacoes: observacoes?.substring(0, 100) || '(vazio)',
+      aprovador_id_valid: !!mutationParams.aprovador_id && mutationParams.aprovador_id.trim() !== ''
+    });
 
     try {
-      await processApproval.mutateAsync({
-        aprovacao_id: selectedApproval.id,
-        status,
-        observacoes,
-        aprovador_id: user.id
-      });
+      await processApproval.mutateAsync(mutationParams);
+      console.log('✅ [CentralAprovacoesExpandida.handleProcessApproval] Sucesso!');
       setIsApprovalModalOpen(false);
       setSelectedApproval(null);
     } catch (error) {
-      console.error('Erro ao processar aprovação:', error);
+      console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Erro ao processar aprovação:', error);
+      console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Detalhes:', {
+        message: error instanceof Error ? error.message : String(error),
+        code: (error as any)?.code,
+        details: (error as any)?.details,
+        hint: (error as any)?.hint,
+        stack: error instanceof Error ? error.stack : 'N/A',
+        mutationParams
+      });
     }
   };
 

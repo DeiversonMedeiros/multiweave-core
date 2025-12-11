@@ -26,6 +26,7 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCentralAprovacoes } from '@/hooks/portal-gestor/useCentralAprovacoes';
+import { useToast } from '@/hooks/use-toast';
 
 interface AprovacaoItem {
   id: string;
@@ -42,6 +43,7 @@ interface AprovacaoItem {
 
 const CentralAprovacoes: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [tipoFilter, setTipoFilter] = useState<string>('todos');
@@ -93,11 +95,20 @@ const CentralAprovacoes: React.FC = () => {
         id: selectedAprovacao.id,
         observacoes: observacoes || undefined
       });
+      toast({
+        title: 'Solicitação aprovada!',
+        description: `A solicitação de ${selectedAprovacao.funcionario_nome} foi aprovada com sucesso.`,
+      });
       setIsAprovacaoDialogOpen(false);
       setSelectedAprovacao(null);
       setObservacoes('');
     } catch (error) {
       console.error('Erro ao aprovar solicitação:', error);
+      toast({
+        title: 'Erro ao aprovar solicitação',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -110,11 +121,20 @@ const CentralAprovacoes: React.FC = () => {
         id: selectedAprovacao.id,
         observacoes: observacoes
       });
+      toast({
+        title: 'Solicitação rejeitada!',
+        description: `A solicitação de ${selectedAprovacao.funcionario_nome} foi rejeitada.`,
+      });
       setIsRejeicaoDialogOpen(false);
       setSelectedAprovacao(null);
       setObservacoes('');
     } catch (error) {
       console.error('Erro ao rejeitar solicitação:', error);
+      toast({
+        title: 'Erro ao rejeitar solicitação',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
     }
   };
 

@@ -19,3 +19,4 @@ COMMENT ON COLUMN almoxarifado.materiais_equipamentos.observacoes IS 'Observaç�
 -- Criar índice para o campo nome para melhorar buscas
 CREATE INDEX IF NOT EXISTS idx_materiais_equipamentos_nome ON almoxarifado.materiais_equipamentos(nome);
 
+

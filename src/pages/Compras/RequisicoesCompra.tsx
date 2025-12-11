@@ -129,10 +129,39 @@ function RequisicoesList() {
   const { canEditEntity, canDeleteEntity } = usePermissions();
   const { data: requisicoes = [], isLoading } = usePurchaseRequisitions();
   const { users } = useUsers();
+  const { data: costCentersData } = useActiveCostCenters();
+  const { data: projectsData } = useActiveProjects();
   const [search, setSearch] = useState('');
   const [selectedRequisicao, setSelectedRequisicao] = useState<any>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showFiltersDialog, setShowFiltersDialog] = useState(false);
+  const [filters, setFilters] = useState({
+    status: '',
+    centro_custo_id: '',
+    projeto_id: '',
+    solicitante_id: '',
+    data_inicio: '',
+    data_fim: '',
+    prioridade: '',
+  });
+  
+  // Debug: Log das requisições recebidas
+  useEffect(() => {
+    console.log('🔍 [RequisicoesList] Total de requisições:', requisicoes.length);
+    console.log('🔍 [RequisicoesList] Requisições por status:', 
+      requisicoes.reduce((acc: any, req: any) => {
+        const status = req.workflow_state || req.status || 'sem_status';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {})
+    );
+    console.log('🔍 [RequisicoesList] IDs das requisições:', requisicoes.map((r: any) => r.id));
+    console.log('🔍 [RequisicoesList] Requisições aprovadas:', 
+      requisicoes.filter((r: any) => (r.workflow_state || r.status) === 'aprovada').length
+    );
+    console.log('🔍 [RequisicoesList] isLoading:', isLoading);
+  }, [requisicoes, isLoading]);
   
   // Criar mapa de IDs de usuários para nomes
   const usersMap = useMemo(() => {
@@ -143,10 +172,40 @@ function RequisicoesList() {
     return map;
   }, [users]);
 
-  const getStatusBadge = (workflow: string) => {
-    switch (workflow) {
+  // Criar mapa de IDs de centros de custo para nomes
+  const costCentersMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const costCenters = costCentersData?.data || [];
+    costCenters.forEach((cc: any) => {
+      map.set(cc.id, cc.nome);
+    });
+    return map;
+  }, [costCentersData]);
+
+  // Criar mapa de IDs de projetos para nomes
+  const projectsMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const projects = projectsData?.data || [];
+    projects.forEach((proj: any) => {
+      map.set(proj.id, proj.nome);
+    });
+    return map;
+  }, [projectsData]);
+
+  // Função para capitalizar primeira letra da prioridade
+  const capitalizePrioridade = (prioridade: string) => {
+    if (!prioridade) return '';
+    return prioridade.charAt(0).toUpperCase() + prioridade.slice(1).toLowerCase();
+  };
+
+  const getStatusBadge = (status: string) => {
+    // Usar status como principal, fallback para workflow_state
+    const statusValue = status || 'pendente_aprovacao';
+    
+    switch (statusValue) {
       case 'pendente_aprovacao':
-      case 'criada': // Tratamento para requisições antigas que ainda podem ter esse status
+      case 'rascunho': // Requisições em rascunho também aguardam aprovação
+      case 'criada': // Tratamento para requisições antigas
         return (
           <Badge variant="outline" className="text-yellow-600">
             <Clock className="h-3 w-3 mr-1" />
@@ -160,8 +219,21 @@ function RequisicoesList() {
             Aprovada
           </Badge>
         );
-      case 'reprovada':
+      case 'rejeitada':
+        return (
+          <Badge variant="outline" className="text-orange-600">
+            <AlertCircle className="h-3 w-3 mr-1" />
+            Rejeitada
+          </Badge>
+        );
       case 'cancelada':
+        return (
+          <Badge variant="outline" className="text-red-600">
+            <AlertCircle className="h-3 w-3 mr-1" />
+            Cancelada
+          </Badge>
+        );
+      case 'reprovada': // Mantido para compatibilidade com dados antigos
         return (
           <Badge variant="outline" className="text-red-600">
             <AlertCircle className="h-3 w-3 mr-1" />
@@ -169,17 +241,163 @@ function RequisicoesList() {
           </Badge>
         );
       default:
-        return <Badge variant="outline">{workflow}</Badge>;
+        return <Badge variant="outline">{statusValue}</Badge>;
     }
   };
 
   const filtered = useMemo(() => {
-    if (!search) return requisicoes;
-    return requisicoes.filter((req: any) =>
-      req.numero_requisicao?.toLowerCase().includes(search.toLowerCase()) ||
-      req.workflow_state?.toLowerCase().includes(search.toLowerCase()),
-    );
-  }, [requisicoes, search]);
+    let result = requisicoes;
+    
+    // Aplicar busca
+    if (search) {
+      result = result.filter((req: any) =>
+        req.numero_requisicao?.toLowerCase().includes(search.toLowerCase()) ||
+        req.workflow_state?.toLowerCase().includes(search.toLowerCase()),
+      );
+    }
+    
+    // Aplicar filtros
+    if (filters.status) {
+      result = result.filter((req: any) => {
+        const status = req.status || req.workflow_state || '';
+        return status === filters.status;
+      });
+    }
+    
+    if (filters.centro_custo_id) {
+      result = result.filter((req: any) => req.centro_custo_id === filters.centro_custo_id);
+    }
+    
+    if (filters.projeto_id) {
+      result = result.filter((req: any) => req.projeto_id === filters.projeto_id);
+    }
+    
+    if (filters.solicitante_id) {
+      result = result.filter((req: any) => req.solicitante_id === filters.solicitante_id);
+    }
+    
+    if (filters.data_inicio) {
+      result = result.filter((req: any) => {
+        if (!req.data_solicitacao) return false;
+        return new Date(req.data_solicitacao) >= new Date(filters.data_inicio);
+      });
+    }
+    
+    if (filters.data_fim) {
+      result = result.filter((req: any) => {
+        if (!req.data_solicitacao) return false;
+        const reqDate = new Date(req.data_solicitacao);
+        const filterDate = new Date(filters.data_fim);
+        filterDate.setHours(23, 59, 59, 999); // Incluir o dia inteiro
+        return reqDate <= filterDate;
+      });
+    }
+    
+    if (filters.prioridade) {
+      result = result.filter((req: any) => req.prioridade === filters.prioridade);
+    }
+    
+    // Ordenar por número de requisição (decrescente - última primeiro)
+    result = [...result].sort((a: any, b: any) => {
+      const numA = a.numero_requisicao || '';
+      const numB = b.numero_requisicao || '';
+      // Extrair número da requisição (ex: REQ-000009 -> 9)
+      const matchA = numA.match(/\d+/);
+      const matchB = numB.match(/\d+/);
+      const numAInt = matchA ? parseInt(matchA[0], 10) : 0;
+      const numBInt = matchB ? parseInt(matchB[0], 10) : 0;
+      return numBInt - numAInt; // Ordem decrescente
+    });
+    
+    return result;
+  }, [requisicoes, search, filters]);
+  
+  // Função para exportar dados para CSV
+  const handleExport = () => {
+    if (filtered.length === 0) {
+      toast.error('Não há dados para exportar');
+      return;
+    }
+    
+    // Preparar dados para exportação
+    const exportData = filtered.map((req: any) => {
+      const status = req.status || req.workflow_state || 'sem_status';
+      const statusLabel = {
+        'pendente_aprovacao': 'Aguardando Aprovação',
+        'rascunho': 'Aguardando Aprovação',
+        'criada': 'Aguardando Aprovação',
+        'aprovada': 'Aprovada',
+        'rejeitada': 'Rejeitada',
+        'cancelada': 'Cancelada',
+        'reprovada': 'Reprovada',
+      }[status] || status;
+      
+      return {
+        'Número': req.numero_requisicao || '',
+        'Data Solicitação': req.data_solicitacao 
+          ? new Date(req.data_solicitacao).toLocaleDateString('pt-BR')
+          : '',
+        'Data Necessidade': req.data_necessidade
+          ? new Date(req.data_necessidade).toLocaleDateString('pt-BR')
+          : '',
+        'Status': statusLabel,
+        'Centro de Custo': costCentersMap.get(req.centro_custo_id) || '',
+        'Projeto': projectsMap.get(req.projeto_id) || '',
+        'Solicitante': usersMap.get(req.solicitante_id) || req.solicitante_nome || '',
+        'Prioridade': capitalizePrioridade(req.prioridade || 'normal'),
+        'Valor Total Estimado': req.valor_total_estimado
+          ? `R$ ${Number(req.valor_total_estimado).toLocaleString('pt-BR', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}`
+          : 'R$ 0,00',
+        'Observações': req.observacoes || req.justificativa || '',
+      };
+    });
+    
+    // Converter para CSV
+    const headers = Object.keys(exportData[0]);
+    const csvRows = [
+      headers.join(','),
+      ...exportData.map(row => 
+        headers.map(header => {
+          const value = row[header as keyof typeof row] || '';
+          // Escapar vírgulas e aspas
+          const stringValue = String(value).replace(/"/g, '""');
+          return `"${stringValue}"`;
+        }).join(',')
+      )
+    ];
+    
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `requisicoes_compra_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast.success(`${exportData.length} requisição(ões) exportada(s) com sucesso`);
+  };
+  
+  // Função para limpar filtros
+  const clearFilters = () => {
+    setFilters({
+      status: '',
+      centro_custo_id: '',
+      projeto_id: '',
+      solicitante_id: '',
+      data_inicio: '',
+      data_fim: '',
+      prioridade: '',
+    });
+  };
+  
+  // Contar filtros ativos
+  const activeFiltersCount = Object.values(filters).filter(v => v !== '').length;
 
   return (
     <div className="space-y-4">
@@ -191,11 +409,16 @@ function RequisicoesList() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <Button variant="outline">
+        <Button variant="outline" onClick={() => setShowFiltersDialog(true)}>
           <Filter className="h-4 w-4 mr-2" />
           Filtros
+          {activeFiltersCount > 0 && (
+            <Badge variant="secondary" className="ml-2 px-1.5 py-0">
+              {activeFiltersCount}
+            </Badge>
+          )}
         </Button>
-        <Button variant="outline">
+        <Button variant="outline" onClick={handleExport} disabled={filtered.length === 0}>
           <Download className="h-4 w-4 mr-2" />
           Exportar
         </Button>
@@ -207,9 +430,9 @@ function RequisicoesList() {
             <TableHead>Número</TableHead>
             <TableHead>Data Solicitação</TableHead>
             <TableHead>Data Necessidade</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Prioridade</TableHead>
-            <TableHead>Valor Total</TableHead>
+            <TableHead>Status Aprovação</TableHead>
+            <TableHead>Centro de Custo</TableHead>
+            <TableHead>Projeto</TableHead>
             <TableHead>Solicitante</TableHead>
             <TableHead>Ações</TableHead>
           </TableRow>
@@ -223,9 +446,9 @@ function RequisicoesList() {
             </TableRow>
           ) : (
             filtered.map((requisicao: any) => (
-              <TableRow key={requisicao.id}>
-                <TableCell className="font-medium">{requisicao.numero_requisicao}</TableCell>
-                <TableCell>
+            <TableRow key={requisicao.id}>
+              <TableCell className="font-medium">{requisicao.numero_requisicao}</TableCell>
+              <TableCell>
                   {requisicao.data_solicitacao
                     ? new Date(requisicao.data_solicitacao).toLocaleDateString('pt-BR')
                     : '--'}
@@ -235,28 +458,20 @@ function RequisicoesList() {
                     ? new Date(requisicao.data_necessidade).toLocaleDateString('pt-BR')
                     : '--'}
                 </TableCell>
-                <TableCell>{getStatusBadge(requisicao.workflow_state || requisicao.status)}</TableCell>
+                <TableCell>{getStatusBadge(requisicao.status || requisicao.workflow_state)}</TableCell>
                 <TableCell>
-                  <Badge
-                    variant={
-                      requisicao.prioridade === 'Alta' || requisicao.prioridade === 'Urgente'
-                        ? 'destructive'
-                        : 'secondary'
-                    }
-                  >
-                    {requisicao.prioridade}
-                  </Badge>
+                  {requisicao.centro_custo_id
+                    ? costCentersMap.get(requisicao.centro_custo_id) || '--'
+                    : '--'}
                 </TableCell>
                 <TableCell>
-                  {requisicao.valor_total_estimado
-                    ? `R$ ${Number(requisicao.valor_total_estimado).toLocaleString('pt-BR', {
-                        minimumFractionDigits: 2,
-                      })}`
+                  {requisicao.projeto_id
+                    ? projectsMap.get(requisicao.projeto_id) || '--'
                     : '--'}
                 </TableCell>
                 <TableCell>{usersMap.get(requisicao.solicitante_id) || requisicao.solicitante_nome || requisicao.solicitante_id}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
+              <TableCell>
+                <div className="flex gap-2">
                     <Button 
                       variant="outline" 
                       size="sm"
@@ -265,23 +480,24 @@ function RequisicoesList() {
                         setShowViewDialog(true);
                       }}
                     >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  
                     <PermissionGuard entity="solicitacoes_compra" action="edit" fallback={null}>
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        disabled={!canEditEntity}
+                        disabled={!canEditEntity || requisicao.status === 'cancelada'}
                         onClick={() => {
                           setSelectedRequisicao(requisicao);
                           setShowEditDialog(true);
                         }}
+                        title={requisicao.status === 'cancelada' ? 'Requisições canceladas não podem ser editadas' : 'Editar requisição'}
                       >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </PermissionGuard>
-
+                      <Edit className="h-4 w-4" />
+                    </Button>
+                  </PermissionGuard>
+                  
                     <PermissionGuard entity="solicitacoes_compra" action="delete" fallback={null}>
                       <Button
                         variant="outline"
@@ -289,12 +505,12 @@ function RequisicoesList() {
                         className="text-red-600 hover:text-red-700"
                         disabled={!canDeleteEntity}
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </PermissionGuard>
-                  </div>
-                </TableCell>
-              </TableRow>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </PermissionGuard>
+                </div>
+              </TableCell>
+            </TableRow>
             ))
           )}
         </TableBody>
@@ -318,7 +534,7 @@ function RequisicoesList() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Status</Label>
-                  <div>{getStatusBadge(selectedRequisicao.workflow_state || selectedRequisicao.status)}</div>
+                  <div>{getStatusBadge(selectedRequisicao.status || selectedRequisicao.workflow_state)}</div>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Data Solicitação</Label>
@@ -334,8 +550,8 @@ function RequisicoesList() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Prioridade</Label>
-                  <Badge variant={selectedRequisicao.prioridade === 'Alta' || selectedRequisicao.prioridade === 'Urgente' ? 'destructive' : 'secondary'}>
-                    {selectedRequisicao.prioridade}
+                  <Badge variant={selectedRequisicao.prioridade === 'alta' || selectedRequisicao.prioridade === 'urgente' ? 'destructive' : 'secondary'}>
+                    {capitalizePrioridade(selectedRequisicao.prioridade || 'normal')}
                   </Badge>
                 </div>
                 <div>
@@ -353,6 +569,23 @@ function RequisicoesList() {
                 <div>
                   <Label className="text-muted-foreground">Observações</Label>
                   <p className="text-sm">{selectedRequisicao.observacoes}</p>
+                </div>
+              )}
+              
+              {/* Observações de Aprovação/Rejeição/Cancelamento */}
+              {selectedRequisicao.observacoes_aprovacao && (
+                <div className="p-4 border rounded-lg bg-amber-50 border-amber-200">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <Label className="text-amber-900 font-semibold flex items-center gap-2">
+                        {selectedRequisicao.status === 'rejeitada' && 'Motivo da Rejeição'}
+                        {selectedRequisicao.status === 'cancelada' && 'Motivo do Cancelamento'}
+                        {!['rejeitada', 'cancelada'].includes(selectedRequisicao.status) && 'Observações da Aprovação'}
+                      </Label>
+                      <p className="text-sm text-amber-800 mt-1">{selectedRequisicao.observacoes_aprovacao}</p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -375,6 +608,160 @@ function RequisicoesList() {
               onClose={() => setShowEditDialog(false)} 
             />
           )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Dialog de Filtros */}
+      <Dialog open={showFiltersDialog} onOpenChange={setShowFiltersDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Filtros de Requisições</DialogTitle>
+            <DialogDescription>
+              Selecione os filtros para buscar requisições específicas
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Status */}
+              <div className="space-y-2">
+                <Label htmlFor="filter_status">Status</Label>
+                <Select
+                  value={filters.status}
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, status: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="pendente_aprovacao">Aguardando Aprovação</SelectItem>
+                    <SelectItem value="aprovada">Aprovada</SelectItem>
+                    <SelectItem value="rejeitada">Rejeitada</SelectItem>
+                    <SelectItem value="cancelada">Cancelada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Prioridade */}
+              <div className="space-y-2">
+                <Label htmlFor="filter_prioridade">Prioridade</Label>
+                <Select
+                  value={filters.prioridade}
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, prioridade: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todas as prioridades" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todas</SelectItem>
+                    <SelectItem value="baixa">Baixa</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="alta">Alta</SelectItem>
+                    <SelectItem value="urgente">Urgente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Centro de Custo */}
+              <div className="space-y-2">
+                <Label htmlFor="filter_centro_custo">Centro de Custo</Label>
+                <Select
+                  value={filters.centro_custo_id}
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, centro_custo_id: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os centros de custo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos</SelectItem>
+                    {(costCentersData?.data || []).map((cc: any) => (
+                      <SelectItem key={cc.id} value={cc.id}>
+                        {cc.codigo} - {cc.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Projeto */}
+              <div className="space-y-2">
+                <Label htmlFor="filter_projeto">Projeto</Label>
+                <Select
+                  value={filters.projeto_id}
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, projeto_id: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os projetos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos</SelectItem>
+                    {(projectsData?.data || []).map((proj: any) => (
+                      <SelectItem key={proj.id} value={proj.id}>
+                        {proj.codigo} - {proj.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Solicitante */}
+              <div className="space-y-2">
+                <Label htmlFor="filter_solicitante">Solicitante</Label>
+                <Select
+                  value={filters.solicitante_id}
+                  onValueChange={(value) => setFilters(prev => ({ ...prev, solicitante_id: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os solicitantes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Todos</SelectItem>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {/* Data Início */}
+              <div className="space-y-2">
+                <Label htmlFor="filter_data_inicio">Data Solicitação - Início</Label>
+                <Input
+                  id="filter_data_inicio"
+                  type="date"
+                  value={filters.data_inicio}
+                  onChange={(e) => setFilters(prev => ({ ...prev, data_inicio: e.target.value }))}
+                />
+              </div>
+              
+              {/* Data Fim */}
+              <div className="space-y-2">
+                <Label htmlFor="filter_data_fim">Data Solicitação - Fim</Label>
+                <Input
+                  id="filter_data_fim"
+                  type="date"
+                  value={filters.data_fim}
+                  onChange={(e) => setFilters(prev => ({ ...prev, data_fim: e.target.value }))}
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-between items-center pt-4 border-t">
+              <Button variant="outline" onClick={clearFilters} disabled={activeFiltersCount === 0}>
+                Limpar Filtros
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowFiltersDialog(false)}>
+                  Fechar
+                </Button>
+                <Button onClick={() => setShowFiltersDialog(false)}>
+                  Aplicar Filtros
+                </Button>
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -762,8 +1149,8 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
             almoxarifado_id: formData.destino_almoxarifado_id || undefined,
           })),
         },
-      });
-      onClose();
+    });
+    onClose();
     } catch (error: any) {
       console.error('Erro ao atualizar solicitação:', error);
       const errorMessage = error?.message || error?.error?.message || 'Erro desconhecido ao atualizar solicitação';
@@ -836,9 +1223,38 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
   };
 
   if (loading) {
-    return (
+  return (
       <div className="flex items-center justify-center p-8">
         <p className="text-muted-foreground">Carregando dados da requisição...</p>
+      </div>
+    );
+  }
+
+  // Bloquear edição se a requisição estiver cancelada
+  if (requisicao?.status === 'cancelada') {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 space-y-4">
+        <AlertCircle className="h-12 w-12 text-red-500" />
+        <div className="text-center">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Requisição Cancelada</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Requisições canceladas não podem ser editadas.
+          </p>
+          {requisicao.observacoes_aprovacao && (
+            <div className="p-4 border rounded-lg bg-amber-50 border-amber-200 max-w-md">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <Label className="text-amber-900 font-semibold">Motivo do Cancelamento</Label>
+                  <p className="text-sm text-amber-800 mt-1">{requisicao.observacoes_aprovacao}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <Button onClick={onClose} className="mt-4">
+            Fechar
+          </Button>
+        </div>
       </div>
     );
   }
@@ -851,27 +1267,27 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
         <div className="space-y-6">
           {/* Primeira linha: Data, Prioridade, Tipo */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
+        <div className="space-y-2">
               <Label htmlFor="data_necessidade">Data de Necessidade *</Label>
-              <Input
-                id="data_necessidade"
-                type="date"
-                value={formData.data_necessidade}
-                onChange={(e) => setFormData(prev => ({ ...prev, data_necessidade: e.target.value }))}
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="prioridade">Prioridade</Label>
-              <Select
-                value={formData.prioridade}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, prioridade: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+          <Input
+            id="data_necessidade"
+            type="date"
+            value={formData.data_necessidade}
+            onChange={(e) => setFormData(prev => ({ ...prev, data_necessidade: e.target.value }))}
+            required
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="prioridade">Prioridade</Label>
+          <Select
+            value={formData.prioridade}
+            onValueChange={(value) => setFormData(prev => ({ ...prev, prioridade: value }))}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
                   <SelectItem value="baixa">Baixa</SelectItem>
                   <SelectItem value="normal">Normal</SelectItem>
                   <SelectItem value="alta">Alta</SelectItem>
@@ -911,14 +1327,14 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                       Emergencial
                     </div>
                   </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
           {/* Segunda linha: Centro de Custo, Projeto, Serviço */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
+      <div className="space-y-2">
               <Label htmlFor="centro_custo">Centro de Custo *</Label>
               <Select
                 value={formData.centro_custo_id || ''}
@@ -945,7 +1361,7 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                   <div className="px-2 py-1.5 border-b">
                     <div className="relative">
                       <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
+        <Input
                         placeholder="Buscar centro de custo..."
                         value={costCenterSearch}
                         onChange={(e) => {
@@ -990,7 +1406,7 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                   }
                 }}
                 disabled={!formData.centro_custo_id}
-                required
+          required
               >
                 <SelectTrigger>
                   <SelectValue placeholder={formData.centro_custo_id ? "Selecione o projeto" : "Selecione primeiro o centro de custo"} />
@@ -1027,7 +1443,7 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                   </div>
                 </SelectContent>
               </Select>
-            </div>
+      </div>
 
             <div className="space-y-2">
               <Label htmlFor="service_id">Serviço *</Label>
@@ -1137,20 +1553,20 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
           </div>
 
           {/* Observações */}
-          <div className="space-y-2">
-            <Label htmlFor="observacoes">Observações</Label>
-            <Textarea
-              id="observacoes"
-              value={formData.observacoes}
-              onChange={(e) => setFormData(prev => ({ ...prev, observacoes: e.target.value }))}
-              placeholder="Observações adicionais"
+      <div className="space-y-2">
+        <Label htmlFor="observacoes">Observações</Label>
+        <Textarea
+          id="observacoes"
+          value={formData.observacoes}
+          onChange={(e) => setFormData(prev => ({ ...prev, observacoes: e.target.value }))}
+          placeholder="Observações adicionais"
               rows={3}
-            />
-          </div>
+        />
+      </div>
 
           {/* Seção de Itens - Reutilizar o mesmo código do NovaSolicitacaoForm */}
           <div className="space-y-4 border-2 border-primary/20 rounded-lg p-6 bg-primary/5">
-            <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center">
               <div>
                 <Label className="text-lg font-semibold">Itens da Solicitação</Label>
                 <p className="text-sm text-muted-foreground mt-1">
@@ -1158,10 +1574,10 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                 </p>
               </div>
               <Button type="button" onClick={addItem} size="sm" variant="default">
-                <Plus className="h-4 w-4 mr-2" />
-                Adicionar Item
-              </Button>
-            </div>
+            <Plus className="h-4 w-4 mr-2" />
+            Adicionar Item
+          </Button>
+        </div>
 
             {formData.itens.length === 0 ? (
               <div className="border-2 border-dashed rounded-lg p-12 text-center text-muted-foreground bg-background">
@@ -1174,7 +1590,7 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                 <ScrollArea className="h-[60vh]">
                   <div className="p-4">
                     <div className="space-y-4">
-                      {formData.itens.map((item, index) => (
+        {formData.itens.map((item, index) => (
                         <Card key={item.id} className="border-2 hover:border-primary/40 transition-colors">
                           <CardContent className="p-5">
                             <div className="flex items-start gap-4">
@@ -1190,17 +1606,17 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                                     {index + 1}
                                   </div>
                                 </div>
-                                <Button
-                                  type="button"
+              <Button
+                type="button"
                                   variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeItem(index)}
+                size="sm"
+                onClick={() => removeItem(index)}
                                   className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            
                               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-3">
                                   <div>
@@ -1624,19 +2040,19 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
         <div className="space-y-6">
           {/* Primeira linha: Data, Prioridade, Tipo */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
               <Label htmlFor="data_necessidade">Data de Necessidade *</Label>
-              <Input
+                <Input
                 id="data_necessidade"
                 type="date"
                 value={formData.data_necessidade}
                 onChange={(e) => setFormData(prev => ({ ...prev, data_necessidade: e.target.value }))}
-                required
-              />
-            </div>
-            
-            <div className="space-y-2">
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
               <Label htmlFor="prioridade">Prioridade</Label>
               <Select
                 value={formData.prioridade}
@@ -1720,7 +2136,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                   <div className="px-2 py-1.5 border-b">
                     <div className="relative">
                       <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
+                <Input
                         placeholder="Buscar centro de custo..."
                         value={costCenterSearch}
                         onChange={(e) => {
@@ -1766,7 +2182,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                   }
                 }}
                 disabled={!formData.centro_custo_id}
-                required
+                  required
               >
                 <SelectTrigger>
                   <SelectValue placeholder={formData.centro_custo_id ? "Selecione o projeto" : "Selecione primeiro o centro de custo"} />
@@ -1803,9 +2219,9 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                   </div>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-2">
+              </div>
+              
+              <div className="space-y-2">
               <Label htmlFor="service_id">Serviço *</Label>
               <Select
                 value={formData.service_id || ''}
@@ -1886,14 +2302,14 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                 </Select>
                 {/* Se selecionar "Outro" ou se o valor não estiver na lista, mostrar campo de texto */}
                 {(!formData.local_entrega || !['Almoxarifado Central', 'Obra Principal', 'Escritório', 'Depósito'].includes(formData.local_entrega)) && (
-                  <Input
+                <Input
                     id="local_entrega_custom"
                     value={formData.local_entrega || ''}
                     onChange={(e) => setFormData(prev => ({ ...prev, local_entrega: e.target.value }))}
                     placeholder="Informe o local de entrega"
                     className="mt-2"
-                    required
-                  />
+                  required
+                />
                 )}
                 {formData.local_entrega && ['Almoxarifado Central', 'Obra Principal', 'Escritório', 'Depósito'].includes(formData.local_entrega) && (
                   <p className="text-xs text-muted-foreground mt-1">Local selecionado: {formData.local_entrega}</p>
@@ -1915,10 +2331,10 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             )}
-          </div>
-
+            </div>
+            
           {/* Observações */}
-          <div className="space-y-2">
+              <div className="space-y-2">
             <Label htmlFor="observacoes">Observações</Label>
             <Textarea
               id="observacoes"
@@ -2013,8 +2429,8 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                             <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1">
                                 <Label className="text-xs text-muted-foreground">Quantidade</Label>
-                                <Input
-                                  type="number"
+                <Input
+                  type="number"
                                   value={item.quantidade}
                                   onChange={(e) => {
                                     const qty = Number(e.target.value);
@@ -2049,24 +2465,24 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                                   </p>
                                 )}
                               </div>
-                            </div>
-
+              </div>
+              
                             <div className="md:col-span-2 space-y-1">
                               <Label className="text-xs text-muted-foreground">Observações do Item</Label>
-                              <Input
+                <Input
                                 value={item.observacoes || ''}
-                                onChange={(e) => updateItem(index, 'observacoes', e.target.value)}
+                  onChange={(e) => updateItem(index, 'observacoes', e.target.value)}
                                 placeholder="Adicione observações específicas para este item..."
                                 className="h-10"
-                              />
-                            </div>
-                          </div>
-                        </div>
+                />
+              </div>
+            </div>
+          </div>
                       </CardContent>
                         </Card>
                       );
                     })}
-                      </div>
+      </div>
                   </div>
                 </ScrollArea>
                 <div className="border-t p-4 bg-muted/30">

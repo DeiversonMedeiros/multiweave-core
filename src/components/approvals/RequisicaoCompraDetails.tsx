@@ -217,53 +217,59 @@ export function RequisicaoCompraDetails({ requisicaoId }: RequisicaoCompraDetail
       </div>
 
       {/* Grid de itens */}
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden">
+        <CardHeader className="flex-shrink-0 border-b">
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
             Itens da Requisição ({requisicaoDetail.itens.length})
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[400px]">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Quantidade</TableHead>
-                  <TableHead>Observações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {requisicaoDetail.itens.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                      Nenhum item encontrado
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  requisicaoDetail.itens.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">
-                        {item.material_nome}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">
-                          {item.quantidade.toLocaleString('pt-BR', { 
-                            minimumFractionDigits: 3,
-                            maximumFractionDigits: 3
-                          })} {item.unidade_medida}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {item.observacoes || '-'}
-                      </TableCell>
+        <CardContent className="p-0">
+          {requisicaoDetail.itens.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Nenhum item encontrado
+            </div>
+          ) : (
+            <div className="relative overflow-hidden">
+              <ScrollArea className="max-h-[50vh]">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-muted z-10">
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="w-40">Quantidade</TableHead>
+                      <TableHead className="w-64">Observações</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </ScrollArea>
+                  </TableHeader>
+                  <TableBody>
+                    {requisicaoDetail.itens.map((item, index) => (
+                      <TableRow key={item.id} className="hover:bg-muted/50">
+                        <TableCell className="text-sm text-muted-foreground font-medium">
+                          {index + 1}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {item.material_nome}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="font-medium">
+                            {item.quantidade.toLocaleString('pt-BR', { 
+                              minimumFractionDigits: 3,
+                              maximumFractionDigits: 3
+                            })} {item.unidade_medida}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-[250px]">
+                          <div className="truncate" title={item.observacoes || undefined}>
+                            {item.observacoes || '-'}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

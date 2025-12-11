@@ -383,20 +383,51 @@ export class ApprovalService {
     aprovador_id: string
   ): Promise<boolean> {
     try {
-      const { data, error } = await supabase.rpc('process_approval', {
+      console.log('🔍 [ApprovalService.processApproval] INÍCIO - Parâmetros recebidos:', {
+        aprovacao_id,
+        status,
+        observacoes: observacoes?.substring(0, 100) || '(vazio)',
+        aprovador_id,
+        timestamp: new Date().toISOString()
+      });
+
+      // Verificar se aprovador_id está presente
+      if (!aprovador_id) {
+        console.error('❌ [ApprovalService.processApproval] ERRO: aprovador_id está vazio ou null!');
+        throw new Error('aprovador_id é obrigatório');
+      }
+
+      const rpcParams = {
         p_aprovacao_id: aprovacao_id,
         p_status: status,
         p_observacoes: observacoes,
         p_aprovador_id: aprovador_id
+      };
+
+      console.log('📡 [ApprovalService.processApproval] Chamando RPC process_approval com:', {
+        ...rpcParams,
+        observacoes: observacoes?.substring(0, 100) || '(vazio)'
       });
 
+      const { data, error } = await supabase.rpc('process_approval', rpcParams);
+
       if (error) {
-        console.error('Erro ao processar aprovação:', error);
+        console.error('❌ [ApprovalService.processApproval] Erro ao processar aprovação:', error);
+        console.error('❌ [ApprovalService.processApproval] Detalhes do erro:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        console.error('❌ [ApprovalService.processApproval] Parâmetros que causaram o erro:', rpcParams);
         throw error;
       }
+
+      console.log('✅ [ApprovalService.processApproval] Sucesso! Resultado:', data);
       return data;
     } catch (error) {
-      console.error('Erro na função processApproval:', error);
+      console.error('❌ [ApprovalService.processApproval] Erro na função processApproval:', error);
+      console.error('❌ [ApprovalService.processApproval] Stack trace:', error instanceof Error ? error.stack : 'N/A');
       throw error;
     }
   }

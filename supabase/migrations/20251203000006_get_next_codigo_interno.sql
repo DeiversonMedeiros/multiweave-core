@@ -75,3 +75,4 @@ GRANT EXECUTE ON FUNCTION public.get_next_codigo_interno_material(UUID) TO anon;
 COMMENT ON FUNCTION almoxarifado.get_next_codigo_interno IS 'Retorna o próximo código interno sequencial para materiais/equipamentos da empresa';
 COMMENT ON FUNCTION public.get_next_codigo_interno_material IS 'Wrapper RPC para obter próximo código interno de material - Retorna JSONB com {proximoCodigo: "2"}';
 
+

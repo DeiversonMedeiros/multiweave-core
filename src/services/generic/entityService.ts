@@ -249,6 +249,17 @@ export const EntityService = {
       firstItemCodigo: finalResult.data[0]?.['codigo'] || finalResult.data[0]?.['nome'] || 'N/A'
     });
     
+    // Log adicional para requisições de compra
+    if (table === 'requisicoes_compra') {
+      const statusCount = finalResult.data.reduce((acc: any, item: any) => {
+        const status = item.workflow_state || item.status || 'sem_status';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+      console.log('📊 [EntityService.list] Requisições por status:', statusCount);
+      console.log('📊 [EntityService.list] Requisições aprovadas:', finalResult.data.filter((r: any) => (r.workflow_state || r.status) === 'aprovada').length);
+    }
+    
     return finalResult;
   },
 
@@ -298,8 +309,9 @@ export const EntityService = {
     table: string;
     companyId: string;
     data: Partial<T>;
+    skipCompanyFilter?: boolean;
   }): Promise<T> => {
-    const { schema, table, companyId, data } = params;
+    const { schema, table, companyId, data, skipCompanyFilter = false } = params;
     
     // Validar companyId para schemas não-públicos
     if (schema !== 'public' && !companyId) {
@@ -506,7 +518,7 @@ export const EntityService = {
       const { data: result, error } = await (supabase as any).rpc('create_entity_data', {
         schema_name: schema,
         table_name: table,
-        company_id_param: companyId,
+        company_id_param: skipCompanyFilter ? null : companyId,
         data_param: dataWithoutCompany
       });
 
@@ -550,8 +562,9 @@ export const EntityService = {
     companyId: string;
     id: string;
     data: Partial<T>;
+    skipCompanyFilter?: boolean;
   }): Promise<T> => {
-    const { schema, table, companyId, id, data } = params;
+    const { schema, table, companyId, id, data, skipCompanyFilter = false } = params;
     
     // Validar que data é um objeto válido
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -618,7 +631,7 @@ export const EntityService = {
       const { data: result, error } = await (supabase as any).rpc('update_entity_data', {
         schema_name: schema,
         table_name: table,
-        company_id_param: companyId,
+        company_id_param: skipCompanyFilter ? null : companyId,
         id_param: id,
         data_param: dataClean // Supabase converterá automaticamente para JSONB
       });
@@ -656,15 +669,16 @@ export const EntityService = {
     table: string;
     companyId: string;
     id: string;
+    skipCompanyFilter?: boolean;
   }): Promise<void> => {
-    const { schema, table, companyId, id } = params;
+    const { schema, table, companyId, id, skipCompanyFilter = false } = params;
     
     // Para schemas que não sejam 'public', usar RPC function
     if (schema !== 'public') {
       const { error } = await (supabase as any).rpc('delete_entity_data', {
         schema_name: schema,
         table_name: table,
-        company_id_param: companyId,
+        company_id_param: skipCompanyFilter ? null : companyId,
         id_param: id
       });
 

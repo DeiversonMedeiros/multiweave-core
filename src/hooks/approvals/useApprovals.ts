@@ -46,16 +46,49 @@ export function useProcessApproval() {
       observacoes: string;
       aprovador_id: string;
     }) => {
-      return ApprovalService.processApproval(aprovacao_id, status, observacoes, aprovador_id);
+      console.log('🔍 [useProcessApproval.mutationFn] INÍCIO - Dados recebidos:', {
+        aprovacao_id,
+        status,
+        observacoes: observacoes?.substring(0, 100) || '(vazio)',
+        aprovador_id,
+        aprovador_id_type: typeof aprovador_id,
+        aprovador_id_length: aprovador_id?.length,
+        timestamp: new Date().toISOString()
+      });
+
+      // Validar aprovador_id antes de chamar
+      if (!aprovador_id || aprovador_id.trim() === '') {
+        console.error('❌ [useProcessApproval.mutationFn] ERRO: aprovador_id inválido!', {
+          aprovador_id,
+          isNull: aprovador_id === null,
+          isUndefined: aprovador_id === undefined,
+          isEmpty: aprovador_id === '',
+          isWhitespace: aprovador_id?.trim() === ''
+        });
+        throw new Error('aprovador_id é obrigatório e não pode estar vazio');
+      }
+
+      console.log('📞 [useProcessApproval.mutationFn] Chamando ApprovalService.processApproval...');
+      const result = await ApprovalService.processApproval(aprovacao_id, status, observacoes, aprovador_id);
+      console.log('✅ [useProcessApproval.mutationFn] Resultado recebido:', result);
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('✅ [useProcessApproval.onSuccess] Aprovação processada com sucesso!', data);
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['approvals-by-process'] });
       toast.success('Aprovação processada com sucesso!');
     },
     onError: (error: any) => {
+      console.error('❌ [useProcessApproval.onError] Erro ao processar aprovação:', error);
+      console.error('❌ [useProcessApproval.onError] Detalhes do erro:', {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+        stack: error?.stack
+      });
       toast.error('Erro ao processar aprovação');
-      console.error(error);
     }
   });
 }
