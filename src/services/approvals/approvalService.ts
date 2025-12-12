@@ -211,7 +211,7 @@ export class ApprovalService {
 
   static async getPendingApprovals(userId: string, companyId: string): Promise<Approval[]> {
     try {
-      const { data, error } = await supabase.rpc('get_pending_approvals_for_user', {
+      const { data, error } = await supabase.rpc('get_pending_approvals_unified_for_user', {
         p_user_id: userId,
         p_company_id: companyId
       });

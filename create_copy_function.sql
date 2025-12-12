@@ -151,3 +151,6 @@ COMMENT ON FUNCTION public.copy_company_data IS 'Copia dados de uma empresa de r
 
 
 
+
+
+

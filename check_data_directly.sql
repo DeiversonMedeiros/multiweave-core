@@ -49,3 +49,6 @@ UNION ALL SELECT 'Configurações FGTS', COUNT(*) FROM rh.fgts_config WHERE comp
 
 
 
+
+
+

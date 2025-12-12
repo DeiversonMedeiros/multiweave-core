@@ -118,3 +118,6 @@ COMMENT ON FUNCTION rh.calculate_work_shift_weekly_hours IS 'Calcula o total de 
 
 
 
+
+
+

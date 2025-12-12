@@ -95,3 +95,6 @@ GROUP BY DATE_TRUNC('month', data_registro);
 
 
 
+
+
+
