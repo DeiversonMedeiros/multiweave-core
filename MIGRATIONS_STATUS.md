@@ -122,3 +122,5 @@ Se você receber esse erro, significa que a tabela já foi criada. Nesse caso:
 - ✅ Aplique apenas as migrations de correção (#5 e #6)
 - ✅ Use `CREATE OR REPLACE` nas funções (já está nas migrations)
 
+
+

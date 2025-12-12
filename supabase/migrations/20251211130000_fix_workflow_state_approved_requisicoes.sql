@@ -14,3 +14,5 @@ SET workflow_state = 'em_cotacao',
 WHERE status = 'aprovada'::compras.status_requisicao
 AND (workflow_state != 'em_cotacao' OR workflow_state IS NULL);
 
+
+

@@ -120,3 +120,5 @@ END $$;
 \echo '5. 20251211143000_force_em_cotacao_for_approved_requisicoes.sql (opcional)'
 \echo ''
 
+
+

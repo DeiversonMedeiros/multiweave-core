@@ -410,3 +410,5 @@ COMMENT ON FUNCTION public.record_edit_and_reset_approvals IS
 Requisições rejeitadas podem ser editadas e reenviadas (resetam aprovações).
 Requisições canceladas não podem ser editadas (não resetam aprovações).';
 
+
+

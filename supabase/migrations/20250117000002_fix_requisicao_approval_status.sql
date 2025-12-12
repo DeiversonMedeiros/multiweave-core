@@ -273,3 +273,5 @@ AND EXISTS (
 --
 -- 4. Requisições existentes foram atualizadas para refletir o novo padrão
 
+
+

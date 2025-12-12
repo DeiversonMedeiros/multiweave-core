@@ -31,7 +31,7 @@ import {
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { useQuotes, useDeleteQuote } from '@/hooks/compras/useComprasData';
+import { useQuotes, useDeleteQuote, useStartQuoteCycle, usePurchaseRequisitions } from '@/hooks/compras/useComprasData';
 import {
   Dialog,
   DialogContent,
@@ -49,6 +49,7 @@ import { supabase } from '@/integrations/supabase/client';
 // Componente principal protegido por permissões
 export default function CotacoesPage() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const [showGerarCotacao, setShowGerarCotacao] = useState(false);
 
   return (
     <RequireAuth 
@@ -61,6 +62,23 @@ export default function CotacoesPage() {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">Cotações de Preços</h1>
+          
+          {/* Botão de gerar cotação protegido por permissão */}
+          <PermissionGuard 
+            entity="cotacoes" 
+            action="create"
+            fallback={
+              <Button disabled variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                Gerar Cotação
+              </Button>
+            }
+          >
+            <Button onClick={() => setShowGerarCotacao(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Gerar Cotação
+            </Button>
+          </PermissionGuard>
         </div>
 
         <Card>
@@ -71,6 +89,19 @@ export default function CotacoesPage() {
             <CotacoesList />
           </CardContent>
         </Card>
+
+        {/* Modal Gerar Cotação */}
+        <Dialog open={showGerarCotacao} onOpenChange={setShowGerarCotacao}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Gerar Nova Cotação</DialogTitle>
+              <DialogDescription>
+                Selecione uma requisição aprovada e os fornecedores para gerar a cotação
+              </DialogDescription>
+            </DialogHeader>
+            <GerarCotacaoForm onClose={() => setShowGerarCotacao(false)} />
+          </DialogContent>
+        </Dialog>
       </div>
     </RequireAuth>
   );
@@ -1212,195 +1243,266 @@ function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: CotacaoM
   );
 }
 
-// Componente do formulário de nova cotação
-function NovaCotacaoForm({ onClose }: { onClose: () => void }) {
+// Componente do formulário para gerar cotação
+function GerarCotacaoForm({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
-  const [formData, setFormData] = useState({
-    data_vencimento: '',
-    fornecedor_nome: '',
-    requisicao_id: '',
-    observacoes: '',
-    itens: [] as any[]
-  });
+  const { selectedCompany } = useCompany();
+  const startQuoteCycleMutation = useStartQuoteCycle();
+  const { data: requisicoes = [], isLoading: loadingRequisicoes } = usePurchaseRequisitions();
+  const { data: fornecedoresData } = useActivePartners();
+  const fornecedores = (fornecedoresData as any)?.data || fornecedoresData || [];
+  
+  const [selectedRequisicao, setSelectedRequisicao] = useState<string>('');
+  const [selectedFornecedores, setSelectedFornecedores] = useState<string[]>([]);
+  const [prazoResposta, setPrazoResposta] = useState<string>('');
+  const [observacoes, setObservacoes] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Definir prazo padrão (7 dias a partir de hoje)
+  useEffect(() => {
+    const dataPadrao = new Date();
+    dataPadrao.setDate(dataPadrao.getDate() + 7);
+    setPrazoResposta(dataPadrao.toISOString().split('T')[0]);
+  }, []);
+
+  // Carregar fornecedores ativos
+  const [fornecedoresAtivos, setFornecedoresAtivos] = useState<any[]>([]);
+  
+  useEffect(() => {
+    const loadFornecedores = async () => {
+      if (!selectedCompany?.id) return;
+      
+      try {
+        const result = await EntityService.list({
+          schema: 'compras',
+          table: 'fornecedores_dados',
+          companyId: selectedCompany.id,
+          filters: { status: 'ativo' },
+          page: 1,
+          pageSize: 100,
+        });
+        setFornecedoresAtivos(result.data || []);
+      } catch (error) {
+        console.error('Erro ao carregar fornecedores:', error);
+      }
+    };
+    
+    loadFornecedores();
+  }, [selectedCompany]);
+
+  const handleFornecedorToggle = (fornecedorId: string) => {
+    setSelectedFornecedores(prev => 
+      prev.includes(fornecedorId)
+        ? prev.filter(id => id !== fornecedorId)
+        : [...prev, fornecedorId]
+    );
+  };
+
+  const handleSelecionarTodosFornecedores = (checked: boolean) => {
+    if (checked) {
+      setSelectedFornecedores(fornecedoresAtivos.map(f => f.id));
+    } else {
+      setSelectedFornecedores([]);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Aqui você implementaria a lógica de criação da cotação
-    toast({
-      title: "Cotação criada",
-      description: "A cotação de preços foi criada com sucesso.",
-    });
-    onClose();
+    
+    if (!selectedRequisicao) {
+      toast({
+        title: "Erro",
+        description: "Selecione uma requisição",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (selectedFornecedores.length === 0) {
+      toast({
+        title: "Erro",
+        description: "Selecione pelo menos um fornecedor",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      await startQuoteCycleMutation.mutateAsync({
+        requisicao_id: selectedRequisicao,
+        fornecedores: selectedFornecedores.map(fornecedorId => ({
+          fornecedor_id: fornecedorId,
+        })),
+        prazo_resposta: prazoResposta,
+        observacoes: observacoes || undefined,
+      });
+
+      toast({
+        title: "Sucesso",
+        description: "Cotação gerada com sucesso",
+      });
+      
+      onClose();
+    } catch (error: any) {
+      console.error('Erro ao gerar cotação:', error);
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível gerar a cotação",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const addItem = () => {
-    setFormData(prev => ({
-      ...prev,
-      itens: [...prev.itens, {
-        id: Date.now().toString(),
-        material_nome: '',
-        quantidade: 1,
-        unidade: 'UN',
-        valor_unitario: 0,
-        valor_total: 0,
-        observacoes: ''
-      }]
-    }));
-  };
-
-  const removeItem = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      itens: prev.itens.filter((_, i) => i !== index)
-    }));
-  };
-
-  const updateItem = (index: number, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      itens: prev.itens.map((item, i) => 
-        i === index ? { ...item, [field]: value } : item
-      )
-    }));
-  };
+  const requisicoesAprovadas = requisicoes.filter((req: any) => 
+    (req.workflow_state || req.status) === 'aprovada'
+  );
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="data_vencimento">Data de Vencimento</Label>
-          <Input
-            id="data_vencimento"
-            type="date"
-            value={formData.data_vencimento}
-            onChange={(e) => setFormData(prev => ({ ...prev, data_vencimento: e.target.value }))}
-            required
-          />
-        </div>
-        
-        <div className="space-y-2">
-          <Label htmlFor="fornecedor_nome">Fornecedor</Label>
-          <Input
-            id="fornecedor_nome"
-            value={formData.fornecedor_nome}
-            onChange={(e) => setFormData(prev => ({ ...prev, fornecedor_nome: e.target.value }))}
-            placeholder="Nome do fornecedor"
-            required
-          />
-        </div>
+      {/* Seleção de Requisição */}
+      <div className="space-y-2">
+        <Label htmlFor="requisicao">Requisição de Compra *</Label>
+        {loadingRequisicoes ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando requisições...
+          </div>
+        ) : requisicoesAprovadas.length === 0 ? (
+          <div className="p-4 border rounded-lg bg-muted">
+            <p className="text-sm text-muted-foreground">
+              Nenhuma requisição aprovada disponível. Aprove uma requisição primeiro.
+            </p>
+          </div>
+        ) : (
+          <Select value={selectedRequisicao} onValueChange={setSelectedRequisicao} required>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione uma requisição aprovada" />
+            </SelectTrigger>
+            <SelectContent>
+              {requisicoesAprovadas.map((requisicao: any) => (
+                <SelectItem key={requisicao.id} value={requisicao.id}>
+                  {requisicao.numero_requisicao || requisicao.id.substring(0, 8)} - 
+                  {requisicao.data_necessidade 
+                    ? ` Necessidade: ${new Date(requisicao.data_necessidade).toLocaleDateString('pt-BR')}`
+                    : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
+      {/* Seleção de Fornecedores */}
       <div className="space-y-2">
-        <Label htmlFor="requisicao_id">Requisição de Compra</Label>
+        <div className="flex items-center justify-between">
+          <Label>Fornecedores *</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => handleSelecionarTodosFornecedores(selectedFornecedores.length < fornecedoresAtivos.length)}
+          >
+            {selectedFornecedores.length === fornecedoresAtivos.length ? 'Desselecionar Todos' : 'Selecionar Todos'}
+          </Button>
+        </div>
+        
+        {fornecedoresAtivos.length === 0 ? (
+          <div className="p-4 border rounded-lg bg-muted">
+            <p className="text-sm text-muted-foreground">
+              Nenhum fornecedor ativo encontrado. Cadastre fornecedores primeiro.
+            </p>
+          </div>
+        ) : (
+          <div className="border rounded-lg p-4 max-h-60 overflow-y-auto">
+            <div className="space-y-2">
+              {fornecedoresAtivos.map((fornecedor: any) => {
+                const partner = fornecedores.find((p: any) => p.id === fornecedor.partner_id);
+                const isSelected = selectedFornecedores.includes(fornecedor.id);
+                
+                return (
+                  <div
+                    key={fornecedor.id}
+                    className={`flex items-center gap-3 p-2 rounded border cursor-pointer transition-colors ${
+                      isSelected ? 'bg-primary/10 border-primary' : 'hover:bg-accent'
+                    }`}
+                    onClick={() => handleFornecedorToggle(fornecedor.id)}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleFornecedorToggle(fornecedor.id)}
+                      className="h-4 w-4"
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">
+                        {partner?.nome || fornecedor.partner_id || 'Fornecedor sem nome'}
+                      </p>
+                      {partner?.cnpj && (
+                        <p className="text-xs text-muted-foreground">CNPJ: {partner.cnpj}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {selectedFornecedores.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {selectedFornecedores.length} fornecedor(es) selecionado(s)
+          </p>
+        )}
+      </div>
+
+      {/* Prazo de Resposta */}
+      <div className="space-y-2">
+        <Label htmlFor="prazo_resposta">Prazo de Resposta *</Label>
         <Input
-          id="requisicao_id"
-          value={formData.requisicao_id}
-          onChange={(e) => setFormData(prev => ({ ...prev, requisicao_id: e.target.value }))}
-          placeholder="ID da requisição de compra"
+          id="prazo_resposta"
+          type="date"
+          value={prazoResposta}
+          onChange={(e) => setPrazoResposta(e.target.value)}
           required
         />
       </div>
 
+      {/* Observações */}
       <div className="space-y-2">
         <Label htmlFor="observacoes">Observações</Label>
         <Textarea
           id="observacoes"
-          value={formData.observacoes}
-          onChange={(e) => setFormData(prev => ({ ...prev, observacoes: e.target.value }))}
-          placeholder="Observações adicionais"
+          value={observacoes}
+          onChange={(e) => setObservacoes(e.target.value)}
+          placeholder="Observações adicionais sobre a cotação (opcional)"
+          rows={3}
         />
       </div>
 
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
-          <Label>Itens da Cotação</Label>
-          <Button type="button" onClick={addItem} size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Adicionar Item
-          </Button>
-        </div>
-
-        {formData.itens.map((item, index) => (
-          <div key={item.id} className="border rounded-lg p-4 space-y-4">
-            <div className="flex justify-between items-center">
-              <h4 className="font-medium">Item {index + 1}</h4>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => removeItem(index)}
-                className="text-red-600"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Material</Label>
-                <Input
-                  value={item.material_nome}
-                  onChange={(e) => updateItem(index, 'material_nome', e.target.value)}
-                  placeholder="Nome do material"
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Quantidade</Label>
-                <Input
-                  type="number"
-                  value={item.quantidade}
-                  onChange={(e) => updateItem(index, 'quantidade', Number(e.target.value))}
-                  min="1"
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Unidade</Label>
-                <Input
-                  value={item.unidade}
-                  onChange={(e) => updateItem(index, 'unidade', e.target.value)}
-                  placeholder="UN, KG, etc."
-                  required
-                />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Valor Unitário</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={item.valor_unitario}
-                  onChange={(e) => updateItem(index, 'valor_unitario', Number(e.target.value))}
-                  placeholder="0.00"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Observações do Item</Label>
-                <Input
-                  value={item.observacoes}
-                  onChange={(e) => updateItem(index, 'observacoes', e.target.value)}
-                  placeholder="Observações específicas do item"
-                />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex justify-end gap-4">
-        <Button type="button" variant="outline" onClick={onClose}>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
           Cancelar
         </Button>
-        <Button type="submit">
-          Criar Cotação
+        <Button 
+          type="submit" 
+          disabled={loading || !selectedRequisicao || selectedFornecedores.length === 0 || loadingRequisicoes}
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Gerando...
+            </>
+          ) : (
+            <>
+              <Plus className="h-4 w-4 mr-2" />
+              Gerar Cotação
+            </>
+          )}
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   );
 }

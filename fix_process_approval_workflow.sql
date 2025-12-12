@@ -157,3 +157,5 @@ $$;
 
 COMMENT ON FUNCTION public.process_approval IS 'Processa aprovação e atualiza workflow_state para em_cotacao quando requisição é totalmente aprovada. Inclui casts explícitos para tipos ENUM.';
 
+
+

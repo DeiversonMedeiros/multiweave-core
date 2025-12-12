@@ -181,3 +181,5 @@ BEGIN
     RAISE NOTICE 'Total de requisições canceladas/rejeitadas: %', v_count;
 END $$;
 
+
+

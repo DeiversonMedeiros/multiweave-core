@@ -102,3 +102,5 @@ LEFT JOIN information_schema.check_constraints cc
 WHERE tc.table_schema = 'compras'
 AND tc.table_name = 'requisicoes_compra';
 
+
+

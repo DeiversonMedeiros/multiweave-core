@@ -66,3 +66,5 @@ Como todas as estruturas existem (tabela, função, coluna), provavelmente você
 
 As migrations usam `CREATE OR REPLACE FUNCTION`, então são seguras para executar mesmo se a função já existir.
 
+
+

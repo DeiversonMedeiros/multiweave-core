@@ -11,3 +11,5 @@ WHERE status = 'aprovada'::compras.status_requisicao
 
 COMMENT ON MIGRATION IS 'Força workflow_state em_cotacao para requisições já aprovadas';
 
+
+

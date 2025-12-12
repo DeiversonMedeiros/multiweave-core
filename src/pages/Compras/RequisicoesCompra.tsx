@@ -47,6 +47,7 @@ import { useActiveProjects } from '@/hooks/useProjects';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useServicesByProject } from '@/hooks/useServices';
 import { useUsers } from '@/hooks/useUsers';
+import { FluxoAprovacao } from '@/components/Compras/FluxoAprovacao';
 
 interface RequisicaoItem {
   id: string;
@@ -137,14 +138,15 @@ function RequisicoesList() {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showFiltersDialog, setShowFiltersDialog] = useState(false);
   const [filters, setFilters] = useState({
-    status: '',
-    centro_custo_id: '',
-    projeto_id: '',
-    solicitante_id: '',
+    status: 'all',
+    centro_custo_id: 'all',
+    projeto_id: 'all',
+    solicitante_id: 'all',
     data_inicio: '',
     data_fim: '',
-    prioridade: '',
+    prioridade: 'all',
   });
+  const [projectSearchFilter, setProjectSearchFilter] = useState('');
   
   // Debug: Log das requisições recebidas
   useEffect(() => {
@@ -191,6 +193,54 @@ function RequisicoesList() {
     });
     return map;
   }, [projectsData]);
+
+  // Filtrar projetos baseado no centro de custo selecionado
+  const filteredProjectsByCostCenter = useMemo(() => {
+    const allProjects = projectsData?.data || [];
+    
+    // Se nenhum centro de custo estiver selecionado, retornar todos os projetos
+    if (!filters.centro_custo_id || filters.centro_custo_id === 'all') {
+      return allProjects;
+    }
+    
+    // Filtrar projetos pelo centro de custo
+    return allProjects.filter((proj: any) => {
+      const projCostCenter = proj.cost_center_id?.toString();
+      const selectedCostCenter = filters.centro_custo_id?.toString();
+      return projCostCenter === selectedCostCenter;
+    });
+  }, [projectsData, filters.centro_custo_id]);
+
+  // Filtrar projetos pela pesquisa
+  const filteredProjects = useMemo(() => {
+    if (!projectSearchFilter) return filteredProjectsByCostCenter;
+    
+    const searchLower = projectSearchFilter.toLowerCase();
+    return filteredProjectsByCostCenter.filter((proj: any) => 
+      proj.codigo?.toLowerCase().includes(searchLower) || 
+      proj.nome?.toLowerCase().includes(searchLower)
+    );
+  }, [filteredProjectsByCostCenter, projectSearchFilter]);
+
+  // Resetar projeto quando centro de custo mudar
+  useEffect(() => {
+    if (filters.centro_custo_id === 'all' || !filters.centro_custo_id) {
+      // Se centro de custo foi resetado, manter o projeto se ainda existir
+      return;
+    }
+    
+    // Verificar se o projeto selecionado ainda pertence ao centro de custo
+    if (filters.projeto_id && filters.projeto_id !== 'all') {
+      const selectedProject = filteredProjectsByCostCenter.find(
+        (p: any) => p.id === filters.projeto_id
+      );
+      
+      if (!selectedProject) {
+        // Projeto não pertence mais ao centro de custo, resetar
+        setFilters(prev => ({ ...prev, projeto_id: 'all' }));
+      }
+    }
+  }, [filters.centro_custo_id, filters.projeto_id, filteredProjectsByCostCenter]);
 
   // Função para capitalizar primeira letra da prioridade
   const capitalizePrioridade = (prioridade: string) => {
@@ -257,22 +307,22 @@ function RequisicoesList() {
     }
     
     // Aplicar filtros
-    if (filters.status) {
+    if (filters.status && filters.status !== 'all') {
       result = result.filter((req: any) => {
         const status = req.status || req.workflow_state || '';
         return status === filters.status;
       });
     }
     
-    if (filters.centro_custo_id) {
+    if (filters.centro_custo_id && filters.centro_custo_id !== 'all') {
       result = result.filter((req: any) => req.centro_custo_id === filters.centro_custo_id);
     }
     
-    if (filters.projeto_id) {
+    if (filters.projeto_id && filters.projeto_id !== 'all') {
       result = result.filter((req: any) => req.projeto_id === filters.projeto_id);
     }
     
-    if (filters.solicitante_id) {
+    if (filters.solicitante_id && filters.solicitante_id !== 'all') {
       result = result.filter((req: any) => req.solicitante_id === filters.solicitante_id);
     }
     
@@ -293,7 +343,7 @@ function RequisicoesList() {
       });
     }
     
-    if (filters.prioridade) {
+    if (filters.prioridade && filters.prioridade !== 'all') {
       result = result.filter((req: any) => req.prioridade === filters.prioridade);
     }
     
@@ -386,14 +436,15 @@ function RequisicoesList() {
   // Função para limpar filtros
   const clearFilters = () => {
     setFilters({
-      status: '',
-      centro_custo_id: '',
-      projeto_id: '',
-      solicitante_id: '',
+      status: 'all',
+      centro_custo_id: 'all',
+      projeto_id: 'all',
+      solicitante_id: 'all',
       data_inicio: '',
       data_fim: '',
-      prioridade: '',
+      prioridade: 'all',
     });
+    setProjectSearchFilter('');
   };
   
   // Contar filtros ativos
@@ -588,6 +639,9 @@ function RequisicoesList() {
                   </div>
                 </div>
               )}
+              
+              {/* Fluxo de Aprovação */}
+              <FluxoAprovacao requisicaoId={selectedRequisicao.id} />
             </div>
           )}
         </DialogContent>
@@ -633,7 +687,7 @@ function RequisicoesList() {
                     <SelectValue placeholder="Todos os status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="pendente_aprovacao">Aguardando Aprovação</SelectItem>
                     <SelectItem value="aprovada">Aprovada</SelectItem>
                     <SelectItem value="rejeitada">Rejeitada</SelectItem>
@@ -653,7 +707,7 @@ function RequisicoesList() {
                     <SelectValue placeholder="Todas as prioridades" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todas</SelectItem>
+                    <SelectItem value="all">Todas</SelectItem>
                     <SelectItem value="baixa">Baixa</SelectItem>
                     <SelectItem value="normal">Normal</SelectItem>
                     <SelectItem value="alta">Alta</SelectItem>
@@ -667,13 +721,20 @@ function RequisicoesList() {
                 <Label htmlFor="filter_centro_custo">Centro de Custo</Label>
                 <Select
                   value={filters.centro_custo_id}
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, centro_custo_id: value }))}
+                  onValueChange={(value) => {
+                    setFilters(prev => ({ 
+                      ...prev, 
+                      centro_custo_id: value,
+                      projeto_id: 'all' // Resetar projeto ao mudar centro de custo
+                    }));
+                    setProjectSearchFilter(''); // Limpar pesquisa
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Todos os centros de custo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     {(costCentersData?.data || []).map((cc: any) => (
                       <SelectItem key={cc.id} value={cc.id}>
                         {cc.codigo} - {cc.nome}
@@ -688,18 +749,57 @@ function RequisicoesList() {
                 <Label htmlFor="filter_projeto">Projeto</Label>
                 <Select
                   value={filters.projeto_id}
-                  onValueChange={(value) => setFilters(prev => ({ ...prev, projeto_id: value }))}
+                  onValueChange={(value) => {
+                    setFilters(prev => ({ ...prev, projeto_id: value }));
+                    setProjectSearchFilter(''); // Limpar pesquisa ao selecionar
+                  }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Todos os projetos" />
+                    <SelectValue placeholder={
+                      filters.centro_custo_id && filters.centro_custo_id !== 'all'
+                        ? "Projetos do centro de custo"
+                        : "Todos os projetos"
+                    } />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
-                    {(projectsData?.data || []).map((proj: any) => (
-                      <SelectItem key={proj.id} value={proj.id}>
-                        {proj.codigo} - {proj.nome}
-                      </SelectItem>
-                    ))}
+                    {/* Campo de pesquisa */}
+                    <div className="px-2 py-1.5 border-b">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar projeto..."
+                          value={projectSearchFilter}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setProjectSearchFilter(e.target.value);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          className="pl-8 h-8"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Opção "Todos" */}
+                    <SelectItem value="all">Todos</SelectItem>
+                    
+                    {/* Lista de projetos filtrados */}
+                    {filteredProjects.length === 0 ? (
+                      <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        {projectSearchFilter 
+                          ? 'Nenhum projeto encontrado'
+                          : filters.centro_custo_id && filters.centro_custo_id !== 'all'
+                            ? 'Nenhum projeto vinculado a este centro de custo'
+                            : 'Nenhum projeto disponível'
+                        }
+                      </div>
+                    ) : (
+                      filteredProjects.map((proj: any) => (
+                        <SelectItem key={proj.id} value={proj.id}>
+                          {proj.codigo} - {proj.nome}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -715,7 +815,7 @@ function RequisicoesList() {
                     <SelectValue placeholder="Todos os solicitantes" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todos</SelectItem>
+                    <SelectItem value="all">Todos</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.nome}

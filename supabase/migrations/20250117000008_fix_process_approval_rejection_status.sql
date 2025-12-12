@@ -153,3 +153,5 @@ GRANT EXECUTE ON FUNCTION public.process_approval(uuid, varchar, text, uuid) TO 
 COMMENT ON FUNCTION public.process_approval(uuid, varchar, text, uuid) IS 
 'Processa aprovações, rejeições e cancelamentos. Quando uma requisição de compra é rejeitada, define o status como "rejeitada" em vez de "cancelada", permitindo que seja editada e reenviada para aprovação.';
 
+
+

@@ -153,3 +153,5 @@ WHERE tc.table_schema = 'compras'
 AND tc.table_name = 'requisicoes_compra'
 ORDER BY tc.constraint_type, tc.constraint_name;
 
+
+

@@ -17,3 +17,5 @@ AND (workflow_state != 'em_cotacao' OR workflow_state IS NULL);
 -- Comentário da migration
 COMMENT ON MIGRATION IS 'Corrige workflow_state de requisições aprovadas antes da migration que adicionou essa atualização automática';
 
+
+

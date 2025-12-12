@@ -249,3 +249,5 @@ GRANT EXECUTE ON FUNCTION public.update_entity_data(text, text, uuid, uuid, json
 COMMENT ON FUNCTION public.update_entity_data(text, text, uuid, uuid, jsonb) IS 
 'Atualiza dados em qualquer tabela de qualquer schema. Verifica se a tabela tem coluna company_id antes de usar na cláusula WHERE. Permite atualizar dados em tabelas de relacionamento que não têm company_id diretamente. Retorna o registro atualizado como JSONB.';
 
+
+

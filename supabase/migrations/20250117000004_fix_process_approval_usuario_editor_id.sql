@@ -186,3 +186,5 @@ $$;
 COMMENT ON FUNCTION public.process_approval IS 
 'Processa aprovação unificada. Define app.current_user_id antes de fazer UPDATEs para que o trigger record_edit_and_reset_approvals possa obter o usuario_editor_id corretamente.';
 
+
+

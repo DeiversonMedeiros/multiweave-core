@@ -48,3 +48,5 @@ WHERE (rc.numero_requisicao LIKE '%REQ-000004%' OR rc.numero_requisicao LIKE '%0
 ORDER BY au.updated_at DESC
 LIMIT 10;
 
+
+

@@ -127,3 +127,5 @@ WHERE au.processo_tipo = 'requisicao_compra'
 AND au.processo_id = '6fcea877-41b1-4128-9f07-87ebf4aa3de7'::uuid
 GROUP BY au.company_id;
 
+
+

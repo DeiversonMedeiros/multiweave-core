@@ -60,3 +60,5 @@ SELECT
 FROM compras.requisicoes_compra
 WHERE id = 'COLE_O_ID_AQUI'::uuid;
 
+
+

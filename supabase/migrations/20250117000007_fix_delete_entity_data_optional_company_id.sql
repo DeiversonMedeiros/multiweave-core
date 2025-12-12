@@ -85,3 +85,5 @@ GRANT EXECUTE ON FUNCTION public.delete_entity_data(text, text, uuid, uuid) TO s
 COMMENT ON FUNCTION public.delete_entity_data(text, text, uuid, uuid) IS 
 'Deleta dados em qualquer tabela de qualquer schema. Verifica se a tabela tem coluna company_id antes de usar na cláusula WHERE. Permite deletar dados em tabelas de relacionamento que não têm company_id diretamente. Retorna true se pelo menos uma linha foi deletada.';
 
+
+

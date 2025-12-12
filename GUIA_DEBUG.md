@@ -135,3 +135,5 @@ AND processo_id = 'ID_DA_REQUISICAO'::uuid;
 3. Verifique se há mensagens de erro
 4. Teste aprovar uma requisição manualmente e veja o resultado
 
+
+

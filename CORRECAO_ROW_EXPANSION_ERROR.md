@@ -96,3 +96,5 @@ LIMIT 1;
 - `supabase/migrations/20251211142000_fix_record_edit_and_reset_approvals.sql` - Versão anterior (com problema)
 - `supabase/migrations/20251211144500_fix_record_edit_and_reset_no_row_expansion.sql` - Tentativa anterior de correção
 
+
+

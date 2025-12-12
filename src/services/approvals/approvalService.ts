@@ -372,6 +372,180 @@ export class ApprovalService {
     }
   }
 
+  /**
+   * Busca o fluxo completo de aprovação para uma requisição
+   * Retorna informações sobre a regra aplicada, aprovadores e seus status
+   */
+  static async getApprovalFlow(
+    processo_tipo: string,
+    processo_id: string,
+    companyId: string
+  ): Promise<{
+    rule: string | null;
+    totalLevels: number;
+    approvalFlow: Array<{
+      level: number;
+      approverId: string;
+      approverName: string;
+      status: 'pendente' | 'aprovado' | 'rejeitado' | 'cancelado';
+      approvedAt: string | null;
+      observacoes?: string;
+    }>;
+    completed: boolean;
+  }> {
+    try {
+      // Buscar aprovações
+      const { data: approvals, error: approvalsError } = await supabase
+        .from('aprovacoes_unificada')
+        .select(`
+          id,
+          nivel_aprovacao,
+          aprovador_id,
+          status,
+          data_aprovacao,
+          observacoes,
+          created_at
+        `)
+        .eq('company_id', companyId)
+        .eq('processo_tipo', processo_tipo)
+        .eq('processo_id', processo_id)
+        .order('nivel_aprovacao', { ascending: true });
+
+      if (approvalsError) {
+        console.error('Erro ao buscar aprovações:', approvalsError);
+        throw approvalsError;
+      }
+
+      if (!approvals || approvals.length === 0) {
+        return {
+          rule: null,
+          totalLevels: 0,
+          approvalFlow: [],
+          completed: false,
+        };
+      }
+
+      // Buscar nomes dos aprovadores
+      const approverIds = [...new Set(approvals.map((a: any) => a.aprovador_id))];
+      const { data: users, error: usersError } = await supabase
+        .from('users')
+        .select('id, nome')
+        .in('id', approverIds);
+
+      if (usersError) {
+        console.warn('Erro ao buscar nomes dos aprovadores:', usersError);
+      }
+
+      // Criar mapa de IDs para nomes
+      const usersMap = new Map<string, string>();
+      (users || []).forEach((user: any) => {
+        usersMap.set(user.id, user.nome);
+      });
+
+      // Determinar regra aplicada (tentar buscar configuração relacionada)
+      let ruleName: string | null = null;
+      try {
+        // Para requisições de compra, buscar dados da requisição para melhor matching
+        let reqData: any = null;
+        if (processo_tipo === 'requisicao_compra') {
+          try {
+            const { data: req } = await supabase
+              .schema('compras')
+              .from('requisicoes_compra')
+              .select('valor_total_estimado, centro_custo_id, solicitante_id')
+              .eq('id', processo_id)
+              .eq('company_id', companyId)
+              .single();
+            reqData = req;
+          } catch (reqError) {
+            console.warn('Erro ao buscar dados da requisição:', reqError);
+          }
+        }
+
+        // Buscar configurações que poderiam se aplicar
+        const { data: configs } = await supabase
+          .from('configuracoes_aprovacao_unificada')
+          .select('*')
+          .eq('company_id', companyId)
+          .eq('processo_tipo', processo_tipo)
+          .eq('ativo', true);
+
+        if (configs && configs.length > 0) {
+          const maxLevel = Math.max(...approvals.map((a: any) => a.nivel_aprovacao));
+          
+          // Tentar encontrar a configuração mais provável
+          let matchingConfig: any = null;
+          
+          if (reqData) {
+            // Tentar matching mais preciso
+            matchingConfig = configs.find((c: any) => {
+              const levelMatches = c.nivel_aprovacao === maxLevel;
+              if (reqData.centro_custo_id && c.centro_custo_id) {
+                return levelMatches && c.centro_custo_id === reqData.centro_custo_id;
+              }
+              if (reqData.valor_total_estimado && c.valor_limite) {
+                return levelMatches && reqData.valor_total_estimado <= c.valor_limite;
+              }
+              return levelMatches;
+            });
+          }
+          
+          // Se não encontrou match específico, usar a primeira com o nível correto
+          if (!matchingConfig) {
+            matchingConfig = configs.find((c: any) => c.nivel_aprovacao === maxLevel) || configs[0];
+          }
+          
+          if (matchingConfig) {
+            // Determinar tipo de regra
+            if (matchingConfig.centro_custo_id) {
+              ruleName = 'Regra por Centro de Custo';
+            } else if (matchingConfig.valor_limite) {
+              ruleName = `Regra por Valor (até R$ ${Number(matchingConfig.valor_limite).toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`;
+            } else if (matchingConfig.departamento) {
+              ruleName = 'Regra por Departamento';
+            } else {
+              ruleName = `Regra de Aprovação Nível ${maxLevel}`;
+            }
+          }
+        } else {
+          // Se não há configuração, mostrar baseado no número de níveis
+          const maxLevel = Math.max(...approvals.map((a: any) => a.nivel_aprovacao));
+          ruleName = `Alçada de ${maxLevel} nível(is)`;
+        }
+      } catch (configError) {
+        console.warn('Erro ao buscar configuração de aprovação:', configError);
+        const maxLevel = Math.max(...approvals.map((a: any) => a.nivel_aprovacao));
+        ruleName = `Alçada de ${maxLevel} nível(is)`;
+      }
+
+      // Mapear aprovações para o formato do fluxo
+      const approvalFlow = approvals.map((approval: any) => ({
+        level: approval.nivel_aprovacao,
+        approverId: approval.aprovador_id,
+        approverName: usersMap.get(approval.aprovador_id) || 'N/A',
+        status: approval.status,
+        approvedAt: approval.data_aprovacao || null,
+        observacoes: approval.observacoes,
+      }));
+
+      // Calcular total de níveis
+      const totalLevels = Math.max(...approvalFlow.map((a) => a.level));
+
+      // Verificar se está completo
+      const completed = approvalFlow.every((a) => a.status === 'aprovado');
+
+      return {
+        rule: ruleName || 'Regra de Aprovação',
+        totalLevels,
+        approvalFlow,
+        completed,
+      };
+    } catch (error) {
+      console.error('Erro na função getApprovalFlow:', error);
+      throw error;
+    }
+  }
+
   static async processApproval(
     aprovacao_id: string,
     status: 'aprovado' | 'rejeitado' | 'cancelado',
