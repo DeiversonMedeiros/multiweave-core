@@ -17,7 +17,8 @@ import {
   XCircle,
   Eye,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -25,10 +26,11 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCentralAprovacoes } from '@/hooks/portal-gestor/useCentralAprovacoes';
+import { useToast } from '@/hooks/use-toast';
 
 interface AprovacaoItem {
   id: string;
-  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto' | 'registro_ponto' | 'assinatura_ponto';
+  tipo: 'ferias' | 'compensacao' | 'atestado' | 'reembolso' | 'equipamento' | 'correcao_ponto' | 'registro_ponto' | 'assinatura_ponto' | 'requisicao_compra';
   funcionario_nome: string;
   funcionario_matricula: string;
   data_solicitacao: string;
@@ -41,6 +43,7 @@ interface AprovacaoItem {
 
 const CentralAprovacoes: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [tipoFilter, setTipoFilter] = useState<string>('todos');
@@ -66,6 +69,7 @@ const CentralAprovacoes: React.FC = () => {
       case 'correcao_ponto': return <Edit className="h-4 w-4" />;
       case 'registro_ponto': return <Clock className="h-4 w-4" />;
       case 'assinatura_ponto': return <Eye className="h-4 w-4" />;
+      case 'requisicao_compra': return <FileText className="h-4 w-4" />;
       default: return <Calendar className="h-4 w-4" />;
     }
   };
@@ -91,11 +95,20 @@ const CentralAprovacoes: React.FC = () => {
         id: selectedAprovacao.id,
         observacoes: observacoes || undefined
       });
+      toast({
+        title: 'Solicitação aprovada!',
+        description: `A solicitação de ${selectedAprovacao.funcionario_nome} foi aprovada com sucesso.`,
+      });
       setIsAprovacaoDialogOpen(false);
       setSelectedAprovacao(null);
       setObservacoes('');
     } catch (error) {
       console.error('Erro ao aprovar solicitação:', error);
+      toast({
+        title: 'Erro ao aprovar solicitação',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -108,11 +121,20 @@ const CentralAprovacoes: React.FC = () => {
         id: selectedAprovacao.id,
         observacoes: observacoes
       });
+      toast({
+        title: 'Solicitação rejeitada!',
+        description: `A solicitação de ${selectedAprovacao.funcionario_nome} foi rejeitada.`,
+      });
       setIsRejeicaoDialogOpen(false);
       setSelectedAprovacao(null);
       setObservacoes('');
     } catch (error) {
       console.error('Erro ao rejeitar solicitação:', error);
+      toast({
+        title: 'Erro ao rejeitar solicitação',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -156,6 +178,7 @@ const CentralAprovacoes: React.FC = () => {
       case 'correcao_ponto': return 'Correção de Ponto';
       case 'registro_ponto': return 'Registro de Ponto (Hora Extra)';
       case 'assinatura_ponto': return 'Assinatura de Ponto';
+      case 'requisicao_compra': return 'Requisição de Compra';
       default: return tipo;
     }
   };
@@ -271,6 +294,7 @@ const CentralAprovacoes: React.FC = () => {
                   <SelectItem value="reembolso">Reembolso</SelectItem>
                   <SelectItem value="equipamento">Equipamento</SelectItem>
                   <SelectItem value="correcao_ponto">Correção de Ponto</SelectItem>
+                  <SelectItem value="requisicao_compra">Requisição de Compra</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -288,3 +288,4 @@ COMMENT ON FUNCTION create_entity_data(TEXT, TEXT, UUID, JSONB) IS
 3. Constrói jsonb_build_object apenas com colunas que realmente existem na tabela
 Isso resolve definitivamente o problema de colunas inexistentes (como valor_total).';
 
+

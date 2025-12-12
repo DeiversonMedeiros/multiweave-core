@@ -201,7 +201,7 @@ BEGIN
                     
                 WHEN 'requisicao_compra' THEN
                     UPDATE compras.requisicoes_compra
-                    SET status = 'aprovado',
+                    SET status = 'aprovada',
                         data_aprovacao = NOW(),
                         aprovado_por = p_aprovador_id,
                         updated_at = NOW()
@@ -244,7 +244,11 @@ BEGIN
                 
             WHEN 'requisicao_compra' THEN
                 UPDATE compras.requisicoes_compra
-                SET status = p_status,
+                SET status = CASE 
+                    WHEN p_status = 'rejeitado' THEN 'cancelada'
+                    WHEN p_status = 'cancelado' THEN 'cancelada'
+                    ELSE 'cancelada'
+                END,
                     updated_at = NOW()
                 WHERE id = approval_record.processo_id;
                 

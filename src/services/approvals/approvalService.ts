@@ -38,6 +38,9 @@ export interface Approval {
   motivo_transferencia?: string;
   created_at: string;
   updated_at: string;
+  // Campos adicionais para requisições de compra
+  numero_requisicao?: string;
+  solicitante_nome?: string;
 }
 
 export interface MaterialExitRequest {
@@ -211,18 +214,139 @@ export class ApprovalService {
 
   static async getPendingApprovals(userId: string, companyId: string): Promise<Approval[]> {
     try {
-      const { data, error } = await supabase.rpc('get_pending_approvals_unified_for_user', {
+      // Usar a função RPC que retorna o formato correto Approval[] da tabela aprovacoes_unificada
+      // Esta função retorna apenas registros do sistema unificado, não do sistema antigo de RH
+      console.log('🔍 [ApprovalService] Buscando aprovações pendentes:', { userId, companyId });
+      
+      const { data: approvals, error } = await supabase.rpc('get_pending_approvals_unified_for_user', {
         p_user_id: userId,
         p_company_id: companyId
       });
 
       if (error) {
-        console.error('Erro ao buscar aprovações pendentes:', error);
+        console.error('❌ [ApprovalService] Erro ao buscar aprovações pendentes:', error);
         throw error;
       }
-      return data || [];
+      
+      // Para requisições de compra, buscar informações adicionais de forma otimizada
+      const requisicaoApprovals = (approvals || []).filter(a => a.processo_tipo === 'requisicao_compra');
+      const requisicaoIds = requisicaoApprovals.map(a => a.processo_id);
+      
+      let requisicoesMap = new Map<string, { numero_requisicao: string; solicitante_id: string }>();
+      let usuariosMap = new Map<string, string>();
+      
+      if (requisicaoIds.length > 0) {
+        try {
+          // Buscar requisições individualmente usando Promise.all para paralelismo
+          const requisicoesPromises = requisicaoIds.map(reqId => 
+            EntityService.getById<{
+              id: string;
+              numero_requisicao: string;
+              solicitante_id: string;
+            }>({
+              schema: 'compras',
+              table: 'requisicoes_compra',
+              id: reqId,
+              companyId
+            })
+          );
+          
+          const requisicoesResults = await Promise.all(requisicoesPromises);
+          const requisicoes = requisicoesResults.filter(r => r !== null) as Array<{
+            id: string;
+            numero_requisicao: string;
+            solicitante_id: string;
+          }>;
+
+          if (requisicoes.length > 0) {
+            // Criar mapa de requisições
+            requisicoes.forEach((req) => {
+              requisicoesMap.set(req.id, {
+                numero_requisicao: req.numero_requisicao,
+                solicitante_id: req.solicitante_id
+              });
+            });
+            
+            // Buscar nomes dos solicitantes únicos
+            const solicitanteIds = [...new Set(requisicoes.map(r => r.solicitante_id).filter(Boolean))];
+            if (solicitanteIds.length > 0) {
+              // Buscar usuários usando RPC diretamente do Supabase
+              // pois a tabela users está no schema public e pode não ter company_id
+              const usuariosPromises = solicitanteIds.map(async (userId) => {
+                try {
+                  const { data, error } = await (supabase.rpc as any)('get_entity_data', {
+                    schema_name: 'public',
+                    table_name: 'users',
+                    company_id_param: null, // users não tem company_id
+                    filters: { id: userId },
+                    limit_param: 1,
+                    offset_param: 0
+                  });
+                  
+                  if (error) {
+                    console.warn(`⚠️ [ApprovalService] Erro ao buscar usuário ${userId}:`, error);
+                    return null;
+                  }
+                  
+                  if (data && Array.isArray(data) && data.length > 0) {
+                    // O RPC retorna no formato { id, data: {...} } ou direto
+                    const userData = data[0]?.data || data[0];
+                    if (userData) {
+                      return {
+                        id: userData.id || userId,
+                        nome: userData.nome || 'N/A'
+                      };
+                    }
+                  }
+                  return null;
+                } catch (err) {
+                  console.warn(`⚠️ [ApprovalService] Erro ao buscar usuário ${userId}:`, err);
+                  return null;
+                }
+              });
+              
+              const usuariosResults = await Promise.all(usuariosPromises);
+              usuariosResults.forEach((user) => {
+                if (user && user.id) {
+                  usuariosMap.set(user.id, user.nome || 'N/A');
+                }
+              });
+            }
+          }
+        } catch (err) {
+          console.warn('⚠️ [ApprovalService] Erro ao buscar detalhes das requisições:', err);
+        }
+      }
+      
+      // Mapear aprovações com detalhes
+      const approvalsWithDetails = (approvals || []).map((approval) => {
+        if (approval.processo_tipo === 'requisicao_compra') {
+          const reqData = requisicoesMap.get(approval.processo_id);
+          if (reqData) {
+            return {
+              ...approval,
+              numero_requisicao: reqData.numero_requisicao,
+              solicitante_nome: usuariosMap.get(reqData.solicitante_id) || 'N/A'
+            };
+          }
+        }
+        return approval;
+      });
+      
+      console.log('✅ [ApprovalService] Aprovações encontradas:', { 
+        count: approvalsWithDetails?.length || 0, 
+        processos: approvalsWithDetails?.map(a => ({ 
+          tipo: a.processo_tipo, 
+          id: a.processo_id, 
+          nivel: a.nivel_aprovacao,
+          numero: a.numero_requisicao,
+          solicitante: a.solicitante_nome
+        }))
+      });
+      
+      return approvalsWithDetails || [];
     } catch (error) {
-      console.error('Erro na função getPendingApprovals:', error);
+      console.error('❌ [ApprovalService] Erro na função getPendingApprovals:', error);
       throw error;
     }
   }
@@ -255,20 +379,51 @@ export class ApprovalService {
     aprovador_id: string
   ): Promise<boolean> {
     try {
-      const { data, error } = await supabase.rpc('process_approval', {
+      console.log('🔍 [ApprovalService.processApproval] INÍCIO - Parâmetros recebidos:', {
+        aprovacao_id,
+        status,
+        observacoes: observacoes?.substring(0, 100) || '(vazio)',
+        aprovador_id,
+        timestamp: new Date().toISOString()
+      });
+
+      // Verificar se aprovador_id está presente
+      if (!aprovador_id) {
+        console.error('❌ [ApprovalService.processApproval] ERRO: aprovador_id está vazio ou null!');
+        throw new Error('aprovador_id é obrigatório');
+      }
+
+      const rpcParams = {
         p_aprovacao_id: aprovacao_id,
         p_status: status,
         p_observacoes: observacoes,
         p_aprovador_id: aprovador_id
+      };
+
+      console.log('📡 [ApprovalService.processApproval] Chamando RPC process_approval com:', {
+        ...rpcParams,
+        observacoes: observacoes?.substring(0, 100) || '(vazio)'
       });
 
+      const { data, error } = await supabase.rpc('process_approval', rpcParams);
+
       if (error) {
-        console.error('Erro ao processar aprovação:', error);
+        console.error('❌ [ApprovalService.processApproval] Erro ao processar aprovação:', error);
+        console.error('❌ [ApprovalService.processApproval] Detalhes do erro:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        console.error('❌ [ApprovalService.processApproval] Parâmetros que causaram o erro:', rpcParams);
         throw error;
       }
+
+      console.log('✅ [ApprovalService.processApproval] Sucesso! Resultado:', data);
       return data;
     } catch (error) {
-      console.error('Erro na função processApproval:', error);
+      console.error('❌ [ApprovalService.processApproval] Erro na função processApproval:', error);
+      console.error('❌ [ApprovalService.processApproval] Stack trace:', error instanceof Error ? error.stack : 'N/A');
       throw error;
     }
   }

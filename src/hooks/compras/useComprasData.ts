@@ -27,13 +27,22 @@ function useCompanyGuard() {
 export function usePurchaseRequisitions(filters?: EntityFilters) {
   const { selectedCompany } = useCompany();
 
+  console.log('🔍 [usePurchaseRequisitions] Hook chamado com filters:', filters);
+  console.log('🔍 [usePurchaseRequisitions] selectedCompany?.id:', selectedCompany?.id);
+
   return useQuery({
     queryKey: ['compras', 'requisicoes', selectedCompany?.id, filters],
     queryFn: async () => {
       if (!selectedCompany?.id) {
         throw new Error('Empresa não selecionada');
       }
+      console.log('🔍 [usePurchaseRequisitions] queryFn executando com companyId:', selectedCompany.id, 'filters:', filters);
       const result = await purchaseService.listRequisitions(selectedCompany.id, filters);
+      console.log('✅ [usePurchaseRequisitions] Resultado recebido:', {
+        total: result.total,
+        count: result.data?.length || 0,
+        data: result.data
+      });
       return result.data;
     },
     enabled: !!selectedCompany?.id,
@@ -61,6 +70,31 @@ export function useCreatePurchaseRequisition() {
     },
     onError: (error: any) => {
       toast.error(error.message || 'Erro ao criar requisição');
+    },
+  });
+}
+
+export function useUpdatePurchaseRequisition() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: PurchaseRequisitionInput }) => {
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      if (!user?.id) throw new Error('Usuário não autenticado');
+      return purchaseService.updateRequisition({
+        companyId: selectedCompany.id,
+        requisicaoId: id,
+        payload,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Requisição atualizada com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['compras', 'requisicoes'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Erro ao atualizar requisição');
     },
   });
 }

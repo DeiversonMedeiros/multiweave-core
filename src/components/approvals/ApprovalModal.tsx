@@ -15,6 +15,7 @@ import {
   Building2
 } from 'lucide-react';
 import { Approval } from '@/services/approvals/approvalService';
+import { RequisicaoCompraDetails } from './RequisicaoCompraDetails';
 
 interface ApprovalModalProps {
   approval: Approval | null;
@@ -71,8 +72,8 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] flex flex-col p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Clock className="h-5 w-5" />
             Processar Aprovação
@@ -82,7 +83,8 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+          <div className="space-y-6">
           {/* Informações da Aprovação */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -113,6 +115,13 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
               </div>
             </div>
           </div>
+
+          {/* Detalhes da Requisição de Compra */}
+          {approval.processo_tipo === 'requisicao_compra' && (
+            <div className="border-t pt-6">
+              <RequisicaoCompraDetails requisicaoId={approval.processo_id} />
+            </div>
+          )}
 
           {/* Transferência de Aprovação */}
           {approval.transferido_em && (
@@ -221,9 +230,10 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
               </p>
             </div>
           )}
+          </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t flex-shrink-0 bg-background">
           <Button variant="outline" onClick={handleClose} disabled={isLoading}>
             Cancelar
           </Button>

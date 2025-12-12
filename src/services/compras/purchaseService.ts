@@ -35,6 +35,7 @@ export interface PurchaseRequisition {
 }
 
 export interface PurchaseRequisitionItemInput {
+  id?: string; // ID opcional para identificar itens existentes na atualização
   material_id: string;
   quantidade: number;
   unidade_medida?: string;
@@ -176,7 +177,8 @@ export const purchaseService = {
     companyId: string,
     filters?: EntityFilters,
   ): Promise<EntityListResult<PurchaseRequisition>> {
-    return EntityService.list<PurchaseRequisition>({
+    console.log('🔍 [purchaseService.listRequisitions] Buscando requisições com filters:', filters);
+    const result = await EntityService.list<PurchaseRequisition>({
       schema: 'compras',
       table: 'requisicoes_compra',
       companyId,
@@ -184,9 +186,21 @@ export const purchaseService = {
       page: 1,
       pageSize: 100,
     });
+    console.log('✅ [purchaseService.listRequisitions] Resultado:', {
+      total: result.total,
+      count: result.data?.length || 0,
+      statuses: result.data?.reduce((acc: any, req: any) => {
+        const status = req.workflow_state || req.status || 'sem_status';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {})
+    });
+    return result;
   },
 
   async listQuotes(companyId: string, filters?: EntityFilters) {
+    // A tabela cotacoes não tem company_id diretamente, então usamos skipCompanyFilter
+    // A segurança é garantida pelo JOIN com requisicoes_compra que tem company_id
     return EntityService.list({
       schema: 'compras',
       table: 'cotacoes',
@@ -194,6 +208,7 @@ export const purchaseService = {
       filters,
       page: 1,
       pageSize: 100,
+      skipCompanyFilter: true, // Tabela não tem company_id diretamente
     });
   },
 
@@ -260,28 +275,255 @@ export const purchaseService = {
         data_necessidade: payload.data_necessidade,
         prioridade: payload.prioridade,
         status: 'rascunho', // Definir status como 'rascunho' para evitar validação da constraint
-        workflow_state: payload.tipo_requisicao === 'emergencial' ? 'pendente_aprovacao' : 'criada',
+        workflow_state: 'pendente_aprovacao', // Sempre inicia aguardando aprovação após criação
       },
     });
 
+    // Agrupar itens duplicados (mesmo material_id) antes de criar
+    // A constraint UNIQUE(requisicao_id, material_id) impede duplicatas
+    const itensAgrupados = new Map<string, {
+      material_id: string;
+      quantidade: number;
+      unidade_medida: string;
+      valor_unitario_estimado: number;
+      observacoes: string[];
+      almoxarifado_id?: string;
+    }>();
+
+    payload.itens.forEach((item) => {
+      const key = item.material_id;
+      if (itensAgrupados.has(key)) {
+        const existente = itensAgrupados.get(key)!;
+        existente.quantidade += item.quantidade;
+        if (item.observacoes) {
+          existente.observacoes.push(item.observacoes);
+        }
+        // Usar o maior valor unitário se houver diferença
+        if (item.valor_unitario_estimado > existente.valor_unitario_estimado) {
+          existente.valor_unitario_estimado = item.valor_unitario_estimado;
+        }
+      } else {
+        itensAgrupados.set(key, {
+          material_id: item.material_id,
+          quantidade: item.quantidade,
+          unidade_medida: item.unidade_medida || 'UN',
+          valor_unitario_estimado: item.valor_unitario_estimado || 0,
+          observacoes: item.observacoes ? [item.observacoes] : [],
+          almoxarifado_id: item.almoxarifado_id,
+        });
+      }
+    });
+
+    // Criar itens sequencialmente para evitar problemas de concorrência
+    // e garantir que a constraint seja respeitada
+    const requisicaoId = (requisicao as any)?.id;
+    for (const itemAgrupado of itensAgrupados.values()) {
+      await EntityService.create({
+        schema: 'compras',
+        table: 'requisicao_itens',
+        companyId,
+        data: {
+          requisicao_id: requisicaoId,
+          material_id: itemAgrupado.material_id,
+          quantidade: itemAgrupado.quantidade,
+          unidade_medida: itemAgrupado.unidade_medida,
+          valor_unitario_estimado: itemAgrupado.valor_unitario_estimado,
+          observacoes: itemAgrupado.observacoes.length > 0 
+            ? itemAgrupado.observacoes.join('; ') 
+            : undefined,
+          almoxarifado_id: itemAgrupado.almoxarifado_id,
+        },
+      });
+    }
+
+    return requisicao;
+  },
+
+  async updateRequisition(params: {
+    companyId: string;
+    requisicaoId: string;
+    payload: PurchaseRequisitionInput;
+  }) {
+    const { companyId, requisicaoId, payload } = params;
+
+    // Validar campos obrigatórios conforme constraint
+    if (payload.tipo_requisicao === 'reposicao' && !payload.destino_almoxarifado_id) {
+      throw new Error('Almoxarifado de destino é obrigatório para requisições de reposição');
+    }
+    if (payload.tipo_requisicao === 'compra_direta' && !payload.local_entrega) {
+      throw new Error('Local de entrega é obrigatório para compras diretas');
+    }
+
+    // Atualizar a requisição
+    const requisicao = await EntityService.update({
+      schema: 'compras',
+      table: 'requisicoes_compra',
+      companyId,
+      id: requisicaoId,
+      data: {
+        centro_custo_id: payload.centro_custo_id,
+        projeto_id: payload.projeto_id,
+        tipo_requisicao: payload.tipo_requisicao,
+        destino_almoxarifado_id: payload.destino_almoxarifado_id,
+        local_entrega: payload.local_entrega,
+        is_emergencial: payload.tipo_requisicao === 'emergencial',
+        justificativa: payload.justificativa,
+        observacoes: payload.observacoes,
+        data_necessidade: payload.data_necessidade,
+        prioridade: payload.prioridade,
+      },
+    });
+
+    // Buscar itens existentes
+    // Nota: requisicao_itens não tem company_id, então usamos skipCompanyFilter
+    // A segurança é garantida pelo filtro requisicao_id que referencia uma requisição com company_id
+    const existingItems = await EntityService.list({
+      schema: 'compras',
+      table: 'requisicao_itens',
+      companyId,
+      filters: { requisicao_id: requisicaoId },
+      page: 1,
+      pageSize: 1000,
+      skipCompanyFilter: true, // Tabela não tem company_id diretamente
+    });
+
+    const existingItemIds = new Set((existingItems.data || []).map((item: any) => item.id));
+    // Mapa de material_id para item existente (para verificar duplicatas)
+    const existingItemsByMaterialId = new Map<string, any>();
+    (existingItems.data || []).forEach((item: any) => {
+      existingItemsByMaterialId.set(item.material_id, item);
+    });
+    
+    const newItemIds = new Set(payload.itens.map((item: any) => item.id).filter(Boolean));
+
+    // Deletar itens removidos
+    const itemsToDelete = (existingItems.data || []).filter(
+      (item: any) => !newItemIds.has(item.id)
+    );
     await Promise.all(
-      payload.itens.map((item) =>
-        EntityService.create({
+      itemsToDelete.map((item: any) =>
+        EntityService.delete({
+          schema: 'compras',
+          table: 'requisicao_itens',
+          companyId,
+          id: item.id,
+          skipCompanyFilter: true, // Tabela não tem company_id diretamente
+        })
+      )
+    );
+
+    // Separar itens existentes (para atualizar) e novos (para criar)
+    const itemsToUpdate: Array<{ id: string; data: any }> = [];
+    const newItemsMap = new Map<string, {
+      material_id: string;
+      quantidade: number;
+      unidade_medida: string;
+      valor_unitario_estimado: number;
+      observacoes: string[];
+      almoxarifado_id?: string;
+    }>();
+
+    payload.itens.forEach((item) => {
+      const itemData = {
+        material_id: item.material_id,
+        quantidade: item.quantidade,
+        unidade_medida: item.unidade_medida || 'UN',
+        valor_unitario_estimado: item.valor_unitario_estimado,
+        observacoes: item.observacoes,
+        almoxarifado_id: item.almoxarifado_id,
+      };
+
+      if (item.id && existingItemIds.has(item.id)) {
+        // Item existente com ID conhecido - atualizar
+        itemsToUpdate.push({ id: item.id, data: itemData });
+      } else if (existingItemsByMaterialId.has(item.material_id)) {
+        // Item sem ID mas já existe na requisição (mesmo material_id) - atualizar o existente
+        const existingItem = existingItemsByMaterialId.get(item.material_id);
+        itemsToUpdate.push({ id: existingItem.id, data: itemData });
+      } else {
+        // Novo item - agrupar por material_id para evitar duplicatas
+        const key = item.material_id;
+        if (newItemsMap.has(key)) {
+          const existente = newItemsMap.get(key)!;
+          existente.quantidade += item.quantidade;
+          if (item.observacoes) {
+            existente.observacoes.push(item.observacoes);
+          }
+          if (item.valor_unitario_estimado > existente.valor_unitario_estimado) {
+            existente.valor_unitario_estimado = item.valor_unitario_estimado;
+          }
+        } else {
+          newItemsMap.set(key, {
+            material_id: item.material_id,
+            quantidade: item.quantidade,
+            unidade_medida: item.unidade_medida || 'UN',
+            valor_unitario_estimado: item.valor_unitario_estimado || 0,
+            observacoes: item.observacoes ? [item.observacoes] : [],
+            almoxarifado_id: item.almoxarifado_id,
+          });
+        }
+      }
+    });
+
+    // Atualizar itens existentes em paralelo
+    await Promise.all(
+      itemsToUpdate.map(({ id, data }) =>
+        EntityService.update({
+          schema: 'compras',
+          table: 'requisicao_itens',
+          companyId,
+          id,
+          data,
+          skipCompanyFilter: true, // Tabela não tem company_id diretamente
+        })
+      )
+    );
+
+    // Criar novos itens sequencialmente para evitar problemas de concorrência
+    // Verificar se já existe item com mesmo material_id antes de criar
+    for (const itemAgrupado of newItemsMap.values()) {
+      // Verificar se já existe item com este material_id na requisição
+      const existingItemWithMaterial = existingItemsByMaterialId.get(itemAgrupado.material_id);
+      
+      if (existingItemWithMaterial) {
+        // Se já existe, atualizar ao invés de criar
+        await EntityService.update({
+          schema: 'compras',
+          table: 'requisicao_itens',
+          companyId,
+          id: existingItemWithMaterial.id,
+          data: {
+            quantidade: itemAgrupado.quantidade,
+            unidade_medida: itemAgrupado.unidade_medida,
+            valor_unitario_estimado: itemAgrupado.valor_unitario_estimado,
+            observacoes: itemAgrupado.observacoes.length > 0 
+              ? itemAgrupado.observacoes.join('; ') 
+              : undefined,
+            almoxarifado_id: itemAgrupado.almoxarifado_id,
+          },
+          skipCompanyFilter: true, // Tabela não tem company_id diretamente
+        });
+      } else {
+        // Criar novo item apenas se não existir
+        await EntityService.create({
           schema: 'compras',
           table: 'requisicao_itens',
           companyId,
           data: {
-            requisicao_id: (requisicao as any)?.id,
-            material_id: item.material_id,
-            quantidade: item.quantidade,
-            unidade_medida: item.unidade_medida || 'UN',
-            valor_unitario_estimado: item.valor_unitario_estimado,
-            observacoes: item.observacoes,
-            almoxarifado_id: item.almoxarifado_id,
+            requisicao_id: requisicaoId,
+            material_id: itemAgrupado.material_id,
+            quantidade: itemAgrupado.quantidade,
+            unidade_medida: itemAgrupado.unidade_medida,
+            valor_unitario_estimado: itemAgrupado.valor_unitario_estimado,
+            observacoes: itemAgrupado.observacoes.length > 0 
+              ? itemAgrupado.observacoes.join('; ') 
+              : undefined,
+            almoxarifado_id: itemAgrupado.almoxarifado_id,
           },
-        }),
-      ),
-    );
+          skipCompanyFilter: true, // Tabela não tem company_id diretamente
+        });
+      }
+    }
 
     return requisicao;
   },
