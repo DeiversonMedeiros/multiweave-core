@@ -1,39 +1,12 @@
 -- =====================================================
--- MIGRAÇÃO: Criar cotação automaticamente ao aprovar requisição
--- Data....: 2025-12-11
+-- CORREÇÃO: Tratar NULL em data_necessidade no trigger criar_cotacao_automatica
+-- Data: 2025-12-12
 -- Descrição:
---   - Cria função para gerar número de cotação
---   - Cria função que cria ciclo de cotação automaticamente
---   - Cria trigger que executa quando requisição é aprovada
+--   - Corrige o trigger criar_cotacao_automatica para tratar casos onde
+--     data_necessidade é NULL (permitido para rascunhos pela migration 20251211215450)
+--   - Quando data_necessidade é NULL, usa 30 dias a partir de hoje como prazo_resposta padrão
 -- =====================================================
 
--- 1. FUNÇÃO PARA GERAR NÚMERO DE COTAÇÃO
--- =====================================================
-CREATE OR REPLACE FUNCTION compras.gerar_numero_cotacao(p_company_id UUID)
-RETURNS VARCHAR(50) 
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    proximo_numero INTEGER;
-    numero_formatado VARCHAR(50);
-BEGIN
-    -- Buscar próximo número de ciclo de cotação
-    SELECT COALESCE(MAX(CAST(SUBSTRING(numero_cotacao FROM '[0-9]+') AS INTEGER)), 0) + 1
-    INTO proximo_numero
-    FROM compras.cotacao_ciclos
-    WHERE company_id = p_company_id;
-    
-    -- Formatar número
-    numero_formatado := 'COT-' || LPAD(proximo_numero::TEXT, 6, '0');
-    
-    RETURN numero_formatado;
-END;
-$$;
-
-COMMENT ON FUNCTION compras.gerar_numero_cotacao(UUID) IS 'Gera número sequencial de cotação para uma empresa';
-
--- 2. FUNÇÃO PARA CRIAR CICLO DE COTAÇÃO AUTOMATICAMENTE
--- =====================================================
 CREATE OR REPLACE FUNCTION compras.criar_cotacao_automatica()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -128,19 +101,6 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION compras.criar_cotacao_automatica() IS 'Cria automaticamente um ciclo de cotação quando uma requisição é aprovada';
-
--- 3. TRIGGER PARA EXECUTAR A FUNÇÃO
--- =====================================================
-DROP TRIGGER IF EXISTS trigger_criar_cotacao_automatica ON compras.requisicoes_compra;
-
-CREATE TRIGGER trigger_criar_cotacao_automatica
-    AFTER UPDATE ON compras.requisicoes_compra
-    FOR EACH ROW
-    WHEN (NEW.status = 'aprovada'::compras.status_requisicao 
-          AND (OLD.status IS NULL OR OLD.status != 'aprovada'::compras.status_requisicao))
-    EXECUTE FUNCTION compras.criar_cotacao_automatica();
-
-COMMENT ON TRIGGER trigger_criar_cotacao_automatica ON compras.requisicoes_compra IS 
-'Cria automaticamente um ciclo de cotação quando uma requisição de compra é aprovada';
+COMMENT ON FUNCTION compras.criar_cotacao_automatica() IS 
+'Cria automaticamente um ciclo de cotação quando uma requisição é aprovada. Trata casos onde data_necessidade é NULL usando 30 dias como prazo padrão.';
 

@@ -79,6 +79,16 @@ const CentralAprovacoesExpandida: React.FC = () => {
       return;
     }
 
+    // Identificar se é requisição de compra para logs específicos
+    const isRequisicaoCompra = selectedApproval.processo_tipo === 'requisicao_compra';
+    if (isRequisicaoCompra) {
+      console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] ⚠️ REQUISIÇÃO DE COMPRA detectada!');
+      if (status === 'aprovado') {
+        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Se todas as aprovações forem concluídas, o trigger criará uma cotação automaticamente.');
+        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Verifique os logs do banco de dados (RAISE NOTICE) para rastrear a criação da cotação.');
+      }
+    }
+
     if (!user?.id) {
       console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] user.id está null ou undefined!', {
         user,
@@ -98,12 +108,22 @@ const CentralAprovacoesExpandida: React.FC = () => {
     console.log('📤 [CentralAprovacoesExpandida.handleProcessApproval] Chamando mutation com:', {
       ...mutationParams,
       observacoes: observacoes?.substring(0, 100) || '(vazio)',
-      aprovador_id_valid: !!mutationParams.aprovador_id && mutationParams.aprovador_id.trim() !== ''
+      aprovador_id_valid: !!mutationParams.aprovador_id && mutationParams.aprovador_id.trim() !== '',
+      processo_tipo: selectedApproval.processo_tipo,
+      is_requisicao_compra: isRequisicaoCompra
     });
 
     try {
       await processApproval.mutateAsync(mutationParams);
       console.log('✅ [CentralAprovacoesExpandida.handleProcessApproval] Sucesso!');
+      
+      // Log específico para requisição de compra aprovada
+      if (isRequisicaoCompra && status === 'aprovado') {
+        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] ✅ Requisição de compra aprovada!');
+        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Verifique os logs do banco de dados para confirmar se a cotação foi criada automaticamente.');
+        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Os logs do trigger criar_cotacao_automatica mostrarão o processo completo.');
+      }
+      
       setIsApprovalModalOpen(false);
       setSelectedApproval(null);
     } catch (error) {
@@ -114,7 +134,9 @@ const CentralAprovacoesExpandida: React.FC = () => {
         details: (error as any)?.details,
         hint: (error as any)?.hint,
         stack: error instanceof Error ? error.stack : 'N/A',
-        mutationParams
+        mutationParams,
+        processo_tipo: selectedApproval.processo_tipo,
+        is_requisicao_compra: isRequisicaoCompra
       });
     }
   };

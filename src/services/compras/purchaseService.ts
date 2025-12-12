@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, comprasSupabase } from '@/integrations/supabase/client';
 import { EntityFilters, EntityListResult, EntityService } from '@/services/generic/entityService';
 
 export type RequisitionWorkflowState =
@@ -199,16 +199,128 @@ export const purchaseService = {
   },
 
   async listQuotes(companyId: string, filters?: EntityFilters) {
-    // A tabela cotacoes não tem company_id diretamente, então usamos skipCompanyFilter
-    // A segurança é garantida pelo JOIN com requisicoes_compra que tem company_id
-    return EntityService.list({
+    // Buscar de cotacao_ciclos ao invés de cotacoes
+    // cotacao_ciclos é criado automaticamente quando uma requisição é aprovada
+    // cotacoes são as cotações individuais de fornecedores dentro de um ciclo
+    // Usar a view cotacoes_with_requisicao que já inclui numero_requisicao via JOIN
+    
+    try {
+      // Tentar usar a view primeiro (mais eficiente)
+      const viewResult = await EntityService.list({
+        schema: 'compras',
+        table: 'cotacoes_with_requisicao',
+        companyId,
+        filters,
+        page: 1,
+        pageSize: 100,
+      });
+
+      if (viewResult.data && viewResult.data.length > 0) {
+        console.log('✅ [listQuotes] Usando view cotacoes_with_requisicao');
+        return viewResult;
+      }
+    } catch (error) {
+      console.warn('⚠️ [listQuotes] View não disponível, usando busca manual:', error);
+    }
+
+    // Fallback: buscar de cotacao_ciclos e fazer JOIN manualmente
+    const cotacoesResult = await EntityService.list({
       schema: 'compras',
-      table: 'cotacoes',
+      table: 'cotacao_ciclos',
       companyId,
       filters,
       page: 1,
       pageSize: 100,
-      skipCompanyFilter: true, // Tabela não tem company_id diretamente
+    });
+
+    if (!cotacoesResult.data || cotacoesResult.data.length === 0) {
+      return cotacoesResult;
+    }
+
+    // Buscar os números das requisições usando query direta do Supabase
+    const requisicaoIds = [...new Set(cotacoesResult.data.map((c: any) => c.requisicao_id).filter(Boolean))];
+    
+    if (requisicaoIds.length === 0) {
+      return cotacoesResult;
+    }
+
+    // Buscar requisições em lote usando EntityService
+    const requisicoesMap = new Map<string, string>();
+    try {
+      console.log('🔍 [listQuotes] Buscando requisições. IDs necessários:', requisicaoIds);
+      
+      // Buscar todas as requisições da empresa e filtrar pelos IDs necessários
+      const requisicoesResult = await EntityService.list({
+        schema: 'compras',
+        table: 'requisicoes_compra',
+        companyId,
+        filters: {},
+        page: 1,
+        pageSize: 1000,
+      });
+
+      console.log('🔍 [listQuotes] Requisições encontradas:', requisicoesResult.data?.length || 0);
+
+      if (requisicoesResult.data) {
+        // Normalizar IDs para string para garantir comparação correta
+        const requisicaoIdsStr = requisicaoIds.map(id => String(id));
+        
+        requisicoesResult.data.forEach((req: any) => {
+          const reqIdStr = String(req.id);
+          if (req.id && requisicaoIdsStr.includes(reqIdStr)) {
+            if (req.numero_requisicao) {
+              requisicoesMap.set(reqIdStr, req.numero_requisicao);
+              console.log(`✅ [listQuotes] Mapeado: ${reqIdStr.substring(0, 8)}... -> ${req.numero_requisicao}`);
+            } else {
+              console.warn(`⚠️ [listQuotes] Requisição ${reqIdStr} não tem numero_requisicao`);
+            }
+          }
+        });
+      }
+      
+      console.log(`✅ [listQuotes] Total mapeado: ${requisicoesMap.size} de ${requisicaoIds.length} necessários`);
+    } catch (error) {
+      console.error('❌ [listQuotes] Erro ao buscar números das requisições:', error);
+    }
+
+    // Adicionar numero_requisicao aos dados das cotações
+    const transformedData = cotacoesResult.data.map((cotacao: any) => {
+      const reqIdStr = cotacao.requisicao_id ? String(cotacao.requisicao_id) : null;
+      const numeroRequisicao = reqIdStr ? requisicoesMap.get(reqIdStr) || null : null;
+      
+      // Log para debug
+      if (!numeroRequisicao && cotacao.requisicao_id) {
+        console.warn(`⚠️ [listQuotes] Não encontrado numero_requisicao para requisicao_id: ${cotacao.requisicao_id}`);
+        console.warn(`⚠️ [listQuotes] Mapa tem ${requisicoesMap.size} entradas`);
+        console.warn(`⚠️ [listQuotes] IDs no mapa:`, Array.from(requisicoesMap.keys()).slice(0, 5));
+        console.warn(`⚠️ [listQuotes] Tentando buscar diretamente...`);
+      }
+      
+      return {
+        ...cotacao,
+        numero_requisicao: numeroRequisicao,
+      };
+    });
+
+    console.log('✅ [listQuotes] Dados finais:', transformedData.map((c: any) => ({
+      id: c.id,
+      numero_cotacao: c.numero_cotacao,
+      requisicao_id: c.requisicao_id,
+      numero_requisicao: c.numero_requisicao
+    })));
+
+    return {
+      ...cotacoesResult,
+      data: transformedData,
+    };
+  },
+
+  async deleteQuote(params: { companyId: string; quoteId: string }) {
+    return EntityService.delete({
+      schema: 'compras',
+      table: 'cotacao_ciclos',
+      companyId: params.companyId,
+      id: params.quoteId,
     });
   },
 

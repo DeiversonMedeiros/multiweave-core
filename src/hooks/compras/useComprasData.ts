@@ -147,6 +147,28 @@ export function useQuotes(filters?: EntityFilters) {
   });
 }
 
+export function useDeleteQuote() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: (id: string) => {
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      return purchaseService.deleteQuote({
+        companyId: selectedCompany.id,
+        quoteId: id,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Cotação excluída com sucesso');
+      queryClient.invalidateQueries({ queryKey: ['compras', 'cotacoes'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Erro ao excluir cotação');
+    },
+  });
+}
+
 export function usePurchaseOrders(filters?: EntityFilters) {
   const { selectedCompany } = useCompany();
 

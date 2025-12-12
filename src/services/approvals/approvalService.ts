@@ -393,6 +393,22 @@ export class ApprovalService {
         throw new Error('aprovador_id é obrigatório');
       }
 
+      // Buscar informações da aprovação para identificar o tipo
+      const { data: approvalData, error: approvalError } = await supabase
+        .from('aprovacoes_unificada')
+        .select('processo_tipo, processo_id, company_id')
+        .eq('id', aprovacao_id)
+        .single();
+
+      if (!approvalError && approvalData) {
+        console.log('📋 [ApprovalService.processApproval] Tipo de processo:', approvalData.processo_tipo);
+        if (approvalData.processo_tipo === 'requisicao_compra') {
+          console.log('🛒 [ApprovalService.processApproval] ⚠️ REQUISIÇÃO DE COMPRA detectada!');
+          console.log('🛒 [ApprovalService.processApproval] Se aprovada, o trigger criará cotação automaticamente.');
+          console.log('🛒 [ApprovalService.processApproval] Verifique os logs do banco (RAISE NOTICE) para rastrear a criação da cotação.');
+        }
+      }
+
       const rpcParams = {
         p_aprovacao_id: aprovacao_id,
         p_status: status,
@@ -420,6 +436,14 @@ export class ApprovalService {
       }
 
       console.log('✅ [ApprovalService.processApproval] Sucesso! Resultado:', data);
+      
+      // Se foi uma requisição de compra aprovada, informar sobre a cotação
+      if (!approvalError && approvalData && approvalData.processo_tipo === 'requisicao_compra' && status === 'aprovado') {
+        console.log('🛒 [ApprovalService.processApproval] ✅ Requisição de compra aprovada!');
+        console.log('🛒 [ApprovalService.processApproval] 📝 Verifique os logs do banco de dados para confirmar se a cotação foi criada automaticamente.');
+        console.log('🛒 [ApprovalService.processApproval] 📝 Os logs do trigger criar_cotacao_automatica mostrarão o processo completo.');
+      }
+      
       return data;
     } catch (error) {
       console.error('❌ [ApprovalService.processApproval] Erro na função processApproval:', error);
