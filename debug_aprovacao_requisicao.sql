@@ -104,3 +104,4 @@ AND tc.table_name = 'requisicoes_compra';
 
 
 
+

@@ -283,3 +283,4 @@ export function FluxoAprovacao({ requisicaoId }: FluxoAprovacaoProps) {
     </Card>
   );
 }
+

@@ -16,3 +16,4 @@ AND (workflow_state != 'em_cotacao' OR workflow_state IS NULL);
 
 
 
+
