@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -75,7 +75,7 @@ const AcompanhamentoPonto: React.FC = () => {
   const dateRange = getDateRange();
   const {
     data,
-    fetchNextPage,
+    fetchNextPage: originalFetchNextPage,
     hasNextPage,
     isFetchingNextPage,
     isLoading
@@ -83,36 +83,49 @@ const AcompanhamentoPonto: React.FC = () => {
     startDate: dateRange.start,
     endDate: dateRange.end,
     status: statusFilter !== 'todos' ? statusFilter : undefined,
-    pageSize: 30, // Carregar 30 registros por vez
+    pageSize: 10, // Carregar 10 registros por vez
     managerUserId: user?.id, // Filtrar apenas registros dos funcionários gerenciados pelo gestor logado
   });
 
-  // Combinar todas as páginas em um único array
-  const pontoData = data?.pages.flatMap(page => page.data) || [];
-
-  // Observer para scroll infinito
-  const observerTarget = useRef<HTMLDivElement>(null);
-
+  // Logs para rastrear mudanças de estado
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
+    console.log('[AcompanhamentoPonto] 📊 Estado da paginação mudou:', {
+      hasNextPage,
+      isFetchingNextPage,
+      isLoading,
+      totalPages: data?.pages?.length || 0,
+      totalRecords: data?.pages?.flatMap(p => p.data).length || 0,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Log quando isFetchingNextPage muda para true (indica que está carregando)
+    if (isFetchingNextPage) {
+      const stackTrace = new Error().stack;
+      console.warn('[AcompanhamentoPonto] ⚠️ isFetchingNextPage = true - Carregamento iniciado!');
+      console.warn('[AcompanhamentoPonto] 📍 Stack trace:', stackTrace);
     }
+  }, [hasNextPage, isFetchingNextPage, isLoading, data]);
 
-    return () => {
-      if (observerTarget.current) {
-        observer.unobserve(observerTarget.current);
-      }
-    };
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  // Wrapper para fetchNextPage que só permite chamadas explícitas do botão
+  const fetchNextPage = useCallback(() => {
+    const stackTrace = new Error().stack;
+    console.log('[AcompanhamentoPonto] 🖱️ fetchNextPage chamado explicitamente');
+    console.log('[AcompanhamentoPonto] 📍 Stack trace:', stackTrace);
+    originalFetchNextPage();
+  }, [originalFetchNextPage]);
+
+  // Combinar todas as páginas em um único array
+  const combineStartTime = performance.now();
+  const pontoData = data?.pages.flatMap(page => page.data) || [];
+  const combineEndTime = performance.now();
+  const combineDuration = combineEndTime - combineStartTime;
+
+  // Log de performance quando dados mudarem
+  useEffect(() => {
+    if (pontoData.length > 0) {
+      console.log(`[AcompanhamentoPonto] 📊 Dados: ${pontoData.length} registros | Combine: ${combineDuration.toFixed(2)}ms`);
+    }
+  }, [pontoData.length, combineDuration]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -225,6 +238,7 @@ const AcompanhamentoPonto: React.FC = () => {
     };
   };
 
+  const filterStartTime = performance.now();
   const filteredPontoData = pontoData.filter((ponto: TimeRecord) => {
     const matchesSearch = (ponto.employee_nome || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (ponto.employee_matricula || '').includes(searchTerm);
@@ -232,6 +246,15 @@ const AcompanhamentoPonto: React.FC = () => {
     
     return matchesSearch && matchesStatus;
   });
+  const filterEndTime = performance.now();
+  const filterDuration = filterEndTime - filterStartTime;
+
+  // Log de performance do filtro
+  useEffect(() => {
+    if (pontoData.length > 0) {
+      console.log(`[AcompanhamentoPonto] 🔍 Filtro: ${filterDuration.toFixed(2)}ms | Total filtrados: ${filteredPontoData.length}`);
+    }
+  }, [filteredPontoData.length, searchTerm, statusFilter]);
 
   const getEstatisticas = () => {
     const total = pontoData.length;
@@ -766,14 +789,27 @@ const AcompanhamentoPonto: React.FC = () => {
                 );
               })}
               
-              {/* Observer para scroll infinito */}
-              <div ref={observerTarget} className="h-4" />
-              
               {/* Indicador de carregamento */}
               {isFetchingNextPage && (
                 <div className="flex items-center justify-center py-4">
                   <Clock className="h-5 w-5 animate-spin mr-2" />
                   <span className="text-sm text-gray-500">Carregando mais registros...</span>
+                </div>
+              )}
+              
+              {/* Botão "Carregar mais" */}
+              {hasNextPage && !isFetchingNextPage && (
+                <div className="flex justify-center py-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      console.log('[AcompanhamentoPonto] 🖱️ Botão "Carregar mais" clicado');
+                      fetchNextPage();
+                    }}
+                    className="w-full max-w-xs"
+                  >
+                    Carregar mais
+                  </Button>
                 </div>
               )}
             </div>

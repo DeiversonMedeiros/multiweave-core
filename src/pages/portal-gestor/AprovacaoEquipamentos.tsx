@@ -26,6 +26,9 @@ import {
   useApproveMonthlyPayment, 
   useRejectMonthlyPayment 
 } from '@/hooks/rh/useEquipmentRentalMonthlyPayments';
+import { listMonthlyPaymentsForManager } from '@/services/rh/equipmentRentalMonthlyPaymentsService';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth-context';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -43,20 +46,27 @@ const AprovacaoEquipamentos: React.FC = () => {
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [paymentAprovacaoObservacoes, setPaymentAprovacaoObservacoes] = useState('');
   const [paymentRejeicaoObservacoes, setPaymentRejeicaoObservacoes] = useState('');
-  const [paymentValorAprovado, setPaymentValorAprovado] = useState<string>('');
   const [isPaymentAprovacaoDialogOpen, setIsPaymentAprovacaoDialogOpen] = useState(false);
   const [isPaymentRejeicaoDialogOpen, setIsPaymentRejeicaoDialogOpen] = useState(false);
   const [monthReference, setMonthReference] = useState<number>(new Date().getMonth() + 1);
   const [yearReference, setYearReference] = useState<number>(new Date().getFullYear());
 
   const { selectedCompany } = useCompany();
+  const { user } = useAuth();
   const { equipments, loading, error, approveEquipment, rejectEquipment } = useEquipmentRentals(selectedCompany?.id || '');
   
-  // Hooks para pagamentos mensais
-  const { data: monthlyPayments = [], isLoading: isLoadingPayments, refetch: refetchPayments } = useMonthlyPayments({
-    monthReference,
-    yearReference,
-    status: 'pendente_aprovacao'
+  // Hooks para pagamentos mensais - filtrar apenas do gestor
+  const { data: monthlyPayments = [], isLoading: isLoadingPayments, refetch: refetchPayments } = useQuery({
+    queryKey: ['equipment-rental-monthly-payments-manager', selectedCompany?.id, user?.id, monthReference, yearReference],
+    queryFn: async () => {
+      if (!selectedCompany?.id || !user?.id) return [];
+      return listMonthlyPaymentsForManager(selectedCompany.id, user.id, {
+        monthReference,
+        yearReference,
+        status: 'pendente_aprovacao'
+      });
+    },
+    enabled: !!selectedCompany?.id && !!user?.id
   });
   const approveMonthlyPayment = useApproveMonthlyPayment();
   const rejectMonthlyPayment = useRejectMonthlyPayment();
@@ -146,7 +156,6 @@ const AprovacaoEquipamentos: React.FC = () => {
   // Handlers para pagamentos mensais
   const handleAprovarPagamento = (payment: any) => {
     setSelectedPayment(payment);
-    setPaymentValorAprovado(payment.valor_calculado.toString());
     setPaymentAprovacaoObservacoes('');
     setIsPaymentAprovacaoDialogOpen(true);
   };
@@ -162,7 +171,6 @@ const AprovacaoEquipamentos: React.FC = () => {
       try {
         await approveMonthlyPayment.mutateAsync({
           paymentId: selectedPayment.id,
-          valorAprovado: paymentValorAprovado ? parseFloat(paymentValorAprovado) : undefined,
           observacoes: paymentAprovacaoObservacoes
         });
         setIsPaymentAprovacaoDialogOpen(false);
@@ -194,11 +202,16 @@ const AprovacaoEquipamentos: React.FC = () => {
     }
   };
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: number | null | undefined) => {
+    // Tratar valores inválidos (NaN, null, undefined)
+    const numValue = value ?? 0;
+    if (isNaN(numValue) || !isFinite(numValue)) {
+      return 'R$ 0,00';
+    }
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(value);
+    }).format(numValue);
   };
 
   if (loading) {
@@ -605,7 +618,7 @@ const AprovacaoEquipamentos: React.FC = () => {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground mb-2">
                             <div>
                               <span className="font-medium">Equipamento:</span>{' '}
-                              {payment.equipment_rental?.tipo_equipamento || 'N/A'}
+                              {payment.equipment_rental?.tipo_equipamento || payment.tipo_equipamento || 'N/A'}
                             </div>
                             <div>
                               <span className="font-medium">Valor Base:</span>{' '}
@@ -663,7 +676,7 @@ const AprovacaoEquipamentos: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Aprovar Pagamento Mensal</DialogTitle>
             <DialogDescription>
-              Confirme a aprovação do pagamento mensal de {selectedPayment?.employee?.nome || 'N/A'}
+              Confirme a aprovação do pagamento mensal de {selectedPayment?.employee?.nome || selectedPayment?.funcionario_nome || 'N/A'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -673,23 +686,10 @@ const AprovacaoEquipamentos: React.FC = () => {
                 <p><strong>Equipamento:</strong> {selectedPayment.equipment_rental?.tipo_equipamento || 'N/A'}</p>
                 <p><strong>Período:</strong> {format(new Date(selectedPayment.year_reference, selectedPayment.month_reference - 1, 1), 'MMMM yyyy', { locale: ptBR })}</p>
                 <p><strong>Valor Calculado:</strong> {formatCurrency(selectedPayment.valor_calculado)}</p>
-                <p><strong>Dias Trabalhados:</strong> {selectedPayment.dias_trabalhados}</p>
-                <p><strong>Desconto:</strong> {formatCurrency(selectedPayment.desconto_ausencia)}</p>
+                <p><strong>Dias Trabalhados:</strong> {selectedPayment.dias_trabalhados ?? 0}</p>
+                <p><strong>Desconto:</strong> {formatCurrency(selectedPayment.desconto_ausencia ?? 0)}</p>
               </div>
             )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Valor Aprovado (opcional)</label>
-              <Input
-                type="number"
-                step="0.01"
-                placeholder={selectedPayment?.valor_calculado.toString()}
-                value={paymentValorAprovado}
-                onChange={(e) => setPaymentValorAprovado(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Deixe em branco para aprovar o valor calculado automaticamente
-              </p>
-            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Observações (opcional)</label>
               <Textarea
@@ -720,15 +720,15 @@ const AprovacaoEquipamentos: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Rejeitar Pagamento Mensal</DialogTitle>
             <DialogDescription>
-              Informe o motivo da rejeição do pagamento de {selectedPayment?.employee?.nome || 'N/A'}
+              Informe o motivo da rejeição do pagamento de {selectedPayment?.employee?.nome || selectedPayment?.funcionario_nome || 'N/A'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {selectedPayment && (
               <div className="space-y-2">
-                <p><strong>Funcionário:</strong> {selectedPayment.employee?.nome || 'N/A'}</p>
-                <p><strong>Equipamento:</strong> {selectedPayment.equipment_rental?.tipo_equipamento || 'N/A'}</p>
-                <p><strong>Valor Calculado:</strong> {formatCurrency(selectedPayment.valor_calculado)}</p>
+                <p><strong>Funcionário:</strong> {selectedPayment.employee?.nome || selectedPayment.funcionario_nome || 'N/A'}</p>
+                <p><strong>Equipamento:</strong> {selectedPayment.equipment_rental?.tipo_equipamento || selectedPayment.tipo_equipamento || 'N/A'}</p>
+                <p><strong>Valor Calculado:</strong> {formatCurrency(selectedPayment.valor_calculado ?? 0)}</p>
               </div>
             )}
             <div className="space-y-2">

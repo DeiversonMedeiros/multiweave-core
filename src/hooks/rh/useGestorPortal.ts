@@ -752,15 +752,19 @@ export const useEquipmentRentals = (companyId: string) => {
       }
 
       // A função RPC já retorna os dados formatados com funcionario_nome e funcionario_matricula
+      // Mapear os campos corretamente (equipamento = tipo_equipamento, motivo = justificativa)
       const formattedData = equipmentsData.map((item: any) => ({
         id: item.id,
         employee_id: item.employee_id,
         funcionario_nome: item.funcionario_nome || 'N/A',
         funcionario_matricula: item.funcionario_matricula || 'N/A',
-        equipamento: item.equipamento,
+        equipamento: item.equipamento || item.tipo_equipamento || 'N/A', // Campo retornado pela função
+        tipo_equipamento: item.equipamento || item.tipo_equipamento || 'N/A', // Adicionar para compatibilidade
+        valor_mensal: item.valor_mensal || 0, // Buscar da tabela se necessário
         data_inicio: item.data_inicio,
         data_fim: item.data_fim,
-        motivo: item.motivo,
+        motivo: item.motivo || item.justificativa || '', // Campo retornado pela função
+        justificativa: item.motivo || item.justificativa || '', // Adicionar para compatibilidade
         status: item.status,
         aprovado_por: item.aprovado_por,
         aprovado_em: item.aprovado_em,

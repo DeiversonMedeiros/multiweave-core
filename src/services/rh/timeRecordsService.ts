@@ -60,6 +60,10 @@ export const TimeRecordsService = {
     status?: string;
     managerUserId?: string;
   }): Promise<{ data: TimeRecord[]; totalCount: number }> => {
+    const serviceStartTime = performance.now();
+    
+    // Chamada RPC
+    const rpcStartTime = performance.now();
     const { data, error } = await supabase.rpc('get_time_records_paginated', {
       company_id_param: params.companyId,
       page_offset: params.pageOffset || 0,
@@ -70,6 +74,8 @@ export const TimeRecordsService = {
       status_filter: params.status || null,
       manager_user_id_filter: params.managerUserId || null,
     });
+    const rpcEndTime = performance.now();
+    const rpcDuration = rpcEndTime - rpcStartTime;
 
     if (error) {
       console.error('[TimeRecordsService.listPaginated] error:', error);
@@ -77,6 +83,7 @@ export const TimeRecordsService = {
     }
 
     if (!data || data.length === 0) {
+      console.log(`[TimeRecordsService.listPaginated] RPC: ${rpcDuration.toFixed(2)}ms | Sem dados`);
       return { data: [], totalCount: 0 };
     }
 
@@ -84,6 +91,7 @@ export const TimeRecordsService = {
     const totalCount = data[0]?.total_count || 0;
 
     // Processar dados
+    const processStartTime = performance.now();
     const processedData = data.map((r: any) => {
       // Processar all_photos e all_locations se vierem como string JSON
       let allPhotos = r.all_photos;
@@ -121,91 +129,111 @@ export const TimeRecordsService = {
         all_locations: allLocations,
       };
     });
+    const processEndTime = performance.now();
+    const processDuration = processEndTime - processStartTime;
 
-    // Gerar signed URLs para todas as fotos em all_photos
-    try {
-      for (const rec of processedData) {
-        if (rec.all_photos && Array.isArray(rec.all_photos) && rec.all_photos.length > 0) {
-          for (let i = 0; i < rec.all_photos.length; i++) {
-            const photo = rec.all_photos[i];
-            if (!photo || !photo.photo_url) {
-              continue;
-            }
-            
-            // Extrair path relativo do photo_url
-            const rawUrl: string = photo.photo_url;
-            let cleanPath = '';
-            
-            // Se já é um path relativo (formato: uuid/filename ou /uuid/filename)
-            if (!/^https?:\/\//i.test(rawUrl)) {
-              // É um path relativo, usar diretamente
-              cleanPath = rawUrl.replace(/^\//, '').split('?')[0].trim();
+    // Gerar signed URLs para todas as fotos em all_photos (OTIMIZADO: em paralelo)
+    const signedUrlsStartTime = performance.now();
+    let totalPhotos = 0;
+    const photoPromises: Array<{ rec: any; index: number; promise: Promise<void> }> = [];
+    
+    // Coletar todas as fotos que precisam de signed URL
+    for (const rec of processedData) {
+      if (rec.all_photos && Array.isArray(rec.all_photos) && rec.all_photos.length > 0) {
+        totalPhotos += rec.all_photos.length;
+        for (let i = 0; i < rec.all_photos.length; i++) {
+          const photo = rec.all_photos[i];
+          if (!photo || !photo.photo_url) {
+            continue;
+          }
+          
+          // Extrair path relativo do photo_url
+          const rawUrl: string = photo.photo_url;
+          let cleanPath = '';
+          
+          // Se já é um path relativo (formato: uuid/filename ou /uuid/filename)
+          if (!/^https?:\/\//i.test(rawUrl)) {
+            // É um path relativo, usar diretamente
+            cleanPath = rawUrl.replace(/^\//, '').split('?')[0].trim();
+          } else {
+            // É uma URL completa, tentar extrair o path
+            const objectPublicMatch = rawUrl.match(/\/storage\/v1\/object\/public\/time-record-photos\/(.+?)(?:\?|$)/);
+            if (objectPublicMatch) {
+              cleanPath = objectPublicMatch[1];
             } else {
-              // É uma URL completa, tentar extrair o path
-              const objectPublicMatch = rawUrl.match(/\/storage\/v1\/object\/public\/time-record-photos\/(.+?)(?:\?|$)/);
-              if (objectPublicMatch) {
-                cleanPath = objectPublicMatch[1];
+              const objectSignMatch = rawUrl.match(/\/storage\/v1\/object\/sign\/time-record-photos\/(.+?)(?:\?|$)/);
+              if (objectSignMatch) {
+                cleanPath = objectSignMatch[1];
               } else {
-                const objectSignMatch = rawUrl.match(/\/storage\/v1\/object\/sign\/time-record-photos\/(.+?)(?:\?|$)/);
-                if (objectSignMatch) {
-                  cleanPath = objectSignMatch[1];
+                // Tentar extrair de URL completa do Supabase
+                const supabaseMatch = rawUrl.match(/time-record-photos[\/](.+?)(?:\?|$)/);
+                if (supabaseMatch) {
+                  cleanPath = supabaseMatch[1];
                 } else {
-                  // Tentar extrair de URL completa do Supabase
-                  const supabaseMatch = rawUrl.match(/time-record-photos[\/](.+?)(?:\?|$)/);
-                  if (supabaseMatch) {
-                    cleanPath = supabaseMatch[1];
-                  } else {
-                    // Última tentativa: extrair UUID e nome do arquivo do final da URL
-                    try {
-                      const urlObj = new URL(rawUrl);
-                      const pathParts = urlObj.pathname.split('/');
-                      const bucketIndex = pathParts.findIndex(p => p === 'time-record-photos');
-                      if (bucketIndex >= 0 && bucketIndex < pathParts.length - 1) {
-                        cleanPath = pathParts.slice(bucketIndex + 1).join('/');
+                  // Última tentativa: extrair UUID e nome do arquivo do final da URL
+                  try {
+                    const urlObj = new URL(rawUrl);
+                    const pathParts = urlObj.pathname.split('/');
+                    const bucketIndex = pathParts.findIndex(p => p === 'time-record-photos');
+                    if (bucketIndex >= 0 && bucketIndex < pathParts.length - 1) {
+                      cleanPath = pathParts.slice(bucketIndex + 1).join('/');
+                    } else {
+                      // Tentar extrair UUID e filename do final
+                      const fileMatch = rawUrl.match(/([a-f0-9-]{36})\/([^\/\?]+)$/i);
+                      if (fileMatch) {
+                        cleanPath = `${fileMatch[1]}/${fileMatch[2]}`;
                       } else {
-                        // Tentar extrair UUID e filename do final
-                        const fileMatch = rawUrl.match(/([a-f0-9-]{36})\/([^\/\?]+)$/i);
-                        if (fileMatch) {
-                          cleanPath = `${fileMatch[1]}/${fileMatch[2]}`;
-                        } else {
-                          continue;
-                        }
+                        continue;
                       }
-                    } catch {
-                      continue;
                     }
+                  } catch {
+                    continue;
                   }
                 }
               }
             }
-            
-            if (!cleanPath) continue;
-            
-            try {
-              // Removido transform do Supabase - usar apenas signed URL sem transformação
-              // As imagens já devem estar otimizadas no upload
-              const { data: signedFull, error: signFullErr } = await supabase
-                .storage
-                .from('time-record-photos')
-                .createSignedUrl(cleanPath, 3600);
-              
+          }
+          
+          if (!cleanPath) continue;
+          
+          // Criar promise para gerar signed URL em paralelo
+          const promise = supabase
+            .storage
+            .from('time-record-photos')
+            .createSignedUrl(cleanPath, 3600)
+            .then(({ data: signedFull, error: signFullErr }) => {
               if (!signFullErr && signedFull) {
                 rec.all_photos[i] = {
                   ...rec.all_photos[i],
                   signed_full_url: signedFull.signedUrl,
-                  // Thumbnail será gerado no frontend quando necessário usando CSS ou canvas
                   signed_thumb_url: signedFull.signedUrl
                 };
               }
-            } catch (e: any) {
+            })
+            .catch(() => {
               // Silenciosamente ignorar erros de signed URL
-            }
-          }
+            });
+          
+          photoPromises.push({ rec, index: i, promise });
         }
       }
-    } catch (e) {
-      // Silenciosamente ignorar erros de signed URL
     }
+    
+    // Executar todas as gerações de signed URL em paralelo
+    let signedUrlsGenerated = 0;
+    try {
+      const results = await Promise.allSettled(photoPromises.map(p => p.promise));
+      signedUrlsGenerated = results.filter(r => r.status === 'fulfilled').length;
+    } catch (e) {
+      // Silenciosamente ignorar erros
+    }
+    const signedUrlsEndTime = performance.now();
+    const signedUrlsDuration = signedUrlsEndTime - signedUrlsStartTime;
+    
+    const serviceEndTime = performance.now();
+    const serviceDuration = serviceEndTime - serviceStartTime;
+
+    console.log(`[TimeRecordsService.listPaginated] ⏱️ RPC: ${rpcDuration.toFixed(2)}ms | Processamento: ${processDuration.toFixed(2)}ms | Signed URLs: ${signedUrlsDuration.toFixed(2)}ms (${signedUrlsGenerated}/${totalPhotos} fotos) | Total: ${serviceDuration.toFixed(2)}ms`);
 
     return {
       data: processedData,

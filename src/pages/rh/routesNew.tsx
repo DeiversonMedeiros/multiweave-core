@@ -44,6 +44,7 @@ import MedicalPlanEditPage from './MedicalPlanEditPage';
 import EmployeeMedicalPlanNewPage from './EmployeeMedicalPlanNewPage';
 import EmployeeDeductionsPage from './EmployeeDeductionsPage';
 import EquipmentRentalMonthlyPaymentsPage from './EquipmentRentalMonthlyPaymentsPage';
+import EquipmentRentalApprovalsPage from './EquipmentRentalApprovalsPage';
 import ConfiguracaoFlashPage from './ConfiguracaoFlashPage';
 import MedicalServicesPage from './MedicalServicesPage';
 import UnionsPage from './UnionsPage';
@@ -175,6 +176,9 @@ export function RHRoutesNew() {
       
       {/* Pagamentos Mensais de Aluguéis */}
       <Route path="/equipment-rental-payments" element={<EquipmentRentalMonthlyPaymentsPage />} />
+      
+      {/* Solicitações de Aluguel de Equipamentos */}
+      <Route path="/equipment-rental-approvals" element={<EquipmentRentalApprovalsPage />} />
       
       {/* Configuração Flash API */}
       <Route path="/configuracao-flash" element={<ConfiguracaoFlashPage />} />

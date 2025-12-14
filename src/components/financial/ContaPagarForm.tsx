@@ -63,6 +63,18 @@ const contaPagarSchema = z.object({
   numero_parcelas: z.number().min(1).max(360).optional(),
   intervalo_parcelas: z.enum(['diario', 'semanal', 'quinzenal', 'mensal', 'bimestral', 'trimestral', 'semestral', 'anual']).optional(),
   data_primeira_parcela: z.string().optional(),
+  // Campos de urgência (M2)
+  is_urgente: z.boolean().optional(),
+  motivo_urgencia: z.string().optional(),
+}).refine((data) => {
+  // Se is_urgente = true, motivo_urgencia é obrigatório
+  if (data.is_urgente && (!data.motivo_urgencia || data.motivo_urgencia.trim().length === 0)) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Motivo da urgência é obrigatório quando o pagamento é urgente',
+  path: ['motivo_urgencia'],
 });
 
 type ContaPagarFormValues = z.infer<typeof contaPagarSchema>;
@@ -113,6 +125,8 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
       numero_parcelas: 1,
       intervalo_parcelas: 'mensal',
       data_primeira_parcela: format(new Date(), 'yyyy-MM-dd'),
+      is_urgente: false,
+      motivo_urgencia: '',
     },
   });
 
@@ -255,6 +269,8 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         forma_pagamento: conta.forma_pagamento || '',
         conta_bancaria_id: conta.conta_bancaria_id || '',
         observacoes: conta.observacoes || '',
+        is_urgente: conta.is_urgente || false,
+        motivo_urgencia: conta.motivo_urgencia || '',
         anexos: conta.anexos || [],
       });
     }
@@ -264,6 +280,15 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
     try {
       setIsSubmitting(true);
       
+      // Converter ID de departamento para nome se necessário
+      let departamentoNome = data.departamento;
+      if (data.departamento) {
+        const unit = (unitsData || []).find((u) => u.id === data.departamento);
+        if (unit) {
+          departamentoNome = unit.nome;
+        }
+      }
+      
       // Clean up special values before saving
       const cleanedData: ContaPagarFormData = {
         descricao: data.descricao,
@@ -272,6 +297,7 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         data_vencimento: data.data_vencimento,
         fornecedor_nome: data.fornecedor_nome,
         ...data,
+        departamento: departamentoNome,
         centro_custo_id: data.centro_custo_id === 'none' || data.centro_custo_id === 'loading' ? '' : data.centro_custo_id,
         conta_bancaria_id: data.conta_bancaria_id === 'none' || data.conta_bancaria_id === 'loading' ? '' : data.conta_bancaria_id,
         is_parcelada: data.is_parcelada || false,
@@ -279,6 +305,9 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         intervalo_parcelas: data.intervalo_parcelas || 'mensal',
         data_primeira_parcela: data.data_primeira_parcela || data.data_vencimento,
         parcelas: parcelas.length > 0 ? parcelas : undefined,
+        // Campos de urgência (M2)
+        is_urgente: data.is_urgente || false,
+        motivo_urgencia: data.is_urgente ? data.motivo_urgencia : undefined,
       };
       
       await onSave(cleanedData);
@@ -796,7 +825,25 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Departamento</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+                          <Select 
+                            onValueChange={(value) => {
+                              // Converter ID para nome ao salvar
+                              const selectedUnit = (unitsData || []).find((u) => u.id === value);
+                              field.onChange(selectedUnit?.nome || value);
+                            }} 
+                            defaultValue={(() => {
+                              // Converter nome para ID ao carregar
+                              if (!field.value) return undefined;
+                              const unit = (unitsData || []).find((u) => u.nome === field.value);
+                              return unit?.id || field.value;
+                            })()}
+                            value={(() => {
+                              // Converter nome para ID para exibição
+                              if (!field.value) return undefined;
+                              const unit = (unitsData || []).find((u) => u.nome === field.value);
+                              return unit?.id || field.value;
+                            })()}
+                          >
                             <FormControl>
                               <SelectTrigger>
                                 <SelectValue placeholder="Selecione o departamento" />
@@ -807,7 +854,7 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                                 <SelectItem value="loading" disabled>Carregando...</SelectItem>
                               ) : (
                                 (unitsData || []).map((unit) => (
-                                  <SelectItem key={unit.id} value={unit.nome}>
+                                  <SelectItem key={unit.id} value={unit.id}>
                                     {unit.nome}
                                   </SelectItem>
                                 ))
@@ -895,6 +942,53 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                       </FormItem>
                     )}
                   />
+
+                  {/* Campos de Urgência (M2) */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <FormField
+                      control={form.control}
+                      name="is_urgente"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                          <div className="space-y-1 leading-none">
+                            <FormLabel>Pagamento Urgente</FormLabel>
+                            <FormDescription>
+                              Marque se este pagamento requer processamento urgente fora do fluxo normal
+                            </FormDescription>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+
+                    {form.watch('is_urgente') && (
+                      <FormField
+                        control={form.control}
+                        name="motivo_urgencia"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Motivo da Urgência *</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Descreva o motivo da urgência deste pagamento..."
+                                className="min-h-[100px]"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Este campo é obrigatório para pagamentos urgentes e será registrado no módulo de Governança (M7)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </div>
                 </TabsContent>
               </Tabs>
 

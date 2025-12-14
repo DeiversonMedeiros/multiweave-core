@@ -34,11 +34,16 @@ import { DashboardFinanceiroPage } from "./pages/financeiro/DashboardFinanceiroP
 import { ContasPagarPage } from "./pages/financeiro/ContasPagarPage";
 import { ContasReceberPage } from "./pages/financeiro/ContasReceberPage";
 import { TesourariaPage } from "./pages/financeiro/TesourariaPage";
+import LotesPagamentoPage from "./pages/financeiro/LotesPagamentoPage";
+import ConciliacaoBancariaPage from "./pages/financeiro/ConciliacaoBancariaPage";
+import ParametrizacaoTributariaPage from "./pages/financeiro/ParametrizacaoTributariaPage";
+import ObrigacoesFiscaisPage from "./pages/financeiro/ObrigacoesFiscaisPage";
 import { FiscalPage } from "./pages/financeiro/FiscalPage";
 import { ContabilidadePage } from "./pages/financeiro/ContabilidadePage";
 import { ClassesFinanceirasPage } from "./pages/financeiro/ClassesFinanceirasPage";
 import { SefazPage } from "./pages/financeiro/SefazPage";
 import { BancariaPage } from "./pages/financeiro/BancariaPage";
+import { GovernancaPlanejamentoPage } from "./pages/financeiro/GovernancaPlanejamentoPage";
 import AlmoxarifadoPage from "./pages/AlmoxarifadoPage";
 import DashboardEstoquePage from "./pages/almoxarifado/DashboardEstoquePage";
 import MateriaisEquipamentosPage from "./pages/almoxarifado/MateriaisEquipamentosPage";
@@ -198,12 +203,17 @@ function App() {
                 <Route path="/financeiro" element={<DashboardFinanceiroPage />} />
                 <Route path="/financeiro/contas-pagar" element={<ContasPagarPage />} />
                 <Route path="/financeiro/contas-receber" element={<ContasReceberPage />} />
+                <Route path="/financeiro/lotes-pagamento" element={<LotesPagamentoPage />} />
                 <Route path="/financeiro/tesouraria" element={<TesourariaPage />} />
+                <Route path="/financeiro/conciliacao-bancaria" element={<ConciliacaoBancariaPage />} />
+                <Route path="/financeiro/parametrizacao-tributaria" element={<ParametrizacaoTributariaPage />} />
+                <Route path="/financeiro/obrigacoes-fiscais" element={<ObrigacoesFiscaisPage />} />
                 <Route path="/financeiro/fiscal" element={<FiscalPage />} />
                 <Route path="/financeiro/contabilidade" element={<ContabilidadePage />} />
                 <Route path="/financeiro/classes-financeiras" element={<ClassesFinanceirasPage />} />
                 <Route path="/financeiro/sefaz" element={<SefazPage />} />
                 <Route path="/financeiro/bancaria" element={<BancariaPage />} />
+                <Route path="/financeiro/governanca" element={<GovernancaPlanejamentoPage />} />
                 <Route path="/compras" element={<RequisicoesCompra />} />
                 <Route path="/compras/requisicoes" element={<RequisicoesCompra />} />
                 <Route path="/compras/cotacoes" element={<Cotacoes />} />

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -82,7 +82,7 @@ export default function TimeRecordsPageNew() {
     endDate: filters.endDate,
     status: filters.status !== 'all' ? filters.status : undefined,
     ...(filters.employeeId && { employeeId: filters.employeeId }),
-    pageSize: 50, // Carregar 50 registros por vez
+    pageSize: 10, // Carregar 10 registros por vez
   });
 
   // Combinar todas as páginas em um único array
@@ -93,29 +93,7 @@ export default function TimeRecordsPageNew() {
   const approveRecordMutation = useApproveTimeRecord();
   const rejectRecordMutation = useRejectTimeRecord();
 
-  // Observer para scroll infinito
-  const observerTarget = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
-
-    return () => {
-      if (observerTarget.current) {
-        observer.unobserve(observerTarget.current);
-      }
-    };
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  // Removido IntersectionObserver - agora só carrega ao clicar no botão "Carregar mais"
 
   // Refetch quando filtros mudarem
   useEffect(() => {
@@ -932,9 +910,6 @@ export default function TimeRecordsPageNew() {
                 );
               })}
               
-              {/* Observer para scroll infinito */}
-              <div ref={observerTarget} className="h-4" />
-              
               {/* Indicador de carregamento */}
               {isFetchingNextPage && (
                 <div className="flex items-center justify-center py-4">
@@ -943,15 +918,18 @@ export default function TimeRecordsPageNew() {
                 </div>
               )}
               
-              {/* Botão "Carregar mais" como fallback */}
+              {/* Botão "Carregar mais" */}
               {hasNextPage && !isFetchingNextPage && (
                 <div className="flex justify-center py-4">
                   <Button
                     variant="outline"
-                    onClick={() => fetchNextPage()}
+                    onClick={() => {
+                      console.log('[TimeRecordsPageNew] 🖱️ Botão "Carregar mais" clicado');
+                      fetchNextPage();
+                    }}
                     className="w-full max-w-xs"
                   >
-                    Carregar mais registros
+                    Carregar mais
                   </Button>
                 </div>
               )}

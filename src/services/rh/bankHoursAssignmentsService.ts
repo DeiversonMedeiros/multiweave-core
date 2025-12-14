@@ -241,6 +241,38 @@ export const BankHoursAssignmentsService = {
   },
 
   /**
+   * Atribui um tipo específico de banco de horas a funcionários em lote
+   */
+  assignType: async (employeeIds: string[], typeId: string, companyId: string): Promise<BankHoursAssignment[]> => {
+    try {
+      if (!typeId) {
+        throw new Error('Tipo de banco de horas não informado');
+      }
+
+      const assignments: BankHoursAssignment[] = [];
+
+      for (const employeeId of employeeIds) {
+        // Verificar se já tem vínculo ativo
+        const existingAssignment = await BankHoursAssignmentsService.getByEmployee(employeeId, companyId);
+        
+        if (!existingAssignment) {
+          const assignment = await BankHoursAssignmentsService.create({
+            employee_id: employeeId,
+            bank_hours_type_id: typeId
+          }, companyId);
+          
+          assignments.push(assignment);
+        }
+      }
+
+      return assignments;
+    } catch (error) {
+      console.error('❌ Erro ao atribuir tipo de banco de horas:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Busca funcionários sem vínculo de banco de horas
    */
   getUnassignedEmployees: async (companyId: string) => {

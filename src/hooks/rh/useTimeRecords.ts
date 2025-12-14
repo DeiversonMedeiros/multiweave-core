@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { TimeRecordsService } from '@/services/rh/timeRecordsService';
 import { 
   TimeRecord, 
@@ -84,19 +85,56 @@ export function useTimeRecordsPaginated(params: {
     (!hasEmployeeIdParam || !!employeeId) && 
     (!hasManagerUserIdParam || !!managerUserId);
 
+  const queryKey = ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId];
+  
+  // Log quando a query key muda
+  useEffect(() => {
+    console.log('[useTimeRecordsPaginated] 🔑 Query key mudou:', queryKey);
+    console.log('[useTimeRecordsPaginated] 🔑 Parâmetros:', {
+      selectedCompanyId: selectedCompany?.id,
+      employeeId,
+      startDate,
+      endDate,
+      status,
+      pageSize,
+      managerUserId,
+    });
+  }, [selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId]);
+
   return useInfiniteQuery({
-    queryKey: ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId],
+    queryKey,
     queryFn: async ({ pageParam = 0 }): Promise<{
       data: TimeRecord[];
       nextCursor?: number;
       hasMore: boolean;
       totalCount: number;
     }> => {
+      const queryStartTime = performance.now();
+      const pageNum = (pageParam as number) / pageSize + 1;
+      
+      // Log com stack trace para ver quem chamou
+      const stackTrace = new Error().stack;
+      console.group(`[useTimeRecordsPaginated] 🔄 queryFn executada - Página ${pageNum} (offset: ${pageParam})`);
+      console.log('📍 Stack trace da chamada:', stackTrace);
+      console.log('📊 Parâmetros:', {
+        companyId: selectedCompany?.id,
+        pageOffset: pageParam,
+        pageLimit: pageSize,
+        employeeId,
+        startDate,
+        endDate,
+        status,
+        managerUserId,
+      });
+
       if (!selectedCompany?.id) {
+        console.warn('⚠️ Company ID não disponível');
+        console.groupEnd();
         return { data: [], hasMore: false, totalCount: 0 };
       }
 
       // Buscar registros paginados do servidor
+      const serviceStartTime = performance.now();
       const result = await TimeRecordsService.listPaginated({
         companyId: selectedCompany.id,
         pageOffset: pageParam as number,
@@ -107,8 +145,17 @@ export function useTimeRecordsPaginated(params: {
         status,
         managerUserId,
       });
+      const serviceEndTime = performance.now();
+      const serviceDuration = serviceEndTime - serviceStartTime;
 
       const hasMore = (pageParam as number) + pageSize < result.totalCount;
+      const queryEndTime = performance.now();
+      const queryDuration = queryEndTime - queryStartTime;
+
+      console.log(`⏱️ Tempo de serviço (RPC + processamento): ${serviceDuration.toFixed(2)}ms`);
+      console.log(`⏱️ Tempo total da query: ${queryDuration.toFixed(2)}ms`);
+      console.log(`📦 Resultado: ${result.data.length} registros, total: ${result.totalCount}, hasMore: ${hasMore}`);
+      console.groupEnd();
 
       return {
         data: result.data,
@@ -118,10 +165,28 @@ export function useTimeRecordsPaginated(params: {
       };
     },
     getNextPageParam: (lastPage) => {
-      return lastPage.hasMore ? lastPage.nextCursor : undefined;
+      // Só retornar nextCursor se houver mais páginas
+      // O React Query não faz prefetch automático por padrão
+      const nextParam = lastPage.hasMore ? lastPage.nextCursor : undefined;
+      const stackTrace = new Error().stack;
+      console.log(`[useTimeRecordsPaginated] 🔍 getNextPageParam chamado:`, {
+        hasMore: lastPage.hasMore,
+        nextParam,
+        totalCount: lastPage.totalCount,
+      });
+      console.log(`[useTimeRecordsPaginated] 📍 Stack trace:`, stackTrace);
+      console.log(`[useTimeRecordsPaginated] ⚠️ getNextPageParam NÃO deve causar carregamento automático - apenas define o parâmetro`);
+      return nextParam;
     },
     enabled: isEnabled,
     initialPageParam: 0,
+    // Desabilitar completamente refetch automático
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    // Desabilitar prefetch automático da próxima página
+    getPreviousPageParam: undefined,
+    // Não fazer prefetch automático - só carregar quando fetchNextPage for chamado explicitamente
     ...queryConfig.dynamic,
   });
 }

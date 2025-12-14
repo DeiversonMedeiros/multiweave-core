@@ -15,6 +15,7 @@ import {
   sendToAccountsPayable,
   sendMultipleToFlash,
   sendMultipleToAccountsPayable,
+  sendMultipleToFlashByCostCenter,
   EquipmentRentalMonthlyPayment,
   ProcessMonthlyRentalsParams,
   ApproveMonthlyPaymentParams,
@@ -197,6 +198,20 @@ export function useSendMultipleToAccountsPayable() {
   return useMutation({
     mutationFn: ({ paymentIds, dueDate }: { paymentIds: string[]; dueDate?: Date }) =>
       sendMultipleToAccountsPayable(paymentIds, dueDate),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment-rental-monthly-payments'] });
+    },
+  });
+}
+
+/**
+ * Hook para enviar múltiplos pagamentos agrupados por centro de custo
+ */
+export function useSendMultipleToFlashByCostCenter() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (paymentIds: string[]) => sendMultipleToFlashByCostCenter(paymentIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment-rental-monthly-payments'] });
     },

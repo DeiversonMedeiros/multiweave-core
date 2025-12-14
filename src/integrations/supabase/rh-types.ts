@@ -1091,6 +1091,7 @@ export interface BenefitConfiguration {
   requires_approval: boolean;
   is_active: boolean;
   entra_no_calculo_folha?: boolean;
+  classe_financeira_id?: string;
   created_at: string;
   updated_at: string;
 }

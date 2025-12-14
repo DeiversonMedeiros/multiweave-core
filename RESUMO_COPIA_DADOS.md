@@ -97,3 +97,7 @@ Get-Content verify_copy.sql | supabase db execute --db-url "postgresql://postgre
 
 
 
+
+
+
+

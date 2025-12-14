@@ -27,7 +27,10 @@ import {
   Building,
   Key,
   Link,
-  Settings
+  Settings,
+  BookOpen,
+  ExternalLink,
+  Info
 } from 'lucide-react';
 import { ConfiguracaoBancariaService, ConfiguracaoBancariaFormData } from '@/services/financial/configuracaoBancariaService';
 import { ConfiguracaoBancaria, LogValidacaoIntegracao } from '@/integrations/supabase/financial-types';
@@ -423,6 +426,10 @@ export function ConfiguracaoBancariaPage({ className }: ConfiguracaoBancariaPage
       <Tabs defaultValue="configuracoes" className="w-full">
         <TabsList>
           <TabsTrigger value="configuracoes">Configurações</TabsTrigger>
+          <TabsTrigger value="instrucoes">
+            <BookOpen className="h-4 w-4 mr-2" />
+            Instruções
+          </TabsTrigger>
           <TabsTrigger value="logs">Logs de Validação</TabsTrigger>
         </TabsList>
 
@@ -502,6 +509,218 @@ export function ConfiguracaoBancariaPage({ className }: ConfiguracaoBancariaPage
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="instrucoes" className="mt-6">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Info className="h-5 w-5" />
+                  Guia de Integração Bancária
+                </CardTitle>
+                <CardDescription>
+                  Instruções detalhadas para configurar integrações com Bradesco e Banco Inter
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {/* Bradesco */}
+                  <div className="border rounded-lg p-6 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <Building className="h-6 w-6 text-blue-600" />
+                      <h3 className="text-xl font-semibold">Banco Bradesco</h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-semibold mb-2 flex items-center gap-2">
+                          <Key className="h-4 w-4" />
+                          1. Obter Credenciais (Client ID e Client Secret)
+                        </h4>
+                        <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground ml-4">
+                          <li>Acesse o <a href="https://developers.bradesco.com.br/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">Portal de Desenvolvedores do Bradesco <ExternalLink className="h-3 w-3" /></a> e realize o cadastro</li>
+                          <li>Envie um e-mail para <a href="mailto:developers@bradesco.com.br" className="text-primary hover:underline">developers@bradesco.com.br</a> com:
+                            <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                              <li><strong>Assunto:</strong> Cadastro de Client ID</li>
+                              <li><strong>Informações necessárias:</strong>
+                                <ul className="list-circle list-inside ml-4 mt-1">
+                                  <li>Nome da Empresa</li>
+                                  <li>CNPJ</li>
+                                  <li>Dados para contato (e-mail e telefone)</li>
+                                  <li>Certificado Digital A1 (ICP-BRASIL, mínimo 2048 bits, validade entre 4 meses e 3 anos)</li>
+                                </ul>
+                              </li>
+                            </ul>
+                          </li>
+                          <li>Após análise e aprovação, o Bradesco enviará as credenciais por e-mail</li>
+                        </ol>
+                      </div>
+
+                      <div>
+                        <h4 className="font-semibold mb-2 flex items-center gap-2">
+                          <Settings className="h-4 w-4" />
+                          2. Preencher Campos da Configuração
+                        </h4>
+                        <div className="bg-muted/50 rounded-lg p-4 space-y-3 text-sm">
+                          <div>
+                            <strong>Nome da Configuração:</strong> Ex: "Bradesco API Produção" ou "Bradesco API Sandbox"
+                          </div>
+                          <div>
+                            <strong>Nome do Banco:</strong> "Banco Bradesco S.A." ou "Bradesco"
+                          </div>
+                          <div>
+                            <strong>Código do Banco:</strong> <code className="bg-background px-2 py-1 rounded">237</code>
+                          </div>
+                          <div>
+                            <strong>Ambiente:</strong> Selecione "Sandbox" para testes ou "Produção" para ambiente real
+                          </div>
+                          <div>
+                            <strong>URL Base da API:</strong>
+                            <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                              <li>Sandbox: <code className="bg-background px-2 py-1 rounded">https://sandbox.api.bradesco.com.br</code></li>
+                              <li>Produção: <code className="bg-background px-2 py-1 rounded">https://api.bradesco.com.br</code></li>
+                            </ul>
+                          </div>
+                          <div>
+                            <strong>Client ID:</strong> Fornecido pelo Bradesco após aprovação
+                          </div>
+                          <div>
+                            <strong>Client Secret:</strong> Fornecido pelo Bradesco após aprovação
+                          </div>
+                          <div>
+                            <strong>Versão da API:</strong> Geralmente <code className="bg-background px-2 py-1 rounded">v1</code>
+                          </div>
+                          <div>
+                            <strong>Grant Type:</strong> <code className="bg-background px-2 py-1 rounded">client_credentials</code>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Alert>
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          <strong>Importante:</strong> O certificado digital é obrigatório para comunicação com as APIs do Bradesco. Certifique-se de que o certificado atende aos requisitos antes de solicitar as credenciais.
+                        </AlertDescription>
+                      </Alert>
+                    </div>
+                  </div>
+
+                  {/* Banco Inter */}
+                  <div className="border rounded-lg p-6 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <Building className="h-6 w-6 text-orange-600" />
+                      <h3 className="text-xl font-semibold">Banco Inter</h3>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-semibold mb-2 flex items-center gap-2">
+                          <Key className="h-4 w-4" />
+                          1. Obter Credenciais (Client ID e Client Secret)
+                        </h4>
+                        <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground ml-4">
+                          <li>Acesse o <a href="https://www.bancointer.com.br/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">Internet Banking PJ do Banco Inter <ExternalLink className="h-3 w-3" /></a> e faça login na sua conta empresarial</li>
+                          <li>No menu superior, clique em <strong>"Soluções para sua empresa"</strong> e selecione <strong>"Nova Integração"</strong></li>
+                          <li>Preencha as informações solicitadas:
+                            <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                              <li>Nome e descrição da aplicação</li>
+                              <li>Selecione os serviços que serão disponibilizados (ex: "API Banking", "Consultar extrato e saldo")</li>
+                            </ul>
+                          </li>
+                          <li>Confirme a criação da integração utilizando o código enviado via SMS</li>
+                          <li>Acesse <strong>"Soluções para sua empresa"</strong> → <strong>"Minhas Integrações"</strong></li>
+                          <li>Localize a aplicação criada, clique nos três pontos e selecione <strong>"Baixar chave e certificado"</strong></li>
+                          <li>As credenciais <strong>Client ID</strong> e <strong>Client Secret</strong> serão exibidas na página</li>
+                          <li>Baixe os arquivos de certificado e chave para seu computador</li>
+                        </ol>
+                      </div>
+
+                      <div>
+                        <h4 className="font-semibold mb-2 flex items-center gap-2">
+                          <Settings className="h-4 w-4" />
+                          2. Preencher Campos da Configuração
+                        </h4>
+                        <div className="bg-muted/50 rounded-lg p-4 space-y-3 text-sm">
+                          <div>
+                            <strong>Nome da Configuração:</strong> Ex: "Banco Inter API Produção" ou "Banco Inter API Sandbox"
+                          </div>
+                          <div>
+                            <strong>Nome do Banco:</strong> "Banco Inter S.A." ou "Banco Inter"
+                          </div>
+                          <div>
+                            <strong>Código do Banco:</strong> <code className="bg-background px-2 py-1 rounded">077</code>
+                          </div>
+                          <div>
+                            <strong>Ambiente:</strong> Selecione "Sandbox" para testes ou "Produção" para ambiente real
+                          </div>
+                          <div>
+                            <strong>URL Base da API:</strong>
+                            <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                              <li>Sandbox: <code className="bg-background px-2 py-1 rounded">https://cdpj-sandbox.partners.uatinter.co</code></li>
+                              <li>Produção: <code className="bg-background px-2 py-1 rounded">https://cdpj.partners.bancointer.com.br</code></li>
+                            </ul>
+                          </div>
+                          <div>
+                            <strong>URL de Autenticação:</strong>
+                            <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                              <li>Sandbox: <code className="bg-background px-2 py-1 rounded">https://cdpj-sandbox.partners.uatinter.co/oauth/v2/token</code></li>
+                              <li>Produção: <code className="bg-background px-2 py-1 rounded">https://cdpj.partners.bancointer.com.br/oauth/v2/token</code></li>
+                            </ul>
+                          </div>
+                          <div>
+                            <strong>Client ID:</strong> Obtido na página "Minhas Integrações" do Internet Banking
+                          </div>
+                          <div>
+                            <strong>Client Secret:</strong> Obtido na página "Minhas Integrações" do Internet Banking
+                          </div>
+                          <div>
+                            <strong>Versão da API:</strong> Geralmente <code className="bg-background px-2 py-1 rounded">v3</code>
+                          </div>
+                          <div>
+                            <strong>Grant Type:</strong> <code className="bg-background px-2 py-1 rounded">client_credentials</code>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Alert>
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          <strong>Importante:</strong> Armazene as credenciais e certificados de forma segura. Não compartilhe com terceiros. Os certificados baixados podem ser necessários para autenticação adicional em algumas operações.
+                        </AlertDescription>
+                      </Alert>
+                    </div>
+                  </div>
+
+                  {/* Dicas Gerais */}
+                  <div className="border rounded-lg p-6 space-y-4 bg-blue-50 dark:bg-blue-950/20">
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <Info className="h-5 w-5 text-blue-600" />
+                      Dicas Gerais
+                    </h3>
+                    <ul className="space-y-2 text-sm">
+                      <li className="flex items-start gap-2">
+                        <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <span>Sempre teste primeiro no ambiente <strong>Sandbox</strong> antes de usar em produção</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <span>Use o botão de <strong>Testar Conectividade</strong> após configurar para verificar se a conexão está funcionando</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <span>Mantenha as credenciais atualizadas e revise periodicamente a validade dos certificados</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <span>Em caso de dúvidas, consulte a documentação oficial de cada banco ou entre em contato com o suporte</span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="logs" className="mt-6">

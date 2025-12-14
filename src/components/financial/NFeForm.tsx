@@ -26,6 +26,8 @@ import { useCompany } from '@/lib/company-context';
 import { ConfiguracaoFiscalService } from '@/services/financial/configuracaoFiscalService';
 import { ConfiguracaoFiscal } from '@/integrations/supabase/financial-types';
 import { supabase } from '@/integrations/supabase/client';
+import { useTaxCalculation } from '@/hooks/tributario/useTaxCalculation';
+import { toast } from 'sonner';
 
 // Schema de validação
 const nfeSchema = z.object({
@@ -118,6 +120,7 @@ interface NFeFormProps {
 export function NFeForm({ nfe, onSave, onCancel, loading = false }: NFeFormProps) {
   const { selectedCompany } = useCompany();
   const { data: partnersData, isLoading: loadingPartners } = usePartners();
+  const { calcularTributosNFe, loading: calculatingTaxes } = useTaxCalculation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingNumero, setLoadingNumero] = useState(false);
   const [configuracoesFiscais, setConfiguracoesFiscais] = useState<ConfiguracaoFiscal[]>([]);
@@ -995,6 +998,98 @@ export function NFeForm({ nfe, onSave, onCancel, loading = false }: NFeFormProps
 
                 {/* Aba: Tributação */}
                 <TabsContent value="tributacao" className="space-y-4">
+                  {/* Botão de Cálculo Automático */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <Calculator className="h-5 w-5" />
+                            Cálculo Automático de Tributos
+                          </CardTitle>
+                          <CardDescription>
+                            Use o motor tributário para calcular automaticamente os impostos
+                          </CardDescription>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={async () => {
+                            const valorTotal = form.getValues('valor_total');
+                            const uf = form.getValues('cliente_uf');
+                            const dataEmissao = form.getValues('data_emissao');
+                            const tipoOperacao = form.getValues('tipo_operacao') === 'saida' ? 'venda' as const : 'compra' as const;
+                            
+                            // Obter valores dos itens ou do formulário
+                            const primeiroItem = itens.length > 0 ? itens[0] : null;
+                            const ncm = primeiroItem?.ncm;
+                            const cfop = primeiroItem?.cfop;
+                            const cst = form.getValues('cst_icms') || primeiroItem?.cst_icms;
+
+                            if (!valorTotal || valorTotal <= 0) {
+                              toast.error('Informe o valor total primeiro');
+                              return;
+                            }
+
+                            if (!uf) {
+                              toast.error('Informe a UF do cliente primeiro');
+                              return;
+                            }
+
+                            const result = await calcularTributosNFe({
+                              valorMercadoria: valorTotal,
+                              uf,
+                              ncm,
+                              dataOperacao: dataEmissao,
+                              cst,
+                              cfop,
+                              tipoOperacao,
+                            });
+
+                            if (result) {
+                              // Preencher valores calculados
+                              if (result.icms) {
+                                form.setValue('valor_icms', result.icms.valorICMS);
+                                form.setValue('aliquota_icms', result.icms.aliquota * 100);
+                                form.setValue('base_calculo_icms', result.icms.baseCalculo);
+                                if (result.icms.valorICMSST) {
+                                  form.setValue('valor_icms_st', result.icms.valorICMSST);
+                                  form.setValue('base_calculo_icms_st', result.icms.baseCalculoST || 0);
+                                }
+                              }
+                              if (result.ipi) {
+                                form.setValue('valor_ipi', result.ipi.valorIPI);
+                                form.setValue('aliquota_ipi', result.ipi.aliquota * 100);
+                                form.setValue('base_calculo_ipi', result.ipi.baseCalculo);
+                              }
+                              if (result.pis) {
+                                form.setValue('valor_pis', result.pis.valorPIS);
+                              }
+                              if (result.cofins) {
+                                form.setValue('valor_cofins', result.cofins.valorCOFINS);
+                              }
+                              
+                              toast.success('Tributos calculados automaticamente!');
+                            }
+                          }}
+                          disabled={calculatingTaxes}
+                        >
+                          {calculatingTaxes ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Calculando...
+                            </>
+                          ) : (
+                            <>
+                              <Calculator className="h-4 w-4 mr-2" />
+                              Calcular Tributos Automaticamente
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                  </Card>
+
                   {/* Regime de Tributação e Tipo de Operação */}
                   <Card>
                     <CardHeader>

@@ -30,6 +30,7 @@ import {
 import { ContaPagar } from '@/integrations/supabase/financial-types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { RetencoesFonteManager } from './RetencoesFonteManager';
 
 interface ContaPagarDetailsProps {
   conta: ContaPagar;
@@ -256,6 +257,19 @@ export function ContaPagarDetails({
               </CardContent>
             </Card>
           </div>
+
+          {/* Retenções na Fonte */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Retenções na Fonte</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <RetencoesFonteManager 
+                contaPagarId={conta.id} 
+                valorTitulo={conta.valor_atual}
+              />
+            </CardContent>
+          </Card>
 
           {/* Observações */}
           {conta.observacoes && (

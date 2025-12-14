@@ -56,6 +56,9 @@ export interface ContaPagar {
   tipo_alerta?: 'vencida' | 'vencendo_hoje' | 'vencendo_em_3_dias' | 'vencendo_em_7_dias' | 'sem_alerta';
   esta_vencida?: boolean;
   esta_proxima_vencer?: boolean;
+  // Campos de urgência (M2)
+  is_urgente?: boolean;
+  motivo_urgencia?: string;
 }
 
 export interface ContaPagarParcela {
@@ -379,6 +382,9 @@ export interface ContaPagarFormData {
   intervalo_parcelas?: 'diario' | 'semanal' | 'quinzenal' | 'mensal' | 'bimestral' | 'trimestral' | 'semestral' | 'anual';
   data_primeira_parcela?: string;
   parcelas?: ContaPagarParcelaFormData[];
+  // Campos de urgência (M2)
+  is_urgente?: boolean;
+  motivo_urgencia?: string;
 }
 
 export interface ContaPagarParcelaFormData {
@@ -1407,5 +1413,448 @@ export interface SpedReport {
   data_validacao?: string;
   arquivo_url?: string;
   observacoes?: string;
+}
+
+// =====================================================
+// TIPOS PARA M2 - RETENÇÕES NA FONTE
+// =====================================================
+
+export interface RetencaoFonte {
+  id: string;
+  company_id: string;
+  conta_pagar_id: string;
+  tipo_retencao: 'INSS' | 'IRRF' | 'PIS' | 'COFINS' | 'CSLL' | 'ISS_RF' | 'IRRF_SERVICOS' | 'IRRF_ALUGUEL' | 'IRRF_DIVIDENDOS' | 'OUTROS';
+  base_calculo: number;
+  aliquota: number;
+  valor_retencao: number;
+  codigo_receita?: string;
+  data_recolhimento?: string;
+  data_recolhimento_real?: string;
+  status: 'pendente' | 'recolhido' | 'cancelado';
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RetencaoFonteFormData {
+  conta_pagar_id: string;
+  tipo_retencao: RetencaoFonte['tipo_retencao'];
+  base_calculo: number;
+  aliquota: number;
+  valor_retencao?: number; // Calculado automaticamente se não fornecido
+  codigo_receita?: string;
+  data_recolhimento?: string;
+  observacoes?: string;
+}
+
+// =====================================================
+// TIPOS PARA M2 - LOTES DE PAGAMENTO
+// =====================================================
+
+export interface LotePagamento {
+  id: string;
+  company_id: string;
+  numero_lote: string;
+  descricao?: string;
+  conta_bancaria_id?: string;
+  criterio_agrupamento?: Record<string, any>; // JSONB
+  valor_total: number;
+  valor_total_retencoes: number;
+  valor_liquido: number;
+  quantidade_titulos: number;
+  status: 'rascunho' | 'pendente_aprovacao' | 'aprovado' | 'rejeitado' | 'enviado' | 'processado' | 'cancelado';
+  data_prevista_pagamento?: string;
+  data_envio?: string;
+  data_processamento?: string;
+  aprovado_por?: string;
+  data_aprovacao?: string;
+  observacoes_aprovacao?: string;
+  arquivo_remessa?: string;
+  numero_remessa?: string;
+  retorno_bancario_id?: string;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LotePagamentoItem {
+  id: string;
+  company_id: string;
+  lote_pagamento_id: string;
+  conta_pagar_id: string;
+  valor_titulo: number;
+  valor_retencoes: number;
+  valor_liquido: number;
+  ordem: number;
+  status_item: 'incluido' | 'removido' | 'pago' | 'rejeitado' | 'cancelado';
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LotePagamentoFormData {
+  descricao?: string;
+  conta_bancaria_id?: string;
+  data_prevista_pagamento?: string;
+  observacoes?: string;
+  criterio_agrupamento?: {
+    data_vencimento?: string;
+    fornecedor_id?: string;
+    tipo_despesa?: string;
+    categoria?: string;
+  };
+}
+
+// =====================================================
+// TIPOS PARA M4 - MOVIMENTAÇÕES BANCÁRIAS E CONCILIAÇÃO
+// =====================================================
+
+export interface MovimentacaoBancaria {
+  id: string;
+  company_id: string;
+  conta_bancaria_id: string;
+  data_movimento: string;
+  data_liquidacao?: string;
+  historico: string;
+  documento?: string;
+  complemento?: string;
+  valor: number;
+  tipo_movimento: 'credito' | 'debito';
+  saldo_apos_movimento?: number;
+  categoria?: string;
+  tipo_operacao?: string;
+  origem_importacao: 'api_bancaria' | 'arquivo_ofx' | 'arquivo_csv' | 'manual';
+  arquivo_origem?: string;
+  lote_importacao?: string;
+  status_conciliacao: 'pendente' | 'conciliada' | 'parcial' | 'divergente' | 'ignorada';
+  conta_pagar_id?: string;
+  conta_receber_id?: string;
+  lote_pagamento_id?: string;
+  valor_esperado?: number;
+  diferenca_valor?: number;
+  motivo_diferenca?: string;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConciliacaoMovimentacao {
+  id: string;
+  company_id: string;
+  movimentacao_id: string;
+  conta_pagar_id?: string;
+  conta_receber_id?: string;
+  lote_pagamento_id?: string;
+  tipo_conciliacao: 'valor_exato' | 'valor_lote' | 'parcial' | 'com_diferenca' | 'manual';
+  valor_conciliado: number;
+  valor_diferenca: number;
+  motivo_diferenca?: string;
+  status: 'conciliada' | 'pendente_validacao' | 'rejeitada';
+  conciliado_por?: string;
+  conciliado_em: string;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConciliacaoPendencia {
+  id: string;
+  company_id: string;
+  tipo_pendencia: 'recebimento_menor' | 'pagamento_incompleto' | 'tarifa_nao_prevista' | 'movimentacao_sem_titulo' | 'titulo_sem_movimentacao' | 'divergencia_valor' | 'divergencia_data';
+  movimentacao_id?: string;
+  conta_pagar_id?: string;
+  conta_receber_id?: string;
+  descricao: string;
+  valor_esperado?: number;
+  valor_real?: number;
+  diferenca?: number;
+  status: 'pendente' | 'em_analise' | 'resolvida' | 'ignorada';
+  resolvido_por?: string;
+  resolvido_em?: string;
+  solucao_aplicada?: string;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// =====================================================
+// TIPOS PARA M5 - PARAMETRIZAÇÃO TRIBUTÁRIA
+// =====================================================
+
+export interface ISSConfig {
+  id: string;
+  company_id: string;
+  codigo_municipio_ibge: string;
+  municipio_nome: string;
+  uf: string;
+  tipo_base_calculo: 'base_cheia' | 'deducao_presumida' | 'deducao_real';
+  percentual_deducao_presumida: number;
+  aliquota_iss: number;
+  aliquota_minima?: number;
+  aliquota_maxima?: number;
+  permite_retencao_na_fonte: boolean;
+  responsavel_recolhimento?: 'prestador' | 'tomador' | 'intermediario';
+  data_inicio_vigencia: string;
+  data_fim_vigencia?: string;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ICMSConfig {
+  id: string;
+  company_id: string;
+  uf: string;
+  uf_nome: string;
+  tipo_operacao: 'venda_interna' | 'venda_interestadual' | 'venda_exterior' | 'compra_interna' | 'compra_interestadual' | 'compra_exterior';
+  cst?: string;
+  cfop?: string;
+  aliquota_icms: number;
+  aliquota_icms_st?: number;
+  permite_credito_insumos: boolean;
+  percentual_credito_insumos: number;
+  percentual_reducao_base: number;
+  percentual_mva?: number;
+  data_inicio_vigencia: string;
+  data_fim_vigencia?: string;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IPIConfig {
+  id: string;
+  company_id: string;
+  ncm?: string;
+  codigo_enquadramento?: string;
+  descricao_produto?: string;
+  tipo_atividade?: 'industrializacao' | 'comercializacao' | 'importacao' | 'exportacao';
+  aliquota_ipi: number;
+  aliquota_ipi_st?: number;
+  permite_credito_ipi: boolean;
+  percentual_credito_ipi: number;
+  data_inicio_vigencia: string;
+  data_fim_vigencia?: string;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PISCOFINSConfig {
+  id: string;
+  company_id: string;
+  regime_apuracao: 'cumulativo' | 'nao_cumulativo';
+  aliquota_pis_cumulativo?: number;
+  aliquota_pis_nao_cumulativo?: number;
+  aliquota_cofins_cumulativo?: number;
+  aliquota_cofins_nao_cumulativo?: number;
+  permite_credito_insumos: boolean;
+  permite_credito_servicos: boolean;
+  permite_credito_energia: boolean;
+  permite_credito_aluguel: boolean;
+  permite_credito_combustivel: boolean;
+  percentual_credito_insumos: number;
+  percentual_credito_servicos: number;
+  percentual_credito_energia: number;
+  percentual_credito_aluguel: number;
+  percentual_credito_combustivel: number;
+  data_inicio_vigencia: string;
+  data_fim_vigencia?: string;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface INSSRATFAPConfig {
+  id: string;
+  company_id: string;
+  cnae?: string;
+  cnae_descricao?: string;
+  aliquota_rat: number;
+  fap: number;
+  aliquota_final: number; // Calculado
+  data_fap?: string;
+  data_inicio_vigencia: string;
+  data_fim_vigencia?: string;
+  is_active: boolean;
+  observacoes?: string;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// =====================================================
+// TIPOS PARA CAIXA DE ENTRADA DE OBRIGAÇÕES FISCAIS
+// =====================================================
+
+export interface ObrigacaoFiscal {
+  id: string;
+  company_id: string;
+  tipo_obrigacao: 'darf' | 'gps' | 'dctf' | 'efd' | 'sped' | 'sefip' | 'rais' | 'caged' | 'dirf' | 'darf_anual' | 'outros';
+  codigo_receita?: string;
+  descricao: string;
+  periodo_referencia: string; // YYYY-MM ou YYYY
+  data_vencimento: string;
+  data_competencia: string;
+  data_apresentacao?: string;
+  valor_principal: number;
+  valor_multa: number;
+  valor_juros: number;
+  valor_total: number;
+  status: 'pendente' | 'em_analise' | 'apresentada' | 'paga' | 'vencida' | 'cancelada';
+  prioridade: 'baixa' | 'normal' | 'alta' | 'critica';
+  conta_pagar_id?: string;
+  nfe_id?: string;
+  nfse_id?: string;
+  observacoes?: string;
+  arquivo_anexo?: string;
+  protocolo_apresentacao?: string;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ObrigacaoFiscalFormData {
+  tipo_obrigacao: ObrigacaoFiscal['tipo_obrigacao'];
+  codigo_receita?: string;
+  descricao: string;
+  periodo_referencia: string;
+  data_vencimento: string;
+  data_competencia: string;
+  valor_principal: number;
+  valor_multa?: number;
+  valor_juros?: number;
+  conta_pagar_id?: string;
+  nfe_id?: string;
+  nfse_id?: string;
+  observacoes?: string;
+  prioridade?: ObrigacaoFiscal['prioridade'];
+}
+
+// =====================================================
+// TIPOS PARA M7 - GOVERNANÇA, PLANEJAMENTO E MÉRITO
+// =====================================================
+
+export type TipoEventoPlanejamento = 
+  | 'pagamento_hoje'
+  | 'compra_urgente'
+  | 'medicao_fora_janela'
+  | 'documento_fora_prazo'
+  | 'requisicao_sem_antecedencia';
+
+export type EtapaProcesso = 
+  | 'criacao_requisicao'
+  | 'aprovacao_requisicao'
+  | 'criacao_cotacao'
+  | 'aprovacao_cotacao'
+  | 'criacao_pedido'
+  | 'envio_pedido'
+  | 'envio_medicao'
+  | 'criacao_conta_pagar'
+  | 'envio_documentos_pagamento'
+  | 'aprovacao_pagamento'
+  | 'pagamento';
+
+export interface SLAEtapa {
+  id: string;
+  company_id: string;
+  etapa_processo: EtapaProcesso;
+  prazo_minimo_horas: number;
+  prazo_ideal_horas: number;
+  descricao?: string;
+  observacoes?: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+export interface EventoPlanejamento {
+  id: string;
+  company_id: string;
+  tipo_evento: TipoEventoPlanejamento;
+  etapa_processo: EtapaProcesso;
+  gestor_id: string;
+  gestor_nome?: string;
+  origem_tipo: string;
+  origem_id: string;
+  data_evento: string;
+  data_necessidade?: string;
+  data_solicitacao?: string;
+  antecedencia_horas?: number;
+  motivo: string;
+  valor?: number;
+  violou_sla: boolean;
+  sla_configurado_horas?: number;
+  diferenca_sla_horas?: number;
+  resolvido: boolean;
+  data_resolucao?: string;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KPIPlanejamentoGestor {
+  id: string;
+  company_id: string;
+  gestor_id: string;
+  gestor_nome?: string;
+  periodo_inicio: string;
+  periodo_fim: string;
+  total_operacoes: number;
+  operacoes_urgentes: number;
+  percentual_operacoes_urgentes: number;
+  tempo_medio_antecedencia_horas: number;
+  tempo_medio_antecedencia_dias: number;
+  total_violacoes_sla: number;
+  percentual_violacoes_sla: number;
+  eventos_pagamento_hoje: number;
+  eventos_compra_urgente: number;
+  eventos_medicao_fora_janela: number;
+  eventos_documento_fora_prazo: number;
+  eventos_requisicao_sem_antecedencia: number;
+  valor_total_operacoes: number;
+  valor_operacoes_urgentes: number;
+  data_calculo: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SLAEtapaFormData {
+  etapa_processo: EtapaProcesso;
+  prazo_minimo_horas: number;
+  prazo_ideal_horas: number;
+  descricao?: string;
+  observacoes?: string;
+  ativo?: boolean;
+}
+
+export interface EventoPlanejamentoFilters {
+  gestor_id?: string;
+  tipo_evento?: TipoEventoPlanejamento;
+  etapa_processo?: EtapaProcesso;
+  violou_sla?: boolean;
+  resolvido?: boolean;
+  data_inicio?: string;
+  data_fim?: string;
+}
+
+export interface KPIPlanejamentoFilters {
+  gestor_id?: string;
+  periodo_inicio?: string;
+  periodo_fim?: string;
 }
 

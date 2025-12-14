@@ -168,4 +168,24 @@ export function useAssignDefaultType() {
   });
 }
 
+/**
+ * Hook para atribuir um tipo específico de banco de horas a funcionários em lote
+ */
+export function useAssignType() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: ({ employeeIds, typeId }: { employeeIds: string[]; typeId: string }) => 
+      BankHoursAssignmentsService.assignType(employeeIds, typeId, selectedCompany?.id || ''),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rh', 'bank-hours-assignments'] });
+      queryClient.invalidateQueries({ queryKey: ['rh', 'employees'] });
+    },
+    onError: (error) => {
+      console.error('Erro ao atribuir tipo de banco de horas:', error);
+    },
+  });
+}
+
 export default useBankHoursAssignments;

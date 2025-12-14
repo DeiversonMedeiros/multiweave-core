@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -70,7 +70,7 @@ export default function TimeRecordsPage() {
   // Usar paginação infinita otimizada
   const {
     data,
-    fetchNextPage,
+    fetchNextPage: originalFetchNextPage,
     hasNextPage,
     isFetchingNextPage,
     isLoading,
@@ -80,17 +80,48 @@ export default function TimeRecordsPage() {
     endDate: dateRange.end,
     status: statusFilter || undefined,
     ...(employeeFilter && { employeeId: employeeFilter }),
-    pageSize: 50, // Carregar 50 registros por vez
+    pageSize: 10, // Carregar 10 registros por vez
   });
 
+  // Logs para rastrear mudanças de estado
+  useEffect(() => {
+    console.log('[TimeRecordsPage] 📊 Estado da paginação mudou:', {
+      hasNextPage,
+      isFetchingNextPage,
+      isLoading,
+      totalPages: data?.pages?.length || 0,
+      totalRecords: data?.pages?.flatMap(p => p.data).length || 0,
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Log quando isFetchingNextPage muda para true (indica que está carregando)
+    if (isFetchingNextPage) {
+      const stackTrace = new Error().stack;
+      console.warn('[TimeRecordsPage] ⚠️ isFetchingNextPage = true - Carregamento iniciado!');
+      console.warn('[TimeRecordsPage] 📍 Stack trace:', stackTrace);
+    }
+  }, [hasNextPage, isFetchingNextPage, isLoading, data]);
+
+  // Wrapper para fetchNextPage que só permite chamadas explícitas do botão
+  const fetchNextPage = useCallback(() => {
+    const stackTrace = new Error().stack;
+    console.log('[TimeRecordsPage] 🖱️ fetchNextPage chamado explicitamente');
+    console.log('[TimeRecordsPage] 📍 Stack trace:', stackTrace);
+    originalFetchNextPage();
+  }, [originalFetchNextPage]);
+
   // Combinar todas as páginas em um único array
+  const combineStartTime = performance.now();
   const timeRecords = data?.pages.flatMap(page => page.data) || [];
+  const combineEndTime = performance.now();
+  const combineDuration = combineEndTime - combineStartTime;
   
   const deleteRecordMutation = useDeleteTimeRecord();
   const approveRecordMutation = useApproveTimeRecord();
   const rejectRecordMutation = useRejectTimeRecord();
 
   // Filtrar dados apenas por busca de texto (filtros de data/status/employee já aplicados no servidor)
+  const filterStartTime = performance.now();
   const filteredRecords = timeRecords.filter(record => {
     // Se não há termo de busca, mostrar todos os registros
     if (!searchTerm) return true;
@@ -105,35 +136,20 @@ export default function TimeRecordsPage() {
            employeeMatricula.includes(searchLower) ||
            observacoes.includes(searchLower);
   });
+  const filterEndTime = performance.now();
+  const filterDuration = filterEndTime - filterStartTime;
+
+  // Log de performance quando dados mudarem
+  useEffect(() => {
+    if (timeRecords.length > 0) {
+      console.log(`[TimeRecordsPage] 📊 Dados: ${timeRecords.length} registros | Combine: ${combineDuration.toFixed(2)}ms | Filtro: ${filterDuration.toFixed(2)}ms | Total filtrados: ${filteredRecords.length}`);
+    }
+  }, [timeRecords.length, filteredRecords.length]);
 
   // Refetch quando filtros mudarem
   useEffect(() => {
     refetch();
   }, [dateRange.start, dateRange.end, statusFilter, employeeFilter, refetch]);
-
-  // Observer para scroll infinito
-  const observerTarget = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
-
-    return () => {
-      if (observerTarget.current) {
-        observer.unobserve(observerTarget.current);
-      }
-    };
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -810,9 +826,6 @@ export default function TimeRecordsPage() {
                 );
               })}
               
-              {/* Observer para scroll infinito */}
-              <div ref={observerTarget} className="h-4" />
-              
               {/* Indicador de carregamento */}
               {isFetchingNextPage && (
                 <div className="flex items-center justify-center py-4">
@@ -821,15 +834,18 @@ export default function TimeRecordsPage() {
                 </div>
               )}
               
-              {/* Botão "Carregar mais" como fallback */}
+              {/* Botão "Carregar mais" */}
               {hasNextPage && !isFetchingNextPage && (
                 <div className="flex justify-center py-4">
                   <Button
                     variant="outline"
-                    onClick={() => fetchNextPage()}
+                    onClick={() => {
+                      console.log('[TimeRecordsPage] 🖱️ Botão "Carregar mais" clicado');
+                      fetchNextPage();
+                    }}
                     className="w-full max-w-xs"
                   >
-                    Carregar mais registros
+                    Carregar mais
                   </Button>
                 </div>
               )}

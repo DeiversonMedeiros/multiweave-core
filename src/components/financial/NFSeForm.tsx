@@ -26,6 +26,7 @@ import { useCompany } from '@/lib/company-context';
 import { ConfiguracaoFiscalService } from '@/services/financial/configuracaoFiscalService';
 import { ConfiguracaoFiscal } from '@/integrations/supabase/financial-types';
 import { supabase } from '@/integrations/supabase/client';
+import { useTaxCalculation } from '@/hooks/tributario/useTaxCalculation';
 
 // Schema de validação
 const nfseSchema = z.object({
@@ -100,6 +101,7 @@ interface NFSeFormProps {
 export function NFSeForm({ nfse, onSave, onCancel, loading = false }: NFSeFormProps) {
   const { selectedCompany } = useCompany();
   const { data: partnersData, isLoading: loadingPartners } = usePartners();
+  const { calcularTributosNFSe, loading: calculatingTaxes } = useTaxCalculation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingNumero, setLoadingNumero] = useState(false);
   const [configuracoesFiscais, setConfiguracoesFiscais] = useState<ConfiguracaoFiscal[]>([]);
@@ -1158,6 +1160,85 @@ export function NFSeForm({ nfse, onSave, onCancel, loading = false }: NFSeFormPr
 
                 {/* Aba: Tributação */}
                 <TabsContent value="tributacao" className="space-y-4">
+                  {/* Botão de Cálculo Automático */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            <Calculator className="h-5 w-5" />
+                            Cálculo Automático de Tributos
+                          </CardTitle>
+                          <CardDescription>
+                            Use o motor tributário para calcular automaticamente os impostos
+                          </CardDescription>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={async () => {
+                            const valorServico = form.getValues('valor_servico');
+                            const codigoMunicipio = form.getValues('codigo_municipio_iss');
+                            const dataEmissao = form.getValues('data_emissao');
+                            const valorDeducoes = form.getValues('valor_deducoes') || 0;
+                            const tipoDeducao = form.getValues('tipo_base_calculo_iss') === 'deducao_presumida' ? 'presumida' as const : 'real' as const;
+
+                            if (!valorServico || valorServico <= 0) {
+                              toast.error('Informe o valor do serviço primeiro');
+                              return;
+                            }
+
+                            if (!codigoMunicipio) {
+                              toast.error('Informe o código do município (IBGE) primeiro');
+                              return;
+                            }
+
+                            const result = await calcularTributosNFSe({
+                              valorServico,
+                              municipioCodigoIBGE: codigoMunicipio,
+                              dataOperacao: dataEmissao,
+                              valorDeducoes: valorDeducoes > 0 ? valorDeducoes : undefined,
+                              tipoDeducao: valorDeducoes > 0 ? tipoDeducao : undefined,
+                            });
+
+                            if (result) {
+                              // Preencher valores calculados
+                              if (result.iss) {
+                                form.setValue('valor_iss', result.iss.valorISS);
+                                form.setValue('aliquota_iss', result.iss.aliquota);
+                                form.setValue('base_calculo_iss', result.iss.baseCalculo);
+                              }
+                              if (result.pis) {
+                                form.setValue('valor_pis', result.pis.valorPIS);
+                              }
+                              if (result.cofins) {
+                                form.setValue('valor_cofins', result.cofins.valorCOFINS);
+                              }
+                              if (result.inss) {
+                                form.setValue('valor_inss', result.inss.valorINSS);
+                              }
+                              
+                              toast.success('Tributos calculados automaticamente!');
+                            }
+                          }}
+                          disabled={calculatingTaxes}
+                        >
+                          {calculatingTaxes ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Calculando...
+                            </>
+                          ) : (
+                            <>
+                              <Calculator className="h-4 w-4 mr-2" />
+                              Calcular Tributos Automaticamente
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </CardHeader>
+                  </Card>
+
                   {/* Regime de Tributação */}
                   <Card>
                     <CardHeader>

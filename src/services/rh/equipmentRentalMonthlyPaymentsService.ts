@@ -30,6 +30,8 @@ export interface EquipmentRentalMonthlyPayment {
   processado_em: string | null;
   enviado_flash_em: string | null;
   enviado_contas_pagar_em: string | null;
+  cost_center_id: string | null;
+  classe_financeira_id: string | null;
   created_at: string;
   updated_at: string;
   // Relações
@@ -60,6 +62,65 @@ export interface ApproveMonthlyPaymentParams {
 export interface RejectMonthlyPaymentParams {
   paymentId: string;
   observacoes: string;
+}
+
+/**
+ * Lista pagamentos mensais de aluguéis para gestor
+ */
+export async function listMonthlyPaymentsForManager(
+  companyId: string,
+  userId: string,
+  filters?: {
+    monthReference?: number;
+    yearReference?: number;
+    status?: EquipmentRentalMonthlyPayment['status'];
+  }
+): Promise<EquipmentRentalMonthlyPayment[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_equipment_rental_monthly_payments_for_manager', {
+      p_company_id: companyId,
+      p_user_id: userId,
+      p_month_reference: filters?.monthReference || null,
+      p_year_reference: filters?.yearReference || null,
+      p_status: filters?.status || null
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    // A função RPC já retorna funcionario_nome, funcionario_matricula e tipo_equipamento
+    // Mapear os dados para o formato esperado pela página
+    const paymentsWithRelations = (data || []).map((payment: any) => {
+      return {
+        ...payment,
+        // Usar funcionario_nome retornado pela RPC
+        employee: {
+          id: payment.employee_id,
+          nome: payment.funcionario_nome || 'N/A',
+          matricula: payment.funcionario_matricula || 'N/A'
+        },
+        // Usar tipo_equipamento retornado pela RPC
+        equipment_rental: payment.tipo_equipamento ? {
+          id: payment.equipment_rental_approval_id,
+          tipo_equipamento: payment.tipo_equipamento,
+          valor_mensal: payment.valor_base || 0
+        } : undefined,
+        // Garantir que campos numéricos não sejam null/undefined
+        dias_trabalhados: payment.dias_trabalhados ?? 0,
+        dias_ausencia: payment.dias_ausencia ?? 0,
+        desconto_ausencia: payment.desconto_ausencia ?? 0,
+        valor_base: payment.valor_base ?? 0,
+        valor_calculado: payment.valor_calculado ?? 0,
+        valor_aprovado: payment.valor_aprovado ?? null
+      };
+    });
+
+    return paymentsWithRelations;
+  } catch (error) {
+    console.error('Erro ao listar pagamentos mensais para gestor:', error);
+    throw error;
+  }
 }
 
 /**
@@ -422,6 +483,40 @@ export async function sendMultipleToAccountsPayable(
     return data as any;
   } catch (error) {
     console.error('Erro ao enviar múltiplos pagamentos para Contas a Pagar:', error);
+    throw error;
+  }
+}
+
+/**
+ * Envia múltiplos pagamentos agrupados por centro de custo para Flash
+ */
+export async function sendMultipleToFlashByCostCenter(
+  paymentIds: string[]
+): Promise<{
+  success: boolean;
+  total_pagamentos: number;
+  total_erros: number;
+  results: any[];
+  message: string;
+}> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
+    const { data, error } = await supabase.rpc('send_multiple_equipment_rentals_to_flash_by_cost_center', {
+      p_payment_ids: paymentIds,
+      p_sent_by: user.id
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as any;
+  } catch (error) {
+    console.error('Erro ao enviar múltiplos pagamentos agrupados por centro de custo:', error);
     throw error;
   }
 }

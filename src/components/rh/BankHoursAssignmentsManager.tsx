@@ -17,7 +17,7 @@ import {
   CheckCircle2,
   UserPlus
 } from 'lucide-react';
-import { useBankHoursAssignments, useCreateBankHoursAssignment, useUpdateBankHoursAssignment, useDeleteBankHoursAssignment, useAssignDefaultType } from '../../hooks/useBankHoursAssignments';
+import { useBankHoursAssignments, useCreateBankHoursAssignment, useUpdateBankHoursAssignment, useDeleteBankHoursAssignment, useAssignDefaultType, useAssignType } from '../../hooks/useBankHoursAssignments';
 import { useBankHoursTypes } from '../../hooks/useBankHoursTypes';
 import { useEmployees } from '../../hooks/rh/useEmployees';
 import { BankHoursAssignmentForm } from '../../integrations/supabase/bank-hours-types-v2';
@@ -35,6 +35,7 @@ export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsM
   const updateAssignment = useUpdateBankHoursAssignment();
   const deleteAssignment = useDeleteBankHoursAssignment();
   const assignDefaultType = useAssignDefaultType();
+  const assignType = useAssignType();
   
   const assignments = assignmentsData?.data || [];
   const types = typesData?.data || [];
@@ -43,6 +44,7 @@ export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsM
   const [showBulkAssign, setShowBulkAssign] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<string | null>(null);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [selectedTypeId, setSelectedTypeId] = useState<string>('');
   const [formData, setFormData] = useState<BankHoursAssignmentForm>({
     employee_id: '',
     bank_hours_type_id: '',
@@ -68,11 +70,20 @@ export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsM
   const handleBulkAssign = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await assignDefaultType.mutateAsync(selectedEmployees);
+      if (!selectedTypeId) {
+        alert('Por favor, selecione um tipo de banco de horas');
+        return;
+      }
+      
+      await assignType.mutateAsync({ 
+        employeeIds: selectedEmployees, 
+        typeId: selectedTypeId 
+      });
       setShowBulkAssign(false);
       setSelectedEmployees([]);
+      setSelectedTypeId('');
     } catch (err) {
-      console.error('Erro ao atribuir tipo padrão:', err);
+      console.error('Erro ao atribuir tipo de banco de horas:', err);
     }
   };
 
@@ -91,6 +102,7 @@ export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsM
     setShowBulkAssign(false);
     setEditingAssignment(null);
     setSelectedEmployees([]);
+    setSelectedTypeId('');
     resetForm();
   };
 
@@ -256,42 +268,64 @@ export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsM
           <CardHeader>
             <CardTitle>Atribuição em Lote</CardTitle>
             <CardDescription>
-              Selecione funcionários para atribuir o tipo padrão de banco de horas
+              Selecione o tipo de banco de horas e os funcionários para atribuir em massa
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleBulkAssign} className="space-y-6">
               <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="select-all"
-                    checked={selectedEmployees.length === unassignedEmployees.length && unassignedEmployees.length > 0}
-                    onCheckedChange={handleSelectAll}
-                  />
-                  <Label htmlFor="select-all">Selecionar todos os funcionários sem vínculo</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-type-select">Tipo de Banco de Horas *</Label>
+                  <Select
+                    value={selectedTypeId}
+                    onValueChange={setSelectedTypeId}
+                  >
+                    <SelectTrigger id="bulk-type-select">
+                      <SelectValue placeholder="Selecione um tipo de banco de horas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {types.filter(type => type.is_active).map(type => (
+                        <SelectItem key={type.id} value={type.id}>
+                          {type.name} {type.is_default && '(Padrão)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="max-h-60 overflow-y-auto space-y-2">
-                  {unassignedEmployees.map(employee => (
-                    <div key={employee.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`employee-${employee.id}`}
-                        checked={selectedEmployees.includes(employee.id)}
-                        onCheckedChange={(checked) => handleEmployeeSelect(employee.id, checked as boolean)}
-                      />
-                      <Label htmlFor={`employee-${employee.id}`} className="flex-1">
-                        {employee.nome} {employee.matricula && `(${employee.matricula})`}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-
-                {unassignedEmployees.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Users className="h-12 w-12 mx-auto mb-4" />
-                    <p>Todos os funcionários já possuem vínculo de banco de horas</p>
+                <div className="space-y-2">
+                  <Label>Funcionários</Label>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Checkbox
+                      id="select-all"
+                      checked={selectedEmployees.length === unassignedEmployees.length && unassignedEmployees.length > 0}
+                      onCheckedChange={handleSelectAll}
+                    />
+                    <Label htmlFor="select-all">Selecionar todos os funcionários sem vínculo</Label>
                   </div>
-                )}
+
+                  <div className="max-h-60 overflow-y-auto space-y-2 border rounded-md p-4">
+                    {unassignedEmployees.map(employee => (
+                      <div key={employee.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`employee-${employee.id}`}
+                          checked={selectedEmployees.includes(employee.id)}
+                          onCheckedChange={(checked) => handleEmployeeSelect(employee.id, checked as boolean)}
+                        />
+                        <Label htmlFor={`employee-${employee.id}`} className="flex-1 cursor-pointer">
+                          {employee.nome} {employee.matricula && `(${employee.matricula})`}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+
+                  {unassignedEmployees.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground border rounded-md">
+                      <Users className="h-12 w-12 mx-auto mb-4" />
+                      <p>Todos os funcionários já possuem vínculo de banco de horas</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end space-x-2">
@@ -300,9 +334,9 @@ export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsM
                 </Button>
                 <Button 
                   type="submit" 
-                  disabled={selectedEmployees.length === 0}
+                  disabled={selectedEmployees.length === 0 || !selectedTypeId}
                 >
-                  Atribuir Tipo Padrão ({selectedEmployees.length} funcionários)
+                  Atribuir ({selectedEmployees.length} funcionário{selectedEmployees.length !== 1 ? 's' : ''})
                 </Button>
               </div>
             </form>

@@ -3,6 +3,9 @@
 -- Corrige os nomes das colunas para corresponder à estrutura real da tabela
 -- =====================================================
 
+-- Remover função existente para poder alterar o tipo de retorno
+DROP FUNCTION IF EXISTS public.get_equipment_rentals_for_manager(UUID, UUID);
+
 CREATE OR REPLACE FUNCTION public.get_equipment_rentals_for_manager(
     p_company_id UUID,
     p_user_id UUID
@@ -13,9 +16,12 @@ RETURNS TABLE (
     funcionario_nome TEXT,
     funcionario_matricula TEXT,
     equipamento VARCHAR(255),
+    tipo_equipamento VARCHAR(255),
+    valor_mensal NUMERIC(10,2),
     data_inicio DATE,
     data_fim DATE,
     motivo TEXT,
+    justificativa TEXT,
     status VARCHAR(50),
     aprovado_por UUID,
     aprovado_em TIMESTAMP WITH TIME ZONE,
@@ -44,10 +50,13 @@ BEGIN
         era.employee_id,
         e.nome::TEXT as funcionario_nome,
         e.matricula::TEXT as funcionario_matricula,
-        era.tipo_equipamento::VARCHAR(255) as equipamento,  -- Corrigido: era.tipo_equipamento ao invés de era.equipamento
+        era.tipo_equipamento::VARCHAR(255) as equipamento,  -- Campo equipamento para compatibilidade
+        era.tipo_equipamento::VARCHAR(255) as tipo_equipamento,  -- Campo original
+        era.valor_mensal,  -- Adicionar valor_mensal
         era.data_inicio,
         era.data_fim,
-        era.justificativa::TEXT as motivo,  -- Corrigido: era.justificativa ao invés de era.motivo
+        era.justificativa::TEXT as motivo,  -- Campo motivo para compatibilidade
+        era.justificativa::TEXT as justificativa,  -- Campo original
         era.status::VARCHAR(50),
         era.aprovado_por,
         era.aprovado_em,

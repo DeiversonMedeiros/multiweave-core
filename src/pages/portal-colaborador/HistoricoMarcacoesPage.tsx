@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
 import { useTimeRecordsPaginated } from '@/hooks/rh/useTimeRecords';
@@ -73,7 +73,7 @@ export default function HistoricoMarcacoesPage() {
   // Buscar histórico de marcações com paginação otimizada
   const {
     data,
-    fetchNextPage,
+    fetchNextPage: originalFetchNextPage,
     hasNextPage,
     isFetchingNextPage,
     isLoading,
@@ -83,35 +83,19 @@ export default function HistoricoMarcacoesPage() {
     startDate: filters.startDate,
     endDate: filters.endDate,
     status: filters.status !== 'all' ? filters.status : undefined,
-    pageSize: 30, // Carregar 30 registros por vez
+    pageSize: 10, // Carregar 10 registros por vez
   });
 
   // Combinar todas as páginas em um único array
   const timeRecords = data?.pages.flatMap(page => page.data) || [];
 
-  // Observer para scroll infinito
-  const observerTarget = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    if (observerTarget.current) {
-      observer.observe(observerTarget.current);
-    }
-
-    return () => {
-      if (observerTarget.current) {
-        observer.unobserve(observerTarget.current);
-      }
-    };
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  // Wrapper para fetchNextPage que só permite chamadas explícitas do botão
+  const fetchNextPage = useCallback(() => {
+    const stackTrace = new Error().stack;
+    console.log('[HistoricoMarcacoesPage] 🖱️ Botão "Carregar mais" clicado');
+    console.log('[HistoricoMarcacoesPage] 📍 Stack trace:', stackTrace);
+    originalFetchNextPage();
+  }, [originalFetchNextPage]);
 
   const getStatusIcon = (status: TimeRecordStatus) => {
     switch (status) {
@@ -692,14 +676,24 @@ export default function HistoricoMarcacoesPage() {
                   </div>
                 ))}
                 
-                {/* Observer para scroll infinito */}
-                <div ref={observerTarget} className="h-4" />
-                
                 {/* Indicador de carregamento */}
                 {isFetchingNextPage && (
                   <div className="flex items-center justify-center py-4">
                     <Clock className="h-5 w-5 animate-spin mr-2" />
                     <span className="text-sm text-gray-500">Carregando mais registros...</span>
+                  </div>
+                )}
+                
+                {/* Botão "Carregar mais" */}
+                {hasNextPage && !isFetchingNextPage && (
+                  <div className="flex justify-center py-4">
+                    <Button
+                      variant="outline"
+                      onClick={fetchNextPage}
+                      className="w-full max-w-xs"
+                    >
+                      Carregar mais
+                    </Button>
                   </div>
                 )}
               </div>

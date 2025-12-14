@@ -20,6 +20,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { BenefitConfiguration, BenefitConfigurationInsert, BenefitConfigurationUpdate } from '@/integrations/supabase/rh-types';
 import { useBenefitTypes, useBenefitCalculationTypes, useBenefitCategories } from '@/hooks/rh/useBenefits';
+import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
 
 const formSchema = z.object({
   name: z.string().min(1, { message: 'Nome é obrigatório.' }),
@@ -38,6 +39,7 @@ const formSchema = z.object({
   requires_approval: z.boolean().default(false),
   is_active: z.boolean().default(true),
   entra_no_calculo_folha: z.boolean().default(true),
+  classe_financeira_id: z.string().optional(),
 });
 
 interface BenefitFormProps {
@@ -60,6 +62,7 @@ const BenefitForm = forwardRef<BenefitFormRef, BenefitFormProps>(({ initialData,
   const benefitTypes = useBenefitTypes();
   const benefitCalculationTypes = useBenefitCalculationTypes();
   const benefitCategories = useBenefitCategories();
+  const { data: classesFinanceirasData, isLoading: loadingClassesFinanceiras } = useActiveClassesFinanceiras();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -76,6 +79,7 @@ const BenefitForm = forwardRef<BenefitFormRef, BenefitFormProps>(({ initialData,
       requires_approval: data?.requires_approval || false,
       is_active: data?.is_active ?? true,
       entra_no_calculo_folha: (data as any)?.entra_no_calculo_folha ?? true,
+      classe_financeira_id: data?.classe_financeira_id || undefined,
     },
   });
 
@@ -94,6 +98,7 @@ const BenefitForm = forwardRef<BenefitFormRef, BenefitFormProps>(({ initialData,
         requires_approval: data.requires_approval,
         is_active: data.is_active,
         entra_no_calculo_folha: (data as any).entra_no_calculo_folha ?? true,
+        classe_financeira_id: data.classe_financeira_id || undefined,
       });
     }
   }, [data, form]);
@@ -109,6 +114,7 @@ const BenefitForm = forwardRef<BenefitFormRef, BenefitFormProps>(({ initialData,
       requires_approval: values.requires_approval,
       is_active: values.is_active,
       entra_no_calculo_folha: values.entra_no_calculo_folha,
+      classe_financeira_id: values.classe_financeira_id || null,
     };
 
     // Campos numéricos opcionais: enviar null se não preenchidos, senão enviar o valor formatado
@@ -346,6 +352,50 @@ const BenefitForm = forwardRef<BenefitFormRef, BenefitFormProps>(({ initialData,
                 </FormControl>
                 <FormDescription>
                   Número de dias para cálculo mensal (padrão: 30)
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Classe Financeira */}
+          <FormField
+            control={form.control}
+            name="classe_financeira_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Classe Financeira</FormLabel>
+                <Select 
+                  onValueChange={(value) => field.onChange(value === '__none__' ? undefined : value)} 
+                  defaultValue={field.value || '__none__'} 
+                  value={field.value || '__none__'}
+                  disabled={isLoading || loadingClassesFinanceiras}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a classe financeira" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="__none__">Nenhuma</SelectItem>
+                    {loadingClassesFinanceiras ? (
+                      <SelectItem value="loading" disabled>Carregando...</SelectItem>
+                    ) : (
+                      (classesFinanceirasData?.data || [])
+                        .sort((a, b) => {
+                          // Ordenar por código (ex: "1.1.01" < "1.1.02" < "1.2.01")
+                          return a.codigo.localeCompare(b.codigo, undefined, { numeric: true, sensitivity: 'base' });
+                        })
+                        .map((classe) => (
+                          <SelectItem key={classe.id} value={classe.id}>
+                            {classe.codigo} - {classe.nome}
+                          </SelectItem>
+                        ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  Classe financeira gerencial associada ao benefício
                 </FormDescription>
                 <FormMessage />
               </FormItem>

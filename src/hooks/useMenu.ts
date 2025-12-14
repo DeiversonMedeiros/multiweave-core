@@ -50,7 +50,10 @@ import {
   Plug,
   Wrench,
   Laptop,
-  Clock3
+  Clock3,
+  Inbox,
+  BarChart3 as BarChart3Icon,
+  Target
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -438,11 +441,51 @@ export const useMenu = () => {
           requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
         },
         {
+          id: 'financeiro-lotes-pagamento',
+          title: 'Lotes de Pagamento',
+          url: '/financeiro/lotes-pagamento',
+          icon: Package,
+          description: 'Agrupe títulos a pagar em lotes',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
           id: 'financeiro-tesouraria',
           title: 'Tesouraria',
           url: '/financeiro/tesouraria',
           icon: Banknote,
-          description: 'Conciliação bancária e fluxo de caixa',
+          description: 'Fluxo de caixa e projeções',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'financeiro-conciliacao-bancaria',
+          title: 'Conciliação Bancária',
+          url: '/financeiro/conciliacao-bancaria',
+          icon: RefreshCw,
+          description: 'Concilie movimentações bancárias com títulos',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'financeiro-parametrizacao-tributaria',
+          title: 'Parametrização Tributária',
+          url: '/financeiro/parametrizacao-tributaria',
+          icon: Calculator,
+          description: 'Configure regras de cálculo de tributos',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'financeiro-obrigacoes-fiscais',
+          title: 'Obrigações Fiscais',
+          url: '/financeiro/obrigacoes-fiscais',
+          icon: Inbox,
+          description: 'Caixa de entrada de obrigações fiscais',
+          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+        },
+        {
+          id: 'financeiro-governanca',
+          title: 'Governança e Planejamento',
+          url: '/financeiro/governanca',
+          icon: Target,
+          description: 'M7 - Mensurar organização de gestores e violações de SLA',
           requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
         },
         {
@@ -1098,6 +1141,14 @@ export const useMenu = () => {
               url: '/rh/equipment-rental-payments',
               icon: Receipt,
               description: 'Pagamentos mensais de aluguel de equipamentos e veículos',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
+              id: 'rh-solicitacoes-aluguel-equipamentos',
+              title: 'Solicitações de Aluguel de Equipamentos',
+              url: '/rh/equipment-rental-approvals',
+              icon: Laptop,
+              description: 'Gerenciar solicitações de aluguel de equipamentos',
               requiresPermission: { type: 'module', name: 'rh', action: 'read' }
             },
             {
