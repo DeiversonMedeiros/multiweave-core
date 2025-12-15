@@ -449,14 +449,28 @@ export class ApprovalService {
         let reqData: any = null;
         if (processo_tipo === 'requisicao_compra') {
           try {
-            const { data: req } = await supabase
-              .schema('compras')
-              .from('requisicoes_compra')
-              .select('valor_total_estimado, centro_custo_id, solicitante_id')
-              .eq('id', processo_id)
-              .eq('company_id', companyId)
-              .single();
-            reqData = req;
+            // Usar EntityService para acessar compras.requisicoes_compra via RPC genérica,
+            // evitando problemas de schema no PostgREST (406 / schemas expostos).
+            const requisicao = await EntityService.getById<{
+              id: string;
+              valor_total_estimado?: number | null;
+              centro_custo_id?: string | null;
+              solicitante_id?: string | null;
+            }>({
+              schema: 'compras',
+              table: 'requisicoes_compra',
+              id: processo_id,
+              companyId,
+            });
+
+            if (requisicao) {
+              reqData = requisicao;
+            } else {
+              console.warn(
+                '[ApprovalService] Nenhuma requisicao_compra encontrada para cálculo de regra de aprovação',
+                { processo_id, companyId }
+              );
+            }
           } catch (reqError) {
             console.warn('Erro ao buscar dados da requisição:', reqError);
           }

@@ -50,8 +50,9 @@ export async function getAprovacoes(
       throw new Error('Usuário não autenticado');
     }
 
-    // Usar a função RPC que retorna aprovações formatadas
-    const { data, error } = await supabase.rpc('get_pending_approvals_for_user', {
+    // Usar a função RPC unificada que retorna aprovações formatadas
+    // Inclui férias, compensações, financeiro e também requisicoes_compra
+    const { data, error } = await supabase.rpc('get_pending_approvals_unified_for_user', {
       p_user_id: user.id,
       p_company_id: companyId
     });
@@ -85,7 +86,7 @@ export async function getAprovacoes(
  */
 export async function getPendingApprovals(companyId: string, userId: string, filters: ApprovalFilters): Promise<AprovacaoItem[]> {
   try {
-    const { data, error } = await supabase.rpc('get_pending_approvals_for_user', {
+    const { data, error } = await supabase.rpc('get_pending_approvals_unified_for_user', {
       p_user_id: userId,
       p_company_id: companyId
     });
@@ -178,12 +179,26 @@ export async function approveRequest(payload: { tipo: AprovacaoItem['tipo']; id:
           p_observacoes: observacoes || null,
           p_aprovador_id: user.id
         };
+        console.log('[CentralAprovacoes] Chamando process_approval para requisicao_compra:', {
+          rpcParams,
+          userId: user.id,
+        });
         break;
       default:
         throw new Error(`Tipo de aprovação desconhecido: ${tipo}`);
     }
 
     const { data, error } = await supabase.rpc(rpcFunction, rpcParams);
+
+    console.log('[CentralAprovacoes] Resultado RPC approveRequest:', {
+      tipo,
+      id,
+      rpcFunction,
+      data,
+      hasError: !!error,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+    });
 
     if (error) {
       console.error(`Erro ao aprovar ${tipo}:`, error);

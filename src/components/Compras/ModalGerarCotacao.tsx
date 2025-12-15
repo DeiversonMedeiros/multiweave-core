@@ -125,8 +125,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   const { data: costCentersData } = useActiveCostCenters();
   const { data: projectsData } = useActiveProjects();
   const { users } = useUsers();
-
+ 
+  // loading: carregando dados iniciais do modal
   const [loading, setLoading] = useState(false);
+  // submitting: envio da cotação para aprovação
+  const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('dados');
   
   // Dados da cotação
@@ -257,6 +260,33 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         const itensAgrupadosArray = Array.from(itensMap.values());
         setItensAgrupados(itensAgrupadosArray);
         setItensSelecionados(new Set(itensAgrupadosArray.map(i => i.material_id)));
+
+        // Definir tipo da cotação com base nas requisições selecionadas
+        const tiposRequisicao = Array.from(
+          new Set(
+            requisicoesData
+              .map((r) => r.tipo_requisicao)
+              .filter(Boolean)
+          )
+        ) as Array<'reposicao' | 'compra_direta' | 'emergencial'>;
+
+        let tipoCotacao: 'reposicao' | 'compra_direta' | 'emergencial' = 'reposicao';
+
+        if (tiposRequisicao.length === 1) {
+          // Todas as requisições têm o mesmo tipo
+          tipoCotacao = tiposRequisicao[0];
+        } else if (tiposRequisicao.includes('emergencial')) {
+          // Se houver qualquer requisição emergencial, priorizar esse tipo
+          tipoCotacao = 'emergencial';
+        } else if (tiposRequisicao.includes('compra_direta')) {
+          // Caso misto entre reposição e compra direta, priorizar compra direta
+          tipoCotacao = 'compra_direta';
+        }
+
+        setFormData(prev => ({
+          ...prev,
+          tipo_cotacao: tipoCotacao,
+        }));
 
         // Carregar fornecedores disponíveis
         const fornecedoresResult = await EntityService.list({
@@ -430,7 +460,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
     try {
       // Preparar dados para envio
       const fornecedoresData = fornecedores.map(f => ({
@@ -457,7 +487,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -1041,21 +1071,21 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         )}
 
         <DialogFooter className="px-6 py-4 border-t flex-shrink-0">
-          <Button variant="outline" onClick={onClose} disabled={loading}>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancelar
           </Button>
           <Button
             variant="outline"
             onClick={handleSalvarRascunho}
-            disabled={loading}
+            disabled={submitting}
           >
             Salvar como Rascunho
           </Button>
           <Button
             onClick={handleEnviarAprovacao}
-            disabled={loading || !fornecedoresOk || itensSelecionados.size === 0}
+            disabled={loading || submitting || !fornecedoresOk || itensSelecionados.size === 0}
           >
-            {loading ? (
+            {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Enviando...
@@ -1072,3 +1102,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     </Dialog>
   );
 }
+
+
+
+
+
+

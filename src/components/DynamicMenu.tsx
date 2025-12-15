@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useMenu, MenuItem } from '@/hooks/useMenu';
 import {
@@ -25,6 +25,7 @@ interface DynamicMenuProps {
 
 export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
   const { open } = useSidebar();
+  const navigate = useNavigate();
   const { menuItems } = useMenu();
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
@@ -52,7 +53,16 @@ export const DynamicMenu: React.FC<DynamicMenuProps> = ({ className }) => {
         <Collapsible
           key={item.id}
           open={isExpanded}
-          onOpenChange={() => toggleExpanded(item.id)}
+          onOpenChange={(nextOpen) => {
+            toggleExpanded(item.id);
+            // Quando o usuário interagir com o módulo principal (ex: "Compras"),
+            // além de expandir o grupo, também navegamos para a rota principal dele.
+            // Isso garante que clicar no módulo do menu lateral carregue a página
+            // correspondente (ex: "/compras").
+            if (nextOpen && item.url) {
+              navigate(item.url);
+            }
+          }}
         >
           <SidebarMenuItem>
             <CollapsibleTrigger asChild>

@@ -138,3 +138,9 @@ AND processo_id = 'ID_DA_REQUISICAO'::uuid;
 
 
 
+
+
+
+
+
+

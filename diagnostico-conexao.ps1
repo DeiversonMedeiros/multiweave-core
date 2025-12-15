@@ -134,3 +134,9 @@ Write-Host "  3. Verifique erros no console do navegador (F12)" -ForegroundColor
 Write-Host ""
 Write-Host "  4. Verifique se ha problemas de autenticacao/token" -ForegroundColor White
 Write-Host ""
+
+
+
+
+
+

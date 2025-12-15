@@ -88,12 +88,14 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     return map;
   }, [users]);
 
-  // Filtrar requisições disponíveis (aprovadas e não em cotação)
+  // Filtrar requisições disponíveis (apenas aprovadas, ainda não em cotação)
   const requisicoesDisponiveis = useMemo(() => {
     return requisicoes.filter((req: any) => {
       const status = req.workflow_state || req.status;
-      // Apenas requisições aprovadas que ainda não estão em cotação
-      return status === 'aprovada' || status === 'em_cotacao';
+      // Requisição fica disponível aqui assim que é aprovada.
+      // Ao iniciar o ciclo de cotação, o workflow da requisição é alterado para "em_cotacao"
+      // pelo purchaseService.startQuoteCycle, fazendo com que ela saia desta lista.
+      return status === 'aprovada';
     });
   }, [requisicoes]);
 
@@ -497,3 +499,9 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     </div>
   );
 }
+
+
+
+
+
+

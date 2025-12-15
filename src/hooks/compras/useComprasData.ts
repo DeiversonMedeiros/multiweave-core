@@ -27,22 +27,13 @@ function useCompanyGuard() {
 export function usePurchaseRequisitions(filters?: EntityFilters) {
   const { selectedCompany } = useCompany();
 
-  console.log('🔍 [usePurchaseRequisitions] Hook chamado com filters:', filters);
-  console.log('🔍 [usePurchaseRequisitions] selectedCompany?.id:', selectedCompany?.id);
-
   return useQuery({
     queryKey: ['compras', 'requisicoes', selectedCompany?.id, filters],
     queryFn: async () => {
       if (!selectedCompany?.id) {
         throw new Error('Empresa não selecionada');
       }
-      console.log('🔍 [usePurchaseRequisitions] queryFn executando com companyId:', selectedCompany.id, 'filters:', filters);
       const result = await purchaseService.listRequisitions(selectedCompany.id, filters);
-      console.log('✅ [usePurchaseRequisitions] Resultado recebido:', {
-        total: result.total,
-        count: result.data?.length || 0,
-        data: result.data
-      });
       return result.data;
     },
     enabled: !!selectedCompany?.id,

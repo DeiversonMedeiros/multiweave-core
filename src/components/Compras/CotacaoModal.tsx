@@ -79,7 +79,10 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
     }
   };
   
+  // loading: carregando dados iniciais da cotação
   const [loading, setLoading] = useState(false);
+  // saving: envio das alterações da cotação
+  const [saving, setSaving] = useState(false);
   const [requisicaoData, setRequisicaoData] = useState<any>(null);
   const [requisicaoItens, setRequisicaoItens] = useState<any[]>([]);
   const [materiaisMap, setMateriaisMap] = useState<Map<string, { nome: string; imagem_url: string | null }>>(new Map());
@@ -222,6 +225,8 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
         });
       } catch (error) {
         console.error('Erro ao carregar dados da cotação:', error);
+        // Usar toast apenas para feedback visual; não depende de mudanças reativas,
+        // então não precisamos incluí-lo nas dependências do useEffect.
         toast({
           title: "Erro",
           description: "Não foi possível carregar os dados da cotação.",
@@ -233,7 +238,19 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
     };
 
     loadData();
-  }, [isOpen, cotacao, selectedCompany, toast]);
+    // Dependemos apenas de isOpen e dos identificadores estáveis da empresa e da cotação
+    // para evitar reexecuções infinitas causadas por mudanças de referência em objetos/funções.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, selectedCompany?.id, cotacao?.id]);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await onSave(formData);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (!cotacao) return null;
 
@@ -484,12 +501,12 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={loading}>
+          <Button variant="outline" onClick={onClose} disabled={loading || saving}>
             {isEditMode ? 'Cancelar' : 'Fechar'}
           </Button>
           {isEditMode && (
-            <Button onClick={() => onSave(formData)} disabled={loading}>
-              {loading ? (
+            <Button onClick={handleSave} disabled={loading || saving}>
+              {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Salvando...
@@ -504,3 +521,9 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
     </Dialog>
   );
 }
+
+
+
+
+
+

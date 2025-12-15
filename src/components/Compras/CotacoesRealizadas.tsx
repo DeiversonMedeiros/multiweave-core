@@ -274,3 +274,9 @@ export function CotacoesRealizadas() {
     </div>
   );
 }
+
+
+
+
+
+
