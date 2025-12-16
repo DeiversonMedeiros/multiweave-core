@@ -4,6 +4,7 @@ import { PermissionGuard } from '@/components/PermissionGuard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import { 
   Search, 
   Filter, 
@@ -14,7 +15,8 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  FileText
+  FileText,
+  X
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
@@ -28,7 +30,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { CotacaoModal } from '@/components/Compras/CotacaoModal';
+
+interface FiltrosCotacoes {
+  status: string;
+  dataInicio: string;
+  dataFim: string;
+  fornecedor: string;
+  valorMin: string;
+  valorMax: string;
+}
 
 export function CotacoesRealizadas() {
   const { canEditEntity, canDeleteEntity } = usePermissions();
@@ -41,6 +59,15 @@ export function CotacoesRealizadas() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [filtros, setFiltros] = useState<FiltrosCotacoes>({
+    status: 'all',
+    dataInicio: '',
+    dataFim: '',
+    fornecedor: '',
+    valorMin: '',
+    valorMax: '',
+  });
 
   const getStatusBadge = (status: string, workflowState?: string) => {
     const statusValue = workflowState || status || 'pendente';
@@ -67,13 +94,97 @@ export function CotacoesRealizadas() {
   };
 
   const filtered = useMemo(() => {
-    if (!search) return cotacoes;
-    return cotacoes.filter((cotacao: any) =>
-      cotacao.numero_cotacao?.toLowerCase().includes(search.toLowerCase()) ||
-      cotacao.status?.toLowerCase().includes(search.toLowerCase()) ||
-      cotacao.workflow_state?.toLowerCase().includes(search.toLowerCase()),
+    let result = cotacoes;
+
+    // Filtro de busca por texto
+    if (search) {
+      result = result.filter((cotacao: any) =>
+        cotacao.numero_cotacao?.toLowerCase().includes(search.toLowerCase()) ||
+        cotacao.status?.toLowerCase().includes(search.toLowerCase()) ||
+        cotacao.workflow_state?.toLowerCase().includes(search.toLowerCase()) ||
+        cotacao.fornecedor_nome?.toLowerCase().includes(search.toLowerCase()) ||
+        cotacao.numero_requisicao?.toLowerCase().includes(search.toLowerCase()),
+      );
+    }
+
+    // Filtro por status
+    if (filtros.status && filtros.status !== 'all') {
+      result = result.filter((cotacao: any) => {
+        const status = cotacao.workflow_state || cotacao.status;
+        return status === filtros.status;
+      });
+    }
+
+    // Filtro por data de criação
+    if (filtros.dataInicio) {
+      result = result.filter((cotacao: any) => {
+        if (!cotacao.created_at) return false;
+        const dataCotacao = new Date(cotacao.created_at);
+        const dataInicio = new Date(filtros.dataInicio);
+        return dataCotacao >= dataInicio;
+      });
+    }
+
+    if (filtros.dataFim) {
+      result = result.filter((cotacao: any) => {
+        if (!cotacao.created_at) return false;
+        const dataCotacao = new Date(cotacao.created_at);
+        const dataFim = new Date(filtros.dataFim);
+        dataFim.setHours(23, 59, 59, 999); // Incluir o dia inteiro
+        return dataCotacao <= dataFim;
+      });
+    }
+
+    // Filtro por fornecedor
+    if (filtros.fornecedor) {
+      result = result.filter((cotacao: any) =>
+        cotacao.fornecedor_nome?.toLowerCase().includes(filtros.fornecedor.toLowerCase()) ||
+        cotacao.fornecedor_id === filtros.fornecedor
+      );
+    }
+
+    // Filtro por valor mínimo
+    if (filtros.valorMin) {
+      const valorMin = parseFloat(filtros.valorMin);
+      result = result.filter((cotacao: any) => {
+        const valor = parseFloat(cotacao.valor_total || 0);
+        return valor >= valorMin;
+      });
+    }
+
+    // Filtro por valor máximo
+    if (filtros.valorMax) {
+      const valorMax = parseFloat(filtros.valorMax);
+      result = result.filter((cotacao: any) => {
+        const valor = parseFloat(cotacao.valor_total || 0);
+        return valor <= valorMax;
+      });
+    }
+
+    return result;
+  }, [cotacoes, search, filtros]);
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      filtros.status !== 'all' ||
+      filtros.dataInicio !== '' ||
+      filtros.dataFim !== '' ||
+      filtros.fornecedor !== '' ||
+      filtros.valorMin !== '' ||
+      filtros.valorMax !== ''
     );
-  }, [cotacoes, search]);
+  }, [filtros]);
+
+  const clearFilters = () => {
+    setFiltros({
+      status: 'all',
+      dataInicio: '',
+      dataFim: '',
+      fornecedor: '',
+      valorMin: '',
+      valorMax: '',
+    });
+  };
 
   const handleView = (cotacao: any) => {
     setSelectedCotacao(cotacao);
@@ -114,9 +225,18 @@ export function CotacoesRealizadas() {
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <Button variant="outline">
+        <Button 
+          variant="outline" 
+          onClick={() => setIsFiltersOpen(true)}
+          className={hasActiveFilters ? 'bg-primary/10 border-primary' : ''}
+        >
           <Filter className="h-4 w-4 mr-2" />
           Filtros
+          {hasActiveFilters && (
+            <Badge variant="secondary" className="ml-2 h-5 w-5 rounded-full p-0 flex items-center justify-center">
+              !
+            </Badge>
+          )}
         </Button>
         <Button variant="outline">
           <Download className="h-4 w-4 mr-2" />
@@ -269,6 +389,132 @@ export function CotacoesRealizadas() {
               disabled={deleteQuoteMutation.isPending}
             >
               {deleteQuoteMutation.isPending ? 'Excluindo...' : 'Excluir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Filtros */}
+      <Dialog open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Filtros de Cotações</DialogTitle>
+            <DialogDescription>
+              Aplique filtros para encontrar cotações específicas
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Filtro por Status */}
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select
+                value={filtros.status}
+                onValueChange={(value) => setFiltros({ ...filtros, status: value })}
+              >
+                <SelectTrigger id="status">
+                  <SelectValue placeholder="Todos os status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os status</SelectItem>
+                  <SelectItem value="aberta">Aberta</SelectItem>
+                  <SelectItem value="em_cotacao">Em Cotação</SelectItem>
+                  <SelectItem value="pendente">Pendente</SelectItem>
+                  <SelectItem value="aguardando_resposta">Aguardando Resposta</SelectItem>
+                  <SelectItem value="em_aprovacao">Em Aprovação</SelectItem>
+                  <SelectItem value="aprovada">Aprovada</SelectItem>
+                  <SelectItem value="completa">Completa</SelectItem>
+                  <SelectItem value="rejeitada">Rejeitada</SelectItem>
+                  <SelectItem value="reprovada">Reprovada</SelectItem>
+                  <SelectItem value="vencida">Vencida</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Filtro por Data */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="dataInicio">Data Início</Label>
+                <Input
+                  id="dataInicio"
+                  type="date"
+                  value={filtros.dataInicio}
+                  onChange={(e) => setFiltros({ ...filtros, dataInicio: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dataFim">Data Fim</Label>
+                <Input
+                  id="dataFim"
+                  type="date"
+                  value={filtros.dataFim}
+                  onChange={(e) => setFiltros({ ...filtros, dataFim: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* Filtro por Fornecedor */}
+            <div className="space-y-2">
+              <Label htmlFor="fornecedor">Fornecedor</Label>
+              <Input
+                id="fornecedor"
+                placeholder="Buscar por nome do fornecedor"
+                value={filtros.fornecedor}
+                onChange={(e) => setFiltros({ ...filtros, fornecedor: e.target.value })}
+              />
+            </div>
+
+            {/* Filtro por Valor */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="valorMin">Valor Mínimo (R$)</Label>
+                <Input
+                  id="valorMin"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={filtros.valorMin}
+                  onChange={(e) => setFiltros({ ...filtros, valorMin: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="valorMax">Valor Máximo (R$)</Label>
+                <Input
+                  id="valorMax"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={filtros.valorMax}
+                  onChange={(e) => setFiltros({ ...filtros, valorMax: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* Indicador de filtros ativos */}
+            {hasActiveFilters && (
+              <div className="flex items-center justify-between p-3 bg-primary/10 rounded-lg">
+                <span className="text-sm text-muted-foreground">
+                  Filtros ativos aplicados
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearFilters}
+                  className="h-8"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Limpar Filtros
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={clearFilters}>
+              Limpar
+            </Button>
+            <Button onClick={() => setIsFiltersOpen(false)}>
+              Aplicar Filtros
             </Button>
           </DialogFooter>
         </DialogContent>

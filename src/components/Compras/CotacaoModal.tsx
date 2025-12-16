@@ -36,13 +36,17 @@ import {
   Package,
   Loader2,
   X,
-  Plus
+  Plus,
+  XCircle
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
 import { useToast } from '@/hooks/use-toast';
 import { EntityService } from '@/services/generic/entityService';
 import { useActivePartners } from '@/hooks/usePartners';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { ApprovalService } from '@/services/approvals/approvalService';
+import { Skeleton } from '@/components/ui/skeleton';
+import { User, Calendar } from 'lucide-react';
 
 interface CotacaoModalProps {
   cotacao: any;
@@ -88,6 +92,8 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
   const [materiaisMap, setMateriaisMap] = useState<Map<string, { nome: string; imagem_url: string | null }>>(new Map());
   const [fornecedoresCotacao, setFornecedoresCotacao] = useState<any[]>([]);
   const [selectedFornecedor, setSelectedFornecedor] = useState<string>('');
+  const [approvalFlow, setApprovalFlow] = useState<any>(null);
+  const [loadingApproval, setLoadingApproval] = useState(false);
   
   const [formData, setFormData] = useState({
     prazo_resposta: '',
@@ -223,6 +229,24 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
           desconto_valor: cotacao.desconto_valor || 0,
           valor_total: cotacao.valor_total || 0,
         });
+
+        // Carregar fluxo de aprovação
+        if (selectedCompany?.id && cotacao.id) {
+          try {
+            setLoadingApproval(true);
+            const flowData = await ApprovalService.getApprovalFlow(
+              'cotacao_compra',
+              cotacao.id,
+              selectedCompany.id
+            );
+            setApprovalFlow(flowData);
+          } catch (error) {
+            console.error('Erro ao carregar fluxo de aprovação:', error);
+            setApprovalFlow(null);
+          } finally {
+            setLoadingApproval(false);
+          }
+        }
       } catch (error) {
         console.error('Erro ao carregar dados da cotação:', error);
         // Usar toast apenas para feedback visual; não depende de mudanças reativas,
@@ -275,11 +299,12 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
           </div>
         ) : (
           <Tabs defaultValue="geral" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="geral">Geral</TabsTrigger>
               <TabsTrigger value="fornecedores">Fornecedores</TabsTrigger>
               <TabsTrigger value="itens">Itens</TabsTrigger>
               <TabsTrigger value="valores">Valores</TabsTrigger>
+              <TabsTrigger value="detalhes">Detalhes</TabsTrigger>
             </TabsList>
 
             <TabsContent value="geral" className="space-y-4">
@@ -496,6 +521,187 @@ export function CotacaoModal({ cotacao, isOpen, isEditMode, onClose, onSave }: C
                   />
                 </div>
               </div>
+            </TabsContent>
+
+            <TabsContent value="detalhes" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertCircle className="h-5 w-5" />
+                    Fluxo de Aprovação
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingApproval ? (
+                    <div className="space-y-4">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-20 w-full" />
+                      <Skeleton className="h-20 w-full" />
+                    </div>
+                  ) : !approvalFlow || approvalFlow.approvalFlow.length === 0 ? (
+                    <div className="text-center py-4 text-muted-foreground">
+                      Nenhuma aprovação configurada para esta cotação
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* Informações gerais */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-muted-foreground">Regra de Aprovação:</span>
+                          <span className="text-sm font-semibold">{approvalFlow.rule || 'Regra de Aprovação'}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-muted-foreground">Total de Níveis:</span>
+                          <span className="text-sm font-semibold">{approvalFlow.totalLevels}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-muted-foreground">Status Geral:</span>
+                          {approvalFlow.completed ? (
+                            <Badge variant="default" className="bg-green-600">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Alçada Concluída
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary">
+                              <Clock className="h-3 w-3 mr-1" />
+                              Em Andamento
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Timeline de aprovadores */}
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-semibold">Sequência de Aprovadores</h3>
+                        
+                        {approvalFlow.approvalFlow.map((item: any, index: number) => {
+                          const isLast = index === approvalFlow.approvalFlow.length - 1;
+                          
+                          const getStatusIcon = (status: string) => {
+                            switch (status) {
+                              case 'aprovado':
+                                return <CheckCircle className="h-5 w-5 text-green-600" />;
+                              case 'rejeitado':
+                              case 'cancelado':
+                                return <XCircle className="h-5 w-5 text-red-600" />;
+                              case 'pendente':
+                              default:
+                                return <Clock className="h-5 w-5 text-gray-400" />;
+                            }
+                          };
+
+                          const getStatusBadge = (status: string) => {
+                            switch (status) {
+                              case 'aprovado':
+                                return <Badge variant="default" className="bg-green-600">Aprovado</Badge>;
+                              case 'rejeitado':
+                                return <Badge variant="destructive">Rejeitado</Badge>;
+                              case 'cancelado':
+                                return <Badge variant="destructive">Cancelado</Badge>;
+                              case 'pendente':
+                              default:
+                                return <Badge variant="secondary">Pendente</Badge>;
+                            }
+                          };
+
+                          const getItemBgColor = (status: string) => {
+                            switch (status) {
+                              case 'aprovado':
+                                return 'bg-green-50 border-green-200';
+                              case 'rejeitado':
+                              case 'cancelado':
+                                return 'bg-red-50 border-red-200';
+                              case 'pendente':
+                              default:
+                                return 'bg-gray-50 border-gray-200';
+                            }
+                          };
+
+                          const formatDateTime = (dateString: string | null): string => {
+                            if (!dateString) return '--';
+                            
+                            try {
+                              const date = new Date(dateString);
+                              const day = date.getDate().toString().padStart(2, '0');
+                              const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                              const year = date.getFullYear();
+                              const hours = date.getHours().toString().padStart(2, '0');
+                              const minutes = date.getMinutes().toString().padStart(2, '0');
+                              const seconds = date.getSeconds().toString().padStart(2, '0');
+                              
+                              return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+                            } catch (error) {
+                              return '--';
+                            }
+                          };
+                          
+                          return (
+                            <div key={`${item.level}-${item.approverId}`} className="relative">
+                              {/* Linha conectora */}
+                              {!isLast && (
+                                <div className="absolute left-5 top-10 h-full w-0.5 bg-gray-200" />
+                              )}
+                              
+                              {/* Card do aprovador */}
+                              <div className={`relative p-4 rounded-lg border-2 ${getItemBgColor(item.status)}`}>
+                                <div className="flex items-start gap-4">
+                                  {/* Ícone de status */}
+                                  <div className="flex-shrink-0 mt-0.5">
+                                    {getStatusIcon(item.status)}
+                                  </div>
+                                  
+                                  {/* Conteúdo */}
+                                  <div className="flex-1 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <User className="h-4 w-4 text-muted-foreground" />
+                                          <span className="font-semibold">{item.approverName}</span>
+                                        </div>
+                                        <div className="text-sm text-muted-foreground mt-1">
+                                          Nível {item.level} / {approvalFlow.totalLevels}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {getStatusBadge(item.status)}
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Data de aprovação */}
+                                    {item.status === 'aprovado' && item.approvedAt && (
+                                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Calendar className="h-4 w-4" />
+                                        <span>
+                                          Aprovado em: <span className="font-medium">{formatDateTime(item.approvedAt)}</span>
+                                        </span>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Observações */}
+                                    {item.observacoes && (
+                                      <div className="text-sm text-muted-foreground bg-white/50 p-2 rounded border">
+                                        <span className="font-medium">Observações: </span>
+                                        {item.observacoes}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Se pendente, mostrar que está aguardando */}
+                                    {item.status === 'pendente' && (
+                                      <div className="text-sm text-muted-foreground italic">
+                                        Aguardando aprovação...
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         )}

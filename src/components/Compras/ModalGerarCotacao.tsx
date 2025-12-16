@@ -238,10 +238,50 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
             skipCompanyFilter: true,
           });
 
-          const itens = (itensResult.data || []).map((item: any) => ({
-            ...item,
-            requisicao_numero: requisicao.numero_requisicao,
-          }));
+          const itensRaw = itensResult.data || [];
+
+          // Coletar todos os IDs de materiais únicos
+          const materialIds = [...new Set(itensRaw.map((item: any) => item.material_id).filter(Boolean))];
+          
+          // Buscar todos os materiais de uma vez
+          const materiaisMap = new Map<string, any>();
+          if (materialIds.length > 0) {
+            try {
+              const materiaisResult = await EntityService.list({
+                schema: 'almoxarifado',
+                table: 'materiais_equipamentos',
+                companyId: selectedCompany.id,
+                filters: {},
+                page: 1,
+                pageSize: 1000,
+              });
+
+              // Criar mapa de materiais por ID
+              if (materiaisResult.data) {
+                materiaisResult.data.forEach((material: any) => {
+                  const materialIdStr = String(material.id);
+                  if (materialIds.includes(material.id) || materialIds.some(id => String(id) === materialIdStr)) {
+                    materiaisMap.set(materialIdStr, material);
+                  }
+                });
+              }
+            } catch (error) {
+              console.error('Erro ao buscar materiais:', error);
+            }
+          }
+
+          // Mapear itens com dados dos materiais
+          const itens = itensRaw.map((item: any) => {
+            const materialIdStr = String(item.material_id);
+            const material = materiaisMap.get(materialIdStr);
+            
+            return {
+              ...item,
+              requisicao_numero: requisicao.numero_requisicao,
+              material_nome: material?.nome || material?.descricao || item.material_nome || 'Material não encontrado',
+              material_codigo: material?.codigo_interno || material?.codigo || item.material_codigo || '',
+            };
+          });
 
           requisicoesData.push({
             id: requisicao.id,
@@ -545,13 +585,63 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   const fornecedoresValidos = fornecedores.filter(f => f.fornecedor_id).length;
   const fornecedoresOk = fornecedoresValidos >= minFornecedores && fornecedoresValidos <= maxFornecedores;
 
+  // Calcular contexto da seleção para o header dinâmico
+  const contextoSelecao = useMemo(() => {
+    if (requisicoes.length === 0) {
+      return {
+        tipoCompra: '',
+        totalRequisicoes: 0,
+        totalItens: itensAgrupados.length,
+        numerosRequisicoes: [],
+      };
+    }
+
+    const tipos = requisicoes.map(r => r.tipo_requisicao).filter(Boolean);
+    const tipoPrincipal = tipos.includes('emergencial') 
+      ? 'Emergencial' 
+      : tipos.includes('compra_direta')
+      ? 'Compra Direta'
+      : tipos.includes('reposicao')
+      ? 'Reposição'
+      : tipos[0] || '';
+
+    const numerosRequisicoes = requisicoes.map(r => r.numero_requisicao);
+    const totalItens = modoCotacao === 'requisicao' 
+      ? itensAgrupados.length 
+      : itensSelecionados.size;
+
+    return {
+      tipoCompra: tipoPrincipal,
+      totalRequisicoes: requisicoes.length,
+      totalItens,
+      numerosRequisicoes: numerosRequisicoes.slice(0, 3), // Mostrar até 3 números
+      temMaisRequisicoes: numerosRequisicoes.length > 3,
+    };
+  }, [requisicoes, itensAgrupados, itensSelecionados, modoCotacao]);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-6xl max-h-[95vh] overflow-hidden flex flex-col p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
-          <DialogTitle>Gerar Cotação</DialogTitle>
-          <DialogDescription>
-            Configure a cotação para as requisições selecionadas
+          <DialogTitle className="flex items-center gap-2">
+            Gerar Cotação
+            {contextoSelecao.tipoCompra && (
+              <Badge variant="outline" className="ml-2">
+                {contextoSelecao.tipoCompra}
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription className="flex items-center gap-2 flex-wrap">
+            <span>
+              {contextoSelecao.totalRequisicoes > 0 
+                ? `${contextoSelecao.totalRequisicoes} requisição(ões): ${contextoSelecao.numerosRequisicoes.join(', ')}${contextoSelecao.temMaisRequisicoes ? '...' : ''}`
+                : 'Configure a cotação para as requisições selecionadas'}
+            </span>
+            {contextoSelecao.totalItens > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {contextoSelecao.totalItens} {contextoSelecao.totalItens === 1 ? 'item' : 'itens'}
+              </Badge>
+            )}
           </DialogDescription>
         </DialogHeader>
 
