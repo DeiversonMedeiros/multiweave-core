@@ -75,8 +75,16 @@ export function useProcessApproval() {
     },
     onSuccess: (data) => {
       console.log('✅ [useProcessApproval.onSuccess] Aprovação processada com sucesso!', data);
+      
+      // Invalidar queries de aprovações
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['approvals-by-process'] });
+      
+      // Invalidar queries de compras para garantir que cotações, pedidos e requisições sejam atualizados
+      // Isso é importante porque quando uma cotação é aprovada, pedidos são criados automaticamente
+      queryClient.invalidateQueries({ queryKey: ['compras'] });
+      console.log('🔄 [useProcessApproval] Queries de compras invalidadas');
+      
       toast.success('Aprovação processada com sucesso!');
     },
     onError: (error: any) => {

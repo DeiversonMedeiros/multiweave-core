@@ -142,6 +142,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
   // Requisições vinculadas
   const [requisicoes, setRequisicoes] = useState<RequisicaoData[]>([]);
+  const [loadedRequisicoesIdsKey, setLoadedRequisicoesIdsKey] = useState<string>('');
   
   // Itens da cotação
   const [modoCotacao, setModoCotacao] = useState<'requisicao' | 'item'>('requisicao');
@@ -154,6 +155,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   
   // Rateio
   const [rateio, setRateio] = useState<RateioItem[]>([]);
+
+  // Criar string estável a partir de requisicoesIds para usar como dependência
+  const requisicoesIdsKey = useMemo(() => {
+    return requisicoesIds.sort().join(',');
+  }, [requisicoesIds]);
 
   // Mapear IDs para nomes
   const costCentersMap = useMemo(() => {
@@ -186,8 +192,25 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   // Carregar dados iniciais
   useEffect(() => {
     if (!isOpen || !selectedCompany?.id || requisicoesIds.length === 0) {
+      // Resetar dados quando modal fechar
+      if (!isOpen) {
+        setRequisicoes([]);
+        setItensAgrupados([]);
+        setItensSelecionados(new Set());
+        setFornecedores([]);
+        setRateio([]);
+        setLoadedRequisicoesIdsKey('');
+      }
       return;
     }
+
+    // Evitar recarregar se já temos os dados carregados para as mesmas requisições
+    if (loadedRequisicoesIdsKey === requisicoesIdsKey && requisicoes.length > 0) {
+      console.log('⏭️ [ModalGerarCotacao] Dados já carregados, pulando recarregamento');
+      return;
+    }
+
+    let isMounted = true;
 
     const loadData = async () => {
       setLoading(true);
@@ -195,6 +218,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         // Carregar requisições
         const requisicoesData: RequisicaoData[] = [];
         for (const reqId of requisicoesIds) {
+          if (!isMounted) return; // Cancelar se componente foi desmontado
+          
           const requisicao = await EntityService.getById({
             schema: 'compras',
             table: 'requisicoes_compra',
@@ -306,20 +331,35 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
           ...prev,
           data_limite: dataLimite.toISOString().split('T')[0],
         }));
+
+        // Marcar como carregado
+        if (isMounted) {
+          setLoadedRequisicoesIdsKey(requisicoesIdsKey);
+        }
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
-        toast({
-          title: "Erro",
-          description: "Não foi possível carregar os dados das requisições.",
-          variant: "destructive",
-        });
+        if (isMounted) {
+          toast({
+            title: "Erro",
+            description: "Não foi possível carregar os dados das requisições.",
+            variant: "destructive",
+          });
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     loadData();
-  }, [isOpen, selectedCompany, requisicoesIds, toast]);
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, selectedCompany?.id, requisicoesIdsKey]);
 
   // Calcular rateio quando itens ou fornecedores mudarem
   useEffect(() => {
@@ -367,7 +407,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     });
 
     setRateio(rateioItems);
-  }, [itensAgrupados, itensSelecionados, fornecedores, requisicoes, costCentersMap, projectsMap]);
+  }, [
+    itensAgrupados, 
+    itensSelecionados, 
+    fornecedores, 
+    requisicoes,
+    // Usar os Map objects diretamente - eles são estáveis via useMemo
+    costCentersMap,
+    projectsMap
+  ]);
 
   const handleAddFornecedor = () => {
     if (formData.tipo_cotacao === 'emergencial' && fornecedores.length >= 1) {
@@ -784,7 +832,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             <div className="flex justify-between items-center">
                               <CardTitle className="text-base">
                                 Fornecedor {index + 1}
-                                {partner && ` - ${partner.nome || partner.razao_social}`}
+                                {partner && ` - ${partner.nome_fantasia || partner.razao_social}`}
                               </CardTitle>
                               <Button
                                 variant="ghost"
@@ -810,14 +858,21 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                     <SelectValue placeholder="Selecione um fornecedor" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {fornecedoresDisponiveis.map((fd: any) => {
-                                      const p = partnersMap.get(fd.partner_id);
-                                      return (
-                                        <SelectItem key={fd.id} value={fd.id}>
-                                          {p?.nome || p?.razao_social || fd.partner_id}
-                                        </SelectItem>
-                                      );
-                                    })}
+                                    {fornecedoresDisponiveis.length === 0 ? (
+                                      <SelectItem value="no-suppliers" disabled>
+                                        Nenhum fornecedor disponível
+                                      </SelectItem>
+                                    ) : (
+                                      fornecedoresDisponiveis.map((fd: any) => {
+                                        const p = partnersMap.get(fd.partner_id);
+                                        const displayName = p?.nome_fantasia || p?.razao_social || `Fornecedor ${fd.id.substring(0, 8)}`;
+                                        return (
+                                          <SelectItem key={fd.id} value={fd.id}>
+                                            {displayName}
+                                          </SelectItem>
+                                        );
+                                      })
+                                    )}
                                   </SelectContent>
                                 </Select>
                               </div>

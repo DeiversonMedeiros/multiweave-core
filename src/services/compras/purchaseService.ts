@@ -707,6 +707,8 @@ export const purchaseService = {
         numero_cotacao,
         prazo_resposta: params.input.prazo_resposta,
         observacoes: params.input.observacoes,
+        status: 'em_aprovacao', // Cotação criada deve ir direto para aprovação
+        workflow_state: 'em_aprovacao', // Cotação criada deve ir direto para aprovação
       },
     });
 

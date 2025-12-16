@@ -42,12 +42,14 @@ export function CotacoesRealizadas() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
-  const getStatusBadge = (status: string) => {
-    const statusValue = status || 'pendente';
+  const getStatusBadge = (status: string, workflowState?: string) => {
+    const statusValue = workflowState || status || 'pendente';
     switch (statusValue) {
       case 'pendente':
       case 'aguardando_resposta':
         return <Badge variant="outline" className="text-yellow-600"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>;
+      case 'em_aprovacao':
+        return <Badge variant="outline" className="text-orange-600"><Clock className="h-3 w-3 mr-1" />Aguardando Aprovação</Badge>;
       case 'aprovada':
       case 'completa':
         return <Badge variant="outline" className="text-green-600"><CheckCircle className="h-3 w-3 mr-1" />Aprovada</Badge>;
@@ -162,7 +164,7 @@ export function CotacoesRealizadas() {
                     ? new Date(cotacao.prazo_resposta || cotacao.data_validade).toLocaleDateString('pt-BR')
                     : '--'}
                 </TableCell>
-                <TableCell>{getStatusBadge(cotacao.workflow_state || cotacao.status)}</TableCell>
+                <TableCell>{getStatusBadge(cotacao.status, cotacao.workflow_state)}</TableCell>
                 <TableCell>
                   {cotacao.fornecedor_nome || cotacao.fornecedor_id || 'Aguardando fornecedores'}
                 </TableCell>

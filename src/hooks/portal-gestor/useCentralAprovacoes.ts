@@ -56,6 +56,8 @@ export function useAprovarSolicitacao() {
       queryClient.invalidateQueries({ queryKey: ['central-aprovacoes'] });
       queryClient.invalidateQueries({ queryKey: ['gestor-dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['gestor-recent-activities'] });
+      // Invalidar queries de compras para garantir atualização quando cotações/requisições são aprovadas
+      queryClient.invalidateQueries({ queryKey: ['compras'] });
     },
   });
 }
@@ -88,6 +90,8 @@ export function useRejeitarSolicitacao() {
       queryClient.invalidateQueries({ queryKey: ['central-aprovacoes'] });
       queryClient.invalidateQueries({ queryKey: ['gestor-dashboard-stats'] });
       queryClient.invalidateQueries({ queryKey: ['gestor-recent-activities'] });
+      // Invalidar queries de compras para garantir atualização quando cotações/requisições são rejeitadas
+      queryClient.invalidateQueries({ queryKey: ['compras'] });
     },
   });
 }

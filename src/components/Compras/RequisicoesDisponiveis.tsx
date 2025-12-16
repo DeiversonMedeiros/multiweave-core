@@ -90,13 +90,63 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
 
   // Filtrar requisições disponíveis (apenas aprovadas, ainda não em cotação)
   const requisicoesDisponiveis = useMemo(() => {
-    return requisicoes.filter((req: any) => {
-      const status = req.workflow_state || req.status;
-      // Requisição fica disponível aqui assim que é aprovada.
-      // Ao iniciar o ciclo de cotação, o workflow da requisição é alterado para "em_cotacao"
-      // pelo purchaseService.startQuoteCycle, fazendo com que ela saia desta lista.
-      return status === 'aprovada';
+    // Debug: Log das requisições recebidas
+    console.log('🔍 [RequisicoesDisponiveis] Total de requisições recebidas:', requisicoes.length);
+    console.log('🔍 [RequisicoesDisponiveis] Requisições por workflow_state:', 
+      requisicoes.reduce((acc: any, req: any) => {
+        const ws = req.workflow_state || 'sem_workflow';
+        acc[ws] = (acc[ws] || 0) + 1;
+        return acc;
+      }, {})
+    );
+    console.log('🔍 [RequisicoesDisponiveis] Requisições por status:', 
+      requisicoes.reduce((acc: any, req: any) => {
+        const st = req.status || 'sem_status';
+        acc[st] = (acc[st] || 0) + 1;
+        return acc;
+      }, {})
+    );
+    
+    const filtered = requisicoes.filter((req: any) => {
+      const status = req.status;
+      const workflowState = req.workflow_state;
+      
+      // Requisição fica disponível quando:
+      // 1. workflow_state = 'em_cotacao' (requisição aprovada e pronta para cotação)
+      // 2. status = 'aprovada' (caso workflow_state não esteja definido)
+      // 
+      // Quando uma requisição é aprovada, ela recebe:
+      // - status = 'aprovada'
+      // - workflow_state = 'em_cotacao'
+      //
+      // IMPORTANTE: Requisições com workflow_state = 'em_cotacao' são as que estão prontas para cotação.
+      // Mesmo que já tenha uma cotação criada, a requisição ainda terá workflow_state = 'em_cotacao',
+      // mas isso é aceitável pois o usuário pode querer criar múltiplas cotações para a mesma requisição.
+      
+      // Aceitar requisições com workflow_state = 'em_cotacao' (aprovadas e prontas para cotação)
+      const hasEmCotacaoState = workflowState === 'em_cotacao';
+      const isApproved = status === 'aprovada';
+      
+      // Excluir requisições canceladas ou reprovadas
+      const isNotCancelled = status !== 'cancelada' && status !== 'reprovada' && workflowState !== 'cancelada' && workflowState !== 'reprovada';
+      
+      // Mostrar requisições aprovadas que estão prontas para cotação
+      const shouldShow = (hasEmCotacaoState || isApproved) && isNotCancelled;
+      
+      if (shouldShow) {
+        console.log('✅ [RequisicoesDisponiveis] Requisição disponível:', {
+          id: req.id,
+          numero: req.numero_requisicao,
+          status,
+          workflow_state: workflowState
+        });
+      }
+      
+      return shouldShow;
     });
+    
+    console.log('✅ [RequisicoesDisponiveis] Requisições disponíveis filtradas:', filtered.length);
+    return filtered;
   }, [requisicoes]);
 
   // Aplicar filtros
