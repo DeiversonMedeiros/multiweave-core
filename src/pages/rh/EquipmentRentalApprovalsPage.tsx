@@ -30,7 +30,7 @@ import {
   Plus
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequireEntity } from '@/components/RequireAuth';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
@@ -238,7 +238,7 @@ const EquipmentRentalApprovalsPage: React.FC = () => {
   };
 
   return (
-    <RequireModule module="rh">
+    <RequireEntity entityName="payroll" action="read">
       <div className="container mx-auto p-6 space-y-6">
         <Card>
           <CardHeader>
@@ -447,7 +447,7 @@ const EquipmentRentalApprovalsPage: React.FC = () => {
           </DialogContent>
         </Dialog>
       </div>
-    </RequireModule>
+    </RequireEntity>
   );
 };
 

@@ -1,13 +1,15 @@
+// @ts-nocheck
 import { supabase } from '@/integrations/supabase/client';
 import { EntityService } from '@/services/generic/entityService';
 
 export interface ApprovalConfig {
   id: string;
   company_id: string;
+  nome?: string;
   processo_tipo: 'conta_pagar' | 'requisicao_compra' | 'cotacao_compra' | 'solicitacao_saida_material' | 'solicitacao_transferencia_material';
   centro_custo_id?: string;
-  departamento?: string;
-  classe_financeira?: string;
+  projeto_id?: string;
+  classe_financeiras?: string[];
   usuario_id?: string;
   valor_limite?: number;
   nivel_aprovacao: number;

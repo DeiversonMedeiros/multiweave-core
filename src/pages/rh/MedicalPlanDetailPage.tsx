@@ -22,7 +22,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -68,7 +68,7 @@ const MedicalPlanDetailPage: React.FC = () => {
   }
 
   return (
-    <RequireModule moduleName="rh">
+    <RequireEntity entityName="medical_agreements" action="read">
       <div className="container mx-auto py-8 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -285,7 +285,7 @@ const MedicalPlanDetailPage: React.FC = () => {
           </Card>
         )}
       </div>
-    </RequireModule>
+    </RequireEntity>
   );
 };
 

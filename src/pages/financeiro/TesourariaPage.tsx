@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { TesourariaPage as TesourariaComponent } from '@/components/financial/TesourariaPage';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequireEntity } from '@/components/RequireAuth';
 
 interface TesourariaPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface TesourariaPageProps {
 
 export function TesourariaPage({ className }: TesourariaPageProps) {
   return (
-    <RequireModule moduleName="financeiro" action="read">
+    <RequireEntity entityName="fluxo_caixa" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export function TesourariaPage({ className }: TesourariaPageProps) {
         </div>
         <TesourariaComponent />
       </div>
-    </RequireModule>
+    </RequireEntity>
   );
 }
 

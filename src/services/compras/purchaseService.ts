@@ -712,7 +712,7 @@ export const purchaseService = {
       },
     });
 
-    await Promise.all(
+    const fornecedoresCriados = await Promise.all(
       params.input.fornecedores.map((fornecedor) =>
         EntityService.create({
           schema: 'compras',
@@ -737,7 +737,10 @@ export const purchaseService = {
       payload: { cotacao_ciclo_id: (ciclo as any)?.id },
     });
 
-    return ciclo;
+    return {
+      ciclo,
+      fornecedores: fornecedoresCriados,
+    };
   },
 
   async upsertQuoteSupplierResponse(params: {

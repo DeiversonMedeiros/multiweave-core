@@ -882,11 +882,14 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                               {loadingClassesFinanceiras ? (
                                 <SelectItem value="loading" disabled>Carregando...</SelectItem>
                               ) : (
-                                (classesFinanceirasData?.data || []).map((classe) => (
-                                  <SelectItem key={classe.id} value={classe.id}>
-                                    {classe.codigo} - {classe.nome}
-                                  </SelectItem>
-                                ))
+                                (classesFinanceirasData?.data || [])
+                                  .slice()
+                                  .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true, sensitivity: 'base' }))
+                                  .map((classe) => (
+                                    <SelectItem key={classe.id} value={classe.id}>
+                                      {classe.codigo} - {classe.nome}
+                                    </SelectItem>
+                                  ))
                               )}
                             </SelectContent>
                           </Select>

@@ -29,6 +29,7 @@ interface FormModalProps {
   onSubmit: (data: any) => void;
   title: string;
   initialData?: any;
+  classesOptions?: string[];
 }
 
 const FormModal: React.FC<FormModalProps> = ({
@@ -36,7 +37,8 @@ const FormModal: React.FC<FormModalProps> = ({
   onClose,
   onSubmit,
   title,
-  initialData
+  initialData,
+  classesOptions
 }) => {
   const { data: almoxarifados = [] } = useAlmoxarifados();
   const [selectedAlmoxarifado, setSelectedAlmoxarifado] = useState<string>('');
@@ -293,7 +295,7 @@ const FormModal: React.FC<FormModalProps> = ({
     'UN', 'KG', 'G', 'L', 'ML', 'M', 'CM', 'MM', 'M²', 'M³', 'CX', 'PC', 'DZ', 'PAR'
   ];
 
-  const classes = [
+  const classes = (classesOptions && classesOptions.length > 0) ? classesOptions : [
     'Parafusos', 'Porcas', 'Arruelas', 'Ferramentas', 'Equipamentos Elétricos',
     'Equipamentos Hidráulicos', 'Equipamentos Pneumáticos', 'Materiais de Construção',
     'Produtos Químicos', 'Equipamentos de Segurança', 'Outros'
@@ -388,13 +390,13 @@ const FormModal: React.FC<FormModalProps> = ({
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="classe">Classe</Label>
+                      <Label htmlFor="classe">Grupo de Materiais</Label>
                       <Select
                         value={formData.classe}
                         onValueChange={(value) => handleInputChange('classe', value)}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Selecione a classe" />
+                          <SelectValue placeholder="Selecione o grupo" />
                         </SelectTrigger>
                         <SelectContent>
                           {classes.map(classe => (

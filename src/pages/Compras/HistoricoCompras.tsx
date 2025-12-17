@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { RequireEntity } from '@/components/RequireAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -279,7 +280,8 @@ const HistoricoCompras: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <RequireEntity entityName="historico_compras" action="read">
+      <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -755,6 +757,7 @@ const HistoricoCompras: React.FC = () => {
         </DialogContent>
       </Dialog>
     </div>
+    </RequireEntity>
   );
 };
 

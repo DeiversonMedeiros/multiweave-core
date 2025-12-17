@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,15 +14,18 @@ import {
   DollarSign, 
   Building2, 
   User,
-  X
+  X,
+  FolderKanban
 } from 'lucide-react';
 import { ApprovalConfig } from '@/services/approvals/approvalService';
 import { useUsers } from '@/hooks/useUsers';
 import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
+import { useActiveProjects } from '@/hooks/useProjects';
 
 interface ApprovalConfigFormProps {
   config?: ApprovalConfig | null;
-  onSubmit: (data: Omit<ApprovalConfig, 'id' | 'created_at' | 'updated_at'>) => void;
+  onSubmit: (data: Omit<ApprovalConfig, 'id' | 'created_at' | 'updated_at' | 'company_id'>) => void;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -35,10 +38,11 @@ interface Aprovador {
 
 export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: ApprovalConfigFormProps) {
   const [formData, setFormData] = useState({
+    nome: config?.nome || '',
     processo_tipo: config?.processo_tipo || '',
     centro_custo_id: config?.centro_custo_id || '',
-    departamento: config?.departamento || '',
-    classe_financeira: config?.classe_financeira || '',
+    projeto_id: config?.projeto_id || '',
+    classe_financeiras: config?.classe_financeiras || [] as string[],
     usuario_id: config?.usuario_id || '',
     valor_limite: config?.valor_limite || '',
     nivel_aprovacao: config?.nivel_aprovacao || 1,
@@ -48,8 +52,8 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
 
   const [criteriaEnabled, setCriteriaEnabled] = useState({
     centro_custo: !!config?.centro_custo_id,
-    departamento: !!config?.departamento,
-    classe_financeira: !!config?.classe_financeira,
+    projeto: !!config?.projeto_id,
+    classe_financeira: !!config?.classe_financeiras?.length,
     usuario: !!config?.usuario_id
   });
 
@@ -57,10 +61,38 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
   const { users = [] } = useUsers();
   const { data: costCentersData } = useCostCenters();
   const costCenters = costCentersData?.data || [];
+  const { data: classesFinanceirasData, isLoading: loadingClassesFinanceiras } = useActiveClassesFinanceiras();
+  const classesFinanceiras = classesFinanceirasData?.data || [];
+  const { data: activeProjectsData } = useActiveProjects();
+  const projects = activeProjectsData?.data || [];
+  const filteredProjects = useMemo(() => {
+    if (!formData.centro_custo_id) return [];
+    return projects.filter((project: any) => project.cost_center_id === formData.centro_custo_id);
+  }, [projects, formData.centro_custo_id]);
+
+  // Garantir consistência: se trocar o centro de custo e o projeto não pertencer, limpa o projeto
+  useEffect(() => {
+    if (
+      formData.projeto_id &&
+      !filteredProjects.some((p: any) => p.id === formData.projeto_id)
+    ) {
+      setFormData((prev) => ({ ...prev, projeto_id: '' }));
+    }
+  }, [filteredProjects, formData.projeto_id]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!formData.nome.trim()) {
+      alert('Informe o nome da configuração');
+      return;
+    }
+
+    if (!formData.processo_tipo) {
+      alert('Selecione o tipo de processo');
+      return;
+    }
+
     // Validar se pelo menos um aprovador foi configurado
     if (formData.aprovadores.length === 0) {
       alert('Configure pelo menos um aprovador');
@@ -69,12 +101,15 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
 
     // Preparar dados para envio
     const submitData = {
+      nome: formData.nome.trim(),
       processo_tipo: formData.processo_tipo as any,
       centro_custo_id: criteriaEnabled.centro_custo ? formData.centro_custo_id || undefined : undefined,
-      departamento: criteriaEnabled.departamento ? formData.departamento || undefined : undefined,
-      classe_financeira: criteriaEnabled.classe_financeira ? formData.classe_financeira || undefined : undefined,
+      projeto_id: criteriaEnabled.projeto ? formData.projeto_id || undefined : undefined,
+      classe_financeiras: criteriaEnabled.classe_financeira && formData.classe_financeiras.length > 0 
+        ? formData.classe_financeiras 
+        : undefined,
       usuario_id: criteriaEnabled.usuario ? formData.usuario_id || undefined : undefined,
-      valor_limite: formData.valor_limite ? parseFloat(formData.valor_limite) : undefined,
+      valor_limite: formData.valor_limite ? parseFloat(String(formData.valor_limite)) : undefined,
       nivel_aprovacao: formData.nivel_aprovacao,
       aprovadores: formData.aprovadores,
       ativo: formData.ativo
@@ -144,6 +179,16 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Tipo de Processo */}
           <div className="space-y-2">
+            <Label htmlFor="nome">Nome da Configuração *</Label>
+            <Input
+              id="nome"
+              placeholder="Ex: Aprovação de compras nível 1"
+              value={formData.nome}
+              onChange={(e) => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="processo_tipo">Tipo de Processo *</Label>
             <Select 
               value={formData.processo_tipo} 
@@ -201,27 +246,43 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
                 </Select>
               )}
 
-              {/* Departamento */}
+              {/* Projeto */}
               <div className="flex items-center space-x-2">
                 <Checkbox
-                  id="departamento"
-                  checked={criteriaEnabled.departamento}
-                  onCheckedChange={() => toggleCriteria('departamento')}
+                  id="projeto"
+                  checked={criteriaEnabled.projeto}
+                  onCheckedChange={() => toggleCriteria('projeto')}
                 />
-                <Label htmlFor="departamento" className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  Departamento
+                <Label htmlFor="projeto" className="flex items-center gap-2">
+                  <FolderKanban className="h-4 w-4" />
+                  Projeto
                 </Label>
               </div>
-              {criteriaEnabled.departamento && (
-                <Input
-                  placeholder="Digite o departamento"
-                  value={formData.departamento}
-                  onChange={(e) => setFormData(prev => ({ ...prev, departamento: e.target.value }))}
-                />
+              {criteriaEnabled.projeto && (
+                <Select 
+                  value={formData.projeto_id} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, projeto_id: value }))}
+                  disabled={!formData.centro_custo_id}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.centro_custo_id ? "Selecione o projeto" : "Selecione um centro de custo"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredProjects.length === 0 && (
+                      <SelectItem value="none" disabled>
+                        {formData.centro_custo_id ? 'Nenhum projeto para este centro de custo' : 'Selecione um centro de custo primeiro'}
+                      </SelectItem>
+                    )}
+                    {filteredProjects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.codigo ? `${project.codigo} - ${project.nome}` : project.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
 
-              {/* Classe Financeira */}
+              {/* Classe Financeira (múltiplas, lógica de OU) */}
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="classe_financeira"
@@ -230,15 +291,47 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
                 />
                 <Label htmlFor="classe_financeira" className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
-                  Classe Financeira
+                  Classe Financeira (uma ou mais)
                 </Label>
               </div>
               {criteriaEnabled.classe_financeira && (
-                <Input
-                  placeholder="Digite a classe financeira"
-                  value={formData.classe_financeira}
-                  onChange={(e) => setFormData(prev => ({ ...prev, classe_financeira: e.target.value }))}
-                />
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Marque uma ou mais classes (aplicação por OU).
+                  </p>
+                  <div className="max-h-56 overflow-y-auto border rounded-md p-3 space-y-2">
+                    {loadingClassesFinanceiras ? (
+                      <div className="text-sm text-muted-foreground">Carregando...</div>
+                    ) : (
+                      classesFinanceiras
+                        .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true, sensitivity: 'base' }))
+                        .map((classe) => {
+                          const checked = formData.classe_financeiras.includes(classe.id);
+                          return (
+                            <label key={classe.id} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(isChecked) => {
+                                  setFormData(prev => {
+                                    const current = new Set(prev.classe_financeiras);
+                                    if (isChecked) {
+                                      current.add(classe.id);
+                                    } else {
+                                      current.delete(classe.id);
+                                    }
+                                    return { ...prev, classe_financeiras: Array.from(current) };
+                                  });
+                                }}
+                              />
+                              <span>
+                                {classe.codigo} - {classe.nome}
+                              </span>
+                            </label>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* Usuário Específico */}

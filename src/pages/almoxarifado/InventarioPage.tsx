@@ -175,7 +175,7 @@ const InventarioPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="inventory_management" action="read">
+    <RequireEntity entityName="inventarios" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">

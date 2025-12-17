@@ -26,7 +26,7 @@ import {
   useProcessMonthlyRentals
 } from '@/hooks/rh/useEquipmentRentalMonthlyPayments';
 import { useCompany } from '@/lib/company-context';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequireEntity } from '@/components/RequireAuth';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -125,7 +125,7 @@ const EquipmentRentalMonthlyPaymentsPage: React.FC = () => {
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
   return (
-    <RequireModule moduleName="rh">
+    <RequireEntity entityName="payroll" action="read">
       <div className="space-y-6 p-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -386,7 +386,7 @@ const EquipmentRentalMonthlyPaymentsPage: React.FC = () => {
         </Card>
 
       </div>
-    </RequireModule>
+    </RequireEntity>
   );
 };
 

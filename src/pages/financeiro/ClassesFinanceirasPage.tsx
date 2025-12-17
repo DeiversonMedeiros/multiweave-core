@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { ClassesFinanceirasPage as ClassesFinanceirasComponent } from '@/components/financial/ClassesFinanceirasPage';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequireEntity } from '@/components/RequireAuth';
 
 interface ClassesFinanceirasPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface ClassesFinanceirasPageProps {
 
 export function ClassesFinanceirasPage({ className }: ClassesFinanceirasPageProps) {
   return (
-    <RequireModule moduleName="financeiro" action="read">
+    <RequireEntity entityName="plano_contas" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export function ClassesFinanceirasPage({ className }: ClassesFinanceirasPageProp
         </div>
         <ClassesFinanceirasComponent />
       </div>
-    </RequireModule>
+    </RequireEntity>
   );
 }
 

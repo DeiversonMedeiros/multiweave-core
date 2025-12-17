@@ -33,7 +33,7 @@ const DashboardEstoquePage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="inventory_dashboard" action="read">
+    <RequireEntity entityName="estoque_atual" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMateriaisEquipamentos, useCreateMaterialEquipamento, useUpdateMaterialEquipamento, useDeleteMaterialEquipamento } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useLocalizacoesFisicas } from '@/hooks/almoxarifado/useLocalizacoesFisicas';
@@ -30,13 +31,20 @@ import { toast } from 'sonner';
 import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCompany } from '@/lib/company-context';
 
 const MateriaisEquipamentosPage: React.FC = () => {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { selectedCompany } = useCompany();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterClasse, setFilterClasse] = useState<string>('todos');
+  const [materialGroups, setMaterialGroups] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'materiais' | 'grupos'>('materiais');
+  const [newGroupName, setNewGroupName] = useState('');
+  const [editingGroup, setEditingGroup] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialEquipamento | null>(null);
   const [viewingMaterial, setViewingMaterial] = useState<MaterialEquipamento | null>(null);
@@ -133,244 +141,381 @@ const MateriaisEquipamentosPage: React.FC = () => {
     return { status: 'ok', color: 'text-green-600', icon: Package };
   };
 
+  const storageKey = useMemo(
+    () => `material-groups-${selectedCompany?.id || 'global'}`,
+    [selectedCompany?.id]
+  );
+
+  useEffect(() => {
+    const stored = localStorage.getItem(storageKey);
+    const storedGroups: string[] = stored ? JSON.parse(stored) : [];
+    const fromMateriais = materiais
+      .map(mat => mat.classe)
+      .filter((classe): classe is string => Boolean(classe));
+    const unique = Array.from(new Set([...storedGroups, ...fromMateriais])).sort();
+    setMaterialGroups(unique);
+  }, [materiais, storageKey]);
+
+  const handleAddGroup = () => {
+    const name = newGroupName.trim();
+    if (!name) {
+      toast.error('Informe um nome para o grupo de materiais');
+      return;
+    }
+    if (materialGroups.includes(name)) {
+      toast.info('Este grupo já existe');
+      return;
+    }
+    const updated = [...materialGroups, name].sort();
+    setMaterialGroups(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    setNewGroupName('');
+    toast.success('Grupo de materiais adicionado');
+  };
+
+  const handleStartEditGroup = (group: string) => {
+    setEditingGroup(group);
+    setEditingGroupName(group);
+  };
+
+  const handleSaveEditGroup = () => {
+    const name = editingGroupName.trim();
+    if (!editingGroup || !name) {
+      toast.error('Informe um nome válido para o grupo');
+      return;
+    }
+    if (materialGroups.some((g) => g === name && g !== editingGroup)) {
+      toast.info('Já existe um grupo com esse nome');
+      return;
+    }
+    const updated = materialGroups.map((g) => (g === editingGroup ? name : g)).sort();
+    setMaterialGroups(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+    setEditingGroup(null);
+    setEditingGroupName('');
+    toast.success('Grupo de materiais atualizado');
+  };
+
+  const handleCancelEditGroup = () => {
+    setEditingGroup(null);
+    setEditingGroupName('');
+  };
+
   return (
     <RequireEntity entityName="materials_equipment" action="read">
       <div className="container mx-auto p-6">
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              <Package className="inline-block mr-3 h-8 w-8" />
-              Materiais e Equipamentos
-            </h1>
-            <p className="text-gray-600">
-              Cadastro e gestão de materiais e equipamentos do almoxarifado
-            </p>
+        <div className="mb-8">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                <Package className="inline-block mr-3 h-8 w-8" />
+                Materiais e Equipamentos
+              </h1>
+              <p className="text-gray-600">
+                Cadastro e gestão de materiais e equipamentos do almoxarifado
+              </p>
+            </div>
+            <Button className="bg-primary hover:bg-primary/90" onClick={handleNewMaterial}>
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Material
+            </Button>
           </div>
-          <Button className="bg-primary hover:bg-primary/90" onClick={handleNewMaterial}>
-            <Plus className="h-4 w-4 mr-2" />
-            Novo Material
-          </Button>
         </div>
 
-        {/* Filtros */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-lg">Filtros</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Buscar por código ou descrição..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              
-              <Select value={filterTipo} onValueChange={setFilterTipo}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos os Tipos</SelectItem>
-                  <SelectItem value="produto">Produto</SelectItem>
-                  <SelectItem value="servico">Serviço</SelectItem>
-                  <SelectItem value="equipamento">Equipamento</SelectItem>
-                </SelectContent>
-              </Select>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'materiais' | 'grupos')}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="materiais">Materiais</TabsTrigger>
+            <TabsTrigger value="grupos">Grupos de Materiais</TabsTrigger>
+          </TabsList>
 
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todos os Status</SelectItem>
-                  <SelectItem value="ativo">Ativo</SelectItem>
-                  <SelectItem value="inativo">Inativo</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={filterClasse} onValueChange={setFilterClasse}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Classe" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todos">Todas as Classes</SelectItem>
-                  <SelectItem value="Parafusos">Parafusos</SelectItem>
-                  <SelectItem value="Ferramentas">Ferramentas</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Loading State */}
-      {loading && (
-        <Card>
-          <CardContent className="text-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p>Carregando materiais...</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Error State */}
-      {error && (
-        <Card>
-          <CardContent className="text-center py-12">
-            <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-4" />
-            <p className="text-red-600 mb-4">{error}</p>
-            <Button onClick={() => refetch()}>
-              Tentar Novamente
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Lista de Materiais */}
-      {!loading && !error && (
-        <div className="space-y-4">
-          {materiais.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <Package className="h-16 w-16 mx-auto mb-4 text-gray-400" />
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Nenhum material encontrado
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  {searchTerm || filterTipo !== 'todos' || filterStatus !== 'todos' || filterClasse !== 'todos'
-                    ? 'Tente ajustar os filtros de busca'
-                    : 'Comece adicionando seu primeiro material'
-                  }
-                </p>
-                <Button onClick={handleNewMaterial}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Adicionar Material
-                </Button>
-              </CardContent>
-            </Card>
-          ) : (
-            materiais.map((material) => {
-              const estoqueStatus = getEstoqueStatus(material);
-              const StatusIcon = estoqueStatus.icon;
-              
-              return (
-            <Card key={material.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
-                      <div>
-                        {material.nome && (
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {material.nome}
-                          </h3>
-                        )}
-                        <p className={`text-sm ${material.nome ? 'text-gray-600' : 'text-lg font-semibold text-gray-900'}`}>
-                          {material.descricao}
-                        </p>
-                      </div>
-                      <Badge variant={material.tipo === 'equipamento' ? 'default' : material.tipo === 'produto' ? 'secondary' : 'outline'}>
-                        {material.tipo === 'equipamento' ? 'Equipamento' : 
-                         material.tipo === 'produto' ? 'Produto' : 
-                         material.tipo === 'servico' ? 'Serviço' : 'Material'}
-                      </Badge>
-                      <Badge variant={material.status === 'ativo' ? 'default' : 'destructive'}>
-                        {material.status === 'ativo' ? 'Ativo' : 'Inativo'}
-                      </Badge>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                      <div>
-                        <span className="font-medium">Código:</span> {material.codigo_interno}
-                      </div>
-                      <div>
-                        <span className="font-medium">Classe:</span> {material.classe}
-                      </div>
-                      <div>
-                        <span className="font-medium">Unidade:</span> {material.unidade_medida}
-                      </div>
-                      <div>
-                        <span className="font-medium">Valor:</span> R$ {(material.valor_unitario || 0).toFixed(2)}
-                      </div>
-                    </div>
-
-                    {/* Campos Fiscais */}
-                    {(material.ncm || material.cfop || material.cst) && (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mt-2 p-2 bg-gray-50 rounded">
-                        {material.ncm && (
-                          <div>
-                            <span className="font-medium">NCM:</span> {material.ncm}
-                          </div>
-                        )}
-                        {material.cfop && (
-                          <div>
-                            <span className="font-medium">CFOP:</span> {material.cfop}
-                          </div>
-                        )}
-                        {material.cst && (
-                          <div>
-                            <span className="font-medium">CST:</span> {material.cst}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mt-2">
-                      <div>
-                        <span className="font-medium">Estoque Mín:</span> {material.estoque_minimo}
-                      </div>
-                      <div>
-                        <span className="font-medium">Estoque Máx:</span> {material.estoque_maximo || 'N/A'}
-                      </div>
-                      <div className="flex items-center">
-                        <MapPin className="h-4 w-4 mr-1" />
-                        <span className="font-medium">Local:</span> {getLocalizacaoDisplay(material)}
-                      </div>
-                      <div className={`flex items-center ${estoqueStatus.color}`}>
-                        <StatusIcon className="h-4 w-4 mr-1" />
-                        <span className="font-medium">Estoque:</span> {material.estoque_atual?.quantidade_atual || 0}
-                      </div>
-                    </div>
+          <TabsContent value="materiais">
+            {/* Filtros */}
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="text-lg">Filtros</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Buscar por código ou descrição..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
                   </div>
+                  
+                  <Select value={filterTipo} onValueChange={setFilterTipo}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos os Tipos</SelectItem>
+                      <SelectItem value="produto">Produto</SelectItem>
+                      <SelectItem value="servico">Serviço</SelectItem>
+                      <SelectItem value="equipamento">Equipamento</SelectItem>
+                    </SelectContent>
+                  </Select>
 
-                  <div className="flex space-x-2 ml-4">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleViewMaterial(material)}
-                      title="Visualizar detalhes"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleEditMaterial(material)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="text-red-600 hover:text-red-700"
-                      onClick={() => handleDeleteMaterial(material.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos os Status</SelectItem>
+                      <SelectItem value="ativo">Ativo</SelectItem>
+                      <SelectItem value="inativo">Inativo</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={filterClasse} onValueChange={setFilterClasse}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Grupo de Materiais" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todos">Todos os Grupos</SelectItem>
+                      {materialGroups.map((grupo) => (
+                        <SelectItem key={grupo} value={grupo}>
+                          {grupo}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>
-              );
-            })
-          )}
-        </div>
-      )}
+
+            {/* Loading State */}
+            {loading && (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+                  <p>Carregando materiais...</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Error State */}
+            {error && (
+              <Card>
+                <CardContent className="text-center py-12">
+                  <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-4" />
+                  <p className="text-red-600 mb-4">{error}</p>
+                  <Button onClick={() => refetch()}>
+                    Tentar Novamente
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Lista de Materiais */}
+            {!loading && !error && (
+              <div className="space-y-4">
+                {materiais.length === 0 ? (
+                  <Card>
+                    <CardContent className="text-center py-12">
+                      <Package className="h-16 w-16 mx-auto mb-4 text-gray-400" />
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Nenhum material encontrado
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        {searchTerm || filterTipo !== 'todos' || filterStatus !== 'todos' || filterClasse !== 'todos'
+                          ? 'Tente ajustar os filtros de busca'
+                          : 'Comece adicionando seu primeiro material'
+                        }
+                      </p>
+                      <Button onClick={handleNewMaterial}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Adicionar Material
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  materiais.map((material) => {
+                    const estoqueStatus = getEstoqueStatus(material);
+                    const StatusIcon = estoqueStatus.icon;
+                    
+                    return (
+                  <Card key={material.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <div>
+                              {material.nome && (
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                  {material.nome}
+                                </h3>
+                              )}
+                              <p className={`text-sm ${material.nome ? 'text-gray-600' : 'text-lg font-semibold text-gray-900'}`}>
+                                {material.descricao}
+                              </p>
+                            </div>
+                            <Badge variant={material.tipo === 'equipamento' ? 'default' : material.tipo === 'produto' ? 'secondary' : 'outline'}>
+                              {material.tipo === 'equipamento' ? 'Equipamento' : 
+                               material.tipo === 'produto' ? 'Produto' : 
+                               material.tipo === 'servico' ? 'Serviço' : 'Material'}
+                            </Badge>
+                            <Badge variant={material.status === 'ativo' ? 'default' : 'destructive'}>
+                              {material.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                            </Badge>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
+                            <div>
+                              <span className="font-medium">Código:</span> {material.codigo_interno}
+                            </div>
+                            <div>
+                              <span className="font-medium">Grupo:</span> {material.classe || '—'}
+                            </div>
+                            <div>
+                              <span className="font-medium">Unidade:</span> {material.unidade_medida}
+                            </div>
+                            <div>
+                              <span className="font-medium">Valor:</span> R$ {(material.valor_unitario || 0).toFixed(2)}
+                            </div>
+                          </div>
+
+                          {/* Campos Fiscais */}
+                          {(material.ncm || material.cfop || material.cst) && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-gray-600 mt-2 p-2 bg-gray-50 rounded">
+                              {material.ncm && (
+                                <div>
+                                  <span className="font-medium">NCM:</span> {material.ncm}
+                                </div>
+                              )}
+                              {material.cfop && (
+                                <div>
+                                  <span className="font-medium">CFOP:</span> {material.cfop}
+                                </div>
+                              )}
+                              {material.cst && (
+                                <div>
+                                  <span className="font-medium">CST:</span> {material.cst}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600 mt-2">
+                            <div>
+                              <span className="font-medium">Estoque Mín:</span> {material.estoque_minimo}
+                            </div>
+                            <div>
+                              <span className="font-medium">Estoque Máx:</span> {material.estoque_maximo || 'N/A'}
+                            </div>
+                            <div className="flex items-center">
+                              <MapPin className="h-4 w-4 mr-1" />
+                              <span className="font-medium">Local:</span> {getLocalizacaoDisplay(material)}
+                            </div>
+                            <div className={`flex items-center ${estoqueStatus.color}`}>
+                              <StatusIcon className="h-4 w-4 mr-1" />
+                              <span className="font-medium">Estoque:</span> {material.estoque_atual?.quantidade_atual || 0}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex space-x-2 ml-4">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleViewMaterial(material)}
+                            title="Visualizar detalhes"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleEditMaterial(material)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => handleDeleteMaterial(material.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="grupos">
+            <Card>
+              <CardHeader>
+                <CardTitle>Grupos de Materiais</CardTitle>
+                <CardDescription>Cadastre e gerencie os grupos usados na aba de materiais.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Novo grupo de materiais"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddGroup();
+                      }
+                    }}
+                  />
+                  <Button onClick={handleAddGroup} className="whitespace-nowrap">
+                    Adicionar
+                  </Button>
+                </div>
+
+                {materialGroups.length === 0 ? (
+                  <p className="text-sm text-gray-600">Nenhum grupo cadastrado ainda.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {materialGroups.map((grupo) => (
+                      <Card key={grupo}>
+                        <CardContent className="py-3 px-4 flex items-center justify-between gap-3">
+                          {editingGroup === grupo ? (
+                            <div className="flex-1 flex items-center gap-2">
+                              <Input
+                                value={editingGroupName}
+                                onChange={(e) => setEditingGroupName(e.target.value)}
+                                placeholder="Nome do grupo"
+                              />
+                              <Button variant="outline" size="sm" onClick={handleSaveEditGroup}>
+                                Salvar
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={handleCancelEditGroup}>
+                                Cancelar
+                              </Button>
+                            </div>
+                          ) : (
+                            <>
+                              <span className="font-medium text-gray-800">{grupo}</span>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">Disponível</Badge>
+                                <Button variant="ghost" size="sm" onClick={() => handleStartEditGroup(grupo)}>
+                                  Editar
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
       {/* Paginação */}
       {!loading && !error && materiais.length > 0 && (
@@ -399,6 +544,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
         onSubmit={editingMaterial ? handleUpdateMaterial : handleCreateMaterial}
         title={editingMaterial ? 'Editar Material' : 'Novo Material'}
         initialData={editingMaterial}
+        classesOptions={materialGroups}
       />
 
       {/* Modal de Visualização de Detalhes */}
@@ -450,7 +596,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
                     <p className="text-gray-900">{viewingMaterial.descricao}</p>
                   </div>
                   <div>
-                    <span className="font-medium text-gray-600">Classe:</span>
+                    <span className="font-medium text-gray-600">Grupo de Materiais:</span>
                     <p className="text-gray-900">{viewingMaterial.classe || 'Não informado'}</p>
                   </div>
                   <div>

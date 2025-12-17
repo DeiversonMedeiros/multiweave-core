@@ -76,13 +76,21 @@ export const useMenu = () => {
   const { selectedCompany } = useCompany();
   
   // Verificação de permissões habilitada
-  const { isAdmin, hasModulePermission, loading } = usePermissions();
+  const { isAdmin, hasModulePermission, hasEntityPermission, loading } = usePermissions();
   const canReadModule = (moduleName: string) => {
     if (isAdmin) return true;
     if (loading || typeof hasModulePermission !== 'function') {
       return true; // Permitir acesso durante carregamento
     }
     return hasModulePermission(moduleName, 'read');
+  };
+  
+  const canReadEntity = (entityName: string) => {
+    if (isAdmin) return true;
+    if (loading || typeof hasEntityPermission !== 'function') {
+      return true; // Permitir acesso durante carregamento
+    }
+    return hasEntityPermission(entityName, 'read');
   };
 
   const menuItems: MenuItem[] = useMemo(() => [
@@ -208,7 +216,7 @@ export const useMenu = () => {
           url: '/portal-gestor',
           icon: LayoutDashboard,
           description: 'Painel principal do gestor',
-          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'manager_dashboard', action: 'read' }
         },
         {
           id: 'gestor-aprovacoes',
@@ -216,7 +224,7 @@ export const useMenu = () => {
           url: '/portal-gestor/aprovacoes',
           icon: FileText,
           description: 'Central unificada de aprovações',
-          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'approval_center', action: 'read' }
         },
         {
           id: 'gestor-aprovacoes-rh',
@@ -232,7 +240,7 @@ export const useMenu = () => {
           url: '/portal-gestor/aprovacoes/ferias',
           icon: Calendar,
           description: 'Gerencie solicitações de férias',
-          requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'vacation_approvals', action: 'read' }
         },
         {
           id: 'gestor-aprovacao-compensacoes',
@@ -304,7 +312,7 @@ export const useMenu = () => {
               url: '/portal-gestor/acompanhamento/ponto',
               icon: Clock,
               description: 'Monitoramento de frequência',
-              requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'time_tracking_management', action: 'read' }
             },
             {
               id: 'gestor-acompanhamento-exames',
@@ -312,7 +320,7 @@ export const useMenu = () => {
               url: '/portal-gestor/acompanhamento/exames',
               icon: Stethoscope,
               description: 'Controle de exames médicos',
-              requiresPermission: { type: 'module', name: 'portal_gestor', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'exam_management', action: 'read' }
             },
             {
               id: 'gestor-acompanhamento-banco-horas',
@@ -430,7 +438,7 @@ export const useMenu = () => {
           url: '/financeiro/contas-pagar',
           icon: TrendingDown,
           description: 'Gestão de contas a pagar',
-          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'contas_pagar', action: 'read' }
         },
         {
           id: 'financeiro-contas-receber',
@@ -438,7 +446,7 @@ export const useMenu = () => {
           url: '/financeiro/contas-receber',
           icon: TrendingUp,
           description: 'Gestão de contas a receber',
-          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'contas_receber', action: 'read' }
         },
         {
           id: 'financeiro-lotes-pagamento',
@@ -454,7 +462,7 @@ export const useMenu = () => {
           url: '/financeiro/tesouraria',
           icon: Banknote,
           description: 'Fluxo de caixa e projeções',
-          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'fluxo_caixa', action: 'read' }
         },
         {
           id: 'financeiro-conciliacao-bancaria',
@@ -462,7 +470,7 @@ export const useMenu = () => {
           url: '/financeiro/conciliacao-bancaria',
           icon: RefreshCw,
           description: 'Concilie movimentações bancárias com títulos',
-          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'conciliacoes_bancarias', action: 'read' }
         },
         {
           id: 'financeiro-parametrizacao-tributaria',
@@ -502,7 +510,7 @@ export const useMenu = () => {
           url: '/financeiro/contabilidade',
           icon: Calculator,
           description: 'Plano de contas e lançamentos',
-          requiresPermission: { type: 'module', name: 'financeiro', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'plano_contas', action: 'read' }
         },
         {
           id: 'financeiro-classes-financeiras',
@@ -568,7 +576,7 @@ export const useMenu = () => {
           url: '/compras/fornecedores',
           icon: Handshake,
           description: 'Gestão de fornecedores e avaliações',
-          requiresPermission: { type: 'module', name: 'compras', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'avaliacao_fornecedores', action: 'read' }
         },
         {
           id: 'compras-contratos',
@@ -576,7 +584,7 @@ export const useMenu = () => {
           url: '/compras/contratos',
           icon: RefreshCw,
           description: 'Gestão de contratos e compras automáticas',
-          requiresPermission: { type: 'module', name: 'compras', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'contratos_compra', action: 'read' }
         },
         {
           id: 'compras-historico',
@@ -584,7 +592,7 @@ export const useMenu = () => {
           url: '/compras/historico',
           icon: History,
           description: 'Histórico e análises de compras',
-          requiresPermission: { type: 'module', name: 'compras', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'historico_compras', action: 'read' }
         }
       ]
     },
@@ -610,7 +618,7 @@ export const useMenu = () => {
           url: '/almoxarifado/estoque',
           icon: Package,
           description: 'Visualizar todos os itens disponíveis em estoque',
-          requiresPermission: { type: 'module', name: 'almoxarifado', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'estoque_atual', action: 'read' }
         },
         {
           id: 'almoxarifado-materiais-equipamentos',
@@ -642,7 +650,7 @@ export const useMenu = () => {
           url: '/almoxarifado/entradas',
           icon: TrendingUp,
           description: 'Controle de entradas de materiais',
-          requiresPermission: { type: 'module', name: 'almoxarifado', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'entradas_materiais', action: 'read' }
         },
         {
           id: 'almoxarifado-saidas-transferencias',
@@ -650,7 +658,7 @@ export const useMenu = () => {
           url: '/almoxarifado/saidas',
           icon: TrendingDown,
           description: 'Gestão de saídas e transferências',
-          requiresPermission: { type: 'module', name: 'almoxarifado', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'transferencias', action: 'read' }
         },
         {
           id: 'almoxarifado-inventario',
@@ -658,7 +666,7 @@ export const useMenu = () => {
           url: '/almoxarifado/inventario',
           icon: ClipboardList,
           description: 'Controle de inventário',
-          requiresPermission: { type: 'module', name: 'almoxarifado', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'inventarios', action: 'read' }
         },
         {
           id: 'almoxarifado-historico',
@@ -666,7 +674,7 @@ export const useMenu = () => {
           url: '/almoxarifado/historico',
           icon: History,
           description: 'Histórico de movimentações de estoque',
-          requiresPermission: { type: 'module', name: 'almoxarifado', action: 'read' }
+          requiresPermission: { type: 'entity', name: 'movimentacoes_estoque', action: 'read' }
         },
         {
           id: 'almoxarifado-relatorios',
@@ -785,7 +793,7 @@ export const useMenu = () => {
               url: '/rh/employees',
               icon: Users,
               description: 'Gestão de funcionários',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'employees', action: 'read' }
             },
             {
               id: 'rh-cargos',
@@ -793,7 +801,7 @@ export const useMenu = () => {
               url: '/rh/positions',
               icon: UserCheck,
               description: 'Gestão de cargos e posições',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'positions', action: 'read' }
             },
             {
               id: 'rh-departamentos',
@@ -801,7 +809,7 @@ export const useMenu = () => {
               url: '/rh/units',
               icon: Building2,
               description: 'Gestão de departamentos',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'units', action: 'read' }
             },
             {
               id: 'rh-dependentes',
@@ -809,7 +817,7 @@ export const useMenu = () => {
               url: '/rh/dependents',
               icon: UserPlus,
               description: 'Gestão de dependentes dos funcionários',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'dependents', action: 'read' }
             },
             {
               id: 'rh-sindicatos',
@@ -817,7 +825,7 @@ export const useMenu = () => {
               url: '/rh/unions',
               icon: Handshake,
               description: 'Gestão sindical e negociações coletivas',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'unions', action: 'read' }
             },
             {
               id: 'rh-organograma',
@@ -853,7 +861,7 @@ export const useMenu = () => {
               url: '/rh/work-shifts',
               icon: Clock,
               description: 'Gestão de turnos e escalas de trabalho',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'work_shifts', action: 'read' }
             },
             {
               id: 'rh-ponto',
@@ -861,7 +869,7 @@ export const useMenu = () => {
               url: '/rh/time-records',
               icon: Clock,
               description: 'Registro e controle de ponto',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'time_records', action: 'read' }
             },
             {
               id: 'rh-banco-horas',
@@ -877,7 +885,7 @@ export const useMenu = () => {
               url: '/rh/holidays',
               icon: Calendar,
               description: 'Gestão de feriados e pontos facultativos',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'holidays', action: 'read' }
             },
             {
               id: 'rh-solicitacoes-compensacao',
@@ -937,7 +945,7 @@ export const useMenu = () => {
               url: '/rh/benefits',
               icon: Gift,
               description: 'Sistema de benefícios',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'benefits', action: 'read' }
             },
             {
               id: 'rh-vinculos-beneficios',
@@ -945,7 +953,7 @@ export const useMenu = () => {
               url: '/rh/employee-benefits',
               icon: UserCheck,
               description: 'Gerenciar vínculos de benefícios com funcionários',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'benefits', action: 'read' }
             },
             {
               id: 'rh-convenios-medicos',
@@ -953,7 +961,7 @@ export const useMenu = () => {
               url: '/rh/medical-agreements',
               icon: Heart,
               description: 'Gestão de convênios médicos e odontológicos',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'medical_agreements', action: 'read' }
             },
             {
               id: 'rh-servicos-medicos',
@@ -977,7 +985,7 @@ export const useMenu = () => {
               url: '/rh/periodic-exams',
               icon: Stethoscope,
               description: 'Controle de exames médicos ocupacionais',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'periodic_exams', action: 'read' }
             },
             {
               id: 'rh-atestados',
@@ -1013,7 +1021,7 @@ export const useMenu = () => {
               url: '/rh/rubricas',
               icon: Calculator,
               description: 'Configuração de rubricas',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'rubricas', action: 'read' }
             },
             {
               id: 'rh-inss',
@@ -1021,7 +1029,7 @@ export const useMenu = () => {
               url: '/rh/inss-brackets',
               icon: TrendingUp,
               description: 'Configuração de faixas INSS',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'inss_brackets', action: 'read' }
             },
             {
               id: 'rh-irrf',
@@ -1029,7 +1037,7 @@ export const useMenu = () => {
               url: '/rh/irrf-brackets',
               icon: TrendingUp,
               description: 'Configuração de faixas IRRF',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'irrf_brackets', action: 'read' }
             },
             {
               id: 'rh-fgts',
@@ -1037,7 +1045,7 @@ export const useMenu = () => {
               url: '/rh/fgts-config',
               icon: Calculator,
               description: 'Configuração de FGTS',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'fgts_config', action: 'read' }
             },
             {
               id: 'rh-financial-integration',
@@ -1065,7 +1073,7 @@ export const useMenu = () => {
               url: '/rh/absence-types',
               icon: UserX,
               description: 'Gestão de tipos de afastamento',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'absence_types', action: 'read' }
             },
             {
               id: 'rh-motivos-atraso',
@@ -1073,7 +1081,7 @@ export const useMenu = () => {
               url: '/rh/delay-reasons',
               icon: Clock,
               description: 'Gestão de motivos de atraso',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'delay_reasons', action: 'read' }
             },
             {
               id: 'rh-codigos-cid',
@@ -1081,7 +1089,7 @@ export const useMenu = () => {
               url: '/rh/cid-codes',
               icon: Stethoscope,
               description: 'Gestão de códigos CID',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'cid_codes', action: 'read' }
             },
             {
               id: 'rh-tipos-adicionais',
@@ -1089,7 +1097,7 @@ export const useMenu = () => {
               url: '/rh/allowance-types',
               icon: DollarSign,
               description: 'Gestão de tipos de adicionais',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'allowance_types', action: 'read' }
             },
             {
               id: 'rh-tipos-deficiencia',
@@ -1097,7 +1105,7 @@ export const useMenu = () => {
               url: '/rh/deficiency-types',
               icon: Accessibility,
               description: 'Gestão de tipos de deficiência',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'deficiency_types', action: 'read' }
             }
           ]
         },
@@ -1117,7 +1125,7 @@ export const useMenu = () => {
               url: '/rh/payroll',
               icon: DollarSign,
               description: 'Folha de pagamento',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'payroll', action: 'read' }
             },
             {
               id: 'rh-motor-calculo',
@@ -1125,7 +1133,7 @@ export const useMenu = () => {
               url: '/rh/payroll-calculation',
               icon: Calculator,
               description: 'Engine de folha de pagamento',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'payroll_calculation', action: 'read' }
             },
             {
               id: 'rh-consolidacao-eventos',
@@ -1133,7 +1141,7 @@ export const useMenu = () => {
               url: '/rh/event-consolidation',
               icon: Calculator,
               description: 'Consolidação de eventos da folha',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'event_consolidation', action: 'read' }
             },
             {
               id: 'rh-pagamentos-mensais-alugueis',
@@ -1177,7 +1185,7 @@ export const useMenu = () => {
               url: '/rh/esocial',
               icon: FileText,
               description: 'Gestão de eventos eSocial',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'entity', name: 'esocial', action: 'read' }
             },
             {
               id: 'rh-integracao-esocial',
@@ -1320,7 +1328,13 @@ export const useMenu = () => {
         .map(item => {
           // Verificar se o item tem permissão
           if (item.requiresPermission) {
-            const hasPermission = canReadModule(item.requiresPermission.name);
+            let hasPermission = false;
+            
+            if (item.requiresPermission.type === 'module') {
+              hasPermission = canReadModule(item.requiresPermission.name);
+            } else if (item.requiresPermission.type === 'entity') {
+              hasPermission = canReadEntity(item.requiresPermission.name);
+            }
             
             if (!hasPermission) {
               return null;
@@ -1344,7 +1358,7 @@ export const useMenu = () => {
     };
 
     return filterItems(menuItems);
-  }, [menuItems, canReadModule]);
+  }, [menuItems, canReadModule, canReadEntity]);
 
   // Obter itens de menu para o sidebar
   const sidebarItems = useMemo(() => {

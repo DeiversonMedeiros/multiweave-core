@@ -379,6 +379,143 @@ export const PermissionManager: React.FC = () => {
     return moduleNames[moduleName] || moduleName.replace('_', ' ');
   };
 
+  // Função para mapear entidades para seus módulos
+  const getEntityModule = (entityName: string): string => {
+    const entityModuleMap: { [key: string]: string } = {
+      // Entidades básicas - cadastros
+      'usuarios': 'cadastros',
+      'empresas': 'cadastros',
+      'perfis': 'configuracoes',
+      'projetos': 'projetos',
+      'materiais_equipamentos': 'materiais_equipamentos',
+      'parceiros': 'parceiros',
+      'services': 'projetos',
+      'centros_custo': 'centros_custo',
+      
+      // Entidades RH
+      'employees': 'rh',
+      'registros_ponto': 'rh',
+      'time_records': 'rh',
+      'vacations': 'rh',
+      'reimbursement_requests': 'rh',
+      'periodic_exams': 'rh',
+      'disciplinary_actions': 'rh',
+      'trainings': 'treinamento',
+      'positions': 'rh',
+      'work_shifts': 'rh',
+      'holidays': 'rh',
+      'rubricas': 'rh',
+      'units': 'rh',
+      'dependents': 'rh',
+      'employment_contracts': 'rh',
+      'medical_agreements': 'rh',
+      'benefits': 'rh',
+      'payroll_config': 'rh',
+      'payroll': 'rh',
+      'income_statements': 'rh',
+      'esocial': 'rh',
+      'inss_brackets': 'rh',
+      'irrf_brackets': 'rh',
+      'fgts_config': 'rh',
+      'delay_reasons': 'rh',
+      'absence_types': 'rh',
+      'cid_codes': 'rh',
+      'allowance_types': 'rh',
+      'deficiency_types': 'rh',
+      'awards_productivity': 'rh',
+      'medical_plans': 'rh',
+      'employee_medical_plans': 'rh',
+      'unions': 'rh',
+      'employee_union_memberships': 'rh',
+      'payroll_calculation': 'rh',
+      'event_consolidation': 'rh',
+      
+      // Entidades Financeiras
+      'contas_pagar': 'financeiro',
+      'contas_receber': 'financeiro',
+      'borderos': 'financeiro',
+      'remessas_bancarias': 'financeiro',
+      'retornos_bancarios': 'financeiro',
+      'contas_bancarias': 'financeiro',
+      'conciliacoes_bancarias': 'financeiro',
+      'fluxo_caixa': 'financeiro',
+      'nfe': 'financeiro',
+      'nfse': 'financeiro',
+      'plano_contas': 'financeiro',
+      'lancamentos_contabeis': 'financeiro',
+      'configuracoes_aprovacao': 'financeiro',
+      'aprovacoes': 'financeiro',
+      'accounts_payable': 'financeiro',
+      'configuracao_fiscal': 'financeiro',
+      'configuracao_bancaria': 'financeiro',
+      
+      // Entidades Almoxarifado
+      'estoque_atual': 'almoxarifado',
+      'movimentacoes_estoque': 'almoxarifado',
+      'entradas_materiais': 'almoxarifado',
+      'entrada_itens': 'almoxarifado',
+      'checklist_recebimento': 'almoxarifado',
+      'transferencias': 'almoxarifado',
+      'transferencia_itens': 'almoxarifado',
+      'inventarios': 'almoxarifado',
+      'inventario_itens': 'almoxarifado',
+      'almoxarifados': 'almoxarifado',
+      'localizacoes_fisicas': 'almoxarifado',
+      'warehouse_transfers': 'almoxarifado',
+      'material_exit_requests': 'almoxarifado',
+      'inventory_dashboard': 'almoxarifado',
+      'inventory_management': 'almoxarifado',
+      'warehouse_reports': 'almoxarifado',
+      
+      // Entidades do Processo de Compras
+      'solicitacoes_compra': 'compras',
+      'cotacoes': 'compras',
+      'pedidos_compra': 'compras',
+      'aprovacoes_compra': 'compras',
+      'fornecedores': 'compras',
+      'contratos_compra': 'compras',
+      'historico_compras': 'compras',
+      'avaliacao_fornecedores': 'compras',
+      'fornecedores_dados': 'compras',
+      
+      // Entidades Frota
+      'vehicles': 'frota',
+      'vehicle_documents': 'frota',
+      'drivers': 'frota',
+      'vehicle_assignments': 'frota',
+      'vehicle_inspections': 'frota',
+      'inspection_items': 'frota',
+      'vehicle_maintenances': 'frota',
+      'vehicle_occurrences': 'frota',
+      'vehicle_requests': 'frota',
+      'vehicle_images': 'frota',
+      
+      // Entidades específicas dos Portais
+      'approval_center': 'portal_gestor',
+      'approval_configs': 'portal_gestor',
+      'approvals': 'portal_gestor',
+      'exam_management': 'portal_gestor',
+      'manager_dashboard': 'portal_gestor',
+      'portal_colaborador': 'portal_colaborador',
+      'time_tracking_management': 'portal_gestor',
+      'vacation_approvals': 'portal_gestor'
+    };
+    return entityModuleMap[entityName] || 'cadastros'; // Default para cadastros se não encontrado
+  };
+
+  // Função para agrupar entidades por módulo
+  const groupEntitiesByModule = () => {
+    const grouped: { [key: string]: string[] } = {};
+    entities.forEach(entity => {
+      const module = getEntityModule(entity);
+      if (!grouped[module]) {
+        grouped[module] = [];
+      }
+      grouped[module].push(entity);
+    });
+    return grouped;
+  };
+
   // Função para obter nome de exibição das entidades em português
   const getEntityDisplayName = (entityName: string) => {
     const entityNames: { [key: string]: string } = {
@@ -640,74 +777,86 @@ export const PermissionManager: React.FC = () => {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="entities" className="space-y-4">
-                  <div className="grid gap-4">
-                    {entities.map(entity => (
-                      <Card key={entity}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-medium">
-                              {getEntityDisplayName(entity)}
-                            </h3>
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="flex items-center space-x-2">
-                              <Switch
-                                id={`${entity}-read`}
-                                checked={getEntityPermissionValue(entity, 'can_read')}
-                                onCheckedChange={(checked) => 
-                                  updateEntityPermission(entity, 'can_read', checked)
-                                }
-                              />
-                              <Label htmlFor={`${entity}-read`} className="flex items-center gap-1">
-                                <Eye className="h-3 w-3" />
-                                Visualizar
-                              </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Switch
-                                id={`${entity}-create`}
-                                checked={getEntityPermissionValue(entity, 'can_create')}
-                                onCheckedChange={(checked) => 
-                                  updateEntityPermission(entity, 'can_create', checked)
-                                }
-                              />
-                              <Label htmlFor={`${entity}-create`} className="flex items-center gap-1">
-                                <Plus className="h-3 w-3" />
-                                Criar
-                              </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Switch
-                                id={`${entity}-edit`}
-                                checked={getEntityPermissionValue(entity, 'can_edit')}
-                                onCheckedChange={(checked) => 
-                                  updateEntityPermission(entity, 'can_edit', checked)
-                                }
-                              />
-                              <Label htmlFor={`${entity}-edit`} className="flex items-center gap-1">
-                                <Edit className="h-3 w-3" />
-                                Editar
-                              </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Switch
-                                id={`${entity}-delete`}
-                                checked={getEntityPermissionValue(entity, 'can_delete')}
-                                onCheckedChange={(checked) => 
-                                  updateEntityPermission(entity, 'can_delete', checked)
-                                }
-                              />
-                              <Label htmlFor={`${entity}-delete`} className="flex items-center gap-1">
-                                <Trash className="h-3 w-3" />
-                                Excluir
-                              </Label>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                <TabsContent value="entities" className="space-y-6">
+                  {Object.entries(groupEntitiesByModule()).map(([module, moduleEntities]) => (
+                    <Card key={module}>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <Building className="h-5 w-5" />
+                          {getModuleDisplayName(module)}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid gap-4">
+                          {moduleEntities.map(entity => (
+                            <Card key={entity} className="border-l-4 border-l-primary/20">
+                              <CardContent className="p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                  <h3 className="font-medium">
+                                    {getEntityDisplayName(entity)}
+                                  </h3>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                  <div className="flex items-center space-x-2">
+                                    <Switch
+                                      id={`${entity}-read`}
+                                      checked={getEntityPermissionValue(entity, 'can_read')}
+                                      onCheckedChange={(checked) => 
+                                        updateEntityPermission(entity, 'can_read', checked)
+                                      }
+                                    />
+                                    <Label htmlFor={`${entity}-read`} className="flex items-center gap-1">
+                                      <Eye className="h-3 w-3" />
+                                      Visualizar
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <Switch
+                                      id={`${entity}-create`}
+                                      checked={getEntityPermissionValue(entity, 'can_create')}
+                                      onCheckedChange={(checked) => 
+                                        updateEntityPermission(entity, 'can_create', checked)
+                                      }
+                                    />
+                                    <Label htmlFor={`${entity}-create`} className="flex items-center gap-1">
+                                      <Plus className="h-3 w-3" />
+                                      Criar
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <Switch
+                                      id={`${entity}-edit`}
+                                      checked={getEntityPermissionValue(entity, 'can_edit')}
+                                      onCheckedChange={(checked) => 
+                                        updateEntityPermission(entity, 'can_edit', checked)
+                                      }
+                                    />
+                                    <Label htmlFor={`${entity}-edit`} className="flex items-center gap-1">
+                                      <Edit className="h-3 w-3" />
+                                      Editar
+                                    </Label>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <Switch
+                                      id={`${entity}-delete`}
+                                      checked={getEntityPermissionValue(entity, 'can_delete')}
+                                      onCheckedChange={(checked) => 
+                                        updateEntityPermission(entity, 'can_delete', checked)
+                                      }
+                                    />
+                                    <Label htmlFor={`${entity}-delete`} className="flex items-center gap-1">
+                                      <Trash className="h-3 w-3" />
+                                      Excluir
+                                    </Label>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </TabsContent>
               </Tabs>
             )}

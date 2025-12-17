@@ -202,7 +202,7 @@ const SaidasTransferenciasPage: React.FC = () => {
   const movimentacoesRecentes = getMovimentacoesRecentes(5);
 
   return (
-    <RequireEntity entityName="warehouse_transfers" action="read">
+    <RequireEntity entityName="transferencias" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
