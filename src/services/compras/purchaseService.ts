@@ -690,27 +690,77 @@ export const purchaseService = {
     userId: string;
     input: QuoteCycleInput;
   }) {
-    const numeroData = await callSchemaFunction<{ result: string }>('compras', 'gerar_numero_requisicao', {
-      p_company_id: params.companyId,
-    });
+    // Validar e formatar dados antes de criar
+    // Converter string vazia para null para campos opcionais
+    const prazoResposta = params.input.prazo_resposta && params.input.prazo_resposta.trim() !== ''
+      ? (typeof params.input.prazo_resposta === 'string' 
+          ? params.input.prazo_resposta.trim() 
+          : new Date(params.input.prazo_resposta).toISOString().split('T')[0])
+      : null;
+    
+    const observacoes = params.input.observacoes && params.input.observacoes.trim() !== ''
+      ? params.input.observacoes.trim()
+      : null;
 
-    const numero_cotacao =
-      (typeof numeroData === 'string' ? numeroData : numeroData?.result)?.replace('REQ', 'COT') ||
-      `COT-${Date.now()}`;
+    // Tentar criar ciclo de cotação com retry em caso de duplicação
+    let ciclo;
+    let tentativas = 0;
+    const maxTentativas = 3;
+    
+    while (tentativas < maxTentativas) {
+      try {
+        // Usar função específica para gerar número de cotação
+        // Isso garante que o número seja único e sequencial baseado em cotacao_ciclos
+        const numeroData = await callSchemaFunction<{ result: string }>('compras', 'gerar_numero_cotacao', {
+          p_company_id: params.companyId,
+        });
 
-    const ciclo = await EntityService.create({
-      schema: 'compras',
-      table: 'cotacao_ciclos',
-      companyId: params.companyId,
-      data: {
-        requisicao_id: params.input.requisicao_id,
-        numero_cotacao,
-        prazo_resposta: params.input.prazo_resposta,
-        observacoes: params.input.observacoes,
-        status: 'em_aprovacao', // Cotação criada deve ir direto para aprovação
-        workflow_state: 'em_aprovacao', // Cotação criada deve ir direto para aprovação
-      },
-    });
+        const numero_cotacao =
+          (typeof numeroData === 'string' ? numeroData : numeroData?.result) ||
+          `COT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+        ciclo = await EntityService.create({
+          schema: 'compras',
+          table: 'cotacao_ciclos',
+          companyId: params.companyId,
+          data: {
+            requisicao_id: params.input.requisicao_id,
+            numero_cotacao,
+            prazo_resposta: prazoResposta,
+            observacoes: observacoes,
+            // Criar com status 'aberta' inicialmente. A mudança para 'em_aprovacao'
+            // deve ser feita via workflow quando o comprador finalizar e enviar.
+            status: 'aberta',
+            workflow_state: 'aberta',
+          },
+        });
+        
+        // Se chegou aqui, a criação foi bem-sucedida
+        break;
+      } catch (error: any) {
+        tentativas++;
+        
+        // Se for erro de duplicação e ainda temos tentativas, tentar novamente
+        if (
+          error?.message?.includes('duplicate key') ||
+          error?.message?.includes('unique constraint') ||
+          error?.code === '23505'
+        ) {
+          if (tentativas < maxTentativas) {
+            // Aguardar um pouco antes de tentar novamente (evitar race condition)
+            await new Promise(resolve => setTimeout(resolve, 100 * tentativas));
+            continue;
+          }
+        }
+        
+        // Se não for erro de duplicação ou esgotamos as tentativas, lançar o erro
+        throw error;
+      }
+    }
+    
+    if (!ciclo) {
+      throw new Error('Não foi possível criar o ciclo de cotação após múltiplas tentativas');
+    }
 
     const fornecedoresCriados = await Promise.all(
       params.input.fornecedores.map((fornecedor) =>

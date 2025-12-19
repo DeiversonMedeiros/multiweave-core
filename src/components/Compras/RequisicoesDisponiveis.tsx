@@ -213,10 +213,13 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         todosItens.push(...itens);
       }
 
-      // Agrupar itens idênticos (mesmo material_id)
+      // Agrupar itens por material_id E tipo_requisicao
+      // O mesmo material pode aparecer em tipos diferentes de requisição
+      // e deve ser tratado como itens separados
       const itensAgrupadosMap = new Map<string, ItemExplodido>();
       todosItens.forEach(item => {
-        const key = item.material_id;
+        // Chave composta: material_id + tipo_requisicao
+        const key = `${item.material_id}_${item.tipo_requisicao || 'sem_tipo'}`;
         if (itensAgrupadosMap.has(key)) {
           const existente = itensAgrupadosMap.get(key)!;
           existente.quantidade += item.quantidade;
@@ -348,13 +351,24 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       return true;
     }
 
-    // Se for Reposição, pode misturar com qualquer tipo
-    if (tipoSelecionado === 'reposicao' || tipo === 'reposicao') {
-      return true;
+    // Emergencial NÃO pode misturar com nenhum outro tipo
+    if (tipoSelecionado === 'emergencial' || tipo === 'emergencial') {
+      return tipoSelecionado === tipo;
     }
 
-    // Se for Emergencial, só pode selecionar itens da mesma requisição
-    if (tipoSelecionado === 'emergencial' || tipo === 'emergencial') {
+    // Reposição NÃO pode misturar com compra direta (podem ser para locais diferentes)
+    if ((tipoSelecionado === 'reposicao' && tipo === 'compra_direta') ||
+        (tipoSelecionado === 'compra_direta' && tipo === 'reposicao')) {
+      return false;
+    }
+
+    // Reposição pode misturar apenas com outras reposições
+    if (tipoSelecionado === 'reposicao' || tipo === 'reposicao') {
+      return tipoSelecionado === tipo;
+    }
+
+    // Compra direta pode misturar apenas com outras compras diretas
+    if (tipoSelecionado === 'compra_direta' || tipo === 'compra_direta') {
       return tipoSelecionado === tipo;
     }
 
@@ -431,14 +445,35 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     if (modoExplodido) {
       if (checked) {
         const tipos = new Set(filtered.map((item: ItemExplodido) => item.tipo_requisicao));
-        if (tipos.size > 1 && !tipos.has('reposicao')) {
-          toast({
-            title: 'Seleção inválida',
-            description: 'Não é possível selecionar todos os itens pois há tipos diferentes de compra.',
-            variant: 'destructive',
-          });
-          return;
+        
+        // Validar se pode selecionar todos os tipos
+        if (tipos.size > 1) {
+          // Verificar se há tipos incompatíveis
+          const temEmergencial = tipos.has('emergencial');
+          const temReposicao = tipos.has('reposicao');
+          const temCompraDireta = tipos.has('compra_direta');
+          
+          // Emergencial não pode misturar com nenhum outro
+          if (temEmergencial && tipos.size > 1) {
+            toast({
+              title: 'Seleção inválida',
+              description: 'Não é possível selecionar itens emergenciais junto com outros tipos de compra.',
+              variant: 'destructive',
+            });
+            return;
+          }
+          
+          // Reposição não pode misturar com compra direta
+          if (temReposicao && temCompraDireta) {
+            toast({
+              title: 'Seleção inválida',
+              description: 'Não é possível misturar requisições de reposição com compra direta (podem ser para locais diferentes).',
+              variant: 'destructive',
+            });
+            return;
+          }
         }
+        
         setSelectedItens(new Set(filtered.map((item: ItemExplodido) => item.id)));
         const requisicoesDosItens = new Set(filtered.map((item: ItemExplodido) => item.requisicao_id));
         setSelectedRequisicoes(requisicoesDosItens);
@@ -449,6 +484,33 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       }
     } else {
       if (checked) {
+        // Validar tipos antes de selecionar todas as requisições
+        const tipos = new Set(filtered.map((r: any) => r.tipo_requisicao));
+        
+        if (tipos.size > 1) {
+          const temEmergencial = tipos.has('emergencial');
+          const temReposicao = tipos.has('reposicao');
+          const temCompraDireta = tipos.has('compra_direta');
+          
+          if (temEmergencial && tipos.size > 1) {
+            toast({
+              title: 'Seleção inválida',
+              description: 'Não é possível selecionar requisições emergenciais junto com outros tipos de compra.',
+              variant: 'destructive',
+            });
+            return;
+          }
+          
+          if (temReposicao && temCompraDireta) {
+            toast({
+              title: 'Seleção inválida',
+              description: 'Não é possível misturar requisições de reposição com compra direta (podem ser para locais diferentes).',
+              variant: 'destructive',
+            });
+            return;
+          }
+        }
+        
         setSelectedRequisicoes(new Set(filtered.map((r: any) => r.id)));
       } else {
         setSelectedRequisicoes(new Set());

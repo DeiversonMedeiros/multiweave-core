@@ -42,8 +42,6 @@ export const EntityService = {
    * Lista dados de qualquer entidade usando a função genérica
    */
   list: async <T = any>(params: EntityListParams): Promise<EntityListResult<T>> => {
-    console.log('🔍 [DEBUG] EntityService.list - chamado com params:', params);
-    
     const {
       schema,
       table,
@@ -58,27 +56,18 @@ export const EntityService = {
 
     const offset = (page - 1) * pageSize;
 
-    console.log('🔍 [DEBUG] EntityService.list - filters originais:', filters);
-    console.log('🔍 [DEBUG] EntityService.list - page:', page, 'pageSize:', pageSize, 'offset:', offset);
-
     // Limpar filtros que têm valor "all" e remover parâmetros de paginação dos filtros
     const cleanFilters = Object.entries(filters).reduce((acc, [key, value]) => {
       // Pular parâmetros de paginação que não devem ir para os filtros SQL
       if (key === 'limit' || key === 'offset' || key === 'page' || key === 'pageSize') {
-        console.log('🔍 [DEBUG] EntityService.list - Removendo parâmetro de paginação:', key, '=', value);
         return acc;
       }
       
       if (value && value !== 'all') {
         acc[key] = value;
-        console.log('🔍 [DEBUG] EntityService.list - Mantendo filtro:', key, '=', value);
-      } else {
-        console.log('🔍 [DEBUG] EntityService.list - Ignorando filtro (vazio ou all):', key, '=', value);
       }
       return acc;
     }, {} as Record<string, any>);
-
-    console.log('🔍 [DEBUG] EntityService.list - cleanFilters:', cleanFilters);
 
     const rpcParams = {
       schema_name: schema,
@@ -91,29 +80,7 @@ export const EntityService = {
       order_direction: orderDirection
     };
 
-    console.log('🔍 [DEBUG] EntityService.list - rpcParams:', rpcParams);
-    console.log('🔍 [DEBUG] EntityService.list - rpcParams JSON:', JSON.stringify(rpcParams, null, 2));
-
-    console.log('📡 [EntityService.list] Chamando RPC get_entity_data com:', {
-      schema: rpcParams.schema_name,
-      table: rpcParams.table_name,
-      companyId: rpcParams.company_id_param,
-      filtersCount: Object.keys(rpcParams.filters).length
-    });
-
     const { data, error } = await (supabase as any).rpc('get_entity_data', rpcParams);
-
-    console.log('📥 [EntityService.list] Resposta RPC recebida:', {
-      hasData: !!data,
-      dataType: typeof data,
-      isArray: Array.isArray(data),
-      dataLength: data?.length,
-      firstItem: data?.[0] ? { id: data[0].id, hasCompanyId: !!data[0].company_id } : null,
-      hasError: !!error,
-      errorCode: error?.code,
-      errorMessage: error?.message,
-      errorHint: error?.hint
-    });
 
     if (error) {
       console.error('❌ [EntityService.list] Erro da RPC:', {
@@ -135,45 +102,15 @@ export const EntityService = {
 
     const result = data || [];
     
-    console.log('📋 [EntityService.list] Processando resposta RPC:', {
-      resultLength: result.length,
-      firstItemKeys: result[0] ? Object.keys(result[0]) : null,
-      firstItemSample: result[0] ? {
-        hasId: !!result[0].id,
-        hasData: !!result[0].data,
-        hasTotalCount: !!result[0].total_count,
-        dataType: typeof result[0].data,
-        dataIsJsonb: result[0].data && typeof result[0].data === 'object'
-      } : null
-    });
-    
     // A RPC retorna: { id: text, data: jsonb, total_count: bigint }
     // Precisamos extrair o campo 'data' de cada item
     const totalCount = result.length > 0 ? (Number(result[0]?.total_count) || result.length) : 0;
     const hasMore = offset + pageSize < totalCount;
 
-    console.log('📊 [EntityService.list] Estatísticas:', {
-      resultLength: result.length,
-      totalCount,
-      hasMore,
-      offset,
-      pageSize,
-      firstTotalCount: result[0]?.total_count
-    });
-
     // Mapear dados - a RPC retorna formato {id, data, total_count}
     let mappedData: T[] = [];
     
     if (result.length > 0) {
-      console.log('🔍 [EntityService.list] Primeiro item da resposta RPC:', {
-        hasId: !!result[0]?.id,
-        hasData: !!result[0]?.data,
-        dataType: typeof result[0]?.data,
-        dataIsObject: result[0]?.data && typeof result[0].data === 'object',
-        dataKeys: result[0]?.data && typeof result[0].data === 'object' ? Object.keys(result[0].data).slice(0, 10) : null,
-        sampleData: result[0]?.data ? JSON.stringify(result[0].data).substring(0, 200) : null
-      });
-      
       if (result[0]?.data) {
         // Formato: [{ id: '...', data: {...jsonb...}, total_count: 123 }, ...]
         // O campo 'data' é um JSONB que precisa ser parseado
@@ -182,7 +119,6 @@ export const EntityService = {
           if (typeof item.data === 'string') {
             try {
               const parsed = JSON.parse(item.data) as T;
-              console.log('✅ [EntityService.list] Dados parseados de string JSON:', parsed);
               return parsed;
             } catch (e) {
               console.warn('⚠️ [EntityService.list] Erro ao parsear JSON string:', e);
@@ -190,48 +126,15 @@ export const EntityService = {
             }
           }
           // JSONB já vem como objeto do Supabase
-          const dataObj = item.data as T;
-          console.log('✅ [EntityService.list] Dados já como objeto (JSONB):', {
-            hasId: !!(dataObj as any)?.id,
-            hasCompanyId: !!(dataObj as any)?.company_id,
-            keys: Object.keys(dataObj as any || {}).slice(0, 10)
-          });
-          return dataObj;
+          return item.data as T;
         }).filter(Boolean);
-        
-        console.log('✅ [EntityService.list] Dados extraídos do campo data (JSONB)');
-        console.log('📦 [EntityService.list] Primeiro item extraído:', mappedData[0] ? {
-          id: mappedData[0]?.['id'],
-          hasCompanyId: !!mappedData[0]?.['company_id'],
-          keys: Object.keys(mappedData[0] || {}).slice(0, 15),
-          codigo: mappedData[0]?.['codigo'],
-          nome: mappedData[0]?.['nome']
-        } : null);
       } else if (result[0]?.id && !result[0]?.data) {
         // Formato direto: [{ id: '...', campo1: ..., campo2: ... }, ...]
         mappedData = result as T[];
-        console.log('✅ [EntityService.list] Dados já no formato direto (sem campo data)');
       } else {
-        console.warn('⚠️ [EntityService.list] Formato desconhecido - usando resultado direto:', {
-          resultLength: result.length,
-          firstItemKeys: result[0] ? Object.keys(result[0]) : null,
-          firstItem: result[0]
-        });
         mappedData = result as T[];
       }
     }
-
-    console.log('📦 [EntityService.list] Dados finais mapeados:', {
-      mappedDataLength: mappedData.length,
-      totalCount,
-      hasMore,
-      sampleItem: mappedData[0] ? {
-        id: mappedData[0]?.['id'],
-        company_id: mappedData[0]?.['company_id'],
-        codigo: mappedData[0]?.['codigo'] || mappedData[0]?.['nome'] || 'N/A',
-        allKeys: Object.keys(mappedData[0] || {})
-      } : null
-    });
 
     const finalResult = {
       data: mappedData,
@@ -239,26 +142,6 @@ export const EntityService = {
       hasMore,
       error: null
     };
-
-    console.log('🎯 [EntityService.list] RETORNO FINAL:', {
-      dataLength: finalResult.data.length,
-      totalCount: finalResult.totalCount,
-      hasMore: finalResult.hasMore,
-      firstItemExists: !!finalResult.data[0],
-      firstItemId: finalResult.data[0]?.['id'],
-      firstItemCodigo: finalResult.data[0]?.['codigo'] || finalResult.data[0]?.['nome'] || 'N/A'
-    });
-    
-    // Log adicional para requisições de compra
-    if (table === 'requisicoes_compra') {
-      const statusCount = finalResult.data.reduce((acc: any, item: any) => {
-        const status = item.workflow_state || item.status || 'sem_status';
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      }, {});
-      console.log('📊 [EntityService.list] Requisições por status:', statusCount);
-      console.log('📊 [EntityService.list] Requisições aprovadas:', finalResult.data.filter((r: any) => (r.workflow_state || r.status) === 'aprovada').length);
-    }
     
     return finalResult;
   },
@@ -454,66 +337,20 @@ export const EntityService = {
         const value = (dataWithoutCompany as any)[key];
         // Se for string vazia e o campo terminar com _id (UUID opcional) ou for um campo de texto opcional
         if (typeof value === 'string' && value.trim() === '') {
-          if (key.endsWith('_id') || key === 'imagem_url' || key === 'ncm' || key === 'cfop' || key === 'cst' || key === 'classe') {
+          if (key.endsWith('_id') || 
+              key === 'imagem_url' || 
+              key === 'ncm' || 
+              key === 'cfop' || 
+              key === 'cst' || 
+              key === 'classe' ||
+              key === 'observacoes' ||
+              key === 'condicoes_comerciais' ||
+              key === 'condicao_pagamento') {
             (dataWithoutCompany as any)[key] = null;
           }
         }
       });
 
-      // Log detalhado para debug
-      console.log('🔍 [DEBUG] create_entity_data:', {
-        schema_name: schema,
-        table_name: table,
-        company_id_param: companyId,
-        data_keys: Object.keys(dataWithoutCompany)
-      });
-      
-      console.log('🔍 [DEBUG] Dados completos sendo enviados:', {
-        dataWithoutCompany: dataWithoutCompany,
-        dataTypes: Object.entries(dataWithoutCompany).map(([key, value]) => ({
-          key,
-          value,
-          type: typeof value
-        }))
-      });
-
-      // Log específico para campos que podem causar problemas
-      Object.entries(dataWithoutCompany).forEach(([key, value]) => {
-        if (value === null) {
-          console.log(`🔍 [DEBUG] Campo ${key}: NULL`);
-        } else if (value === undefined) {
-          console.log(`🔍 [DEBUG] Campo ${key}: UNDEFINED`);
-        } else if (typeof value === 'string' && value.trim() === '') {
-          console.log(`🔍 [DEBUG] Campo ${key}: STRING VAZIA`);
-        } else {
-          console.log(`🔍 [DEBUG] Campo ${key}: ${value} (${typeof value})`);
-        }
-      });
-
-      // Log específico para status
-      if ('status' in dataWithoutCompany) {
-        console.log('🔍 [DEBUG] Campo status:', {
-          value: dataWithoutCompany.status,
-          type: typeof dataWithoutCompany.status,
-          isString: typeof dataWithoutCompany.status === 'string',
-          isValid: ['ativo', 'inativo'].includes(dataWithoutCompany.status as string)
-        });
-      } else {
-        console.log('🔍 [DEBUG] Campo status: NÃO ENCONTRADO');
-      }
-
-      // Log específico para solicitado_por
-      if ('solicitado_por' in dataWithoutCompany) {
-        console.log('🔍 [DEBUG] Campo solicitado_por:', {
-          value: dataWithoutCompany.solicitado_por,
-          type: typeof dataWithoutCompany.solicitado_por,
-          isString: typeof dataWithoutCompany.solicitado_por === 'string',
-          length: typeof dataWithoutCompany.solicitado_por === 'string' ? dataWithoutCompany.solicitado_por.length : 'N/A',
-          isUUID: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(dataWithoutCompany.solicitado_por))
-        });
-      } else {
-        console.log('🔍 [DEBUG] Campo solicitado_por: NÃO ENCONTRADO');
-      }
 
       const { data: result, error } = await (supabase as any).rpc('create_entity_data', {
         schema_name: schema,

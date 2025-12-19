@@ -88,6 +88,7 @@ interface ItemAgrupado {
   unidade_medida: string;
   quantidade_total: number;
   origem: string[]; // Array de números de requisição
+  tipo_requisicao: string; // Tipo da requisição (reposicao, compra_direta, emergencial)
   selecionado: boolean;
   itens_origem: RequisicaoItem[];
 }
@@ -168,7 +169,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   const [fornecedoresDisponiveis, setFornecedoresDisponiveis] = useState<any[]>([]);
 
   // Mapa item x fornecedor (dados do mapa de cotação)
+  // Chave: material_id + tipo_requisicao (para diferenciar o mesmo material em tipos diferentes)
   const [mapaFornecedorItens, setMapaFornecedorItens] = useState<MapaFornecedorItens>({});
+
+  // Função helper para gerar chave composta do item no mapa
+  const getItemKey = (item: ItemAgrupado): string => {
+    return `${item.material_id}_${item.tipo_requisicao || 'sem_tipo'}`;
+  };
 
   const valorItemCalculado = (cell: ItemFornecedorValor) => {
     const bruto = (cell.quantidade_ofertada || 0) * (cell.valor_unitario || 0);
@@ -182,10 +189,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     const porItem = new Map<string, { melhor: number; fornecedorId?: string }>();
 
     itensAgrupados
-      .filter((i) => itensSelecionados.has(i.material_id))
+      .filter((i) => itensSelecionados.has(getItemKey(i)))
       .forEach((item) => {
+        const itemKey = getItemKey(item);
         fornecedores.forEach((f) => {
-          const cell = mapaFornecedorItens[f.id]?.[item.material_id];
+          const cell = mapaFornecedorItens[f.id]?.[itemKey];
           if (!cell) return;
           const total = valorItemCalculado(cell);
           porFornecedor.set(f.id, (porFornecedor.get(f.id) || 0) + total);
@@ -358,25 +366,33 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
         setRequisicoes(requisicoesData);
 
-        // Agrupar itens
+        // Agrupar itens por material_id E tipo_requisicao
+        // IMPORTANTE: O mesmo material pode aparecer em tipos diferentes de requisição
+        // e deve ser tratado como itens separados para diferenciar origem e tipo
+        // A quantidade_total deve ser a SOMA de todas as quantidades
+        // dos itens com o mesmo material_id E tipo_requisicao
         const itensMap = new Map<string, ItemAgrupado>();
         requisicoesData.forEach((req) => {
           req.itens.forEach((item) => {
-            const key = item.material_id;
+            // Chave composta: material_id + tipo_requisicao
+            const tipoReq = req.tipo_requisicao || 'sem_tipo';
+            const key = `${item.material_id}_${tipoReq}`;
             if (!itensMap.has(key)) {
               itensMap.set(key, {
                 material_id: item.material_id,
                 material_nome: item.material_nome || 'Material sem nome',
                 material_codigo: item.material_codigo || '',
                 unidade_medida: item.unidade_medida || 'UN',
-                quantidade_total: 0,
+                quantidade_total: 0, // Será somado abaixo
                 origem: [],
+                tipo_requisicao: tipoReq,
                 selecionado: true,
                 itens_origem: [],
               });
             }
             const agrupado = itensMap.get(key)!;
-            agrupado.quantidade_total += item.quantidade;
+            // Soma a quantidade do item atual à quantidade total do material agrupado
+            agrupado.quantidade_total += Number(item.quantidade) || 0;
             if (!agrupado.origem.includes(req.numero_requisicao)) {
               agrupado.origem.push(req.numero_requisicao);
             }
@@ -386,7 +402,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
         const itensAgrupadosArray = Array.from(itensMap.values());
         setItensAgrupados(itensAgrupadosArray);
-        setItensSelecionados(new Set(itensAgrupadosArray.map(i => i.material_id)));
+        // Usar chave composta (material_id + tipo_requisicao) para seleção
+        setItensSelecionados(new Set(itensAgrupadosArray.map(i => getItemKey(i))));
 
         // Definir tipo da cotação com base nas requisições selecionadas
         const tiposRequisicao = Array.from(
@@ -476,13 +493,14 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     );
 
     itensSelecionadosArray.forEach((itemAgrupado) => {
+      const itemKey = getItemKey(itemAgrupado);
       // escolher fornecedor vencedor ou o de menor valor total
       const melhorFornecedorId = (() => {
         let chosen: string | null = null;
         let best = Number.POSITIVE_INFINITY;
 
         fornecedores.forEach((f) => {
-          const cell = mapaFornecedorItens[f.id]?.[itemAgrupado.material_id];
+          const cell = mapaFornecedorItens[f.id]?.[itemKey];
           if (!cell) return;
           if (cell.is_vencedor) {
             chosen = f.id;
@@ -501,7 +519,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
       if (!melhorFornecedorId) return;
 
-      const cellSelecionada = mapaFornecedorItens[melhorFornecedorId]?.[itemAgrupado.material_id];
+      const cellSelecionada = mapaFornecedorItens[melhorFornecedorId]?.[itemKey];
       if (!cellSelecionada) return;
 
       const quantidadeUsada = Math.min(
@@ -571,8 +589,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         if (!next[fornecedor.id]) next[fornecedor.id] = {};
 
         itensAgrupados.forEach((item) => {
-          if (!next[fornecedor.id][item.material_id]) {
-            next[fornecedor.id][item.material_id] = {
+          const itemKey = getItemKey(item);
+          if (!next[fornecedor.id][itemKey]) {
+            next[fornecedor.id][itemKey] = {
               quantidade_ofertada: item.quantidade_total,
               valor_unitario: 0,
               desconto_percentual: 0,
@@ -641,16 +660,17 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
   const handleUpdateMapaValor = (
     fornecedorId: string,
-    materialId: string,
+    item: ItemAgrupado,
     field: keyof ItemFornecedorValor,
     value: any
   ) => {
+    const itemKey = getItemKey(item);
     setMapaFornecedorItens((prev) => {
       const next = { ...prev };
       if (!next[fornecedorId]) next[fornecedorId] = {};
-      if (!next[fornecedorId][materialId]) {
-        next[fornecedorId][materialId] = {
-          quantidade_ofertada: 0,
+      if (!next[fornecedorId][itemKey]) {
+        next[fornecedorId][itemKey] = {
+          quantidade_ofertada: item.quantidade_total,
           valor_unitario: 0,
           desconto_percentual: 0,
           desconto_valor: 0,
@@ -660,18 +680,19 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
           is_vencedor: false,
         };
       }
-      (next[fornecedorId][materialId] as any)[field] = value;
+      (next[fornecedorId][itemKey] as any)[field] = value;
       return { ...next };
     });
   };
 
-  const handleToggleItem = (materialId: string) => {
+  const handleToggleItem = (item: ItemAgrupado) => {
+    const itemKey = getItemKey(item);
     setItensSelecionados(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(materialId)) {
-        newSet.delete(materialId);
+      if (newSet.has(itemKey)) {
+        newSet.delete(itemKey);
       } else {
-        newSet.add(materialId);
+        newSet.add(itemKey);
       }
       return newSet;
     });
@@ -715,12 +736,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     }
 
     // Validação de mapa por item
-    const itensSelecionadosArray = itensAgrupados.filter((i) => itensSelecionados.has(i.material_id));
+    const itensSelecionadosArray = itensAgrupados.filter((i) => itensSelecionados.has(getItemKey(i)));
     for (const item of itensSelecionadosArray) {
       let cobertura = 0;
       let temFornecedor = false;
+      const itemKey = getItemKey(item);
       fornecedores.forEach((f) => {
-        const cell = mapaFornecedorItens[f.id]?.[item.material_id];
+        const cell = mapaFornecedorItens[f.id]?.[itemKey];
         if (cell && cell.quantidade_ofertada > 0 && cell.valor_unitario > 0) {
           temFornecedor = true;
           cobertura += cell.quantidade_ofertada;
@@ -748,6 +770,17 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
     setSubmitting(true);
     try {
+      // Validar data limite
+      if (!formData.data_limite || formData.data_limite.trim() === '') {
+        toast({
+          title: "Erro",
+          description: "A data limite para resposta é obrigatória.",
+          variant: "destructive",
+        });
+        setSubmitting(false);
+        return;
+      }
+
       // Preparar dados para envio
       const fornecedoresData = fornecedores.map((f) => ({
         fornecedor_id: f.fornecedor_id,
@@ -758,8 +791,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
       const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
         requisicao_id: requisicoesIds[0], // Por enquanto, usar primeira requisição
         fornecedores: fornecedoresData,
-        prazo_resposta: formData.data_limite,
-        observacoes: formData.observacoes_internas,
+        prazo_resposta: formData.data_limite.trim(),
+        observacoes: formData.observacoes_internas?.trim() || null,
       });
 
       const fornecedoresCriados = cicloResponse?.fornecedores || [];
@@ -780,9 +813,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         const cotacaoFornecedorId = mapFornecedorParaCotacao.get(fornecedor.id)!;
 
         itensAgrupados
-          .filter((item) => itensSelecionados.has(item.material_id))
+          .filter((item) => itensSelecionados.has(getItemKey(item)))
           .forEach((item) => {
-            const valorMapa = mapaFornecedorItens[fornecedor.id]?.[item.material_id];
+            const itemKey = getItemKey(item);
+            const valorMapa = mapaFornecedorItens[fornecedor.id]?.[itemKey];
             if (!valorMapa) return;
             const { quantidade_ofertada, valor_unitario } = valorMapa;
             if (!quantidade_ofertada || !valor_unitario) return;
@@ -837,6 +871,23 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
   const isEmergencial = formData.tipo_cotacao === 'emergencial';
   const minFornecedores = isEmergencial ? 1 : 2;
+
+  // Função para obter badge do tipo de requisição
+  const getTipoBadge = (tipo: string) => {
+    switch (tipo) {
+      case 'emergencial':
+        return <Badge variant="outline" className="text-orange-600 bg-orange-50 text-xs">
+          <Zap className="h-3 w-3 mr-1" />
+          Emergencial
+        </Badge>;
+      case 'reposicao':
+        return <Badge variant="outline" className="text-blue-600 bg-blue-50 text-xs">Reposição</Badge>;
+      case 'compra_direta':
+        return <Badge variant="outline" className="text-purple-600 bg-purple-50 text-xs">Compra Direta</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs">{tipo || '—'}</Badge>;
+    }
+  };
   const maxFornecedores = 6;
   const fornecedoresValidos = fornecedores.filter(f => f.fornecedor_id).length;
   const fornecedoresOk = fornecedoresValidos >= minFornecedores && fornecedoresValidos <= maxFornecedores;
@@ -885,7 +936,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
               </Badge>
             )}
           </DialogTitle>
-          <DialogDescription className="flex items-center gap-2 flex-wrap">
+          <DialogDescription className="sr-only">
+            Modal para gerar cotação de preços para as requisições selecionadas
+          </DialogDescription>
+          <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
             <span>
               {contextoSelecao.totalRequisicoes > 0 
                 ? `${contextoSelecao.totalRequisicoes} requisição(ões): ${contextoSelecao.numerosRequisicoes.join(', ')}${contextoSelecao.temMaisRequisicoes ? '...' : ''}`
@@ -896,7 +950,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                 {contextoSelecao.totalItens} {contextoSelecao.totalItens === 1 ? 'item' : 'itens'}
               </Badge>
             )}
-          </DialogDescription>
+          </div>
         </DialogHeader>
 
         {loading && requisicoes.length === 0 ? (
@@ -1087,13 +1141,14 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                       </TableHeader>
                       <TableBody>
                         {itensAgrupados.map((item) => {
-                          const isSelected = itensSelecionados.has(item.material_id);
+                          const itemKey = getItemKey(item);
+                          const isSelected = itensSelecionados.has(itemKey);
                           return (
-                            <TableRow key={item.material_id} className={!isSelected ? 'opacity-50' : ''}>
+                            <TableRow key={itemKey} className={!isSelected ? 'opacity-50' : ''}>
                               <TableCell>
                                 <Checkbox
                                   checked={isSelected}
-                                  onCheckedChange={() => handleToggleItem(item.material_id)}
+                                  onCheckedChange={() => handleToggleItem(item)}
                                 />
                               </TableCell>
                               <TableCell className="font-mono text-sm">
@@ -1103,16 +1158,22 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                               <TableCell>{item.unidade_medida}</TableCell>
                               <TableCell>{item.quantidade_total.toLocaleString('pt-BR')}</TableCell>
                               <TableCell>
-                                <div className="flex flex-wrap gap-1">
-                                  {item.origem.map((origem, idx) => (
-                                    <Badge key={idx} variant="outline" className="text-xs">
-                                      {origem}
-                                    </Badge>
-                                  ))}
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex flex-wrap gap-1">
+                                    {item.origem.map((origem, idx) => (
+                                      <Badge key={idx} variant="outline" className="text-xs">
+                                        {origem}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    {getTipoBadge(item.tipo_requisicao)}
+                                  </div>
                                 </div>
                               </TableCell>
                               {fornecedores.map((f) => {
-                                const cell = mapaFornecedorItens[f.id]?.[item.material_id];
+                                const itemKey = getItemKey(item);
+                                const cell = mapaFornecedorItens[f.id]?.[itemKey];
                                 return (
                                   <TableCell key={`${item.material_id}-${f.id}`} className="min-w-[260px] align-top">
                                     <div className="grid grid-cols-2 gap-2 pb-10">
@@ -1124,7 +1185,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onChange={(e) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'quantidade_ofertada',
                                               parseFloat(e.target.value) || 0
                                             )
@@ -1140,7 +1201,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onChange={(e) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'valor_unitario',
                                               parseFloat(e.target.value) || 0
                                             )
@@ -1156,7 +1217,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onChange={(e) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'desconto_percentual',
                                               parseFloat(e.target.value) || 0
                                             )
@@ -1172,7 +1233,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onChange={(e) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'desconto_valor',
                                               parseFloat(e.target.value) || 0
                                             )
@@ -1187,7 +1248,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onChange={(e) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'prazo_entrega_dias',
                                               parseInt(e.target.value) || 0
                                             )
@@ -1201,7 +1262,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onChange={(e) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'condicao_pagamento',
                                               e.target.value
                                             )
@@ -1216,7 +1277,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onChange={(e) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'observacoes',
                                               e.target.value
                                             )
@@ -1229,7 +1290,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                           onCheckedChange={(checked) =>
                                             handleUpdateMapaValor(
                                               f.id,
-                                              item.material_id,
+                                              item,
                                               'is_vencedor',
                                               Boolean(checked)
                                             )
