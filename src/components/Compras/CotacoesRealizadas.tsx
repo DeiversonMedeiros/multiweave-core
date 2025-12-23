@@ -46,6 +46,7 @@ interface FiltrosCotacoes {
   fornecedor: string;
   valorMin: string;
   valorMax: string;
+  ordenarPor: string; // Campo para ordenação (prioridade, data, etc)
 }
 
 export function CotacoesRealizadas() {
@@ -67,6 +68,7 @@ export function CotacoesRealizadas() {
     fornecedor: '',
     valorMin: '',
     valorMax: '',
+    ordenarPor: 'data_desc', // Padrão: mais recentes primeiro
   });
 
   const getStatusBadge = (status: string, workflowState?: string) => {
@@ -161,6 +163,67 @@ export function CotacoesRealizadas() {
       });
     }
 
+    // Ordenação
+    if (filtros.ordenarPor) {
+      result = [...result].sort((a: any, b: any) => {
+        switch (filtros.ordenarPor) {
+          case 'prioridade_desc':
+            // Ordenar por prioridade: alta > normal > baixa
+            // Se tipo_requisicao for emergencial, considerar como alta prioridade
+            const prioridadeOrder: Record<string, number> = { urgente: 4, alta: 3, normal: 2, baixa: 1 };
+            const prioridadeA = a.tipo_requisicao === 'emergencial' 
+              ? 3 
+              : (prioridadeOrder[a.prioridade || 'normal'] || 2);
+            const prioridadeB = b.tipo_requisicao === 'emergencial' 
+              ? 3 
+              : (prioridadeOrder[b.prioridade || 'normal'] || 2);
+            return prioridadeB - prioridadeA;
+          
+          case 'prioridade_asc':
+            const prioridadeOrderAsc: Record<string, number> = { urgente: 4, alta: 3, normal: 2, baixa: 1 };
+            const prioridadeAAsc = a.tipo_requisicao === 'emergencial' 
+              ? 3 
+              : (prioridadeOrderAsc[a.prioridade || 'normal'] || 2);
+            const prioridadeBAsc = b.tipo_requisicao === 'emergencial' 
+              ? 3 
+              : (prioridadeOrderAsc[b.prioridade || 'normal'] || 2);
+            return prioridadeAAsc - prioridadeBAsc;
+          
+          case 'tipo_desc':
+            // Ordenar por tipo: emergencial > compra_direta > reposicao
+            const tipoOrder: Record<string, number> = { emergencial: 3, compra_direta: 2, reposicao: 1 };
+            const tipoA = tipoOrder[a.tipo_requisicao || a.tipo_cotacao || 'reposicao'] || 1;
+            const tipoB = tipoOrder[b.tipo_requisicao || b.tipo_cotacao || 'reposicao'] || 1;
+            return tipoB - tipoA;
+          
+          case 'tipo_asc':
+            const tipoOrderAsc: Record<string, number> = { emergencial: 3, compra_direta: 2, reposicao: 1 };
+            const tipoAAsc = tipoOrderAsc[a.tipo_requisicao || a.tipo_cotacao || 'reposicao'] || 1;
+            const tipoBAsc = tipoOrderAsc[b.tipo_requisicao || b.tipo_cotacao || 'reposicao'] || 1;
+            return tipoAAsc - tipoBAsc;
+          
+          case 'data_desc':
+            const dataA = new Date(a.created_at || 0).getTime();
+            const dataB = new Date(b.created_at || 0).getTime();
+            return dataB - dataA;
+          
+          case 'data_asc':
+            const dataAAsc = new Date(a.created_at || 0).getTime();
+            const dataBAsc = new Date(b.created_at || 0).getTime();
+            return dataAAsc - dataBAsc;
+          
+          case 'valor_desc':
+            return parseFloat(b.valor_total || 0) - parseFloat(a.valor_total || 0);
+          
+          case 'valor_asc':
+            return parseFloat(a.valor_total || 0) - parseFloat(b.valor_total || 0);
+          
+          default:
+            return 0;
+        }
+      });
+    }
+
     return result;
   }, [cotacoes, search, filtros]);
 
@@ -171,7 +234,8 @@ export function CotacoesRealizadas() {
       filtros.dataFim !== '' ||
       filtros.fornecedor !== '' ||
       filtros.valorMin !== '' ||
-      filtros.valorMax !== ''
+      filtros.valorMax !== '' ||
+      filtros.ordenarPor !== 'data_desc'
     );
   }, [filtros]);
 
@@ -183,6 +247,7 @@ export function CotacoesRealizadas() {
       fornecedor: '',
       valorMin: '',
       valorMax: '',
+      ordenarPor: 'data_desc',
     });
   };
 
@@ -431,25 +496,30 @@ export function CotacoesRealizadas() {
               </Select>
             </div>
 
-            {/* Filtro por Data */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="dataInicio">Data Início</Label>
-                <Input
-                  id="dataInicio"
-                  type="date"
-                  value={filtros.dataInicio}
-                  onChange={(e) => setFiltros({ ...filtros, dataInicio: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="dataFim">Data Fim</Label>
-                <Input
-                  id="dataFim"
-                  type="date"
-                  value={filtros.dataFim}
-                  onChange={(e) => setFiltros({ ...filtros, dataFim: e.target.value })}
-                />
+            {/* Filtro por Data - De... Até */}
+            <div className="space-y-2">
+              <Label>Período de Data</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="dataInicio" className="text-xs text-muted-foreground">Data De</Label>
+                  <Input
+                    id="dataInicio"
+                    type="date"
+                    value={filtros.dataInicio}
+                    onChange={(e) => setFiltros({ ...filtros, dataInicio: e.target.value })}
+                    placeholder="Data inicial"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="dataFim" className="text-xs text-muted-foreground">Data Até</Label>
+                  <Input
+                    id="dataFim"
+                    type="date"
+                    value={filtros.dataFim}
+                    onChange={(e) => setFiltros({ ...filtros, dataFim: e.target.value })}
+                    placeholder="Data final"
+                  />
+                </div>
               </div>
             </div>
 
@@ -488,6 +558,29 @@ export function CotacoesRealizadas() {
                   onChange={(e) => setFiltros({ ...filtros, valorMax: e.target.value })}
                 />
               </div>
+            </div>
+
+            {/* Filtro de Ordenação por Prioridade/Tipo */}
+            <div className="space-y-2">
+              <Label htmlFor="ordenarPor">Ordenar Por</Label>
+              <Select
+                value={filtros.ordenarPor}
+                onValueChange={(value) => setFiltros({ ...filtros, ordenarPor: value })}
+              >
+                <SelectTrigger id="ordenarPor">
+                  <SelectValue placeholder="Selecione a ordenação" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="data_desc">Data (Mais Recente)</SelectItem>
+                  <SelectItem value="data_asc">Data (Mais Antiga)</SelectItem>
+                  <SelectItem value="prioridade_desc">Prioridade (Alta → Baixa)</SelectItem>
+                  <SelectItem value="prioridade_asc">Prioridade (Baixa → Alta)</SelectItem>
+                  <SelectItem value="tipo_desc">Tipo (Emergencial → Reposição)</SelectItem>
+                  <SelectItem value="tipo_asc">Tipo (Reposição → Emergencial)</SelectItem>
+                  <SelectItem value="valor_desc">Valor (Maior → Menor)</SelectItem>
+                  <SelectItem value="valor_asc">Valor (Menor → Maior)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Indicador de filtros ativos */}

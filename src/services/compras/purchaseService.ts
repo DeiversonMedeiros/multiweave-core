@@ -239,16 +239,17 @@ export const purchaseService = {
 
     // Buscar os números das requisições usando query direta do Supabase
     const requisicaoIds = [...new Set(cotacoesResult.data.map((c: any) => c.requisicao_id).filter(Boolean))];
-    
+
     if (requisicaoIds.length === 0) {
       return cotacoesResult;
     }
 
     // Buscar requisições em lote usando EntityService
-    const requisicoesMap = new Map<string, string>();
+    // Mapa para armazenar dados completos das requisições (numero, prioridade, tipo)
+    const requisicoesMap = new Map<string, { numero_requisicao: string; prioridade: string; tipo_requisicao: string }>();
     try {
       console.log('🔍 [listQuotes] Buscando requisições. IDs necessários:', requisicaoIds);
-      
+
       // Buscar todas as requisições da empresa e filtrar pelos IDs necessários
       const requisicoesResult = await EntityService.list({
         schema: 'compras',
@@ -264,41 +265,34 @@ export const purchaseService = {
       if (requisicoesResult.data) {
         // Normalizar IDs para string para garantir comparação correta
         const requisicaoIdsStr = requisicaoIds.map(id => String(id));
-        
+
         requisicoesResult.data.forEach((req: any) => {
           const reqIdStr = String(req.id);
           if (req.id && requisicaoIdsStr.includes(reqIdStr)) {
-            if (req.numero_requisicao) {
-              requisicoesMap.set(reqIdStr, req.numero_requisicao);
-              console.log(`✅ [listQuotes] Mapeado: ${reqIdStr.substring(0, 8)}... -> ${req.numero_requisicao}`);
-            } else {
-              console.warn(`⚠️ [listQuotes] Requisição ${reqIdStr} não tem numero_requisicao`);
-            }
+            requisicoesMap.set(reqIdStr, {
+              numero_requisicao: req.numero_requisicao || '',
+              prioridade: req.prioridade || 'normal',
+              tipo_requisicao: req.tipo_requisicao || 'reposicao',
+            });
           }
         });
       }
-      
+
       console.log(`✅ [listQuotes] Total mapeado: ${requisicoesMap.size} de ${requisicaoIds.length} necessários`);
     } catch (error) {
       console.error('❌ [listQuotes] Erro ao buscar números das requisições:', error);
     }
 
-    // Adicionar numero_requisicao aos dados das cotações
+    // Adicionar dados das requisições aos dados das cotações
     const transformedData = cotacoesResult.data.map((cotacao: any) => {
       const reqIdStr = cotacao.requisicao_id ? String(cotacao.requisicao_id) : null;
-      const numeroRequisicao = reqIdStr ? requisicoesMap.get(reqIdStr) || null : null;
-      
-      // Log para debug
-      if (!numeroRequisicao && cotacao.requisicao_id) {
-        console.warn(`⚠️ [listQuotes] Não encontrado numero_requisicao para requisicao_id: ${cotacao.requisicao_id}`);
-        console.warn(`⚠️ [listQuotes] Mapa tem ${requisicoesMap.size} entradas`);
-        console.warn(`⚠️ [listQuotes] IDs no mapa:`, Array.from(requisicoesMap.keys()).slice(0, 5));
-        console.warn(`⚠️ [listQuotes] Tentando buscar diretamente...`);
-      }
-      
+      const reqData = reqIdStr ? requisicoesMap.get(reqIdStr) : null;
+
       return {
         ...cotacao,
-        numero_requisicao: numeroRequisicao,
+        numero_requisicao: reqData?.numero_requisicao || null,
+        prioridade: reqData?.prioridade || 'normal',
+        tipo_requisicao: reqData?.tipo_requisicao || 'reposicao',
       };
     });
 

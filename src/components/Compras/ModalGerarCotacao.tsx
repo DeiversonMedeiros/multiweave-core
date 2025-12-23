@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   Select,
   SelectContent,
@@ -41,7 +42,9 @@ import {
   AlertCircle,
   DollarSign,
   Calendar,
-  Zap
+  Zap,
+  TrendingDown,
+  TrendingUp
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
 import { useToast } from '@/hooks/use-toast';
@@ -433,15 +436,61 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         }));
 
         // Carregar fornecedores disponíveis
-        const fornecedoresResult = await EntityService.list({
-          schema: 'compras',
-          table: 'fornecedores_dados',
-          companyId: selectedCompany.id,
-          filters: { status: 'ativo' },
-          page: 1,
-          pageSize: 100,
-        });
-        setFornecedoresDisponiveis(fornecedoresResult.data || []);
+        try {
+          const fornecedoresResult = await EntityService.list({
+            schema: 'compras',
+            table: 'fornecedores_dados',
+            companyId: selectedCompany.id,
+            filters: { status: 'ativo' },
+            page: 1,
+            pageSize: 100,
+          });
+          const fornecedoresData = fornecedoresResult.data || [];
+          console.log('📦 [ModalGerarCotacao] Fornecedores carregados:', fornecedoresData.length, fornecedoresData);
+          console.log('📦 [ModalGerarCotacao] Partners disponíveis no mapa:', partnersMap.size);
+          console.log('📦 [ModalGerarCotacao] Partners data:', partnersData);
+          
+          // Log detalhado de cada fornecedor
+          fornecedoresData.forEach((fd: any, index: number) => {
+            const partner = fd.partner_id ? partnersMap.get(fd.partner_id) : null;
+            console.log(`📦 Fornecedor ${index + 1} (${fd.id.substring(0, 8)}...):`);
+            console.log(`   - partner_id: ${fd.partner_id || 'NÃO TEM'}`);
+            console.log(`   - partner_encontrado: ${!!partner}`);
+            console.log(`   - partner_nome: ${partner?.nome_fantasia || partner?.razao_social || partner?.nome || 'N/A'}`);
+            console.log(`   - contato_principal: ${fd.contato_principal || 'N/A'}`);
+            console.log(`   - email_cotacao: ${fd.email_cotacao || 'N/A'}`);
+            console.log(`   - cidade/uf: ${fd.cidade || 'N/A'}/${fd.uf || 'N/A'}`);
+            console.log(`   - status: ${fd.status || 'N/A'}`);
+            
+            // Verificar se o partner_id existe no mapa
+            if (fd.partner_id) {
+              const partnerKeys = Array.from(partnersMap.keys());
+              console.log(`   - partner_id existe no mapa? ${partnersMap.has(fd.partner_id)}`);
+              console.log(`   - IDs disponíveis no mapa: ${partnerKeys.slice(0, 5).join(', ')}...`);
+            }
+          });
+          
+          // Se não encontrou fornecedores ativos, tentar buscar todos (para debug)
+          if (fornecedoresData.length === 0) {
+            console.warn('⚠️ [ModalGerarCotacao] Nenhum fornecedor ativo encontrado, buscando todos...');
+            const todosFornecedoresResult = await EntityService.list({
+              schema: 'compras',
+              table: 'fornecedores_dados',
+              companyId: selectedCompany.id,
+              filters: {},
+              page: 1,
+              pageSize: 100,
+            });
+            const todosFornecedores = todosFornecedoresResult.data || [];
+            console.log('📦 [ModalGerarCotacao] Total de fornecedores (todos os status):', todosFornecedores.length);
+            setFornecedoresDisponiveis(todosFornecedores);
+          } else {
+            setFornecedoresDisponiveis(fornecedoresData);
+          }
+        } catch (error) {
+          console.error('❌ [ModalGerarCotacao] Erro ao carregar fornecedores:', error);
+          setFornecedoresDisponiveis([]);
+        }
 
         // Definir data limite padrão (7 dias)
         const dataLimite = new Date();
@@ -489,7 +538,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
     const rateioItems: RateioItem[] = [];
     const itensSelecionadosArray = itensAgrupados.filter(i =>
-      itensSelecionados.has(i.material_id)
+      itensSelecionados.has(getItemKey(i))
     );
 
     itensSelecionadosArray.forEach((itemAgrupado) => {
@@ -960,32 +1009,36 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-            <TabsList className="px-6 pt-4 flex-shrink-0">
-              <TabsTrigger value="dados">
-                <FileText className="h-4 w-4 mr-2" />
-                Dados
-              </TabsTrigger>
-              <TabsTrigger value="requisicoes">
-                <FileText className="h-4 w-4 mr-2" />
-                Requisições
-              </TabsTrigger>
-              <TabsTrigger value="itens">
-                <Package className="h-4 w-4 mr-2" />
-                Itens
-              </TabsTrigger>
-              <TabsTrigger value="fornecedores">
-                <Users className="h-4 w-4 mr-2" />
-                Fornecedores
-              </TabsTrigger>
-              <TabsTrigger value="rateio">
-                <Calculator className="h-4 w-4 mr-2" />
-                Rateio
-              </TabsTrigger>
-              <TabsTrigger value="finalizacao">
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Finalização
-              </TabsTrigger>
-            </TabsList>
+            <div className="px-6 pt-4 flex-shrink-0 border-b">
+              <div className="overflow-x-auto">
+                <TabsList className="inline-flex">
+                  <TabsTrigger value="dados">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Dados
+                  </TabsTrigger>
+                  <TabsTrigger value="requisicoes">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Requisições
+                  </TabsTrigger>
+                  <TabsTrigger value="itens-fornecedores">
+                    <Package className="h-4 w-4 mr-2" />
+                    Itens & Fornecedores
+                  </TabsTrigger>
+                  <TabsTrigger value="mapa-cotacao">
+                    <Calculator className="h-4 w-4 mr-2" />
+                    Mapa Cotação
+                  </TabsTrigger>
+                  <TabsTrigger value="rateio">
+                    <Calculator className="h-4 w-4 mr-2" />
+                    Rateio
+                  </TabsTrigger>
+                  <TabsTrigger value="finalizacao">
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Finalização
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+            </div>
 
             <ScrollArea className="flex-1 px-6">
               <TabsContent value="dados" className="mt-4 space-y-4">
@@ -1091,341 +1144,537 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                 </Table>
               </TabsContent>
 
-              <TabsContent value="itens" className="mt-4 space-y-4">
-                <div className="space-y-4">
-                  <div className="flex items-center space-x-4">
-                    <Label>Itens selecionados para o mapa</Label>
-                    <Badge variant="secondary">{itensSelecionados.size} itens</Badge>
-                  </div>
-
-                  <div className="max-h-[60vh] overflow-auto rounded border">
-                    <Table>
-                      <TableHeader className="sticky top-0 bg-background">
-                        <TableRow>
-                          <TableHead className="w-12">
-                            <Checkbox
-                              checked={itensAgrupados.length > 0 && itensSelecionados.size === itensAgrupados.length}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  setItensSelecionados(new Set(itensAgrupados.map(i => i.material_id)));
-                                } else {
-                                  setItensSelecionados(new Set());
-                                }
-                              }}
-                            />
-                          </TableHead>
-                          <TableHead>Código</TableHead>
-                          <TableHead>Descrição</TableHead>
-                          <TableHead>Unidade</TableHead>
-                          <TableHead>Qtd. Total</TableHead>
-                          <TableHead>Origem</TableHead>
-                          {fornecedores.map((f, idx) => {
-                            const partner = partnersMap.get(f.fornecedor_id);
-                            const fd = fornecedoresDisponiveis.find((x: any) => x.id === f.fornecedor_id);
-                            const partnerFromFd = fd ? partnersMap.get(fd.partner_id) : null;
-                            const displayName =
-                              partner?.nome_fantasia ||
-                              partner?.razao_social ||
-                              partnerFromFd?.nome_fantasia ||
-                              partnerFromFd?.razao_social ||
-                              fd?.nome_fantasia ||
-                              fd?.razao_social ||
-                              `Fornecedor ${idx + 1}`;
-                            return (
-                              <TableHead key={f.id} className="min-w-[260px]">
-                                {displayName}
-                              </TableHead>
-                            );
-                          })}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {itensAgrupados.map((item) => {
-                          const itemKey = getItemKey(item);
-                          const isSelected = itensSelecionados.has(itemKey);
-                          return (
-                            <TableRow key={itemKey} className={!isSelected ? 'opacity-50' : ''}>
-                              <TableCell>
-                                <Checkbox
-                                  checked={isSelected}
-                                  onCheckedChange={() => handleToggleItem(item)}
-                                />
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {item.material_codigo || '—'}
-                              </TableCell>
-                              <TableCell>{item.material_nome}</TableCell>
-                              <TableCell>{item.unidade_medida}</TableCell>
-                              <TableCell>{item.quantidade_total.toLocaleString('pt-BR')}</TableCell>
-                              <TableCell>
-                                <div className="flex flex-col gap-1">
-                                  <div className="flex flex-wrap gap-1">
-                                    {item.origem.map((origem, idx) => (
-                                      <Badge key={idx} variant="outline" className="text-xs">
-                                        {origem}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    {getTipoBadge(item.tipo_requisicao)}
-                                  </div>
-                                </div>
-                              </TableCell>
-                              {fornecedores.map((f) => {
-                                const itemKey = getItemKey(item);
-                                const cell = mapaFornecedorItens[f.id]?.[itemKey];
-                                return (
-                                  <TableCell key={`${item.material_id}-${f.id}`} className="min-w-[260px] align-top">
-                                    <div className="grid grid-cols-2 gap-2 pb-10">
-                                      <div className="col-span-2">
-                                        <Label className="text-[11px]">Qtd. ofertada</Label>
-                                        <Input
-                                          type="number"
-                                          value={cell?.quantidade_ofertada ?? item.quantidade_total}
-                                          onChange={(e) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'quantidade_ofertada',
-                                              parseFloat(e.target.value) || 0
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label className="text-[11px]">Valor (R$)</Label>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          value={cell?.valor_unitario ?? 0}
-                                          onChange={(e) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'valor_unitario',
-                                              parseFloat(e.target.value) || 0
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label className="text-[11px]">Desconto %</Label>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          value={cell?.desconto_percentual ?? 0}
-                                          onChange={(e) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'desconto_percentual',
-                                              parseFloat(e.target.value) || 0
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label className="text-[11px]">Desc. (R$)</Label>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          value={cell?.desconto_valor ?? 0}
-                                          onChange={(e) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'desconto_valor',
-                                              parseFloat(e.target.value) || 0
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label className="text-[11px]">Prazo (dias)</Label>
-                                        <Input
-                                          type="number"
-                                          value={cell?.prazo_entrega_dias ?? 0}
-                                          onChange={(e) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'prazo_entrega_dias',
-                                              parseInt(e.target.value) || 0
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div className="col-span-2">
-                                        <Label className="text-[11px]">Condição</Label>
-                                        <Input
-                                          value={cell?.condicao_pagamento ?? ''}
-                                          onChange={(e) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'condicao_pagamento',
-                                              e.target.value
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div className="col-span-2">
-                                        <Label className="text-[11px]">Obs</Label>
-                                        <Textarea
-                                          rows={2}
-                                          value={cell?.observacoes ?? ''}
-                                          onChange={(e) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'observacoes',
-                                              e.target.value
-                                            )
-                                          }
-                                        />
-                                      </div>
-                                      <div className="col-span-2 flex items-center gap-2">
-                                        <Checkbox
-                                          checked={cell?.is_vencedor || false}
-                                          onCheckedChange={(checked) =>
-                                            handleUpdateMapaValor(
-                                              f.id,
-                                              item,
-                                              'is_vencedor',
-                                              Boolean(checked)
-                                            )
-                                          }
-                                        />
-                                        <span className="text-xs text-muted-foreground">Marcar vencedor</span>
-                                      </div>
+              <TabsContent value="itens-fornecedores" className="mt-4 space-y-4 flex flex-col h-full">
+                {/* Parte Superior - Itens da Cotação (Sticky) */}
+                <div className="sticky top-0 z-10 bg-background border-b pb-4 mb-4 flex-shrink-0">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Package className="h-4 w-4" />
+                        Itens da Cotação
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-[100px]">Código</TableHead>
+                              <TableHead>Descrição</TableHead>
+                              <TableHead className="w-[100px]">Unidade</TableHead>
+                              <TableHead className="w-[120px] text-right">Quantidade</TableHead>
+                              <TableHead className="w-[150px]">Origem</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {itensAgrupados.map((item) => {
+                              const itemKey = getItemKey(item);
+                              return (
+                                <TableRow key={itemKey}>
+                                  <TableCell className="font-mono text-xs">{item.material_codigo || '—'}</TableCell>
+                                  <TableCell className="font-medium">{item.material_nome}</TableCell>
+                                  <TableCell className="text-muted-foreground">{item.unidade_medida}</TableCell>
+                                  <TableCell className="text-right">{item.quantidade_total.toLocaleString('pt-BR')}</TableCell>
+                                  <TableCell className="text-muted-foreground text-sm">
+                                    <div className="flex flex-wrap gap-1">
+                                      {item.origem.map((origem, idx) => (
+                                        <Badge key={idx} variant="outline" className="text-xs">
+                                          {origem}
+                                        </Badge>
+                                      ))}
                                     </div>
                                   </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Parte Inferior - Seleção de Fornecedores */}
+                <div className="flex-1 overflow-auto">
+                  <Card>
+                    <CardHeader>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <CardTitle className="text-sm font-medium flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            Seleção de Fornecedores
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {isEmergencial 
+                              ? 'Cotações emergenciais: exatamente 1 fornecedor'
+                              : `Cotações normais: mínimo ${minFornecedores}, máximo ${maxFornecedores} fornecedores`
+                            }
+                          </p>
+                          <p className="text-sm font-medium mt-1">
+                            Fornecedores selecionados: {fornecedoresValidos} / {isEmergencial ? '1' : `${minFornecedores}-${maxFornecedores}`}
+                          </p>
+                          {!fornecedoresOk && (
+                            <p className="text-sm text-red-600 mt-1">
+                              {isEmergencial 
+                                ? 'Selecione exatamente 1 fornecedor'
+                                : `Selecione entre ${minFornecedores} e ${maxFornecedores} fornecedores`
+                              }
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          onClick={handleAddFornecedor}
+                          disabled={isEmergencial ? fornecedores.length >= 1 : fornecedores.length >= 6}
+                          size="sm"
+                        >
+                          <Users className="h-4 w-4 mr-2" />
+                          Adicionar Fornecedor
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {fornecedoresDisponiveis.length === 0 && (
+                        <Alert className="mb-4">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>
+                            Nenhum fornecedor ativo encontrado. Verifique se há fornecedores cadastrados no sistema.
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      {fornecedores.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>Nenhum fornecedor adicionado</p>
+                          <p className="text-sm">Clique em "Adicionar Fornecedor" para começar</p>
+                          {fornecedoresDisponiveis.length > 0 && (
+                            <p className="text-xs mt-2">
+                              {fornecedoresDisponiveis.length} fornecedor(es) disponível(is)
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[50px]"></TableHead>
+                                <TableHead>Fornecedor</TableHead>
+                                <TableHead className="w-[150px]">CNPJ</TableHead>
+                                <TableHead className="w-[120px]">Tipo</TableHead>
+                                <TableHead className="w-[100px]">Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {fornecedores.map((fornecedor, index) => {
+                                const partner = fornecedor.fornecedor_id 
+                                  ? partnersMap.get(fornecedor.fornecedor_id) 
+                                  : null;
+                                const fd = fornecedoresDisponiveis.find((x: any) => x.id === fornecedor.fornecedor_id);
+                                const isBlocked = fd?.status === 'bloqueado';
+                                
+                                return (
+                                  <TableRow key={fornecedor.id}>
+                                    <TableCell>
+                                      <Checkbox
+                                        checked={!!fornecedor.fornecedor_id}
+                                        disabled={isBlocked}
+                                        onCheckedChange={(checked) => {
+                                          if (!checked) {
+                                            handleRemoveFornecedor(fornecedor.id);
+                                          }
+                                        }}
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center gap-2">
+                                        {partner ? (
+                                          <span className={isBlocked ? 'opacity-50' : ''}>
+                                            {partner.nome_fantasia || partner.razao_social}
+                                          </span>
+                                        ) : (
+                                          <Select
+                                            value={fornecedor.fornecedor_id}
+                                            onValueChange={(value) => 
+                                              handleUpdateFornecedor(fornecedor.id, 'fornecedor_id', value)
+                                            }
+                                          >
+                                            <SelectTrigger className="w-[200px]">
+                                              <SelectValue placeholder="Selecione um fornecedor" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {(() => {
+                                                console.log('🔍 [SelectContent] Renderizando com', fornecedoresDisponiveis.length, 'fornecedores');
+                                                if (fornecedoresDisponiveis.length === 0) {
+                                                  return (
+                                                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                                                      Nenhum fornecedor disponível
+                                                    </div>
+                                                  );
+                                                }
+                                                return fornecedoresDisponiveis.map((fd: any) => {
+                                                  const p = fd.partner_id ? partnersMap.get(fd.partner_id) : null;
+                                                  // Tentar várias fontes para o nome do fornecedor
+                                                  const displayName = 
+                                                    p?.nome_fantasia || 
+                                                    p?.razao_social || 
+                                                    p?.nome ||
+                                                    fd.contato_principal || 
+                                                    (fd.email_cotacao ? fd.email_cotacao.split('@')[0] : null) ||
+                                                    `Fornecedor ${fd.id.substring(0, 8)}`;
+                                                  
+                                                  console.log(`🔍 [SelectItem] Renderizando fornecedor ${fd.id.substring(0, 8)} com nome: ${displayName}`);
+                                                  
+                                                  return (
+                                                    <SelectItem key={fd.id} value={fd.id}>
+                                                      <div className="flex flex-col">
+                                                        <span>{displayName}</span>
+                                                        {(fd.uf && fd.cidade) && (
+                                                          <span className="text-xs text-muted-foreground">
+                                                            {fd.cidade}/{fd.uf}
+                                                          </span>
+                                                        )}
+                                                        {fd.email_cotacao && (
+                                                          <span className="text-xs text-muted-foreground">
+                                                            {fd.email_cotacao}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                    </SelectItem>
+                                                  );
+                                                });
+                                              })()}
+                                            </SelectContent>
+                                          </Select>
+                                        )}
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleRemoveFornecedor(fornecedor.id)}
+                                          disabled={isEmergencial && fornecedores.length === 1}
+                                        >
+                                          <X className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs text-muted-foreground">
+                                      {partner?.cnpj || '—'}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge variant="outline" className="text-xs">
+                                        {fd?.tipo === 'local' ? 'Local' : fd?.tipo === 'nacional' ? 'Nacional' : fd?.tipo === 'internacional' ? 'Internacional' : '—'}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      {isBlocked ? (
+                                        <Badge variant="secondary" className="text-xs flex items-center gap-1">
+                                          <AlertCircle className="h-3 w-3" />
+                                          Bloqueado
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="default" className="text-xs">
+                                          Ativo
+                                        </Badge>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
                                 );
                               })}
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Campo Valores da Cotação - Só habilita quando tem fornecedor vinculado */}
+                  {fornecedoresValidos > 0 && (
+                    <Card className="mt-4">
+                      <CardHeader>
+                        <CardTitle className="text-sm font-medium">
+                          Valores da Cotação
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          <p className="text-sm text-muted-foreground">
+                            {fornecedoresValidos} fornecedor(es) selecionado(s). 
+                            Você pode preencher os valores na aba "Mapa Cotação".
+                          </p>
+                          <div className="p-4 bg-muted rounded-md">
+                            <p className="text-sm font-medium mb-2">Fornecedores Selecionados:</p>
+                            <ul className="list-disc list-inside space-y-1">
+                              {fornecedores.filter(f => f.fornecedor_id).map((fornecedor) => {
+                                const partner = partnersMap.get(fornecedor.fornecedor_id);
+                                return (
+                                  <li key={fornecedor.id} className="text-sm text-muted-foreground">
+                                    {partner?.nome_fantasia || partner?.razao_social} {partner?.cnpj && `(${partner.cnpj})`}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
                 </div>
               </TabsContent>
 
-              <TabsContent value="fornecedores" className="mt-4 space-y-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <Label>Fornecedores</Label>
-                    <p className="text-sm text-muted-foreground">
-                      {isEmergencial 
-                        ? 'Cotações emergenciais: exatamente 1 fornecedor'
-                        : `Cotações normais: mínimo ${minFornecedores}, máximo ${maxFornecedores} fornecedores`
-                      }
-                    </p>
-                    <p className="text-sm font-medium mt-1">
-                      Fornecedores selecionados: {fornecedoresValidos} / {isEmergencial ? '1' : `${minFornecedores}-${maxFornecedores}`}
-                    </p>
-                    {!fornecedoresOk && (
-                      <p className="text-sm text-red-600 mt-1">
-                        {isEmergencial 
-                          ? 'Selecione exatamente 1 fornecedor'
-                          : `Selecione entre ${minFornecedores} e ${maxFornecedores} fornecedores`
-                        }
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    onClick={handleAddFornecedor}
-                    disabled={isEmergencial ? fornecedores.length >= 1 : fornecedores.length >= 6}
-                    size="sm"
-                  >
-                    <Users className="h-4 w-4 mr-2" />
-                    Adicionar Fornecedor
-                  </Button>
-                </div>
-
-                {fornecedores.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Nenhum fornecedor adicionado</p>
-                    <p className="text-sm">Clique em "Adicionar Fornecedor" para começar</p>
-                  </div>
+              {/* Nova Aba: Mapa Cotação */}
+              <TabsContent value="mapa-cotacao" className="mt-4 space-y-4">
+                {fornecedoresValidos === 0 ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Selecione pelo menos um fornecedor na aba "Itens & Fornecedores" para visualizar o mapa de cotação.
+                    </AlertDescription>
+                  </Alert>
                 ) : (
-                  <div className="space-y-4 max-h-[60vh] overflow-auto pr-3 pb-6">
-                    {fornecedores.map((fornecedor, index) => {
-                      const partner = fornecedor.fornecedor_id 
-                        ? partnersMap.get(fornecedor.fornecedor_id) 
-                        : null;
-                      
-                      return (
-                        <Card key={fornecedor.id}>
-                          <CardHeader className="pb-3">
-                            <div className="flex justify-between items-center">
-                              <CardTitle className="text-base">
-                                Fornecedor {index + 1}
-                                {partner && ` - ${partner.nome_fantasia || partner.razao_social}`}
-                              </CardTitle>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveFornecedor(fornecedor.id)}
-                                disabled={isEmergencial && fornecedores.length === 1}
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </CardHeader>
-                          <CardContent className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label>Fornecedor *</Label>
-                                <Select
-                                  value={fornecedor.fornecedor_id}
-                                  onValueChange={(value) => 
-                                    handleUpdateFornecedor(fornecedor.id, 'fornecedor_id', value)
-                                  }
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Selecione um fornecedor" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {fornecedoresDisponiveis.length === 0 ? (
-                                      <SelectItem value="no-suppliers" disabled>
-                                        Nenhum fornecedor disponível
-                                      </SelectItem>
-                                    ) : (
-                                      fornecedoresDisponiveis.map((fd: any) => {
-                                        const p = partnersMap.get(fd.partner_id);
-                                        const displayName = p?.nome_fantasia || p?.razao_social || `Fornecedor ${fd.id.substring(0, 8)}`;
-                                        return (
-                                          <SelectItem key={fd.id} value={fd.id}>
-                                            {displayName}
-                                          </SelectItem>
-                                        );
-                                      })
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-4">
+                      <Label>Mapa de Cotação - Comparativo de Valores</Label>
+                      <Badge variant="secondary">{itensSelecionados.size} itens selecionados</Badge>
+                    </div>
 
-                            <div className="space-y-2">
-                              <Label>Observações</Label>
-                              <Textarea
-                                value={fornecedor.observacoes || ''}
-                                onChange={(e) => 
-                                  handleUpdateFornecedor(fornecedor.id, 'observacoes', e.target.value)
-                                }
-                                placeholder="Observações sobre este fornecedor"
-                                rows={2}
-                              />
+                    <div className="max-h-[60vh] overflow-auto rounded border">
+                      <div className="inline-block min-w-full align-middle">
+                        <div className="border rounded-lg">
+                          {/* Cabeçalho Fixo */}
+                          <div className="grid border-b bg-muted/50 sticky top-0 z-10" 
+                               style={{ gridTemplateColumns: `250px repeat(${fornecedores.filter(f => f.fornecedor_id).length}, minmax(280px, 1fr))` }}>
+                            {/* Coluna de Itens */}
+                            <div className="p-3 font-medium text-sm border-r">
+                              Item
                             </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                            {/* Colunas de Fornecedores */}
+                            {fornecedores.filter(f => f.fornecedor_id).map((f) => {
+                              const partner = partnersMap.get(f.fornecedor_id);
+                              const displayName = partner?.nome_fantasia || partner?.razao_social || `Fornecedor ${f.id.substring(0, 8)}`;
+                              return (
+                                <div key={f.id} className="p-3 font-medium text-sm border-r last:border-r-0 text-center">
+                                  <div className="font-semibold">{displayName}</div>
+                                  {partner?.cnpj && (
+                                    <div className="text-xs text-muted-foreground mt-1">{partner.cnpj}</div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Linhas de Itens */}
+                          {itensAgrupados
+                            .filter((item) => itensSelecionados.has(getItemKey(item)))
+                            .map((item) => {
+                              const itemKey = getItemKey(item);
+                              const fornecedoresValidosList = fornecedores.filter(f => f.fornecedor_id);
+                              
+                              // Calcular menor e maior valor
+                              let lowestValue: number | null = null;
+                              let highestValue: number | null = null;
+                              let lowestSupplierId: string | null = null;
+                              let highestSupplierId: string | null = null;
+
+                              fornecedoresValidosList.forEach((f) => {
+                                const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                                if (cell) {
+                                  const total = valorItemCalculado(cell);
+                                  if (total > 0) {
+                                    if (lowestValue === null || total < lowestValue) {
+                                      lowestValue = total;
+                                      lowestSupplierId = f.id;
+                                    }
+                                    if (highestValue === null || total > highestValue) {
+                                      highestValue = total;
+                                      highestSupplierId = f.id;
+                                    }
+                                  }
+                                }
+                              });
+
+                              return (
+                                <div key={itemKey} className="border-b last:border-b-0">
+                                  {/* Linha Principal do Item */}
+                                  <div className="grid border-b" 
+                                       style={{ gridTemplateColumns: `250px repeat(${fornecedoresValidosList.length}, minmax(280px, 1fr))` }}>
+                                    {/* Coluna de Item (Fixa) */}
+                                    <div className="p-3 border-r bg-muted/30">
+                                      <div className="font-medium text-sm">{item.material_nome}</div>
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        {item.material_codigo || '—'} • {item.quantidade_total.toLocaleString('pt-BR')} {item.unidade_medida}
+                                      </div>
+                                    </div>
+
+                                    {/* Colunas de Fornecedores */}
+                                    {fornecedoresValidosList.map((f) => {
+                                      const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                                      const isLowest = f.id === lowestSupplierId && lowestValue !== null;
+                                      const isHighest = f.id === highestSupplierId && highestValue !== null && lowestSupplierId !== highestSupplierId;
+                                      const isWinner = cell?.is_vencedor;
+
+                                      return (
+                                        <div
+                                          key={f.id}
+                                          className={`p-3 border-r last:border-r-0 space-y-2 ${
+                                            isLowest ? 'bg-green-50 dark:bg-green-950/20' : ''
+                                          } ${
+                                            isHighest ? 'bg-red-50 dark:bg-red-950/20' : ''
+                                          } ${
+                                            isWinner ? 'ring-2 ring-green-500' : ''
+                                          }`}
+                                        >
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div className="col-span-2">
+                                              <Label className="text-xs">Qtd. ofertada</Label>
+                                              <Input
+                                                type="number"
+                                                value={cell?.quantidade_ofertada ?? item.quantidade_total}
+                                                onChange={(e) =>
+                                                  handleUpdateMapaValor(
+                                                    f.id,
+                                                    item,
+                                                    'quantidade_ofertada',
+                                                    parseFloat(e.target.value) || 0
+                                                  )
+                                                }
+                                                className="h-8 text-sm"
+                                              />
+                                            </div>
+                                            <div>
+                                              <Label className="text-xs">Preço *</Label>
+                                              <Input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                value={cell?.valor_unitario ?? 0}
+                                                onChange={(e) =>
+                                                  handleUpdateMapaValor(
+                                                    f.id,
+                                                    item,
+                                                    'valor_unitario',
+                                                    parseFloat(e.target.value) || 0
+                                                  )
+                                                }
+                                                className="h-8 text-sm"
+                                                required
+                                              />
+                                            </div>
+                                            <div>
+                                              <Label className="text-xs">Desconto (%)</Label>
+                                              <Input
+                                                type="number"
+                                                step="0.01"
+                                                min="0"
+                                                max="100"
+                                                value={cell?.desconto_percentual ?? 0}
+                                                onChange={(e) =>
+                                                  handleUpdateMapaValor(
+                                                    f.id,
+                                                    item,
+                                                    'desconto_percentual',
+                                                    parseFloat(e.target.value) || 0
+                                                  )
+                                                }
+                                                className="h-8 text-sm"
+                                              />
+                                            </div>
+                                            <div>
+                                              <Label className="text-xs">Prazo (dias) *</Label>
+                                              <Input
+                                                type="number"
+                                                min="0"
+                                                value={cell?.prazo_entrega_dias ?? 0}
+                                                onChange={(e) =>
+                                                  handleUpdateMapaValor(
+                                                    f.id,
+                                                    item,
+                                                    'prazo_entrega_dias',
+                                                    parseInt(e.target.value) || 0
+                                                  )
+                                                }
+                                                className="h-8 text-sm"
+                                                required
+                                              />
+                                            </div>
+                                            <div className="col-span-2">
+                                              <Label className="text-xs">Condição Comercial *</Label>
+                                              <Input
+                                                value={cell?.condicao_pagamento ?? ''}
+                                                onChange={(e) =>
+                                                  handleUpdateMapaValor(
+                                                    f.id,
+                                                    item,
+                                                    'condicao_pagamento',
+                                                    e.target.value
+                                                  )
+                                                }
+                                                placeholder="Ex: 30/60 dias"
+                                                className="h-8 text-sm"
+                                                required
+                                              />
+                                            </div>
+                                          </div>
+
+                                          {/* Valor Final Calculado */}
+                                          {cell && (cell.valor_unitario > 0 || cell.quantidade_ofertada > 0) && (
+                                            <div className="pt-2 border-t">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-xs text-muted-foreground">Total</span>
+                                                <span className={`text-sm font-semibold ${
+                                                  isLowest ? 'text-green-600' : ''
+                                                } ${
+                                                  isHighest ? 'text-red-600' : ''
+                                                }`}>
+                                                  R$ {valorItemCalculado(cell).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </span>
+                                              </div>
+                                              {isLowest && (
+                                                <Badge variant="secondary" className="mt-1 text-xs flex items-center gap-1 w-full justify-center">
+                                                  <TrendingDown className="h-3 w-3" />
+                                                  Menor
+                                                </Badge>
+                                              )}
+                                              {isHighest && !isLowest && (
+                                                <Badge variant="destructive" className="mt-1 text-xs flex items-center gap-1 w-full justify-center">
+                                                  <TrendingUp className="h-3 w-3" />
+                                                  Maior
+                                                </Badge>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          {/* Checkbox Vencedor */}
+                                          <div className="pt-2">
+                                            <div className="flex items-center space-x-2">
+                                              <Checkbox
+                                                checked={isWinner || false}
+                                                onCheckedChange={(checked) =>
+                                                  handleUpdateMapaValor(
+                                                    f.id,
+                                                    item,
+                                                    'is_vencedor',
+                                                    Boolean(checked)
+                                                  )
+                                                }
+                                              />
+                                              <Label className="text-xs cursor-pointer">
+                                                Marcar como vencedor
+                                              </Label>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </TabsContent>
+
 
               <TabsContent value="rateio" className="mt-4">
                 <div className="space-y-4">
