@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -44,7 +44,13 @@ import {
   Calendar,
   Zap,
   TrendingDown,
-  TrendingUp
+  TrendingUp,
+  MapPin,
+  Trophy,
+  PieChart,
+  AlertTriangle,
+  CheckCircle2,
+  Info
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
@@ -56,6 +62,7 @@ import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useActiveProjects } from '@/hooks/useProjects';
 import { useUsers } from '@/hooks/useUsers';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface ModalGerarCotacaoProps {
   isOpen: boolean;
@@ -70,6 +77,7 @@ interface RequisicaoData {
   projeto_id?: string;
   tipo_requisicao?: string;
   prioridade?: string;
+  local_entrega?: string;
   itens: RequisicaoItem[];
 }
 
@@ -180,6 +188,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   // Fornecedores
   const [fornecedores, setFornecedores] = useState<FornecedorCotacao[]>([]);
   const [fornecedoresDisponiveis, setFornecedoresDisponiveis] = useState<any[]>([]);
+  const [buscaFornecedor, setBuscaFornecedor] = useState<string>('');
 
   // Mapa item x fornecedor (dados do mapa de cotação)
   // Chave: material_id + tipo_requisicao (para diferenciar o mesmo material em tipos diferentes)
@@ -259,6 +268,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   
   // Rateio
   const [rateio, setRateio] = useState<RateioItem[]>([]);
+  
+  // Modal de Informações Adicionais do Fornecedor
+  const [fornecedorModalAberto, setFornecedorModalAberto] = useState(false);
+  const [fornecedorSelecionadoModal, setFornecedorSelecionadoModal] = useState<string | null>(null);
 
   // Criar string estável a partir de requisicoesIds para usar como dependência
   const requisicoesIdsKey = useMemo(() => {
@@ -403,6 +416,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
             projeto_id: requisicao.projeto_id,
             tipo_requisicao: requisicao.tipo_requisicao,
             prioridade: requisicao.prioridade,
+            local_entrega: requisicao.local_entrega,
             itens,
           });
         }
@@ -476,57 +490,85 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         }));
 
         // Carregar fornecedores disponíveis
+        // Primeiro, carregar todos os partners ativos do tipo 'fornecedor'
         try {
-          const fornecedoresResult = await EntityService.list({
-            schema: 'compras',
-            table: 'fornecedores_dados',
+          // Carregar todos os partners ativos
+          const partnersResult = await EntityService.list({
+            schema: 'public',
+            table: 'partners',
             companyId: selectedCompany.id,
-            filters: { status: 'ativo' },
+            filters: { ativo: true },
             page: 1,
-            pageSize: 100,
+            pageSize: 1000,
           });
-          const fornecedoresData = fornecedoresResult.data || [];
-          console.log('📦 [ModalGerarCotacao] Fornecedores carregados:', fornecedoresData.length, fornecedoresData);
-          console.log('📦 [ModalGerarCotacao] Partners disponíveis no mapa:', partnersMap.size);
-          console.log('📦 [ModalGerarCotacao] Partners data:', partnersData);
+          const allPartners = partnersResult.data || [];
           
-          // Log detalhado de cada fornecedor
-          fornecedoresData.forEach((fd: any, index: number) => {
-            const partner = fd.partner_id ? partnersMap.get(fd.partner_id) : null;
-            console.log(`📦 Fornecedor ${index + 1} (${fd.id.substring(0, 8)}...):`);
-            console.log(`   - partner_id: ${fd.partner_id || 'NÃO TEM'}`);
-            console.log(`   - partner_encontrado: ${!!partner}`);
-            console.log(`   - partner_nome: ${partner?.nome_fantasia || partner?.razao_social || partner?.nome || 'N/A'}`);
-            console.log(`   - contato_principal: ${fd.contato_principal || 'N/A'}`);
-            console.log(`   - email_cotacao: ${fd.email_cotacao || 'N/A'}`);
-            console.log(`   - cidade/uf: ${fd.cidade || 'N/A'}/${fd.uf || 'N/A'}`);
-            console.log(`   - status: ${fd.status || 'N/A'}`);
-            
-            // Verificar se o partner_id existe no mapa
-            if (fd.partner_id) {
-              const partnerKeys = Array.from(partnersMap.keys());
-              console.log(`   - partner_id existe no mapa? ${partnersMap.has(fd.partner_id)}`);
-              console.log(`   - IDs disponíveis no mapa: ${partnerKeys.slice(0, 5).join(', ')}...`);
-            }
-          });
+          // Filtrar apenas partners do tipo 'fornecedor'
+          const fornecedorPartners = allPartners.filter((p: any) => 
+            Array.isArray(p.tipo) && p.tipo.includes('fornecedor')
+          );
           
-          // Se não encontrou fornecedores ativos, tentar buscar todos (para debug)
-          if (fornecedoresData.length === 0) {
-            console.warn('⚠️ [ModalGerarCotacao] Nenhum fornecedor ativo encontrado, buscando todos...');
-            const todosFornecedoresResult = await EntityService.list({
+          console.log('📦 [ModalGerarCotacao] Partners do tipo fornecedor encontrados:', fornecedorPartners.length);
+          
+          // Carregar fornecedores_dados para obter dados adicionais
+          const fornecedoresDadosResult = await EntityService.list({
               schema: 'compras',
               table: 'fornecedores_dados',
               companyId: selectedCompany.id,
               filters: {},
               page: 1,
-              pageSize: 100,
-            });
-            const todosFornecedores = todosFornecedoresResult.data || [];
-            console.log('📦 [ModalGerarCotacao] Total de fornecedores (todos os status):', todosFornecedores.length);
-            setFornecedoresDisponiveis(todosFornecedores);
+            pageSize: 1000,
+          });
+          const fornecedoresDados = fornecedoresDadosResult.data || [];
+          
+          // Criar mapa: partner_id -> fornecedores_dados
+          const fornecedoresDadosMap = new Map(
+            fornecedoresDados.map((fd: any) => [fd.partner_id, fd])
+          );
+          
+          // Criar lista de fornecedores disponíveis combinando partners e fornecedores_dados
+          // Se o partner tem fornecedores_dados, usar os dados dele
+          // Se não tem, criar um objeto virtual com dados do partner
+          const fornecedoresDisponiveisList = fornecedorPartners.map((partner: any) => {
+            const fornecedorDados = fornecedoresDadosMap.get(partner.id);
+            
+            if (fornecedorDados) {
+              // Se tem fornecedores_dados, usar ele
+              return {
+                ...fornecedorDados,
+                partner_id: partner.id,
+                // Garantir que tem os dados do partner
+                partner_nome_fantasia: partner.nome_fantasia,
+                partner_razao_social: partner.razao_social,
+                partner_cnpj: partner.cnpj,
+              };
           } else {
-            setFornecedoresDisponiveis(fornecedoresData);
-          }
+              // Se não tem fornecedores_dados, criar objeto virtual
+              // Usar partner.id como id temporário (será substituído quando criar fornecedores_dados)
+              return {
+                id: `temp_${partner.id}`, // ID temporário
+                partner_id: partner.id,
+                company_id: selectedCompany.id,
+                contato_principal: (partner.contato as any)?.nome_contato || null,
+                email_cotacao: (partner.contato as any)?.email || null,
+                telefone: (partner.contato as any)?.telefone || (partner.contato as any)?.celular || null,
+                uf: (partner.endereco as any)?.estado || null,
+                cidade: (partner.endereco as any)?.cidade || null,
+                status: 'ativo', // Default para novos
+                // Dados do partner para exibição
+                partner_nome_fantasia: partner.nome_fantasia,
+                partner_razao_social: partner.razao_social,
+                partner_cnpj: partner.cnpj,
+                is_virtual: true, // Flag para indicar que precisa criar fornecedores_dados
+              };
+            }
+          });
+          
+          console.log('📦 [ModalGerarCotacao] Fornecedores disponíveis (partners + dados):', fornecedoresDisponiveisList.length);
+          console.log('📦 [ModalGerarCotacao] Fornecedores com dados:', fornecedoresDisponiveisList.filter((f: any) => !f.is_virtual).length);
+          console.log('📦 [ModalGerarCotacao] Fornecedores virtuais (sem dados):', fornecedoresDisponiveisList.filter((f: any) => f.is_virtual).length);
+          
+          setFornecedoresDisponiveis(fornecedoresDisponiveisList);
         } catch (error) {
           console.error('❌ [ModalGerarCotacao] Erro ao carregar fornecedores:', error);
           setFornecedoresDisponiveis([]);
@@ -583,31 +625,20 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
     itensSelecionadosArray.forEach((itemAgrupado) => {
       const itemKey = getItemKey(itemAgrupado);
-      // escolher fornecedor vencedor ou o de menor valor total
-      const melhorFornecedorId = (() => {
-        let chosen: string | null = null;
-        let best = Number.POSITIVE_INFINITY;
 
-        fornecedores.forEach((f) => {
+      // SEMPRE usar o fornecedor vencedor selecionado pelo comprador
+      const fornecedorVencedor = fornecedores.find((f) => {
           const cell = mapaFornecedorItens[f.id]?.[itemKey];
-          if (!cell) return;
-          if (cell.is_vencedor) {
-            chosen = f.id;
-            best = valorItemCalculado(cell);
+        return cell && cell.is_vencedor === true;
+      });
+
+      // Se não houver vencedor selecionado, pular este item (não deveria acontecer devido à validação)
+      if (!fornecedorVencedor) {
+        console.warn(`Item ${itemAgrupado.material_nome} não tem fornecedor vencedor selecionado`);
             return;
           }
-          const total = valorItemCalculado(cell);
-          if (total > 0 && total < best) {
-            best = total;
-            chosen = f.id;
-          }
-        });
 
-        return chosen;
-      })();
-
-      if (!melhorFornecedorId) return;
-
+      const melhorFornecedorId = fornecedorVencedor.id;
       const cellSelecionada = mapaFornecedorItens[melhorFornecedorId]?.[itemKey];
       if (!cellSelecionada) return;
 
@@ -741,10 +772,88 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     setFornecedores(fornecedores.filter(f => f.id !== id));
   };
 
-  const handleUpdateFornecedor = (id: string, field: keyof FornecedorCotacao, value: any) => {
+  const handleUpdateFornecedor = async (id: string, field: keyof FornecedorCotacao, value: any) => {
+    // Validação: não permitir fornecedores duplicados
+    if (field === 'fornecedor_id' && value) {
+      // Verificar se o fornecedor já foi selecionado em outra linha
+      const fornecedorJaSelecionado = fornecedores.some(
+        (f) => f.id !== id && f.fornecedor_id === value
+      );
+      
+      if (fornecedorJaSelecionado) {
+        toast({
+          title: "Atenção",
+          description: "Este fornecedor já foi adicionado à cotação. Não é possível adicionar o mesmo fornecedor duas vezes.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    
+    // Se está selecionando um fornecedor e o valor é um ID virtual (temp_*), criar fornecedores_dados
+    if (field === 'fornecedor_id' && value && value.startsWith('temp_')) {
+      const partnerId = value.replace('temp_', '');
+      const fornecedorVirtual = fornecedoresDisponiveis.find((fd: any) => fd.id === value);
+      
+      if (fornecedorVirtual && fornecedorVirtual.is_virtual) {
+        try {
+          // Criar fornecedores_dados para este partner
+          const novoFornecedorDados = await EntityService.create({
+            schema: 'compras',
+            table: 'fornecedores_dados',
+            companyId: selectedCompany?.id || '',
+            data: {
+              partner_id: partnerId,
+              company_id: selectedCompany?.id,
+              status: 'ativo',
+              contato_principal: fornecedorVirtual.contato_principal || null,
+              email_cotacao: fornecedorVirtual.email_cotacao || null,
+              telefone: fornecedorVirtual.telefone || null,
+              uf: fornecedorVirtual.uf || null,
+              cidade: fornecedorVirtual.cidade || null,
+            },
+          });
+          
+          // Atualizar a lista de fornecedores disponíveis para incluir o novo
+          const updatedFornecedor = {
+            ...novoFornecedorDados,
+            partner_id: partnerId,
+            partner_nome_fantasia: fornecedorVirtual.partner_nome_fantasia,
+            partner_razao_social: fornecedorVirtual.partner_razao_social,
+            partner_cnpj: fornecedorVirtual.partner_cnpj,
+          };
+          
+          setFornecedoresDisponiveis((prev: any[]) => 
+            prev.map((fd: any) => fd.id === value ? updatedFornecedor : fd)
+          );
+          
+          // Usar o novo ID real
+          value = novoFornecedorDados.id;
+          
+          toast({
+            title: "Sucesso",
+            description: "Dados de compras criados para o fornecedor.",
+          });
+        } catch (error: any) {
+          console.error('Erro ao criar fornecedores_dados:', error);
+          toast({
+            title: "Erro",
+            description: error.message || "Erro ao criar dados de compras para o fornecedor.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+    }
+    
     setFornecedores(fornecedores.map(f => 
       f.id === id ? { ...f, [field]: value } : f
     ));
+    
+    // Limpar busca após seleção
+    if (field === 'fornecedor_id') {
+      setBuscaFornecedor('');
+    }
   };
 
   const handleUpdateMapaValor = (
@@ -773,6 +882,60 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
       return { ...next };
     });
   };
+
+  // Função para selecionar fornecedor vencedor de um item (apenas um por item)
+  const handleSelectVencedor = useCallback((
+    fornecedorId: string,
+    item: ItemAgrupado,
+    checked: boolean
+  ) => {
+    const itemKey = getItemKey(item);
+    setMapaFornecedorItens((prev) => {
+      const next = { ...prev };
+      
+      // Se marcado, desmarcar todos os outros fornecedores deste item
+      if (checked) {
+        // Iterar sobre todas as chaves de fornecedores no mapa para desmarcar todos
+        Object.keys(next).forEach((fId) => {
+          if (fId !== fornecedorId && next[fId] && next[fId][itemKey]) {
+            next[fId][itemKey] = {
+              ...next[fId][itemKey],
+              is_vencedor: false,
+            };
+          }
+        });
+        
+        // Marcar o fornecedor selecionado
+        if (!next[fornecedorId]) next[fornecedorId] = {};
+        if (!next[fornecedorId][itemKey]) {
+          next[fornecedorId][itemKey] = {
+            quantidade_ofertada: item.quantidade_total,
+            valor_unitario: 0,
+            desconto_percentual: 0,
+            desconto_valor: 0,
+            prazo_entrega_dias: 0,
+            condicao_pagamento: '',
+            observacoes: '',
+            is_vencedor: false,
+          };
+        }
+        next[fornecedorId][itemKey] = {
+          ...next[fornecedorId][itemKey],
+          is_vencedor: true,
+        };
+      } else {
+        // Se desmarcado, apenas remover o vencedor
+        if (next[fornecedorId] && next[fornecedorId][itemKey]) {
+          next[fornecedorId][itemKey] = {
+            ...next[fornecedorId][itemKey],
+            is_vencedor: false,
+          };
+        }
+      }
+      
+      return { ...next };
+    });
+  }, []);
 
   const handleToggleItem = (item: ItemAgrupado) => {
     const itemKey = getItemKey(item);
@@ -824,27 +987,91 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
       return;
     }
 
-    // Validação de mapa por item
+    // Validar se cada fornecedor tem pelo menos um item com valor preenchido
+    const fornecedoresComId = fornecedores.filter(f => f.fornecedor_id);
+    const fornecedoresSemValor = fornecedoresComId.filter((fornecedor) => {
+      const temValorPreenchido = itensAgrupados
+        .filter((item) => itensSelecionados.has(getItemKey(item)))
+        .some((item) => {
+          const itemKey = getItemKey(item);
+          const cell = mapaFornecedorItens[fornecedor.id]?.[itemKey];
+          return cell && cell.valor_unitario && cell.valor_unitario > 0;
+        });
+      return !temValorPreenchido;
+    });
+
+    if (fornecedoresSemValor.length > 0) {
+      const fornecedorDados = fornecedoresSemValor.map((f) => {
+        const fd = fornecedoresDadosMap.get(f.fornecedor_id);
+        const partner = fd?.partner_id ? partnersMap.get(fd.partner_id) : null;
+        return partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+      }).join(', ');
+
+      toast({
+        title: "Erro",
+        description: `Cada fornecedor deve ter pelo menos um item com valor preenchido no mapa de cotação. Fornecedor(es) sem valor: ${fornecedorDados}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validação de mapa por item (cada item deve ter pelo menos um fornecedor com valor)
     const itensSelecionadosArray = itensAgrupados.filter((i) => itensSelecionados.has(getItemKey(i)));
     for (const item of itensSelecionadosArray) {
-      let cobertura = 0;
       let temFornecedor = false;
       const itemKey = getItemKey(item);
-      fornecedores.forEach((f) => {
+      fornecedoresComId.forEach((f) => {
         const cell = mapaFornecedorItens[f.id]?.[itemKey];
         if (cell && cell.quantidade_ofertada > 0 && cell.valor_unitario > 0) {
           temFornecedor = true;
-          cobertura += cell.quantidade_ofertada;
         }
       });
 
       if (!temFornecedor) {
         toast({
           title: "Erro",
-          description: `Item ${item.material_nome} sem nenhuma oferta de fornecedor.`,
+          description: `Item ${item.material_nome} sem nenhuma oferta de fornecedor com valor preenchido.`,
           variant: "destructive",
         });
         return;
+      }
+
+      // Verificar se o item tem um fornecedor vencedor selecionado
+      let temVencedor = false;
+      let fornecedorVencedorId: string | null = null;
+      fornecedoresComId.forEach((f) => {
+        const cell = mapaFornecedorItens[f.id]?.[itemKey];
+        if (cell && cell.is_vencedor) {
+          temVencedor = true;
+          fornecedorVencedorId = f.id;
+        }
+      });
+      if (!temVencedor) {
+        toast({
+          title: "Erro",
+          description: `Selecione o fornecedor vencedor para o item "${item.material_nome}".`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Verificar se o vencedor não é o menor preço e se tem observações
+      if (fornecedorVencedorId && lowestSupplierId && fornecedorVencedorId !== lowestSupplierId) {
+        const fornecedorVencedor = fornecedores.find(f => f.id === fornecedorVencedorId);
+        if (!fornecedorVencedor?.observacoes || fornecedorVencedor.observacoes.trim() === '') {
+          const fornecedorDados = fornecedorVencedor?.fornecedor_id 
+            ? fornecedoresDadosMap.get(fornecedorVencedor.fornecedor_id)
+            : null;
+          const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+          const nomeFornecedor = partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+          
+          toast({
+            title: "Erro",
+            description: `O fornecedor vencedor "${nomeFornecedor}" para o item "${item.material_nome}" não é o menor preço. É obrigatório preencher as observações justificando a escolha.`,
+            variant: "destructive",
+          });
+          return;
+        }
       }
 
       if (cobertura < item.quantidade_total) {
@@ -1033,6 +1260,39 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   const fornecedoresValidos = fornecedores.filter(f => f.fornecedor_id).length;
   const fornecedoresOk = fornecedoresValidos >= minFornecedores && fornecedoresValidos <= maxFornecedores;
 
+  // Validação: Verificar se cada fornecedor tem pelo menos um item com valor preenchido
+  const validarFornecedoresComValores = useMemo(() => {
+    if (fornecedoresValidos === 0) return false;
+    
+    const fornecedoresComId = fornecedores.filter(f => f.fornecedor_id);
+    
+    // Verificar se cada fornecedor tem pelo menos um item com valor_unitario preenchido
+    return fornecedoresComId.every((fornecedor) => {
+      // Verificar se há pelo menos um item selecionado com valor preenchido para este fornecedor
+      const temValorPreenchido = itensAgrupados
+        .filter((item) => itensSelecionados.has(getItemKey(item)))
+        .some((item) => {
+          const itemKey = getItemKey(item);
+          const cell = mapaFornecedorItens[fornecedor.id]?.[itemKey];
+          return cell && cell.valor_unitario && cell.valor_unitario > 0;
+        });
+      
+      return temValorPreenchido;
+    });
+  }, [fornecedores, fornecedoresValidos, itensAgrupados, itensSelecionados, mapaFornecedorItens]);
+
+  // Validação completa para habilitar botão
+  const podeEnviarAprovacao = useMemo(() => {
+    // Verificar requisitos básicos
+    if (itensSelecionados.size === 0) return false;
+    if (!fornecedoresOk) return false;
+    
+    // Verificar se todos os fornecedores têm pelo menos um item com valor
+    if (!validarFornecedoresComValores) return false;
+    
+    return true;
+  }, [itensSelecionados.size, fornecedoresOk, validarFornecedoresComValores]);
+
   // Calcular contexto da seleção para o header dinâmico
   const contextoSelecao = useMemo(() => {
     if (requisicoes.length === 0) {
@@ -1041,6 +1301,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         totalRequisicoes: 0,
         totalItens: itensAgrupados.length,
         numerosRequisicoes: [],
+        locaisEntrega: [],
       };
     }
 
@@ -1056,12 +1317,20 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     const numerosRequisicoes = requisicoes.map(r => r.numero_requisicao);
     const totalItens = itensSelecionados.size || itensAgrupados.length;
 
+    // Coletar locais de entrega das requisições de compra direta
+    const locaisEntrega = requisicoes
+      .filter(r => r.tipo_requisicao === 'compra_direta' && r.local_entrega)
+      .map(r => r.local_entrega)
+      .filter((local, index, self) => self.indexOf(local) === index) // Remover duplicatas
+      .filter(Boolean) as string[];
+
     return {
       tipoCompra: tipoPrincipal,
       totalRequisicoes: requisicoes.length,
       totalItens,
       numerosRequisicoes: numerosRequisicoes.slice(0, 3), // Mostrar até 3 números
       temMaisRequisicoes: numerosRequisicoes.length > 3,
+      locaisEntrega,
     };
   }, [requisicoes, itensAgrupados, itensSelecionados]);
 
@@ -1197,6 +1466,32 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                     rows={4}
                   />
                 </div>
+
+                {/* Campo destacado de Local de Entrega para Compra Direta */}
+                {contextoSelecao.locaisEntrega.length > 0 && (
+                  <div className="border-2 border-primary/30 rounded-lg p-4 bg-primary/5 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5 text-primary" />
+                      <Label className="text-base font-semibold text-primary">
+                        Local de Entrega - Compra Direta
+                      </Label>
+                    </div>
+                    <div className="space-y-2">
+                      {contextoSelecao.locaisEntrega.map((local, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 p-3 bg-background border border-primary/20 rounded-md"
+                        >
+                          <MapPin className="h-4 w-4 text-primary flex-shrink-0" />
+                          <span className="font-medium text-sm">{local}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Informação fornecida pelo solicitante na requisição de compra direta
+                    </p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="requisicoes" className="mt-4">
@@ -1352,6 +1647,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                 <TableHead className="w-[50px]"></TableHead>
                                 <TableHead>Fornecedor</TableHead>
                                 <TableHead className="w-[150px]">CNPJ</TableHead>
+                                <TableHead className="w-[150px]">Região</TableHead>
                                 <TableHead className="w-[120px]">Tipo</TableHead>
                                 <TableHead className="w-[100px]">Status</TableHead>
                               </TableRow>
@@ -1383,9 +1679,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                     <TableCell>
                                       <div className="flex items-center gap-2">
                                         {partner ? (
+                                          <div className="flex flex-col">
                                           <span className={isBlocked ? 'opacity-50' : ''}>
                                             {partner.nome_fantasia || partner.razao_social}
                                           </span>
+                                          </div>
                                         ) : (
                                           <Select
                                             value={fornecedor.fornecedor_id}
@@ -1393,44 +1691,136 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                               handleUpdateFornecedor(fornecedor.id, 'fornecedor_id', value)
                                             }
                                           >
-                                            <SelectTrigger className="w-[200px]">
-                                              <SelectValue placeholder="Selecione um fornecedor" />
+                                            <SelectTrigger className="w-[300px]">
+                                              <SelectValue placeholder="Selecione um fornecedor">
+                                                {(() => {
+                                                  if (!fornecedor.fornecedor_id) return null;
+                                                  const fdSelecionado = fornecedoresDisponiveis.find((fd: any) => fd.id === fornecedor.fornecedor_id);
+                                                  if (!fdSelecionado) return null;
+                                                  
+                                                  const partnerName = fdSelecionado.partner_nome_fantasia || 
+                                                                    fdSelecionado.partner_razao_social ||
+                                                                    (fdSelecionado.partner_id ? partnersMap.get(fdSelecionado.partner_id)?.nome_fantasia : null) ||
+                                                                    (fdSelecionado.partner_id ? partnersMap.get(fdSelecionado.partner_id)?.razao_social : null);
+                                                  
+                                                  return partnerName || 
+                                                         fdSelecionado.contato_principal || 
+                                                         (fdSelecionado.email_cotacao ? fdSelecionado.email_cotacao.split('@')[0] : null) ||
+                                                         `Fornecedor ${fdSelecionado.id.substring(0, 8)}`;
+                                                })()}
+                                              </SelectValue>
                                             </SelectTrigger>
-                                            <SelectContent>
+                                            <SelectContent className="max-h-[400px]">
+                                              {/* Campo de busca */}
+                                              <div className="p-2 border-b">
+                                                <Input
+                                                  placeholder="Buscar fornecedor..."
+                                                  value={buscaFornecedor}
+                                                  onChange={(e) => setBuscaFornecedor(e.target.value)}
+                                                  className="h-9"
+                                                  onKeyDown={(e) => e.stopPropagation()}
+                                                />
+                                              </div>
+                                              
+                                              <ScrollArea className="max-h-[350px]">
                                               {(() => {
-                                                console.log('🔍 [SelectContent] Renderizando com', fornecedoresDisponiveis.length, 'fornecedores');
-                                                if (fornecedoresDisponiveis.length === 0) {
+                                                  // Filtrar fornecedores já selecionados
+                                                  const fornecedoresSelecionadosIds = new Set(
+                                                    fornecedores
+                                                      .filter((f) => f.id !== fornecedor.id && f.fornecedor_id)
+                                                      .map((f) => f.fornecedor_id)
+                                                  );
+                                                  
+                                                  // Filtrar por busca e remover já selecionados
+                                                  const fornecedoresFiltrados = fornecedoresDisponiveis.filter((fd: any) => {
+                                                    // Não mostrar se já está selecionado
+                                                    if (fornecedoresSelecionadosIds.has(fd.id)) {
+                                                      return false;
+                                                    }
+                                                    
+                                                    // Filtrar por busca
+                                                    if (buscaFornecedor.trim()) {
+                                                      const busca = buscaFornecedor.toLowerCase();
+                                                      const partnerName = (fd.partner_nome_fantasia || 
+                                                                          fd.partner_razao_social ||
+                                                                          (fd.partner_id ? partnersMap.get(fd.partner_id)?.nome_fantasia : null) ||
+                                                                          (fd.partner_id ? partnersMap.get(fd.partner_id)?.razao_social : null) || '').toLowerCase();
+                                                      const cnpj = (fd.partner_cnpj || 
+                                                                   (fd.partner_id ? partnersMap.get(fd.partner_id)?.cnpj : null) || '').toLowerCase();
+                                                      const cidade = (fd.cidade || '').toLowerCase();
+                                                      const uf = (fd.uf || '').toLowerCase();
+                                                      const email = (fd.email_cotacao || '').toLowerCase();
+                                                      
+                                                      return partnerName.includes(busca) ||
+                                                             cnpj.includes(busca) ||
+                                                             cidade.includes(busca) ||
+                                                             uf.includes(busca) ||
+                                                             email.includes(busca);
+                                                    }
+                                                    
+                                                    return true;
+                                                  });
+                                                  
+                                                  if (fornecedoresFiltrados.length === 0) {
                                                   return (
-                                                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                                                      Nenhum fornecedor disponível
+                                                      <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                                                        {buscaFornecedor.trim() 
+                                                          ? 'Nenhum fornecedor encontrado com o termo buscado'
+                                                          : 'Nenhum fornecedor disponível'}
                                                     </div>
                                                   );
                                                 }
-                                                return fornecedoresDisponiveis.map((fd: any) => {
-                                                  const p = fd.partner_id ? partnersMap.get(fd.partner_id) : null;
+                                                  
+                                                  return fornecedoresFiltrados.map((fd: any) => {
+                                                    // Usar dados do partner que já estão no objeto ou buscar do mapa
+                                                    const partnerName = fd.partner_nome_fantasia || 
+                                                                      fd.partner_razao_social ||
+                                                                      (fd.partner_id ? partnersMap.get(fd.partner_id)?.nome_fantasia : null) ||
+                                                                      (fd.partner_id ? partnersMap.get(fd.partner_id)?.razao_social : null);
+                                                    
                                                   // Tentar várias fontes para o nome do fornecedor
                                                   const displayName = 
-                                                    p?.nome_fantasia || 
-                                                    p?.razao_social || 
-                                                    p?.nome ||
+                                                      partnerName ||
                                                     fd.contato_principal || 
                                                     (fd.email_cotacao ? fd.email_cotacao.split('@')[0] : null) ||
                                                     `Fornecedor ${fd.id.substring(0, 8)}`;
                                                   
-                                                  console.log(`🔍 [SelectItem] Renderizando fornecedor ${fd.id.substring(0, 8)} com nome: ${displayName}`);
+                                                    const isVirtual = fd.is_virtual === true;
+                                                    
+                                                    // Obter região (cidade/UF) - sempre mostrar UF quando disponível
+                                                    const partnerEndereco = fd.partner_id ? (partnersMap.get(fd.partner_id)?.endereco as any) : null;
+                                                    const cidade = fd.cidade || partnerEndereco?.cidade || null;
+                                                    const uf = fd.uf || partnerEndereco?.estado || null;
+                                                    
+                                                    // Formatar região: sempre mostrar UF quando disponível
+                                                    let regiao = null;
+                                                    if (cidade && uf) {
+                                                      regiao = `${cidade}/${uf}`;
+                                                    } else if (cidade) {
+                                                      regiao = cidade;
+                                                    } else if (uf) {
+                                                      regiao = uf;
+                                                    }
                                                   
                                                   return (
-                                                    <SelectItem key={fd.id} value={fd.id}>
-                                                      <div className="flex flex-col">
-                                                        <span>{displayName}</span>
-                                                        {(fd.uf && fd.cidade) && (
-                                                          <span className="text-xs text-muted-foreground">
-                                                            {fd.cidade}/{fd.uf}
-                                                          </span>
+                                                      <SelectItem key={fd.id} value={fd.id} disabled={false}>
+                                                        <div className="flex flex-col gap-1">
+                                                          <div className="flex items-center gap-2">
+                                                            <span className="font-medium">{displayName}</span>
+                                                            {isVirtual && (
+                                                              <Badge variant="outline" className="text-xs h-5 px-1.5 text-amber-600 border-amber-600">
+                                                                Sem dados
+                                                              </Badge>
+                                                            )}
+                                                          </div>
+                                                          {regiao && (
+                                                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                              <span>📍 {regiao}</span>
+                                                            </div>
                                                         )}
                                                         {fd.email_cotacao && (
                                                           <span className="text-xs text-muted-foreground">
-                                                            {fd.email_cotacao}
+                                                              ✉️ {fd.email_cotacao}
                                                           </span>
                                                         )}
                                                       </div>
@@ -1438,6 +1828,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                                   );
                                                 });
                                               })()}
+                                              </ScrollArea>
                                             </SelectContent>
                                           </Select>
                                         )}
@@ -1453,6 +1844,23 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                     </TableCell>
                                     <TableCell className="font-mono text-xs text-muted-foreground">
                                       {partner?.cnpj || '—'}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-muted-foreground">
+                                      {(() => {
+                                        const partnerEndereco = (partner?.endereco as any) || null;
+                                        const cidade = fd?.cidade || partnerEndereco?.cidade || null;
+                                        const uf = fd?.uf || partnerEndereco?.estado || null;
+                                        
+                                        // Sempre mostrar UF quando disponível
+                                        if (cidade && uf) {
+                                          return `${cidade}/${uf}`;
+                                        } else if (cidade) {
+                                          return cidade;
+                                        } else if (uf) {
+                                          return uf;
+                                        }
+                                        return '—';
+                                      })()}
                                     </TableCell>
                                     <TableCell>
                                       <Badge variant="outline" className="text-xs">
@@ -1532,38 +1940,66 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                       <Badge variant="secondary">{itensSelecionados.size} itens selecionados</Badge>
                     </div>
 
-                    {/* Tabela Principal: Itens x Fornecedores */}
-                    <div className="max-h-[50vh] overflow-auto rounded border">
-                      <div className="inline-block min-w-full align-middle">
-                        <div className="border rounded-lg">
-                          {/* Cabeçalho Fixo */}
-                          <div className="grid border-b bg-muted/50 sticky top-0 z-10" 
-                               style={{ gridTemplateColumns: `200px repeat(${fornecedores.filter(f => f.fornecedor_id).length}, 1fr)` }}>
-                            {/* Coluna de Itens */}
-                            <div className="p-3 font-medium text-sm border-r">
-                              Item / Descrição
+                    {/* Tabela Principal: Itens x Fornecedores com Scroll Horizontal */}
+                    <div className="rounded border bg-background overflow-hidden">
+                      <div className="relative">
+                        {/* Container com scroll horizontal e vertical */}
+                        <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+                          <div className="inline-block min-w-full">
+                            <div className="border rounded-lg bg-background">
+                              {/* Cabeçalho Fixo - Apenas primeira linha congelada */}
+                              <div className="flex border-b bg-muted/50 sticky top-0 z-30">
+                                {/* Coluna de Itens Fixa com fundo sólido */}
+                                <div className="sticky left-0 z-40 bg-background p-3 font-medium text-sm border-r w-[250px] flex-shrink-0 shadow-lg">
+                                  <div className="bg-background">Item / Descrição</div>
                             </div>
-                            {/* Colunas de Fornecedores - 3 colunas cada */}
+                                {/* Container de Fornecedores com Scroll */}
+                                <div className="flex">
                             {fornecedores.filter(f => f.fornecedor_id).map((f) => {
                               // Buscar fornecedor_dados pelo fornecedor_id
                               const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
                               // Buscar partner pelo partner_id do fornecedor_dados
                               const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
                               const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.id.substring(0, 8)}`;
+                                    
+                                    // Verificar se este fornecedor tem pelo menos um item com valor preenchido
+                                    const temValoresPreenchidos = itensAgrupados
+                                      .filter((item) => itensSelecionados.has(getItemKey(item)))
+                                      .some((item) => {
+                                        const cell = mapaFornecedorItens[f.id]?.[getItemKey(item)];
+                                        return cell && cell.valor_unitario && cell.valor_unitario > 0;
+                                      });
+                                    
                               return (
-                                <div key={f.id} className="p-2 font-medium text-xs border-r last:border-r-0 text-center bg-muted/30">
-                                  <div className="font-semibold text-sm">{displayName}</div>
+                                      <div key={f.id} className="p-2 font-medium text-xs border-r last:border-r-0 text-center bg-muted/30 w-[300px] flex-shrink-0">
+                                        <div 
+                                          className={`font-semibold text-sm mb-1 truncate ${
+                                            temValoresPreenchidos 
+                                              ? 'cursor-pointer hover:text-primary hover:underline transition-colors' 
+                                              : ''
+                                          }`}
+                                          title={temValoresPreenchidos ? `Clique para editar informações de ${displayName}` : displayName}
+                                          onClick={() => {
+                                            if (temValoresPreenchidos) {
+                                              setFornecedorSelecionadoModal(f.id);
+                                              setFornecedorModalAberto(true);
+                                            }
+                                          }}
+                                        >
+                                          {displayName}
+                                        </div>
                                   {partner?.cnpj && (
-                                    <div className="text-xs text-muted-foreground mt-1">{partner.cnpj}</div>
-                                  )}
-                                  <div className="grid grid-cols-3 gap-1 mt-2 text-xs font-normal">
-                                    <div className="bg-background/50 p-1 rounded">Unit.</div>
-                                    <div className="bg-background/50 p-1 rounded">Qtd.</div>
-                                    <div className="bg-background/50 p-1 rounded">Total</div>
+                                          <div className="text-xs text-muted-foreground mb-2">{partner.cnpj}</div>
+                                        )}
+                                        <div className="grid grid-cols-3 gap-1 text-xs font-normal">
+                                          <div className="bg-background/50 p-1.5 rounded text-center border">Valor</div>
+                                          <div className="bg-background/50 p-1.5 rounded text-center border">Qtd.</div>
+                                          <div className="bg-background/50 p-1.5 rounded text-center border">Total</div>
                                   </div>
                                 </div>
                               );
                             })}
+                                </div>
                           </div>
 
                           {/* Linhas de Itens */}
@@ -1597,33 +2033,58 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                               });
 
                               return (
-                                <div key={itemKey} className="border-b last:border-b-0">
-                                  <div className="grid" 
-                                       style={{ gridTemplateColumns: `200px repeat(${fornecedoresValidosList.length}, 1fr)` }}>
-                                    {/* Coluna de Item (Fixa) */}
-                                    <div className="p-3 border-r bg-muted/20">
+                                    <div key={itemKey} className="flex border-b last:border-b-0 relative">
+                                      {/* Coluna de Item Fixa com fundo sólido para não mostrar fornecedores por trás */}
+                                      <div className="sticky left-0 z-30 p-3 border-r bg-background w-[250px] flex-shrink-0 shadow-lg">
+                                        <div className="bg-background">
                                       <div className="font-medium text-sm">{item.material_nome}</div>
                                       <div className="text-xs text-muted-foreground mt-1">
                                         {item.material_codigo || '—'} • {item.quantidade_total.toLocaleString('pt-BR')} {item.unidade_medida}
+                                          </div>
+                                          {/* Indicador de Fornecedor Vencedor */}
+                                          {(() => {
+                                            const vencedor = fornecedoresValidosList.find((f) => {
+                                              const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                                              return cell?.is_vencedor;
+                                            });
+                                            if (vencedor) {
+                                              const fornecedorDados = fornecedoresDadosMap.get(vencedor.fornecedor_id);
+                                              const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+                                              const displayName = partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+                                              return (
+                                                <div className="mt-2 flex items-center gap-1">
+                                                  <CheckCircle className="h-3 w-3 text-green-600" />
+                                                  <span className="text-xs text-green-600 font-medium">Vencedor: {displayName}</span>
+                                                </div>
+                                              );
+                                            }
+                                            return null;
+                                          })()}
                                       </div>
                                     </div>
 
-                                    {/* Colunas de Fornecedores - 3 campos cada */}
+                                      {/* Container de Fornecedores com Scroll - Mantém alinhamento perfeito */}
+                                      <div className="flex bg-background">
                                     {fornecedoresValidosList.map((f) => {
                                       const cell = mapaFornecedorItens[f.id]?.[itemKey];
                                       const isLowest = f.id === lowestSupplierId && lowestValue !== null;
                                       const isHighest = f.id === highestSupplierId && highestValue !== null && lowestSupplierId !== highestSupplierId;
                                       const valorTotal = cell ? valorItemCalculado(cell) : 0;
 
+                                          const isVencedor = cell?.is_vencedor || false;
+
                                       return (
                                         <div
                                           key={f.id}
-                                          className={`p-2 border-r last:border-r-0 ${
+                                              className={`p-2 border-r last:border-r-0 w-[300px] flex-shrink-0 bg-background ${
                                             isLowest ? 'bg-green-50 dark:bg-green-950/20' : ''
                                           } ${
                                             isHighest ? 'bg-red-50 dark:bg-red-950/20' : ''
+                                              } ${
+                                                isVencedor ? 'ring-2 ring-green-500 ring-offset-1 bg-green-50 dark:bg-green-950/30' : ''
                                           }`}
                                         >
+                                              <div className="space-y-2">
                                           <div className="grid grid-cols-3 gap-1">
                                             {/* Valor Unitário */}
                                             <div>
@@ -1631,7 +2092,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                                 type="number"
                                                 step="0.01"
                                                 min="0"
-                                                value={cell?.valor_unitario ?? 0}
+                                                      value={cell?.valor_unitario ?? ''}
                                                 onChange={(e) =>
                                                   handleUpdateMapaValor(
                                                     f.id,
@@ -1675,6 +2136,47 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                                   : '—'
                                                 }
                                               </span>
+                                                  </div>
+                                                </div>
+                                                
+                                                {/* Checkbox Vencedor */}
+                                                <div className="flex items-center justify-center pt-1 border-t">
+                                                  {(() => {
+                                                    // Verificar se algum outro fornecedor já é vencedor deste item
+                                                    const outroVencedor = fornecedoresValidosList.find((forn) => {
+                                                      if (forn.id === f.id) return false;
+                                                      const outraCell = mapaFornecedorItens[forn.id]?.[itemKey];
+                                                      return outraCell && outraCell.is_vencedor === true;
+                                                    });
+                                                    
+                                                    const isOutroVencedor = !!outroVencedor;
+                                                    const isEsteVencedor = cell?.is_vencedor || false;
+                                                    
+                                                    return (
+                                                      <div className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                          id={`vencedor-${itemKey}-${f.id}`}
+                                                          checked={isEsteVencedor}
+                                                          disabled={isOutroVencedor && !isEsteVencedor}
+                                                          onCheckedChange={(checked) => {
+                                                            if (!isOutroVencedor || checked) {
+                                                              handleSelectVencedor(f.id, item, checked as boolean);
+                                                            }
+                                                          }}
+                                                        />
+                                                        <Label
+                                                          htmlFor={`vencedor-${itemKey}-${f.id}`}
+                                                          className={`text-xs ${
+                                                            isOutroVencedor && !isEsteVencedor
+                                                              ? 'cursor-not-allowed text-muted-foreground opacity-50'
+                                                              : 'cursor-pointer'
+                                                          }`}
+                                                        >
+                                                          Vencedor
+                                                        </Label>
+                                                      </div>
+                                                    );
+                                                  })()}
                                             </div>
                                           </div>
                                         </div>
@@ -1684,9 +2186,82 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                 </div>
                               );
                             })}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
+
+                    {/* Seção de Soma Parcial por Fornecedor Vencedor */}
+                    {(() => {
+                      const fornecedoresVencedores = fornecedores
+                        .filter(f => f.fornecedor_id)
+                        .filter(f => {
+                          // Verificar se este fornecedor tem pelo menos um item vencedor
+                          return itensAgrupados
+                            .filter((item) => itensSelecionados.has(getItemKey(item)))
+                            .some((item) => {
+                              const itemKey = getItemKey(item);
+                              const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                              return cell && cell.is_vencedor === true;
+                            });
+                        });
+
+                      if (fornecedoresVencedores.length === 0) return null;
+
+                      return (
+                        <Card className="border-primary/20 bg-primary/5">
+                          <CardHeader>
+                            <CardTitle className="text-base">Resumo Parcial por Fornecedor Vencedor</CardTitle>
+                            <p className="text-sm text-muted-foreground">
+                              Valores parciais dos itens selecionados como vencedores para cada fornecedor
+                            </p>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {fornecedoresVencedores.map((f) => {
+                                const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
+                                const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+                                const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.id.substring(0, 8)}`;
+                                
+                                // Calcular subtotal PARCIAL (apenas itens onde este fornecedor é vencedor)
+                                const subtotalParcial = itensAgrupados
+                                  .filter((item) => itensSelecionados.has(getItemKey(item)))
+                                  .reduce((sum, item) => {
+                                    const itemKey = getItemKey(item);
+                                    const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                                    if (cell && cell.is_vencedor) {
+                                      return sum + valorItemCalculado(cell);
+                                    }
+                                    return sum;
+                                  }, 0);
+
+                                // Contar quantos itens este fornecedor é vencedor
+                                const qtdItensVencedores = itensAgrupados
+                                  .filter((item) => itensSelecionados.has(getItemKey(item)))
+                                  .filter((item) => {
+                                    const itemKey = getItemKey(item);
+                                    const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                                    return cell && cell.is_vencedor === true;
+                                  }).length;
+
+                                return (
+                                  <div key={f.id} className="p-4 border rounded-lg bg-background">
+                                    <div className="font-semibold text-sm mb-2">{displayName}</div>
+                                    <div className="text-xs text-muted-foreground mb-1">
+                                      {qtdItensVencedores} {qtdItensVencedores === 1 ? 'item vencedor' : 'itens vencedores'}
+                                    </div>
+                                    <div className="font-bold text-lg text-primary">
+                                      R$ {subtotalParcial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })()}
 
                     {/* Seção de Informações Adicionais por Fornecedor */}
                     <Card>
@@ -1702,8 +2277,20 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
                             const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.id.substring(0, 8)}`;
                             
-                            // Calcular subtotal dos itens deste fornecedor
-                            const subtotal = itensAgrupados
+                            // Calcular subtotal PARCIAL (apenas itens onde este fornecedor é vencedor)
+                            const subtotalParcial = itensAgrupados
+                              .filter((item) => itensSelecionados.has(getItemKey(item)))
+                              .reduce((sum, item) => {
+                                const itemKey = getItemKey(item);
+                                const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                                if (cell && cell.is_vencedor) {
+                                  return sum + valorItemCalculado(cell);
+                                }
+                                return sum;
+                              }, 0);
+
+                            // Calcular subtotal TOTAL (todos os itens cotados por este fornecedor)
+                            const subtotalTotal = itensAgrupados
                               .filter((item) => itensSelecionados.has(getItemKey(item)))
                               .reduce((sum, item) => {
                                 const cell = mapaFornecedorItens[f.id]?.[getItemKey(item)];
@@ -1714,13 +2301,22 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             const imposto = f.valor_imposto || 0;
                             const descontoPct = f.desconto_percentual || 0;
                             const descontoValor = f.desconto_valor || 0;
-                            const descontoCalculado = subtotal * (descontoPct / 100) + descontoValor;
-                            const total = subtotal + frete + imposto - descontoCalculado;
+                            // Desconto aplicado apenas sobre o subtotal PARCIAL (itens vencedores)
+                            const descontoCalculado = subtotalParcial * (descontoPct / 100) + descontoValor;
+                            const total = subtotalParcial + frete + imposto - descontoCalculado;
 
                             return (
                               <div key={f.id} className="border rounded-lg p-4 space-y-3">
                                 <div className="font-semibold text-sm mb-3 pb-2 border-b">
                                   {displayName}
+                                </div>
+                                
+                                {/* Resumo Parcial e Total */}
+                                <div className="p-3 bg-muted/30 rounded-lg mb-3">
+                                  <div className="text-xs text-muted-foreground mb-1">Subtotal Parcial (Itens Vencedores):</div>
+                                  <div className="font-bold text-lg text-primary">R$ {subtotalParcial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                  <div className="text-xs text-muted-foreground mt-2">Subtotal Total (Todos os Itens Cotados):</div>
+                                  <div className="font-semibold text-sm">R$ {subtotalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                                 </div>
                                 
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1802,8 +2398,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                 <div className="mt-4 pt-3 border-t">
                                   <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
                                     <div>
-                                      <span className="text-muted-foreground">Subtotal:</span>
-                                      <div className="font-semibold">R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                      <span className="text-muted-foreground">Subtotal Parcial:</span>
+                                      <div className="font-semibold">R$ {subtotalParcial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
                                     </div>
                                     <div>
                                       <span className="text-muted-foreground">Frete:</span>
@@ -1858,7 +2454,44 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
                                 {/* Observações */}
                                 <div className="mt-3">
-                                  <Label className="text-xs text-muted-foreground">Observações</Label>
+                                  {(() => {
+                                    // Verificar se este fornecedor tem algum item vencedor que não é o de menor preço
+                                    const fornecedoresValidosParaComparacao = fornecedores.filter(f => f.fornecedor_id);
+                                    const temItemVencedorNaoMenor = itensAgrupados
+                                      .filter((item) => itensSelecionados.has(getItemKey(item)))
+                                      .some((item) => {
+                                        const itemKey = getItemKey(item);
+                                        const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                                        if (!cell || !cell.is_vencedor) return false;
+                                        
+                                        // Calcular menor valor para este item
+                                        let menorValor: number | null = null;
+                                        fornecedoresValidosParaComparacao.forEach((forn) => {
+                                          const cellFornecedor = mapaFornecedorItens[forn.id]?.[itemKey];
+                                          if (cellFornecedor) {
+                                            const total = valorItemCalculado(cellFornecedor);
+                                            if (total > 0 && (menorValor === null || total < menorValor)) {
+                                              menorValor = total;
+                                            }
+                                          }
+                                        });
+                                        
+                                        const valorVencedor = valorItemCalculado(cell);
+                                        return menorValor !== null && valorVencedor > menorValor;
+                                      });
+                                    
+                                    const isObrigatorio = temItemVencedorNaoMenor;
+                                    
+                                    return (
+                                      <>
+                                        <Label className={`text-xs ${isObrigatorio ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+                                          Observações {isObrigatorio && '*'}
+                                        </Label>
+                                        {isObrigatorio && (
+                                          <p className="text-xs text-red-600 mb-1">
+                                            Obrigatório: este fornecedor foi selecionado como vencedor para item(ns) que não são o menor preço
+                                          </p>
+                                        )}
                                   <Textarea
                                     value={f.observacoes || ''}
                                     onChange={(e) => {
@@ -1866,9 +2499,17 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                         forn.id === f.id ? { ...forn, observacoes: e.target.value } : forn
                                       ));
                                     }}
-                                    placeholder="Observações sobre esta cotação..."
-                                    className="text-sm min-h-[60px]"
-                                  />
+                                          placeholder={
+                                            isObrigatorio 
+                                              ? "Justifique por que este fornecedor foi escolhido mesmo não sendo o menor preço..."
+                                              : "Observações sobre esta cotação..."
+                                          }
+                                          className={`text-sm min-h-[60px] ${isObrigatorio ? 'border-red-300 focus:border-red-500' : ''}`}
+                                          required={isObrigatorio}
+                                        />
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             );
@@ -2013,148 +2654,653 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
               </TabsContent>
 
               <TabsContent value="finalizacao" className="mt-4 space-y-4 max-h-[75vh] overflow-auto pr-2">
-                <Card>
+                {(() => {
+                  // Calcular fornecedores vencedores e seus totais parciais
+                  const fornecedoresVencedores = fornecedores
+                    .filter(f => f.fornecedor_id)
+                    .map(f => {
+                      // Calcular subtotal PARCIAL (apenas itens onde este fornecedor é vencedor)
+                      const subtotalParcial = itensAgrupados
+                        .filter((item) => itensSelecionados.has(getItemKey(item)))
+                        .reduce((sum, item) => {
+                          const itemKey = getItemKey(item);
+                          const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                          if (cell && cell.is_vencedor) {
+                            return sum + valorItemCalculado(cell);
+                          }
+                          return sum;
+                        }, 0);
+
+                      // Aplicar descontos, frete e imposto
+                      const frete = f.valor_frete || 0;
+                      const imposto = f.valor_imposto || 0;
+                      const descontoPct = f.desconto_percentual || 0;
+                      const descontoValor = f.desconto_valor || 0;
+                      const descontoCalculado = subtotalParcial * (descontoPct / 100) + descontoValor;
+                      const totalAdjudicado = subtotalParcial + frete + imposto - descontoCalculado;
+
+                      // Contar itens vencedores
+                      const qtdItensVencedores = itensAgrupados
+                        .filter((item) => itensSelecionados.has(getItemKey(item)))
+                        .filter((item) => {
+                          const itemKey = getItemKey(item);
+                          const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                          return cell && cell.is_vencedor === true;
+                        }).length;
+
+                      return {
+                        fornecedor: f,
+                        subtotalParcial,
+                        totalAdjudicado,
+                        qtdItensVencedores,
+                      };
+                    })
+                    .filter(f => f.qtdItensVencedores > 0);
+
+                  // Encontrar fornecedor líder (maior valor total adjudicado)
+                  const fornecedorLider = fornecedoresVencedores.length > 0
+                    ? fornecedoresVencedores.reduce((lider, atual) => 
+                        atual.totalAdjudicado > lider.totalAdjudicado ? atual : lider
+                      )
+                    : null;
+
+                  // Calcular valor total da cotação
+                  const valorTotalCotacao = fornecedoresVencedores.reduce((sum, f) => sum + f.totalAdjudicado, 0);
+
+                  // Verificar se é decisão única ou distribuída
+                  const isDecisaoUnica = fornecedoresVencedores.length === 1;
+                  const isDecisaoDistribuida = fornecedoresVencedores.length > 1;
+
+                  // Calcular decisão por item
+                  const decisaoPorItem = itensAgrupados
+                    .filter((item) => itensSelecionados.has(getItemKey(item)))
+                    .map((item) => {
+                      const itemKey = getItemKey(item);
+                      
+                      // Encontrar fornecedor vencedor para este item
+                      const fornecedorVencedor = fornecedores.find(f => {
+                        const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                        return cell && cell.is_vencedor === true;
+                      });
+                      
+                      if (!fornecedorVencedor) return null;
+
+                      const cell = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
+                      const valorAdjudicado = cell ? valorItemCalculado(cell) : 0;
+
+                      // Encontrar menor valor para este item
+                      let menorValor: number | null = null;
+                      let fornecedorMenorValor: typeof fornecedorVencedor | null = null;
+                      
+                      fornecedores.filter(f => f.fornecedor_id).forEach((f) => {
+                        const cellFornecedor = mapaFornecedorItens[f.id]?.[itemKey];
+                        if (cellFornecedor) {
+                          const total = valorItemCalculado(cellFornecedor);
+                          if (total > 0 && (menorValor === null || total < menorValor)) {
+                            menorValor = total;
+                            fornecedorMenorValor = f;
+                          }
+                        }
+                      });
+
+                      const isMelhorPreco = menorValor !== null && valorAdjudicado === menorValor;
+                      const diferencaValor = menorValor !== null && !isMelhorPreco 
+                        ? valorAdjudicado - menorValor 
+                        : 0;
+
+                      const fornecedorDados = fornecedoresDadosMap.get(fornecedorVencedor.fornecedor_id);
+                      const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+                      const nomeFornecedor = partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+
+                      // Buscar observações do fornecedor se não for melhor preço
+                      const observacoesFornecedor = fornecedorVencedor.observacoes || '';
+
+                      return {
+                        item,
+                        itemKey,
+                        fornecedorVencedor,
+                        nomeFornecedor,
+                        valorAdjudicado,
+                        isMelhorPreco,
+                        menorValor,
+                        diferencaValor,
+                        observacoesFornecedor,
+                      };
+                    })
+                    .filter(Boolean);
+
+                  return (
+                    <div className="space-y-4">
+                      {/* 1️⃣ Cabeçalho de Decisão */}
+                      <Card className="border-primary/20 bg-primary/5">
                   <CardHeader>
-                    <CardTitle>Resumo da Cotação</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <PieChart className="h-5 w-5 text-primary" />
                       <div>
-                        <Label className="text-muted-foreground">Tipo</Label>
-                        <p className="font-medium">{formData.tipo_cotacao}</p>
-                      </div>
-                      <div>
-                        <Label className="text-muted-foreground">Data Limite</Label>
-                        <p className="font-medium">
-                          {formData.data_limite 
-                            ? new Date(formData.data_limite).toLocaleDateString('pt-BR')
-                            : '—'
+                                <CardTitle className="text-lg">Modelo de Decisão</CardTitle>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {isDecisaoUnica 
+                                    ? 'Cotação adjudicada a um único fornecedor'
+                                    : isDecisaoDistribuida
+                                    ? `Cotação distribuída por item (${fornecedoresVencedores.length} fornecedores vencedores)`
+                                    : 'Nenhuma decisão tomada ainda'
                           }
                         </p>
                       </div>
-                      <div>
-                        <Label className="text-muted-foreground">Requisições</Label>
-                        <p className="font-medium">{requisicoes.length}</p>
                       </div>
-                      <div>
-                        <Label className="text-muted-foreground">Itens Selecionados</Label>
-                        <p className="font-medium">{itensSelecionados.size}</p>
+                            {fornecedorLider && (
+                              <div className="text-right">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Trophy className="h-4 w-4 text-yellow-600" />
+                                  <span className="text-xs font-semibold text-muted-foreground">Fornecedor Líder</span>
                       </div>
-                      <div>
-                        <Label className="text-muted-foreground">Fornecedores</Label>
-                        <p className="font-medium">
-                          {fornecedoresValidos} {!fornecedoresOk && <span className="text-red-600">⚠️</span>}
-                        </p>
+                                <div className="font-bold text-lg">
+                                  {(() => {
+                                    const fornecedorDados = fornecedoresDadosMap.get(fornecedorLider.fornecedor.id);
+                                    const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+                                    return partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+                                  })()}
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Card className="border-dashed">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm">Totais por fornecedor</CardTitle>
+                            )}
+                          </div>
                         </CardHeader>
-                        <CardContent className="space-y-2">
-                          {fornecedores.length === 0 && (
-                            <p className="text-sm text-muted-foreground">Nenhum fornecedor adicionado</p>
-                          )}
-                          {fornecedores.map((f) => {
-                            const total = resumoTotais.totaisFinais?.get(f.id) || resumoTotais.porFornecedor.get(f.id) || 0;
-                            // Buscar fornecedor_dados pelo fornecedor_id
-                            const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
-                            // Buscar partner pelo partner_id do fornecedor_dados
+                        {isDecisaoDistribuida && (
+                          <CardContent>
+                            <Alert className="border-blue-200 bg-blue-50">
+                              <Info className="h-4 w-4 text-blue-600" />
+                              <AlertDescription className="text-blue-900">
+                                Esta cotação foi distribuída entre múltiplos fornecedores. Cada item foi adjudicado ao fornecedor selecionado como vencedor.
+                              </AlertDescription>
+                            </Alert>
+                          </CardContent>
+                        )}
+                      </Card>
+
+                      {/* 2️⃣ Impacto Financeiro por Fornecedor */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <DollarSign className="h-5 w-5" />
+                            Impacto Financeiro por Fornecedor
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground">
+                            Valores adjudicados e percentual de participação no total da cotação
+                          </p>
+                        </CardHeader>
+                        <CardContent>
+                          {fornecedoresVencedores.length === 0 ? (
+                            <div className="text-center py-8 text-muted-foreground">
+                              <AlertTriangle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                              <p>Nenhum fornecedor vencedor selecionado</p>
+                              <p className="text-sm">Selecione os fornecedores vencedores na aba "Mapa Cotação"</p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {fornecedoresVencedores
+                                .sort((a, b) => b.totalAdjudicado - a.totalAdjudicado)
+                                .map((f) => {
+                                  const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor.id);
                             const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
-                            const isMelhor = resumoTotais.melhorFornecedorId === f.id;
+                                  const displayName = partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+                                  const isLider = fornecedorLider && fornecedorLider.fornecedor.id === f.fornecedor.id;
+                                  const percentual = valorTotalCotacao > 0 
+                                    ? (f.totalAdjudicado / valorTotalCotacao) * 100 
+                                    : 0;
+
                             return (
                               <div
-                                key={f.id}
-                                className={`flex items-center justify-between rounded px-3 py-2 ${
-                                  isMelhor ? 'bg-green-50 border border-green-200' : 'bg-muted/30'
-                                }`}
-                              >
-                                <div className="flex flex-col">
-                                  <span className="font-medium">
-                                    {partner?.nome_fantasia || partner?.razao_social || 'Fornecedor'}
-                                  </span>
-                                  <span className="text-xs text-muted-foreground">ID: {f.fornecedor_id || '—'}</span>
+                                      key={f.fornecedor.id}
+                                      className={`p-4 border-2 rounded-lg ${
+                                        isLider
+                                          ? 'border-yellow-400 bg-yellow-50 dark:bg-yellow-950/20'
+                                          : 'border-muted bg-background'
+                                      }`}
+                                    >
+                                      <div className="flex items-start justify-between mb-2">
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            {isLider && <Trophy className="h-4 w-4 text-yellow-600" />}
+                                            <span className="font-semibold text-sm">{displayName}</span>
                                 </div>
-                                <div className="text-right">
-                                  <div className="font-semibold">
-                                    R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                          <div className="text-xs text-muted-foreground">
+                                            {f.qtdItensVencedores} {f.qtdItensVencedores === 1 ? 'item' : 'itens'} adjudicado{f.qtdItensVencedores > 1 ? 's' : ''}
                                   </div>
-                                  {isMelhor && <Badge className="mt-1 bg-green-600">Menor total</Badge>}
+                                        </div>
+                                        {isLider && (
+                                          <Badge className="bg-yellow-600 text-white">Líder</Badge>
+                                        )}
+                                      </div>
+                                      <div className="mt-3 pt-3 border-t">
+                                        <div className="text-xs text-muted-foreground mb-1">Total Adjudicado</div>
+                                        <div className="font-bold text-xl text-primary">
+                                          R$ {f.totalAdjudicado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground mt-2">
+                                          {percentual.toFixed(1)}% do valor total da cotação
+                                        </div>
                                 </div>
                               </div>
                             );
                           })}
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
 
-                      <Card className="border-dashed">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-sm">Melhor por item</CardTitle>
+                      {/* 3️⃣ Decisão por Item */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <Package className="h-5 w-5" />
+                            Decisão por Item
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground">
+                            Detalhamento da adjudicação de cada item da cotação
+                          </p>
                         </CardHeader>
-                        <CardContent className="space-y-2 max-h-64 overflow-auto">
-                          {Array.from(resumoTotais.porItem.entries()).map(([materialId, info]) => {
-                            const item = itensAgrupados.find((i) => i.material_id === materialId);
-                            const fornecedorMelhor = fornecedores.find((f) => f.id === info.fornecedorId);
-                            const partner = fornecedorMelhor
-                              ? (() => {
-                                  const fd = fornecedoresDadosMap.get(fornecedorMelhor.fornecedor_id);
-                                  return fd?.partner_id ? partnersMap.get(fd.partner_id) : null;
-                                })()
-                              : null;
-                            return (
-                              <div key={materialId} className="flex justify-between rounded bg-muted/30 px-3 py-2">
+                        <CardContent>
+                          {decisaoPorItem.length === 0 ? (
+                            <div className="text-center py-8 text-muted-foreground">
+                              <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                              <p>Nenhum item com fornecedor vencedor selecionado</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {decisaoPorItem.map((decisao) => (
+                                <div
+                                  key={decisao.itemKey}
+                                  className={`p-4 border rounded-lg ${
+                                    decisao.isMelhorPreco
+                                      ? 'bg-green-50 dark:bg-green-950/20 border-green-200'
+                                      : 'bg-orange-50 dark:bg-orange-950/20 border-orange-200'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between mb-2">
                                 <div className="flex-1">
-                                  <div className="font-medium">{item?.material_nome || 'Item'}</div>
+                                      <div className="font-semibold text-sm mb-1">
+                                        {decisao.item.material_nome}
+                                      </div>
                                   <div className="text-xs text-muted-foreground">
-                                    {item?.material_codigo || materialId}
+                                        {decisao.item.material_codigo || '—'} • {decisao.item.quantidade_total.toLocaleString('pt-BR')} {decisao.item.unidade_medida}
                                   </div>
                                 </div>
                                 <div className="text-right">
-                                  <div className="font-semibold">
-                                    R$ {info.melhor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                      <div className="font-bold text-lg">
+                                        R$ {decisao.valorAdjudicado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                   </div>
-                                  {partner && (
-                                    <div className="text-xs text-muted-foreground">
-                                      {partner.nome_fantasia || partner.razao_social}
+                                      {decisao.isMelhorPreco ? (
+                                        <Badge className="mt-1 bg-green-600">
+                                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                                          Melhor preço
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="destructive" className="mt-1">
+                                          <AlertTriangle className="h-3 w-3 mr-1" />
+                                          Não é menor preço
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="mt-3 pt-3 border-t">
+                                    <div className="text-xs font-semibold text-muted-foreground mb-2">
+                                      Fornecedor Vencedor: {decisao.nomeFornecedor}
+                                    </div>
+                                    
+                                    {!decisao.isMelhorPreco && decisao.menorValor !== null && (
+                                      <Alert className="bg-orange-100 border-orange-300">
+                                        <AlertTriangle className="h-4 w-4 text-orange-600" />
+                                        <AlertDescription className="text-sm">
+                                          <div className="font-semibold mb-1">
+                                            Este item não foi adjudicado ao menor preço
+                                          </div>
+                                          <div className="text-xs space-y-1">
+                                            <div>
+                                              Menor preço disponível: <strong>R$ {decisao.menorValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                                            </div>
+                                            <div>
+                                              Diferença: <strong>R$ {decisao.diferencaValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>
+                                            </div>
+                                            {decisao.observacoesFornecedor && (
+                                              <div className="mt-2 pt-2 border-t border-orange-300">
+                                                <strong>Justificativa:</strong> {decisao.observacoesFornecedor}
                                     </div>
                                   )}
                                 </div>
+                                        </AlertDescription>
+                                      </Alert>
+                                    )}
                               </div>
-                            );
-                          })}
-                          {resumoTotais.porItem.size === 0 && (
-                            <p className="text-sm text-muted-foreground">Nenhum item calculado.</p>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </CardContent>
                       </Card>
-                    </div>
 
-                    {formData.observacoes_internas && (
-                      <div>
-                        <Label className="text-muted-foreground">Observações</Label>
-                        <p className="text-sm">{formData.observacoes_internas}</p>
+                      {/* 4️⃣ Observações da Decisão */}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <FileText className="h-5 w-5" />
+                            Observações da Decisão
+                          </CardTitle>
+                          <p className="text-sm text-muted-foreground">
+                            Justificativa geral para auditoria e aprovação
+                          </p>
+                        </CardHeader>
+                        <CardContent>
+                          {formData.observacoes_internas ? (
+                            <div className="p-4 bg-muted/30 rounded-lg">
+                              <p className="text-sm whitespace-pre-wrap">{formData.observacoes_internas}</p>
+                            </div>
+                          ) : (
+                            <div className="text-center py-4 text-muted-foreground text-sm">
+                              Nenhuma observação registrada
                       </div>
                     )}
                   </CardContent>
                 </Card>
 
-                <div className="space-y-2">
-                  <Label>Status da Cotação</Label>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">Rascunho</Badge>
-                    <Badge variant="outline">Em cotação</Badge>
-                    <Badge variant="outline">Aguardando aprovação</Badge>
-                    <Badge variant="outline">Aprovada</Badge>
-                    <Badge variant="outline">Reprovada</Badge>
-                    <Badge variant="outline">Vencida</Badge>
+                      {/* 5️⃣ Resumo Final */}
+                      <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader>
+                          <CardTitle>Resumo Final da Cotação</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <Label className="text-muted-foreground text-xs">Tipo de Cotação</Label>
+                              <p className="font-medium">{formData.tipo_cotacao}</p>
                   </div>
+                            <div>
+                              <Label className="text-muted-foreground text-xs">Data Limite</Label>
+                              <p className="font-medium">
+                                {formData.data_limite 
+                                  ? new Date(formData.data_limite).toLocaleDateString('pt-BR')
+                                  : '—'
+                                }
+                              </p>
                 </div>
+                            <div>
+                              <Label className="text-muted-foreground text-xs">Total Adjudicado</Label>
+                              <p className="font-bold text-lg text-primary">
+                                R$ {valorTotalCotacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                            <div>
+                              <Label className="text-muted-foreground text-xs">Fornecedores Vencedores</Label>
+                              <p className="font-medium">{fornecedoresVencedores.length}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  );
+                })()}
               </TabsContent>
             </div>
           </Tabs>
         )}
+
+        {/* Modal de Informações Adicionais do Fornecedor */}
+        <Dialog open={fornecedorModalAberto} onOpenChange={setFornecedorModalAberto}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            {fornecedorSelecionadoModal && (() => {
+              const f = fornecedores.find(f => f.id === fornecedorSelecionadoModal);
+              if (!f) return null;
+              
+              const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
+              const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+              const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.id.substring(0, 8)}`;
+              
+              // Calcular subtotal PARCIAL (apenas itens onde este fornecedor é vencedor)
+              const subtotalParcial = itensAgrupados
+                .filter((item) => itensSelecionados.has(getItemKey(item)))
+                .reduce((sum, item) => {
+                  const itemKey = getItemKey(item);
+                  const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                  if (cell && cell.is_vencedor) {
+                    return sum + valorItemCalculado(cell);
+                  }
+                  return sum;
+                }, 0);
+
+              // Calcular subtotal TOTAL (todos os itens cotados por este fornecedor)
+              const subtotalTotal = itensAgrupados
+                .filter((item) => itensSelecionados.has(getItemKey(item)))
+                .reduce((sum, item) => {
+                  const cell = mapaFornecedorItens[f.id]?.[getItemKey(item)];
+                  return sum + (cell ? valorItemCalculado(cell) : 0);
+                }, 0);
+
+              const frete = f.valor_frete || 0;
+              const imposto = f.valor_imposto || 0;
+              const descontoPct = f.desconto_percentual || 0;
+              const descontoValor = f.desconto_valor || 0;
+              // Desconto aplicado apenas sobre o subtotal PARCIAL (itens vencedores)
+              const descontoCalculado = subtotalParcial * (descontoPct / 100) + descontoValor;
+              const total = subtotalParcial + frete + imposto - descontoCalculado;
+
+              // Verificar se este fornecedor tem algum item vencedor que não é o de menor preço
+              const fornecedoresValidosParaComparacao = fornecedores.filter(f => f.fornecedor_id);
+              const temItemVencedorNaoMenor = itensAgrupados
+                .filter((item) => itensSelecionados.has(getItemKey(item)))
+                .some((item) => {
+                  const itemKey = getItemKey(item);
+                  const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                  if (!cell || !cell.is_vencedor) return false;
+                  
+                  // Calcular menor valor para este item
+                  let menorValor: number | null = null;
+                  fornecedoresValidosParaComparacao.forEach((forn) => {
+                    const cellFornecedor = mapaFornecedorItens[forn.id]?.[itemKey];
+                    if (cellFornecedor) {
+                      const total = valorItemCalculado(cellFornecedor);
+                      if (total > 0 && (menorValor === null || total < menorValor)) {
+                        menorValor = total;
+                      }
+                    }
+                  });
+                  
+                  const valorVencedor = valorItemCalculado(cell);
+                  return menorValor !== null && valorVencedor > menorValor;
+                });
+              
+              const isObrigatorio = temItemVencedorNaoMenor;
+
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle>Informações Adicionais - {displayName}</DialogTitle>
+                    <DialogDescription>
+                      Preencha as informações comerciais e financeiras para este fornecedor
+                    </DialogDescription>
+                  </DialogHeader>
+                  
+                  <div className="space-y-4 mt-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {/* Frete */}
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Frete (R$)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={frete}
+                          onChange={(e) => {
+                            const newValue = parseFloat(e.target.value) || 0;
+                            setFornecedores(fornecedores.map(forn => 
+                              forn.id === f.id ? { ...forn, valor_frete: newValue } : forn
+                            ));
+                          }}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+
+                      {/* Imposto */}
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Imposto (R$)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={imposto}
+                          onChange={(e) => {
+                            const newValue = parseFloat(e.target.value) || 0;
+                            setFornecedores(fornecedores.map(forn => 
+                              forn.id === f.id ? { ...forn, valor_imposto: newValue } : forn
+                            ));
+                          }}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+
+                      {/* Desconto Percentual */}
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Desconto (%)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="100"
+                          value={descontoPct}
+                          onChange={(e) => {
+                            const newValue = parseFloat(e.target.value) || 0;
+                            setFornecedores(fornecedores.map(forn => 
+                              forn.id === f.id ? { ...forn, desconto_percentual: newValue } : forn
+                            ));
+                          }}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+
+                      {/* Desconto Valor */}
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Desconto (R$)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={descontoValor}
+                          onChange={(e) => {
+                            const newValue = parseFloat(e.target.value) || 0;
+                            setFornecedores(fornecedores.map(forn => 
+                              forn.id === f.id ? { ...forn, desconto_valor: newValue } : forn
+                            ));
+                          }}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Resumo Financeiro */}
+                    <div className="pt-3 border-t">
+                      <div className="mb-3 p-3 bg-muted/30 rounded-lg">
+                        <div className="text-xs text-muted-foreground mb-1">Subtotal Parcial (Itens Vencedores):</div>
+                        <div className="font-bold text-lg text-primary">R$ {subtotalParcial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        <div className="text-xs text-muted-foreground mt-2">Subtotal Total (Todos os Itens Cotados):</div>
+                        <div className="font-semibold text-sm">R$ {subtotalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Subtotal Parcial:</span>
+                          <div className="font-semibold">R$ {subtotalParcial.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Frete:</span>
+                          <div className="font-semibold">R$ {frete.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Imposto:</span>
+                          <div className="font-semibold">R$ {imposto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Desconto:</span>
+                          <div className="font-semibold text-red-600">- R$ {descontoCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                        <div className="border-l pl-3">
+                          <span className="text-muted-foreground">Total:</span>
+                          <div className="font-bold text-lg">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Prazo e Condições */}
+                    <div className="grid grid-cols-2 gap-4 pt-3 border-t">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Prazo de Entrega (dias)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          value={f.prazo_entrega || 0}
+                          onChange={(e) => {
+                            const newValue = parseInt(e.target.value) || 0;
+                            setFornecedores(fornecedores.map(forn => 
+                              forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
+                            ));
+                          }}
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Condição de Pagamento</Label>
+                        <Input
+                          value={f.condicao_pagamento || ''}
+                          onChange={(e) => {
+                            setFornecedores(fornecedores.map(forn => 
+                              forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
+                            ));
+                          }}
+                          placeholder="Ex: 30/60/90 dias"
+                          className="h-9 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Observações */}
+                    <div className="pt-3">
+                      <Label className={`text-xs ${isObrigatorio ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+                        Observações {isObrigatorio && '*'}
+                      </Label>
+                      {isObrigatorio && (
+                        <p className="text-xs text-red-600 mb-1">
+                          Obrigatório: este fornecedor foi selecionado como vencedor para item(ns) que não são o menor preço
+                        </p>
+                      )}
+                      <Textarea
+                        value={f.observacoes || ''}
+                        onChange={(e) => {
+                          setFornecedores(fornecedores.map(forn => 
+                            forn.id === f.id ? { ...forn, observacoes: e.target.value } : forn
+                          ));
+                        }}
+                        placeholder={
+                          isObrigatorio 
+                            ? "Justifique por que este fornecedor foi escolhido mesmo não sendo o menor preço..."
+                            : "Observações sobre esta cotação..."
+                        }
+                        className={`text-sm min-h-[80px] mt-1 ${isObrigatorio ? 'border-red-300 focus:border-red-500' : ''}`}
+                        required={isObrigatorio}
+                      />
+                    </div>
+                  </div>
+
+                  <DialogFooter>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setFornecedorModalAberto(false)}
+                    >
+                      Fechar
+                    </Button>
+                  </DialogFooter>
+                </>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
 
         <DialogFooter className="px-6 py-4 border-t flex-shrink-0">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
@@ -2167,9 +3313,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
           >
             Salvar como Rascunho
           </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-block">
           <Button
             onClick={handleEnviarAprovacao}
-            disabled={loading || submitting || !fornecedoresOk || itensSelecionados.size === 0}
+                    disabled={loading || submitting || !podeEnviarAprovacao}
           >
             {submitting ? (
               <>
@@ -2183,6 +3333,25 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
               </>
             )}
           </Button>
+                </span>
+              </TooltipTrigger>
+              {!podeEnviarAprovacao && !loading && !submitting && (
+                <TooltipContent>
+                  <div className="max-w-xs">
+                    {!fornecedoresOk ? (
+                      <p>Selecione {isEmergencial ? '1' : 'entre 2 e 6'} fornecedor(es) conforme o tipo de cotação</p>
+                    ) : !validarFornecedoresComValores ? (
+                      <p>Cada fornecedor deve ter pelo menos um item com valor preenchido no mapa de cotação</p>
+                    ) : itensSelecionados.size === 0 ? (
+                      <p>Selecione pelo menos um item</p>
+                    ) : (
+                      <p>Preencha todos os requisitos para enviar</p>
+                    )}
+                  </div>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         </DialogFooter>
       </DialogContent>
     </Dialog>

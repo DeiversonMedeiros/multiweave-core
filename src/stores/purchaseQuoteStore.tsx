@@ -218,28 +218,39 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
       });
       const fornecedoresCotacao = fornecedoresCotacaoResult.data || [];
 
-      // Carregar todos os fornecedores disponíveis
-      const fornecedoresResult = await EntityService.list({
-        schema: 'compras',
-        table: 'fornecedores_dados',
-        companyId,
-        filters: { status: 'ativo' },
-        page: 1,
-        pageSize: 100,
-      });
-      const fornecedoresDisponiveis = fornecedoresResult.data || [];
-
-      // Carregar partners para obter nomes
+      // Carregar todos os partners ativos do tipo 'fornecedor'
       const partnersResult = await EntityService.list({
         schema: 'public',
         table: 'partners',
+        companyId,
+        filters: { ativo: true },
+        page: 1,
+        pageSize: 1000,
+      });
+      const allPartners = partnersResult.data || [];
+      
+      // Filtrar apenas partners do tipo 'fornecedor'
+      const fornecedorPartners = allPartners.filter((p: any) => 
+        Array.isArray(p.tipo) && p.tipo.includes('fornecedor')
+      );
+      
+      const partnersMap = new Map(fornecedorPartners.map((p: any) => [p.id, p]));
+
+      // Carregar fornecedores_dados para obter dados adicionais (se existirem)
+      const fornecedoresResult = await EntityService.list({
+        schema: 'compras',
+        table: 'fornecedores_dados',
         companyId,
         filters: {},
         page: 1,
         pageSize: 1000,
       });
-      const partners = partnersResult.data || [];
-      const partnersMap = new Map(partners.map((p: any) => [p.id, p]));
+      const fornecedoresDados = fornecedoresResult.data || [];
+      
+      // Criar mapa: partner_id -> fornecedores_dados
+      const fornecedoresDadosMap = new Map(
+        fornecedoresDados.map((fd: any) => [fd.partner_id, fd])
+      );
 
       // Criar mapa de fornecedores da cotação para buscar frete/imposto
       const fornecedoresCotacaoMap = new Map<string, any>();
@@ -254,16 +265,39 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
         });
       });
 
-      // Mapear fornecedores
-      const suppliers: SupplierState[] = fornecedoresDisponiveis.map((fornecedor: any) => {
-        const partner = partnersMap.get(fornecedor.partner_id);
-        const isSelected = fornecedoresCotacao.some((fc: any) => fc.fornecedor_id === fornecedor.id);
-        const cotacaoFornecedor = fornecedoresCotacaoMap.get(fornecedor.id);
+      // Mapear fornecedores a partir dos partners
+      // Usar fornecedores_dados.id se existir, senão usar partner.id como fallback
+      const suppliers: SupplierState[] = fornecedorPartners.map((partner: any) => {
+        const fornecedorDados = fornecedoresDadosMap.get(partner.id);
+        
+        // Se existe fornecedores_dados, usar o id dele, senão usar partner.id
+        const supplierId = fornecedorDados?.id || partner.id;
+        
+        // Verificar se está selecionado na cotação
+        // cotacao_fornecedores referencia fornecedores_dados.id, então precisamos verificar ambos
+        const isSelected = fornecedoresCotacao.some((fc: any) => {
+          // Se temos fornecedores_dados, verificar pelo id dele
+          if (fornecedorDados) {
+            return fc.fornecedor_id === fornecedorDados.id;
+          }
+          // Se não temos fornecedores_dados, não pode estar selecionado (pois cotacao_fornecedores requer fornecedores_dados.id)
+          return false;
+        });
+        
+        const cotacaoFornecedor = fornecedoresCotacaoMap.get(supplierId);
+        
+        // Determinar status: se tem fornecedores_dados, usar status dele, senão considerar ativo
+        let status: SupplierStatus = 'ACTIVE';
+        if (fornecedorDados) {
+          status = (fornecedorDados.status === 'bloqueado' ? 'BLOCKED' : 
+                   fornecedorDados.status === 'inativo' ? 'BLOCKED' : 'ACTIVE') as SupplierStatus;
+        }
         
         // Log para debug
         if (isSelected && cotacaoFornecedor) {
           console.log('📦 [loadQuoteData] Fornecedor cotação:', {
-            fornecedor_id: fornecedor.id,
+            supplier_id: supplierId,
+            partner_id: partner.id,
             cotacao_fornecedor: cotacaoFornecedor,
             valor_frete: cotacaoFornecedor.valor_frete,
             valor_imposto: cotacaoFornecedor.valor_imposto,
@@ -271,13 +305,13 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
         }
         
         return {
-          id: fornecedor.id,
-          name: partner?.nome_fantasia || partner?.razao_social || fornecedor.partner_id || 'Fornecedor',
-          cnpj: partner?.cnpj || fornecedor.cnpj || '',
-          type: (fornecedor.tipo || 'NACIONAL') as SupplierType,
-          status: (fornecedor.status === 'bloqueado' ? 'BLOCKED' : 'ACTIVE') as SupplierStatus,
+          id: supplierId,
+          name: partner.nome_fantasia || partner.razao_social || 'Fornecedor',
+          cnpj: partner.cnpj || '',
+          type: 'NACIONAL' as SupplierType, // Default, pode ser melhorado com dados de endereço
+          status,
           selected: isSelected,
-          partner_id: fornecedor.partner_id,
+          partner_id: partner.id,
           valor_frete: cotacaoFornecedor?.valor_frete ? Number(cotacaoFornecedor.valor_frete) : 0,
           valor_imposto: cotacaoFornecedor?.valor_imposto ? Number(cotacaoFornecedor.valor_imposto) : 0,
           desconto_percentual: cotacaoFornecedor?.desconto_percentual ? Number(cotacaoFornecedor.desconto_percentual) : 0,
