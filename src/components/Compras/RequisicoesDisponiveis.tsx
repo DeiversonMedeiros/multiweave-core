@@ -32,7 +32,7 @@ import {
   Grid3x3,
   List
 } from 'lucide-react';
-import { usePurchaseRequisitions } from '@/hooks/compras/useComprasData';
+import { usePurchaseRequisitions, useQuotes } from '@/hooks/compras/useComprasData';
 import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useActiveProjects } from '@/hooks/useProjects';
 import { useUsers } from '@/hooks/useUsers';
@@ -125,6 +125,26 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     });
     return Array.from(grupos).sort();
   }, [itensExplodidos]);
+
+  // Buscar cotações para verificar quais requisições já têm cotação criada
+  const { data: cotacoes = [] } = useQuotes();
+  const cotacoesPorRequisicao = useMemo(() => {
+    const map = new Map<string, any>();
+    cotacoes.forEach((cotacao: any) => {
+      // A view cotacoes_with_requisicao retorna requisicao_id
+      // E cotacao_ciclos também tem requisicao_id
+      const requisicaoId = cotacao.requisicao_id;
+      if (requisicaoId) {
+        // Se já existe uma cotação para esta requisição, manter a primeira encontrada
+        // ou substituir se a nova tiver um status mais recente
+        if (!map.has(requisicaoId) || 
+            (cotacao.workflow_state === 'em_aprovacao' || cotacao.workflow_state === 'aprovada')) {
+          map.set(requisicaoId, cotacao);
+        }
+      }
+    });
+    return map;
+  }, [cotacoes]);
 
   // Filtrar requisições disponíveis
   const requisicoesDisponiveis = useMemo(() => {
@@ -955,10 +975,45 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                           {projectsMap.get(requisicao.projeto_id) || '—'}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="text-blue-600">
-                            <Clock className="h-3 w-3 mr-1" />
-                            Aguardando cotação
-                          </Badge>
+                          {(() => {
+                            const temCotacao = cotacoesPorRequisicao.has(requisicao.id);
+                            const cotacao = cotacoesPorRequisicao.get(requisicao.id);
+                            
+                            if (temCotacao) {
+                              // Requisição já tem cotação criada
+                              const cotacaoStatus = cotacao?.workflow_state || cotacao?.status || 'aberta';
+                              if (cotacaoStatus === 'em_aprovacao') {
+                                return (
+                                  <Badge variant="outline" className="text-orange-600">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    Cotação em aprovação
+                                  </Badge>
+                                );
+                              } else if (cotacaoStatus === 'aprovada') {
+                                return (
+                                  <Badge variant="outline" className="text-green-600">
+                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                    Cotação aprovada
+                                  </Badge>
+                                );
+                              } else {
+                                return (
+                                  <Badge variant="outline" className="text-blue-600">
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    Em cotação
+                                  </Badge>
+                                );
+                              }
+                            } else {
+                              // Requisição ainda não tem cotação
+                              return (
+                                <Badge variant="outline" className="text-blue-600">
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Aguardando cotação
+                                </Badge>
+                              );
+                            }
+                          })()}
                         </TableCell>
                       </TableRow>
                     );

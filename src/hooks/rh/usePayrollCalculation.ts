@@ -218,7 +218,7 @@ export function usePayrollEventsByPeriod(
         count: result.data.length
       };
     },
-    enabled: !!selectedCompany?.id,
+    enabled: !!selectedCompany?.id && mesReferencia > 0 && anoReferencia > 0,
     staleTime: 1000 * 60 * 2, // 2 minutos
   });
 }

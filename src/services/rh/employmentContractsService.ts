@@ -3,6 +3,7 @@
 // =====================================================
 
 import { supabase } from '@/integrations/supabase/client';
+import { EntityService } from '@/services/generic/entityService';
 import { EmploymentContract, Employee } from '@/integrations/supabase/rh-types';
 
 export interface EmploymentContractFilters {
@@ -253,19 +254,18 @@ export async function getEmploymentContractsByEmployee(
   companyId: string
 ): Promise<EmploymentContract[]> {
   try {
-    const { data, error } = await supabase
-      .from('employment_contracts')
-      .select('*')
-      .eq('employee_id', employeeId)
-      .eq('company_id', companyId)
-      .order('data_inicio', { ascending: false });
+    const result = await EntityService.list<EmploymentContract>({
+      schema: 'rh',
+      table: 'employment_contracts',
+      companyId,
+      filters: {
+        employee_id: employeeId
+      },
+      orderBy: 'data_inicio',
+      orderDirection: 'DESC'
+    });
 
-    if (error) {
-      console.error('Erro ao buscar contratos do funcionário:', error);
-      throw new Error(`Erro ao buscar contratos do funcionário: ${error.message}`);
-    }
-
-    return data || [];
+    return result.data || [];
   } catch (error) {
     console.error('Erro no serviço de contratos do funcionário:', error);
     throw error;

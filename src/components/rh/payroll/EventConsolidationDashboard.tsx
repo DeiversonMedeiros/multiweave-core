@@ -43,6 +43,9 @@ import {
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
 import { useEmployees } from '@/hooks/rh/useEmployees';
+import { useEventConsolidations } from '@/hooks/rh/useEventConsolidation';
+import { usePayrollEventsByPeriod } from '@/hooks/rh/usePayrollCalculation';
+import { calculatePayroll } from '@/services/rh/payrollCalculationService';
 import { toast } from 'sonner';
 
 // =====================================================
@@ -103,6 +106,7 @@ export function EventConsolidationDashboard({
 }: EventConsolidationDashboardProps) {
   const { selectedCompany } = useCompany();
   const { data: employees = [], isLoading: employeesLoading } = useEmployees();
+  const { data: eventConsolidations = [] } = useEventConsolidations();
   
   // Estados
   const [filters, setFilters] = useState<EventFilters>({
@@ -123,6 +127,26 @@ export function EventConsolidationDashboard({
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [isGeneratingEvents, setIsGeneratingEvents] = useState(false);
+  
+  // Extrair mês e ano do período selecionado
+  const periodData = useMemo(() => {
+    if (!filters.period || filters.period === 'all') return null;
+    const match = filters.period.match(/^(\d{4})-(\d{2})$/);
+    if (match) {
+      return {
+        year: parseInt(match[1], 10),
+        month: parseInt(match[2], 10)
+      };
+    }
+    return null;
+  }, [filters.period]);
+  
+  // Buscar eventos do banco de dados quando período for selecionado
+  const { data: payrollEventsData, isLoading: isLoadingEvents, refetch: refetchEvents } = usePayrollEventsByPeriod(
+    periodData?.month || 0,
+    periodData?.year || 0
+  );
 
   // Dados mockados para demonstração
   const mockEvents: PayrollEvent[] = [
@@ -209,7 +233,17 @@ export function EventConsolidationDashboard({
       const matchesType = filters.eventType === 'all' || event.event_type === filters.eventType;
       const matchesStatus = filters.status === 'all' || event.status === filters.status;
       
-      return matchesSearch && matchesEmployee && matchesType && matchesStatus;
+      // Filtrar por período se selecionado
+      let matchesPeriod = true;
+      if (filters.period && filters.period !== 'all') {
+        const eventDate = new Date(event.created_at);
+        const eventYear = eventDate.getFullYear();
+        const eventMonth = String(eventDate.getMonth() + 1).padStart(2, '0');
+        const eventPeriod = `${eventYear}-${eventMonth}`;
+        matchesPeriod = eventPeriod === filters.period;
+      }
+      
+      return matchesSearch && matchesEmployee && matchesType && matchesStatus && matchesPeriod;
     });
   }, [events, searchTerm, filters]);
 
@@ -235,16 +269,21 @@ export function EventConsolidationDashboard({
   };
 
   const handleConsolidate = async () => {
-    if (selectedEvents.length === 0) {
-      toast.error('Selecione pelo menos um evento para consolidar');
+    // Se não houver eventos selecionados, consolidar todos os eventos filtrados
+    const eventsToConsolidate = selectedEvents.length > 0 ? selectedEvents : filteredEvents.map(e => e.id);
+    
+    if (eventsToConsolidate.length === 0) {
+      toast.error('Não há eventos para consolidar');
       return;
     }
 
     setIsConsolidating(true);
     try {
-      await onConsolidate?.(selectedEvents);
-      toast.success(`${selectedEvents.length} eventos consolidados com sucesso`);
+      await onConsolidate?.(eventsToConsolidate);
+      toast.success(`${eventsToConsolidate.length} eventos consolidados com sucesso`);
       setSelectedEvents([]);
+      // Recarregar eventos após consolidação
+      await refetchEvents();
     } catch (error) {
       toast.error('Erro ao consolidar eventos');
     } finally {
@@ -328,10 +367,144 @@ export function EventConsolidationDashboard({
     return labels[type as keyof typeof labels] || type;
   };
 
-  // Inicializar dados mockados
+  // Função para gerar períodos dinamicamente
+  const generatePeriods = useMemo(() => {
+    const periodsMap = new Map<string, { value: string; label: string }>();
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // getMonth() retorna 0-11
+    
+    // Nomes dos meses em português
+    const monthNames = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    
+    // Adicionar períodos existentes no banco de dados
+    eventConsolidations.forEach(consolidation => {
+      if (consolidation.periodo) {
+        // Formato esperado: YYYY/MM ou YYYY-MM
+        // Normalizar para YYYY-MM para uso interno
+        const normalizedPeriod = consolidation.periodo.replace(/\//g, '-');
+        const periodMatch = normalizedPeriod.match(/^(\d{4})-(\d{2})$/);
+        if (periodMatch) {
+          const [, year, month] = periodMatch;
+          const yearNum = parseInt(year, 10);
+          const monthNum = parseInt(month, 10);
+          
+          if (yearNum >= 2024 && monthNum >= 1 && monthNum <= 12) {
+            const periodValue = `${year}-${month}`;
+            const periodLabel = `${monthNames[monthNum - 1]} ${year}`;
+            periodsMap.set(periodValue, { value: periodValue, label: periodLabel });
+          }
+        }
+      }
+    });
+    
+    // Gerar períodos desde janeiro de 2024 até o mês atual
+    const startYear = 2024;
+    
+    for (let year = startYear; year <= currentYear; year++) {
+      const startMonth = year === startYear ? 1 : 1;
+      const endMonth = year === currentYear ? currentMonth : 12;
+      
+      for (let month = startMonth; month <= endMonth; month++) {
+        const periodValue = `${year}-${String(month).padStart(2, '0')}`;
+        const periodLabel = `${monthNames[month - 1]} ${year}`;
+        periodsMap.set(periodValue, { value: periodValue, label: periodLabel });
+      }
+    }
+    
+    // Converter Map para Array e ordenar do mais recente para o mais antigo
+    const periods = Array.from(periodsMap.values());
+    periods.sort((a, b) => {
+      // Comparar por valor (YYYY-MM) em ordem decrescente
+      return b.value.localeCompare(a.value);
+    });
+    
+    return periods;
+  }, [eventConsolidations]);
+
+  // Converter eventos de folha para o formato PayrollEvent do dashboard
   React.useEffect(() => {
-    setEvents(mockEvents);
-  }, []);
+    if (payrollEventsData?.data && periodData) {
+      const convertedEvents: PayrollEvent[] = payrollEventsData.data.map((event: any) => {
+        // Buscar nome do funcionário
+        const employee = employees.find(emp => emp.id === event.employee_id);
+        const employeeName = employee?.nome || 'Funcionário não encontrado';
+        
+        return {
+          id: event.id,
+          employee_id: event.employee_id,
+          employee_name: employeeName,
+          event_type: event.tipo_rubrica === 'provento' ? 'benefit' : 
+                      event.tipo_rubrica === 'desconto' ? 'absence' : 'calculation',
+          description: event.descricao_rubrica || 'Evento de folha',
+          value: event.tipo_rubrica === 'provento' ? event.valor_total : -event.valor_total,
+          status: 'pending', // TODO: Mapear status real do evento
+          created_at: event.created_at || new Date().toISOString()
+        };
+      });
+      setEvents(convertedEvents);
+    } else if (!periodData) {
+      // Se não houver período selecionado, usar dados mockados
+      setEvents(mockEvents);
+    } else if (isLoadingEvents) {
+      // Manter eventos anteriores enquanto carrega
+      // Não limpar eventos
+    } else {
+      // Se não houver eventos e não estiver carregando, limpar
+      setEvents([]);
+    }
+  }, [payrollEventsData, periodData, employees, isLoadingEvents]);
+  
+  // Função para gerar eventos de todos os funcionários
+  const handleGenerateAllEvents = async () => {
+    console.log('🎯 [handleGenerateAllEvents] Iniciando geração de eventos...');
+    console.log('📅 [handleGenerateAllEvents] Período:', periodData);
+    console.log('🏢 [handleGenerateAllEvents] Empresa:', selectedCompany?.id);
+    
+    if (!periodData || !selectedCompany?.id) {
+      console.error('❌ [handleGenerateAllEvents] Período ou empresa não selecionados');
+      toast.error('Selecione um período primeiro');
+      return;
+    }
+    
+    setIsGeneratingEvents(true);
+    try {
+      console.log('🚀 [handleGenerateAllEvents] Chamando calculatePayroll...');
+      toast.info('Gerando eventos para todos os funcionários...');
+      
+      const result = await calculatePayroll({
+        companyId: selectedCompany.id,
+        mesReferencia: periodData.month,
+        anoReferencia: periodData.year,
+        tipoProcesso: 'folha_mensal'
+      });
+      
+      console.log('📊 [handleGenerateAllEvents] Resultado do calculatePayroll:', result);
+      
+      if (result.status === 'sucesso') {
+        console.log(`✅ [handleGenerateAllEvents] Sucesso! ${result.eventosCalculados} eventos criados para ${result.funcionariosProcessados} funcionários`);
+        toast.success(`Eventos gerados com sucesso! ${result.eventosCalculados} eventos criados para ${result.funcionariosProcessados} funcionários`);
+        // Recarregar eventos
+        console.log('🔄 [handleGenerateAllEvents] Recarregando eventos...');
+        await refetchEvents();
+        console.log('✅ [handleGenerateAllEvents] Eventos recarregados');
+      } else {
+        console.error('❌ [handleGenerateAllEvents] Erro no resultado:', result.erros);
+        toast.error(`Erro ao gerar eventos: ${result.erros.join(', ')}`);
+      }
+    } catch (error: any) {
+      console.error('❌ [handleGenerateAllEvents] Erro capturado:', error);
+      console.error('❌ [handleGenerateAllEvents] Stack:', error?.stack);
+      console.error('❌ [handleGenerateAllEvents] Mensagem:', error?.message);
+      toast.error(`Erro ao gerar eventos: ${error?.message || 'Erro desconhecido'}`);
+    } finally {
+      console.log('🏁 [handleGenerateAllEvents] Finalizando (finally)');
+      setIsGeneratingEvents(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -386,9 +559,12 @@ export function EventConsolidationDashboard({
                   <SelectValue placeholder="Selecionar período" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="2024-01">Janeiro 2024</SelectItem>
-                  <SelectItem value="2024-02">Fevereiro 2024</SelectItem>
-                  <SelectItem value="2024-03">Março 2024</SelectItem>
+                  <SelectItem value="all">Todos os períodos</SelectItem>
+                  {generatePeriods.map((period) => (
+                    <SelectItem key={period.value} value={period.value}>
+                      {period.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -618,41 +794,73 @@ export function EventConsolidationDashboard({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-4">
-                <Button
-                  onClick={handleConsolidate}
-                  disabled={selectedEvents.length === 0 || isConsolidating}
-                >
-                  {isConsolidating ? (
-                    <>
-                      <Pause className="h-4 w-4 mr-2" />
-                      Consolidando...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-4 w-4 mr-2" />
-                      Consolidar Eventos
-                    </>
-                  )}
-                </Button>
+              <div className="space-y-4">
+                {/* Botão para gerar eventos de todos os funcionários */}
+                {periodData && (
+                  <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                    <div>
+                      <p className="font-medium">Gerar Eventos do Período</p>
+                      <p className="text-sm text-muted-foreground">
+                        Gere eventos de folha para todos os funcionários do período {periodData.month}/{periodData.year}
+                      </p>
+                    </div>
+                    <Button
+                      onClick={handleGenerateAllEvents}
+                      disabled={isGeneratingEvents || !periodData}
+                      variant="outline"
+                    >
+                      {isGeneratingEvents ? (
+                        <>
+                          <Pause className="h-4 w-4 mr-2" />
+                          Gerando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4 mr-2" />
+                          Gerar Eventos
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
                 
-                <Button
-                  variant="default"
-                  onClick={handleApprove}
-                  disabled={selectedEvents.length === 0}
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Aprovar Selecionados
-                </Button>
+                {/* Botões de consolidação */}
+                <div className="flex gap-4">
+                  <Button
+                    onClick={handleConsolidate}
+                    disabled={(selectedEvents.length === 0 && filteredEvents.length === 0) || isConsolidating}
+                  >
+                    {isConsolidating ? (
+                      <>
+                        <Pause className="h-4 w-4 mr-2" />
+                        Consolidando...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Consolidar Eventos
+                      </>
+                    )}
+                  </Button>
                 
-                <Button
-                  variant="destructive"
-                  onClick={() => setIsRejectDialogOpen(true)}
-                  disabled={selectedEvents.length === 0}
-                >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Rejeitar Selecionados
-                </Button>
+                  <Button
+                    variant="default"
+                    onClick={handleApprove}
+                    disabled={selectedEvents.length === 0}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Aprovar Selecionados
+                  </Button>
+                  
+                  <Button
+                    variant="destructive"
+                    onClick={() => setIsRejectDialogOpen(true)}
+                    disabled={selectedEvents.length === 0}
+                  >
+                    <XCircle className="h-4 w-4 mr-2" />
+                    Rejeitar Selecionados
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

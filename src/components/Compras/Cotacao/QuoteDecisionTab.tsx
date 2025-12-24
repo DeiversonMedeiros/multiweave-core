@@ -54,20 +54,31 @@ export function QuoteDecisionTab() {
     return { lowestValue, lowestSupplierId };
   };
 
-  // Calcular vencedor global (soma de todos os itens)
+  // Calcular vencedor global (soma de todos os itens + frete + imposto - descontos)
   const calculateGlobalWinner = () => {
+    const subtotals: { [supplierId: string]: number } = {};
     const totals: { [supplierId: string]: number } = {};
 
     selectedSuppliers.forEach((sup) => {
-      let total = 0;
+      let subtotal = 0;
       items.forEach((item) => {
         const row = quoteMatrix[item.id] || {};
         const cell = row[sup.id];
         if (cell?.finalValue != null) {
-          total += cell.finalValue;
+          subtotal += cell.finalValue;
         }
       });
-      totals[sup.id] = total;
+      subtotals[sup.id] = subtotal;
+
+      // Calcular total final: subtotal + frete + imposto - descontos
+      const frete = sup.valor_frete || 0;
+      const imposto = sup.valor_imposto || 0;
+      const descontoPct = sup.desconto_percentual || 0;
+      const descontoValor = sup.desconto_valor || 0;
+      const descontoCalculado = subtotal * (descontoPct / 100) + descontoValor;
+      
+      const totalFinal = subtotal + frete + imposto - descontoCalculado;
+      totals[sup.id] = Math.max(0, totalFinal);
     });
 
     let lowestTotal: number | null = null;
@@ -80,7 +91,7 @@ export function QuoteDecisionTab() {
       }
     });
 
-    return { totals, winnerId, lowestTotal };
+    return { subtotals, totals, winnerId, lowestTotal };
   };
 
   const globalTotals = calculateGlobalWinner();
@@ -111,7 +122,7 @@ export function QuoteDecisionTab() {
                   <div>
                     <h4 className="font-medium text-sm">{item.description}</h4>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {item.quantity} {item.unit} • {item.code}
+                      {item.quantity} {item.unit} • {item.originLabel}
                     </p>
                   </div>
                   {lowestValue !== null && (
@@ -211,36 +222,74 @@ export function QuoteDecisionTab() {
         <CardContent>
           <div className="space-y-3">
             {selectedSuppliers.map((supplier) => {
+              const subtotal = globalTotals.subtotals[supplier.id] || 0;
               const total = globalTotals.totals[supplier.id] || 0;
               const isWinner = supplier.id === globalTotals.winnerId;
               const isSelected = globalWinnerSupplierId === supplier.id;
+              const frete = supplier.valor_frete || 0;
+              const imposto = supplier.valor_imposto || 0;
+              const descontoPct = supplier.desconto_percentual || 0;
+              const descontoValor = supplier.desconto_valor || 0;
+              const descontoCalculado = subtotal * (descontoPct / 100) + descontoValor;
+              // Sempre mostrar detalhamento se houver subtotal ou valores extras
+              const temInfoExtra = subtotal > 0 || frete > 0 || imposto > 0 || descontoCalculado > 0;
 
               return (
                 <div
                   key={supplier.id}
-                  className={`flex items-center justify-between p-3 border rounded-md ${
+                  className={`border rounded-md ${
                     isSelected ? 'bg-primary/5 border-primary' : ''
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <p className="text-sm font-medium">{supplier.name}</p>
-                      <p className="text-xs text-muted-foreground">{supplier.cnpj}</p>
+                  <div className="flex items-center justify-between p-3">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <p className="text-sm font-medium">{supplier.name}</p>
+                        <p className="text-xs text-muted-foreground">{supplier.cnpj}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <p className="text-sm font-semibold">{formatCurrency(total)}</p>
-                      {isWinner && (
-                        <Badge variant="secondary" className="text-xs mt-1">
-                          Menor Total
-                        </Badge>
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">{formatCurrency(total)}</p>
+                        {isWinner && (
+                          <Badge variant="secondary" className="text-xs mt-1">
+                            Menor Total
+                          </Badge>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
                       )}
                     </div>
-                    {isSelected && (
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
-                    )}
                   </div>
+                  
+                  {/* Detalhamento: Frete, Imposto, Descontos */}
+                  {temInfoExtra && (
+                    <div className="px-3 pb-3 pt-2 border-t bg-muted/30 space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Subtotal dos itens:</span>
+                        <span className="font-medium">{formatCurrency(subtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Frete:</span>
+                        <span className="font-medium">{formatCurrency(frete)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Impostos:</span>
+                        <span className="font-medium">{formatCurrency(imposto)}</span>
+                      </div>
+                      {descontoCalculado > 0 && (
+                        <div className="flex justify-between text-xs text-red-600">
+                          <span>Descontos:</span>
+                          <span className="font-medium">-{formatCurrency(descontoCalculado)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-xs font-semibold pt-1 border-t mt-1">
+                        <span>Total Final:</span>
+                        <span>{formatCurrency(total)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

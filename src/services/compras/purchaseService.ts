@@ -113,7 +113,7 @@ export interface NFEntryInput {
 const requisitionTransitions: Record<RequisitionWorkflowState, RequisitionWorkflowState[]> = {
   criada: ['pendente_aprovacao', 'cancelada'],
   pendente_aprovacao: ['aprovada', 'reprovada'],
-  aprovada: ['encaminhada', 'cancelada'],
+  aprovada: ['encaminhada', 'em_cotacao', 'cancelada'], // Permitir transição direta de aprovada para em_cotacao
   reprovada: [],
   encaminhada: ['em_cotacao', 'cancelada'],
   em_cotacao: ['finalizada'],
@@ -772,14 +772,75 @@ export const purchaseService = {
       ),
     );
 
-    await purchaseService.transitionRequisition({
+    // Buscar o estado atual da requisição para fazer a transição correta
+    const requisicao = await EntityService.getById({
+      schema: 'compras',
+      table: 'requisicoes_compra',
       companyId: params.companyId,
-      requisicaoId: params.input.requisicao_id,
-      from: 'encaminhada',
-      to: 'em_cotacao',
-      actorId: params.userId,
-      payload: { cotacao_ciclo_id: (ciclo as any)?.id },
+      id: params.input.requisicao_id,
     });
+
+    const currentState = (requisicao as any)?.workflow_state as RequisitionWorkflowState;
+    
+    // Se já está em 'em_cotacao', não precisa atualizar
+    if (currentState !== 'em_cotacao') {
+      // Determinar o estado de origem baseado no estado atual
+      let fromState: RequisitionWorkflowState;
+      
+      if (currentState === 'aprovada') {
+        fromState = 'aprovada';
+      } else if (currentState === 'encaminhada') {
+        fromState = 'encaminhada';
+      } else {
+        // Se o estado não é nem 'aprovada' nem 'encaminhada', 
+        // atualizar diretamente sem usar a função de transição
+        fromState = currentState;
+      }
+
+      try {
+        // Tentar fazer a transição usando a função de transição
+        await purchaseService.transitionRequisition({
+          companyId: params.companyId,
+          requisicaoId: params.input.requisicao_id,
+          from: fromState,
+          to: 'em_cotacao',
+          actorId: params.userId,
+          payload: { cotacao_ciclo_id: (ciclo as any)?.id },
+        });
+      } catch (error: any) {
+        // Se a transição falhar (por exemplo, transição não permitida),
+        // atualizar diretamente o workflow_state
+        if (error?.message?.includes('Transição inválida')) {
+          await EntityService.update({
+            schema: 'compras',
+            table: 'requisicoes_compra',
+            companyId: params.companyId,
+            id: params.input.requisicao_id,
+            data: {
+              workflow_state: 'em_cotacao',
+            },
+          });
+
+          // Registrar no log de workflow
+          await EntityService.create({
+            schema: 'compras',
+            table: 'workflow_logs',
+            companyId: params.companyId,
+            data: {
+              entity_type: 'requisicao_compra',
+              entity_id: params.input.requisicao_id,
+              from_state: currentState,
+              to_state: 'em_cotacao',
+              actor_id: params.userId,
+              payload: { cotacao_ciclo_id: (ciclo as any)?.id },
+            },
+          });
+        } else {
+          // Se for outro tipo de erro, relançar
+          throw error;
+        }
+      }
+    }
 
     return {
       ciclo,

@@ -254,15 +254,46 @@ export const DeductionsService = {
     anoReferencia?: number
   ): Promise<EmployeeDeduction[]> => {
     try {
-      const { data, error } = await supabase.rpc('get_pending_deductions', {
-        p_company_id: companyId,
-        p_employee_id: employeeId || null,
-        p_mes_referencia: mesReferencia || null,
-        p_ano_referencia: anoReferencia || null,
+      // Usar call_schema_rpc para chamar função do schema rh
+      const { data, error } = await supabase.rpc('call_schema_rpc', {
+        p_schema_name: 'rh',
+        p_function_name: 'get_pending_deductions',
+        p_params: {
+          p_company_id: companyId,
+          p_employee_id: employeeId || null,
+          p_mes_referencia: mesReferencia || null,
+          p_ano_referencia: anoReferencia || null,
+        }
       });
 
-      if (error) throw error;
-      return data || [];
+      if (error) {
+        console.error('Erro na chamada RPC:', error);
+        throw error;
+      }
+      
+      // call_schema_rpc retorna { result: ... } ou { error: true, message: ... }
+      if (data?.error) {
+        throw new Error(data.message || 'Erro ao buscar deduções pendentes');
+      }
+      
+      // Funções que retornam TABLE podem retornar como array direto ou dentro de result
+      // Verificar se data é um array (retorno direto de TABLE)
+      if (Array.isArray(data)) {
+        return data as EmployeeDeduction[];
+      }
+      
+      // Se data.result existe e é um array, usar ele
+      if (data?.result && Array.isArray(data.result)) {
+        return data.result as EmployeeDeduction[];
+      }
+      
+      // Se data.result existe mas não é array, tentar converter
+      if (data?.result) {
+        return [data.result] as EmployeeDeduction[];
+      }
+      
+      // Retornar array vazio se não houver dados
+      return [];
     } catch (error) {
       console.error('Erro ao buscar deduções pendentes:', error);
       throw error;

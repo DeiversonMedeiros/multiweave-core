@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { usePurchaseQuoteStore } from '@/stores/purchaseQuoteStore';
-import { Package, Users, DollarSign, Calendar, Percent } from 'lucide-react';
+import { Package, Users } from 'lucide-react';
 
 // Helper para formatar moeda
 function formatCurrency(value: number): string {
@@ -97,137 +97,135 @@ export function ItemsSuppliersTab() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <div className="min-w-full">
-                  {/* Cabeçalho da Tabela */}
-                  <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: `300px repeat(${selectedSuppliers.length}, 1fr)` }}>
-                    <div className="font-medium text-sm p-2 border-b">Item</div>
-                    {selectedSuppliers.map((supplier) => (
-                      <div
-                        key={supplier.id}
-                        className="font-medium text-sm p-2 border-b text-center"
-                      >
-                        {supplier.name}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Linhas de Itens */}
-                  {items.map((item) => {
-                    const row = quoteMatrix[item.id] || {};
-                    return (
-                      <div
-                        key={item.id}
-                        className="grid gap-2 mb-4 pb-4 border-b last:border-0"
-                        style={{ gridTemplateColumns: `300px repeat(${selectedSuppliers.length}, 1fr)` }}
-                      >
-                        {/* Informações do Item */}
-                        <div className="p-2">
-                          <div className="font-medium text-sm">{item.description}</div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {item.quantity} {item.unit} • {item.code}
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-3 font-medium text-sm min-w-[300px]">Item</th>
+                      {selectedSuppliers.map((supplier) => (
+                        <th key={supplier.id} className="text-center p-3 font-medium text-sm border-l">
+                          {supplier.name}
+                        </th>
+                      ))}
+                    </tr>
+                    <tr className="border-b bg-muted/50">
+                      <th className="text-left p-2 text-xs text-muted-foreground font-normal"></th>
+                      {selectedSuppliers.map((supplier) => (
+                        <th key={supplier.id} className="text-center p-2 text-xs text-muted-foreground font-normal border-l">
+                          <div className="grid grid-cols-4 gap-2">
+                            <div className="text-xs">Preço Unit.</div>
+                            <div className="text-xs">Desconto (%)</div>
+                            <div className="text-xs">Prazo (dias)</div>
+                            <div className="text-xs">Total</div>
                           </div>
-                        </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => {
+                      const row = quoteMatrix[item.id] || {};
+                      return (
+                        <tr key={item.id} className="border-b hover:bg-muted/30">
+                          {/* Informações do Item */}
+                          <td className="p-3 align-top">
+                            <div className="font-medium text-sm">{item.description}</div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {item.quantity} {item.unit} • {item.originLabel}
+                            </div>
+                          </td>
 
-                        {/* Campos por Fornecedor */}
-                        {selectedSuppliers.map((supplier) => {
-                          const cell = row[supplier.id] || {
-                            price: null,
-                            discount: null,
-                            leadTime: null,
-                            commercialTerms: null,
-                            finalValue: null,
-                          };
+                          {/* Dados por Fornecedor */}
+                          {selectedSuppliers.map((supplier) => {
+                            const cell = row[supplier.id] || {
+                              price: null,
+                              discount: null,
+                              leadTime: null,
+                              commercialTerms: null,
+                              finalValue: null,
+                            };
 
-                          return (
-                            <div key={supplier.id} className="space-y-2 p-2">
-                              {/* Preço Unitário */}
-                              <div>
-                                <Label className="text-xs flex items-center gap-1">
-                                  <DollarSign className="h-3 w-3" />
-                                  Preço Unit.
-                                </Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={cell.price ?? ''}
-                                  onChange={(e) =>
-                                    setQuoteValue(
-                                      item.id,
-                                      supplier.id,
-                                      'price',
-                                      e.target.value ? parseFloat(e.target.value) : null
-                                    )
-                                  }
-                                  placeholder="0.00"
-                                  className="h-8 text-sm"
-                                />
-                              </div>
+                            return (
+                              <td key={supplier.id} className="p-3 border-l align-top">
+                                <div className="grid grid-cols-4 gap-2">
+                                  {/* Preço Unitário */}
+                                  <div>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={cell.price ?? ''}
+                                      onChange={(e) =>
+                                        setQuoteValue(
+                                          item.id,
+                                          supplier.id,
+                                          'price',
+                                          e.target.value ? parseFloat(e.target.value) : null
+                                        )
+                                      }
+                                      placeholder="0.00"
+                                      className="h-8 text-sm text-center"
+                                    />
+                                  </div>
 
-                              {/* Desconto */}
-                              <div>
-                                <Label className="text-xs flex items-center gap-1">
-                                  <Percent className="h-3 w-3" />
-                                  Desconto (%)
-                                </Label>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  max="100"
-                                  value={cell.discount ?? ''}
-                                  onChange={(e) =>
-                                    setQuoteValue(
-                                      item.id,
-                                      supplier.id,
-                                      'discount',
-                                      e.target.value ? parseFloat(e.target.value) : null
-                                    )
-                                  }
-                                  placeholder="0.00"
-                                  className="h-8 text-sm"
-                                />
-                              </div>
+                                  {/* Desconto */}
+                                  <div>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      max="100"
+                                      value={cell.discount ?? ''}
+                                      onChange={(e) =>
+                                        setQuoteValue(
+                                          item.id,
+                                          supplier.id,
+                                          'discount',
+                                          e.target.value ? parseFloat(e.target.value) : null
+                                        )
+                                      }
+                                      placeholder="0.00"
+                                      className="h-8 text-sm text-center"
+                                    />
+                                  </div>
 
-                              {/* Prazo de Entrega */}
-                              <div>
-                                <Label className="text-xs flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  Prazo (dias)
-                                </Label>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  value={cell.leadTime ?? ''}
-                                  onChange={(e) =>
-                                    setQuoteValue(
-                                      item.id,
-                                      supplier.id,
-                                      'leadTime',
-                                      e.target.value ? parseInt(e.target.value) : null
-                                    )
-                                  }
-                                  placeholder="0"
-                                  className="h-8 text-sm"
-                                />
-                              </div>
+                                  {/* Prazo de Entrega */}
+                                  <div>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={cell.leadTime ?? ''}
+                                      onChange={(e) =>
+                                        setQuoteValue(
+                                          item.id,
+                                          supplier.id,
+                                          'leadTime',
+                                          e.target.value ? parseInt(e.target.value) : null
+                                        )
+                                      }
+                                      placeholder="0"
+                                      className="h-8 text-sm text-center"
+                                    />
+                                  </div>
 
-                              {/* Valor Final Calculado */}
-                              {cell.finalValue !== null && (
-                                <div className="pt-1">
-                                  <div className="text-xs text-muted-foreground">Total</div>
-                                  <div className="text-sm font-semibold">
-                                    {formatCurrency(cell.finalValue)}
+                                  {/* Valor Final Calculado */}
+                                  <div className="flex items-center justify-center">
+                                    {cell.finalValue !== null ? (
+                                      <div className="text-sm font-semibold">
+                                        {formatCurrency(cell.finalValue)}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-muted-foreground">-</div>
+                                    )}
                                   </div>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>

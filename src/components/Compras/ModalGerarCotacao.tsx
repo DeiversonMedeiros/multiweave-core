@@ -47,6 +47,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
+import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/hooks/use-toast';
 import { EntityService } from '@/services/generic/entityService';
 import { useStartQuoteCycle } from '@/hooks/compras/useComprasData';
@@ -100,6 +101,14 @@ interface FornecedorCotacao {
   id: string;
   fornecedor_id: string;
   fornecedor_nome?: string;
+  valor_frete?: number;
+  valor_imposto?: number;
+  desconto_percentual?: number;
+  desconto_valor?: number;
+  prazo_entrega?: number;
+  condicao_pagamento?: string;
+  observacoes?: string;
+  preco_unitario?: number; // Campo legado, mantido para compatibilidade
 }
 
 interface RateioItem {
@@ -138,6 +147,7 @@ type MapaFornecedorItens = Record<
 
 export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGerarCotacaoProps) {
   const { selectedCompany } = useCompany();
+  const { user } = useAuth();
   const { toast } = useToast();
   const startQuoteCycleMutation = useStartQuoteCycle();
   const { data: partnersData } = useActivePartners();
@@ -191,6 +201,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     const porFornecedor = new Map<string, number>();
     const porItem = new Map<string, { melhor: number; fornecedorId?: string }>();
 
+    // Primeiro, calcular subtotais dos itens por fornecedor
     itensAgrupados
       .filter((i) => itensSelecionados.has(getItemKey(i)))
       .forEach((item) => {
@@ -208,9 +219,28 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         });
       });
 
+    // Agora calcular totais finais incluindo frete, imposto e desconto
+    const totaisFinais = new Map<string, number>();
+    porFornecedor.forEach((subtotal, fid) => {
+      const fornecedor = fornecedores.find(f => f.id === fid);
+      if (!fornecedor) {
+        totaisFinais.set(fid, subtotal);
+        return;
+      }
+
+      const frete = fornecedor.valor_frete || 0;
+      const imposto = fornecedor.valor_imposto || 0;
+      const descontoPct = fornecedor.desconto_percentual || 0;
+      const descontoValor = fornecedor.desconto_valor || 0;
+      const descontoCalculado = subtotal * (descontoPct / 100) + descontoValor;
+      
+      const totalFinal = subtotal + frete + imposto - descontoCalculado;
+      totaisFinais.set(fid, Math.max(0, totalFinal));
+    });
+
     let melhorFornecedorId: string | undefined;
     let melhorTotal = Number.POSITIVE_INFINITY;
-    porFornecedor.forEach((total, fid) => {
+    totaisFinais.forEach((total, fid) => {
       if (total < melhorTotal) {
         melhorTotal = total;
         melhorFornecedorId = fid;
@@ -218,8 +248,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     });
 
     return {
-      porFornecedor,
+      porFornecedor, // Subtotal dos itens (sem frete/imposto/desconto)
       porItem,
+      totaisFinais, // Totais finais incluindo frete/imposto/desconto
       melhorFornecedorId,
       melhorTotal: Number.isFinite(melhorTotal) ? melhorTotal : 0,
       totalItens: Array.from(porFornecedor.values()).reduce((a, b) => a + b, 0),
@@ -261,6 +292,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     });
     return map;
   }, [partnersData]);
+
+  // Mapa de fornecedores_dados: fornecedor_id -> fornecedor_dados completo
+  const fornecedoresDadosMap = useMemo(() => {
+    const map = new Map<string, any>();
+    fornecedoresDisponiveis.forEach((fd: any) => {
+      map.set(fd.id, fd);
+    });
+    return map;
+  }, [fornecedoresDisponiveis]);
 
   // Carregar dados iniciais
   useEffect(() => {
@@ -901,6 +941,58 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         await Promise.all(inserts);
       }
 
+      // Atualizar workflow_state de todas as requisições selecionadas para 'em_cotacao'
+      // A primeira já foi atualizada pelo startQuoteCycle, mas as outras também precisam ser atualizadas
+      const updatePromises = requisicoesIds.map(async (reqId) => {
+        try {
+          // Buscar o estado atual da requisição
+          const requisicao = await EntityService.getById({
+            schema: 'compras',
+            table: 'requisicoes_compra',
+            companyId: selectedCompany!.id,
+            id: reqId,
+          });
+
+          const currentState = (requisicao as any)?.workflow_state;
+          
+          // Se já está em 'em_cotacao', não precisa atualizar
+          if (currentState !== 'em_cotacao') {
+            // Atualizar diretamente o workflow_state
+            await EntityService.update({
+              schema: 'compras',
+              table: 'requisicoes_compra',
+              companyId: selectedCompany!.id,
+              id: reqId,
+              data: {
+                workflow_state: 'em_cotacao',
+              },
+            });
+
+            // Registrar no log de workflow
+            if (user?.id) {
+              await EntityService.create({
+                schema: 'compras',
+                table: 'workflow_logs',
+                companyId: selectedCompany!.id,
+                data: {
+                  entity_type: 'requisicao_compra',
+                  entity_id: reqId,
+                  from_state: currentState,
+                  to_state: 'em_cotacao',
+                  actor_id: user.id,
+                  payload: { cotacao_ciclo_id: cicloId },
+                },
+              });
+            }
+          }
+        } catch (error) {
+          // Log do erro mas não interrompe o processo
+          console.error(`Erro ao atualizar requisição ${reqId}:`, error);
+        }
+      });
+
+      await Promise.all(updatePromises);
+
       toast({
         title: "Sucesso",
         description: "Cotação enviada para aprovação com mapa por item/fornecedor.",
@@ -1040,7 +1132,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
               </div>
             </div>
 
-            <ScrollArea className="flex-1 px-6">
+            <div className="flex-1 px-6 overflow-y-auto" style={{ maxHeight: 'calc(95vh - 200px)' }}>
               <TabsContent value="dados" className="mt-4 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -1144,9 +1236,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                 </Table>
               </TabsContent>
 
-              <TabsContent value="itens-fornecedores" className="mt-4 space-y-4 flex flex-col h-full">
-                {/* Parte Superior - Itens da Cotação (Sticky) */}
-                <div className="sticky top-0 z-10 bg-background border-b pb-4 mb-4 flex-shrink-0">
+              <TabsContent value="itens-fornecedores" className="mt-4 space-y-4 pb-8">
+                {/* Parte Superior - Itens da Cotação */}
+                <div className="flex-shrink-0">
                   <Card>
                     <CardHeader className="pb-3">
                       <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1195,7 +1287,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                 </div>
 
                 {/* Parte Inferior - Seleção de Fornecedores */}
-                <div className="flex-1 overflow-auto">
+                <div>
                   <Card>
                     <CardHeader>
                       <div className="flex justify-between items-center">
@@ -1267,7 +1359,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             <TableBody>
                               {fornecedores.map((fornecedor, index) => {
                                 const partner = fornecedor.fornecedor_id 
-                                  ? partnersMap.get(fornecedor.fornecedor_id) 
+                                  ? (() => {
+                                      const fd = fornecedoresDadosMap.get(fornecedor.fornecedor_id);
+                                      return fd?.partner_id ? partnersMap.get(fd.partner_id) : null;
+                                    })()
                                   : null;
                                 const fd = fornecedoresDisponiveis.find((x: any) => x.id === fornecedor.fornecedor_id);
                                 const isBlocked = fd?.status === 'bloqueado';
@@ -1404,7 +1499,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             <p className="text-sm font-medium mb-2">Fornecedores Selecionados:</p>
                             <ul className="list-disc list-inside space-y-1">
                               {fornecedores.filter(f => f.fornecedor_id).map((fornecedor) => {
-                                const partner = partnersMap.get(fornecedor.fornecedor_id);
+                                const fornecedorDados = fornecedoresDadosMap.get(fornecedor.fornecedor_id);
+                                const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
                                 return (
                                   <li key={fornecedor.id} className="text-sm text-muted-foreground">
                                     {partner?.nome_fantasia || partner?.razao_social} {partner?.cnpj && `(${partner.cnpj})`}
@@ -1430,32 +1526,41 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                     </AlertDescription>
                   </Alert>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="flex items-center space-x-4">
-                      <Label>Mapa de Cotação - Comparativo de Valores</Label>
+                      <Label className="text-lg font-semibold">Mapa de Cotação - Comparativo de Valores</Label>
                       <Badge variant="secondary">{itensSelecionados.size} itens selecionados</Badge>
                     </div>
 
-                    <div className="max-h-[60vh] overflow-auto rounded border">
+                    {/* Tabela Principal: Itens x Fornecedores */}
+                    <div className="max-h-[50vh] overflow-auto rounded border">
                       <div className="inline-block min-w-full align-middle">
                         <div className="border rounded-lg">
                           {/* Cabeçalho Fixo */}
                           <div className="grid border-b bg-muted/50 sticky top-0 z-10" 
-                               style={{ gridTemplateColumns: `250px repeat(${fornecedores.filter(f => f.fornecedor_id).length}, minmax(280px, 1fr))` }}>
+                               style={{ gridTemplateColumns: `200px repeat(${fornecedores.filter(f => f.fornecedor_id).length}, 1fr)` }}>
                             {/* Coluna de Itens */}
                             <div className="p-3 font-medium text-sm border-r">
-                              Item
+                              Item / Descrição
                             </div>
-                            {/* Colunas de Fornecedores */}
+                            {/* Colunas de Fornecedores - 3 colunas cada */}
                             {fornecedores.filter(f => f.fornecedor_id).map((f) => {
-                              const partner = partnersMap.get(f.fornecedor_id);
-                              const displayName = partner?.nome_fantasia || partner?.razao_social || `Fornecedor ${f.id.substring(0, 8)}`;
+                              // Buscar fornecedor_dados pelo fornecedor_id
+                              const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
+                              // Buscar partner pelo partner_id do fornecedor_dados
+                              const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+                              const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.id.substring(0, 8)}`;
                               return (
-                                <div key={f.id} className="p-3 font-medium text-sm border-r last:border-r-0 text-center">
-                                  <div className="font-semibold">{displayName}</div>
+                                <div key={f.id} className="p-2 font-medium text-xs border-r last:border-r-0 text-center bg-muted/30">
+                                  <div className="font-semibold text-sm">{displayName}</div>
                                   {partner?.cnpj && (
                                     <div className="text-xs text-muted-foreground mt-1">{partner.cnpj}</div>
                                   )}
+                                  <div className="grid grid-cols-3 gap-1 mt-2 text-xs font-normal">
+                                    <div className="bg-background/50 p-1 rounded">Unit.</div>
+                                    <div className="bg-background/50 p-1 rounded">Qtd.</div>
+                                    <div className="bg-background/50 p-1 rounded">Total</div>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1493,54 +1598,35 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
                               return (
                                 <div key={itemKey} className="border-b last:border-b-0">
-                                  {/* Linha Principal do Item */}
-                                  <div className="grid border-b" 
-                                       style={{ gridTemplateColumns: `250px repeat(${fornecedoresValidosList.length}, minmax(280px, 1fr))` }}>
+                                  <div className="grid" 
+                                       style={{ gridTemplateColumns: `200px repeat(${fornecedoresValidosList.length}, 1fr)` }}>
                                     {/* Coluna de Item (Fixa) */}
-                                    <div className="p-3 border-r bg-muted/30">
+                                    <div className="p-3 border-r bg-muted/20">
                                       <div className="font-medium text-sm">{item.material_nome}</div>
                                       <div className="text-xs text-muted-foreground mt-1">
                                         {item.material_codigo || '—'} • {item.quantidade_total.toLocaleString('pt-BR')} {item.unidade_medida}
                                       </div>
                                     </div>
 
-                                    {/* Colunas de Fornecedores */}
+                                    {/* Colunas de Fornecedores - 3 campos cada */}
                                     {fornecedoresValidosList.map((f) => {
                                       const cell = mapaFornecedorItens[f.id]?.[itemKey];
                                       const isLowest = f.id === lowestSupplierId && lowestValue !== null;
                                       const isHighest = f.id === highestSupplierId && highestValue !== null && lowestSupplierId !== highestSupplierId;
-                                      const isWinner = cell?.is_vencedor;
+                                      const valorTotal = cell ? valorItemCalculado(cell) : 0;
 
                                       return (
                                         <div
                                           key={f.id}
-                                          className={`p-3 border-r last:border-r-0 space-y-2 ${
+                                          className={`p-2 border-r last:border-r-0 ${
                                             isLowest ? 'bg-green-50 dark:bg-green-950/20' : ''
                                           } ${
                                             isHighest ? 'bg-red-50 dark:bg-red-950/20' : ''
-                                          } ${
-                                            isWinner ? 'ring-2 ring-green-500' : ''
                                           }`}
                                         >
-                                          <div className="grid grid-cols-2 gap-2">
-                                            <div className="col-span-2">
-                                              <Label className="text-xs">Qtd. ofertada</Label>
-                                              <Input
-                                                type="number"
-                                                value={cell?.quantidade_ofertada ?? item.quantidade_total}
-                                                onChange={(e) =>
-                                                  handleUpdateMapaValor(
-                                                    f.id,
-                                                    item,
-                                                    'quantidade_ofertada',
-                                                    parseFloat(e.target.value) || 0
-                                                  )
-                                                }
-                                                className="h-8 text-sm"
-                                              />
-                                            </div>
+                                          <div className="grid grid-cols-3 gap-1">
+                                            {/* Valor Unitário */}
                                             <div>
-                                              <Label className="text-xs">Preço *</Label>
                                               <Input
                                                 type="number"
                                                 step="0.01"
@@ -1554,111 +1640,41 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                                     parseFloat(e.target.value) || 0
                                                   )
                                                 }
-                                                className="h-8 text-sm"
-                                                required
+                                                placeholder="0,00"
+                                                className="h-8 text-xs text-center"
                                               />
                                             </div>
+                                            {/* Quantidade */}
                                             <div>
-                                              <Label className="text-xs">Desconto (%)</Label>
                                               <Input
                                                 type="number"
-                                                step="0.01"
+                                                step="0.001"
                                                 min="0"
-                                                max="100"
-                                                value={cell?.desconto_percentual ?? 0}
+                                                value={cell?.quantidade_ofertada ?? item.quantidade_total}
                                                 onChange={(e) =>
                                                   handleUpdateMapaValor(
                                                     f.id,
                                                     item,
-                                                    'desconto_percentual',
+                                                    'quantidade_ofertada',
                                                     parseFloat(e.target.value) || 0
                                                   )
                                                 }
-                                                className="h-8 text-sm"
+                                                placeholder="0"
+                                                className="h-8 text-xs text-center"
                                               />
                                             </div>
-                                            <div>
-                                              <Label className="text-xs">Prazo (dias) *</Label>
-                                              <Input
-                                                type="number"
-                                                min="0"
-                                                value={cell?.prazo_entrega_dias ?? 0}
-                                                onChange={(e) =>
-                                                  handleUpdateMapaValor(
-                                                    f.id,
-                                                    item,
-                                                    'prazo_entrega_dias',
-                                                    parseInt(e.target.value) || 0
-                                                  )
+                                            {/* Valor Total (calculado) */}
+                                            <div className="flex items-center justify-center">
+                                              <span className={`text-xs font-semibold ${
+                                                isLowest ? 'text-green-600 dark:text-green-400' : ''
+                                              } ${
+                                                isHighest ? 'text-red-600 dark:text-red-400' : ''
+                                              }`}>
+                                                {valorTotal > 0 
+                                                  ? `R$ ${valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                                  : '—'
                                                 }
-                                                className="h-8 text-sm"
-                                                required
-                                              />
-                                            </div>
-                                            <div className="col-span-2">
-                                              <Label className="text-xs">Condição Comercial *</Label>
-                                              <Input
-                                                value={cell?.condicao_pagamento ?? ''}
-                                                onChange={(e) =>
-                                                  handleUpdateMapaValor(
-                                                    f.id,
-                                                    item,
-                                                    'condicao_pagamento',
-                                                    e.target.value
-                                                  )
-                                                }
-                                                placeholder="Ex: 30/60 dias"
-                                                className="h-8 text-sm"
-                                                required
-                                              />
-                                            </div>
-                                          </div>
-
-                                          {/* Valor Final Calculado */}
-                                          {cell && (cell.valor_unitario > 0 || cell.quantidade_ofertada > 0) && (
-                                            <div className="pt-2 border-t">
-                                              <div className="flex items-center justify-between">
-                                                <span className="text-xs text-muted-foreground">Total</span>
-                                                <span className={`text-sm font-semibold ${
-                                                  isLowest ? 'text-green-600' : ''
-                                                } ${
-                                                  isHighest ? 'text-red-600' : ''
-                                                }`}>
-                                                  R$ {valorItemCalculado(cell).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </span>
-                                              </div>
-                                              {isLowest && (
-                                                <Badge variant="secondary" className="mt-1 text-xs flex items-center gap-1 w-full justify-center">
-                                                  <TrendingDown className="h-3 w-3" />
-                                                  Menor
-                                                </Badge>
-                                              )}
-                                              {isHighest && !isLowest && (
-                                                <Badge variant="destructive" className="mt-1 text-xs flex items-center gap-1 w-full justify-center">
-                                                  <TrendingUp className="h-3 w-3" />
-                                                  Maior
-                                                </Badge>
-                                              )}
-                                            </div>
-                                          )}
-
-                                          {/* Checkbox Vencedor */}
-                                          <div className="pt-2">
-                                            <div className="flex items-center space-x-2">
-                                              <Checkbox
-                                                checked={isWinner || false}
-                                                onCheckedChange={(checked) =>
-                                                  handleUpdateMapaValor(
-                                                    f.id,
-                                                    item,
-                                                    'is_vencedor',
-                                                    Boolean(checked)
-                                                  )
-                                                }
-                                              />
-                                              <Label className="text-xs cursor-pointer">
-                                                Marcar como vencedor
-                                              </Label>
+                                              </span>
                                             </div>
                                           </div>
                                         </div>
@@ -1671,6 +1687,195 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                         </div>
                       </div>
                     </div>
+
+                    {/* Seção de Informações Adicionais por Fornecedor */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">Informações Adicionais da Cotação</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          {fornecedores.filter(f => f.fornecedor_id).map((f) => {
+                            // Buscar fornecedor_dados pelo fornecedor_id
+                            const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
+                            // Buscar partner pelo partner_id do fornecedor_dados
+                            const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+                            const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.id.substring(0, 8)}`;
+                            
+                            // Calcular subtotal dos itens deste fornecedor
+                            const subtotal = itensAgrupados
+                              .filter((item) => itensSelecionados.has(getItemKey(item)))
+                              .reduce((sum, item) => {
+                                const cell = mapaFornecedorItens[f.id]?.[getItemKey(item)];
+                                return sum + (cell ? valorItemCalculado(cell) : 0);
+                              }, 0);
+
+                            const frete = f.valor_frete || 0;
+                            const imposto = f.valor_imposto || 0;
+                            const descontoPct = f.desconto_percentual || 0;
+                            const descontoValor = f.desconto_valor || 0;
+                            const descontoCalculado = subtotal * (descontoPct / 100) + descontoValor;
+                            const total = subtotal + frete + imposto - descontoCalculado;
+
+                            return (
+                              <div key={f.id} className="border rounded-lg p-4 space-y-3">
+                                <div className="font-semibold text-sm mb-3 pb-2 border-b">
+                                  {displayName}
+                                </div>
+                                
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                  {/* Frete */}
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground">Frete (R$)</Label>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={frete}
+                                      onChange={(e) => {
+                                        const newValue = parseFloat(e.target.value) || 0;
+                                        setFornecedores(fornecedores.map(forn => 
+                                          forn.id === f.id ? { ...forn, valor_frete: newValue } : forn
+                                        ));
+                                      }}
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+
+                                  {/* Imposto */}
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground">Imposto (R$)</Label>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={imposto}
+                                      onChange={(e) => {
+                                        const newValue = parseFloat(e.target.value) || 0;
+                                        setFornecedores(fornecedores.map(forn => 
+                                          forn.id === f.id ? { ...forn, valor_imposto: newValue } : forn
+                                        ));
+                                      }}
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+
+                                  {/* Desconto Percentual */}
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground">Desconto (%)</Label>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      max="100"
+                                      value={descontoPct}
+                                      onChange={(e) => {
+                                        const newValue = parseFloat(e.target.value) || 0;
+                                        setFornecedores(fornecedores.map(forn => 
+                                          forn.id === f.id ? { ...forn, desconto_percentual: newValue } : forn
+                                        ));
+                                      }}
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+
+                                  {/* Desconto Valor */}
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground">Desconto (R$)</Label>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={descontoValor}
+                                      onChange={(e) => {
+                                        const newValue = parseFloat(e.target.value) || 0;
+                                        setFornecedores(fornecedores.map(forn => 
+                                          forn.id === f.id ? { ...forn, desconto_valor: newValue } : forn
+                                        ));
+                                      }}
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Resumo Financeiro */}
+                                <div className="mt-4 pt-3 border-t">
+                                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                                    <div>
+                                      <span className="text-muted-foreground">Subtotal:</span>
+                                      <div className="font-semibold">R$ {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Frete:</span>
+                                      <div className="font-semibold">R$ {frete.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Imposto:</span>
+                                      <div className="font-semibold">R$ {imposto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                    </div>
+                                    <div>
+                                      <span className="text-muted-foreground">Desconto:</span>
+                                      <div className="font-semibold text-red-600">- R$ {descontoCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                    </div>
+                                    <div className="border-l pl-3">
+                                      <span className="text-muted-foreground">Total:</span>
+                                      <div className="font-bold text-lg">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Prazo e Condições */}
+                                <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t">
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground">Prazo de Entrega (dias)</Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={f.prazo_entrega || 0}
+                                      onChange={(e) => {
+                                        const newValue = parseInt(e.target.value) || 0;
+                                        setFornecedores(fornecedores.map(forn => 
+                                          forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
+                                        ));
+                                      }}
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-muted-foreground">Condição de Pagamento</Label>
+                                    <Input
+                                      value={f.condicao_pagamento || ''}
+                                      onChange={(e) => {
+                                        setFornecedores(fornecedores.map(forn => 
+                                          forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
+                                        ));
+                                      }}
+                                      placeholder="Ex: 30/60/90 dias"
+                                      className="h-9 text-sm"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Observações */}
+                                <div className="mt-3">
+                                  <Label className="text-xs text-muted-foreground">Observações</Label>
+                                  <Textarea
+                                    value={f.observacoes || ''}
+                                    onChange={(e) => {
+                                      setFornecedores(fornecedores.map(forn => 
+                                        forn.id === f.id ? { ...forn, observacoes: e.target.value } : forn
+                                      ));
+                                    }}
+                                    placeholder="Observações sobre esta cotação..."
+                                    className="text-sm min-h-[60px]"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
                 )}
               </TabsContent>
@@ -1853,8 +2058,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             <p className="text-sm text-muted-foreground">Nenhum fornecedor adicionado</p>
                           )}
                           {fornecedores.map((f) => {
-                            const total = resumoTotais.porFornecedor.get(f.id) || 0;
-                            const partner = partnersMap.get(f.fornecedor_id);
+                            const total = resumoTotais.totaisFinais?.get(f.id) || resumoTotais.porFornecedor.get(f.id) || 0;
+                            // Buscar fornecedor_dados pelo fornecedor_id
+                            const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
+                            // Buscar partner pelo partner_id do fornecedor_dados
+                            const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
                             const isMelhor = resumoTotais.melhorFornecedorId === f.id;
                             return (
                               <div
@@ -1890,7 +2098,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             const item = itensAgrupados.find((i) => i.material_id === materialId);
                             const fornecedorMelhor = fornecedores.find((f) => f.id === info.fornecedorId);
                             const partner = fornecedorMelhor
-                              ? partnersMap.get(fornecedorMelhor.fornecedor_id)
+                              ? (() => {
+                                  const fd = fornecedoresDadosMap.get(fornecedorMelhor.fornecedor_id);
+                                  return fd?.partner_id ? partnersMap.get(fd.partner_id) : null;
+                                })()
                               : null;
                             return (
                               <div key={materialId} className="flex justify-between rounded bg-muted/30 px-3 py-2">
@@ -1941,7 +2152,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                   </div>
                 </div>
               </TabsContent>
-            </ScrollArea>
+            </div>
           </Tabs>
         )}
 
