@@ -2103,7 +2103,7 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
                           </FormControl>
                           <SelectContent>
                             {availableManagers.length === 0 ? (
-                              <SelectItem value="" disabled>
+                              <SelectItem value="none" disabled>
                                 Nenhum usuário disponível
                               </SelectItem>
                             ) : (

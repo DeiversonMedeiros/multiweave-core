@@ -11,6 +11,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { ContaPagar, ContaPagarFormData, ContaPagarFilters } from '@/integrations/supabase/financial-types';
 import { supabase } from '@/integrations/supabase/client';
 import { calculateDueDateStatus } from '@/utils/financial/dueDateUtils';
+import { EntityService } from '@/services/generic/entityService';
 
 interface UseContasPagarReturn {
   contasPagar: ContaPagar[];
@@ -279,23 +280,105 @@ export function useContasPagar(): UseContasPagarReturn {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
     try {
-      const response = await fetch('/api/financial/contas-pagar', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          company_id: selectedCompany.id,
-          ...data,
-        }),
+      // Obter usuário atual para created_by
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Preparar dados para criação
+      const contaData: any = {
+        company_id: selectedCompany.id,
+        numero_titulo: data.numero_titulo || '',
+        fornecedor_id: data.fornecedor_id || null,
+        fornecedor_nome: data.fornecedor_nome || null,
+        fornecedor_cnpj: data.fornecedor_cnpj || null,
+        descricao: data.descricao,
+        valor_original: data.valor_original,
+        valor_atual: data.valor_original, // Inicialmente igual ao valor original
+        data_emissao: data.data_emissao,
+        data_vencimento: data.data_vencimento,
+        centro_custo_id: data.centro_custo_id || null,
+        projeto_id: data.projeto_id || null,
+        departamento: data.departamento || null,
+        classe_financeira: data.classe_financeira || null,
+        categoria: data.categoria || null,
+        status: 'pendente',
+        forma_pagamento: data.forma_pagamento || null,
+        conta_bancaria_id: data.conta_bancaria_id || null,
+        observacoes: data.observacoes || null,
+        anexos: data.anexos || [],
+        valor_desconto: data.valor_desconto || 0,
+        valor_juros: data.valor_juros || 0,
+        valor_multa: data.valor_multa || 0,
+        valor_pago: 0,
+        is_active: true,
+        created_by: user?.id || null,
+        // Campos de parcelamento
+        is_parcelada: data.is_parcelada || false,
+        numero_parcelas: data.numero_parcelas || 1,
+        intervalo_parcelas: data.intervalo_parcelas || 'mensal',
+        // Campos de urgência
+        is_urgente: data.is_urgente || false,
+        motivo_urgencia: data.motivo_urgencia || null,
+      };
+
+      // Remover campos vazios (strings vazias) para evitar erros
+      Object.keys(contaData).forEach(key => {
+        if (contaData[key] === '' || contaData[key] === 'none' || contaData[key] === 'loading') {
+          contaData[key] = null;
+        }
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao criar conta a pagar');
+      // Criar conta a pagar usando EntityService
+      const createdConta = await EntityService.create<ContaPagar>({
+        schema: 'financeiro',
+        table: 'contas_pagar',
+        companyId: selectedCompany.id,
+        data: contaData
+      });
+
+      // Se a conta é parcelada e há parcelas definidas, criar as parcelas
+      if (data.is_parcelada && data.parcelas && data.parcelas.length > 0) {
+        const { useCreateContasPagarParcelas } = await import('./useContasPagarParcelas');
+        // Nota: useCreateContasPagarParcelas é um hook, então precisamos usar de forma diferente
+        // Vamos criar as parcelas diretamente aqui
+        for (const parcela of data.parcelas) {
+          // Gerar número do título da parcela
+          const { data: numeroTitulo } = await supabase.rpc(
+            'generate_titulo_number_parcela',
+            {
+              p_conta_pagar_id: createdConta.id,
+              p_numero_parcela: parcela.numero_parcela
+            }
+          );
+
+          const parcelaData = {
+            conta_pagar_id: createdConta.id,
+            company_id: selectedCompany.id,
+            numero_parcela: parcela.numero_parcela,
+            valor_parcela: parcela.valor_parcela,
+            valor_original: parcela.valor_parcela,
+            valor_atual: parcela.valor_parcela,
+            data_vencimento: parcela.data_vencimento,
+            valor_desconto: 0,
+            valor_juros: 0,
+            valor_multa: 0,
+            valor_pago: 0,
+            status: 'pendente' as const,
+            numero_titulo: numeroTitulo || undefined,
+            observacoes: parcela.observacoes || undefined,
+          };
+
+          await EntityService.create({
+            schema: 'financeiro',
+            table: 'contas_pagar_parcelas',
+            companyId: selectedCompany.id,
+            data: parcelaData
+          });
+        }
       }
 
       await loadContasPagar();
     } catch (err) {
+      console.error('Erro ao criar conta a pagar:', err);
       throw err;
     }
   };
@@ -305,23 +388,28 @@ export function useContasPagar(): UseContasPagarReturn {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
     try {
-      const response = await fetch(`/api/financial/contas-pagar/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          company_id: selectedCompany.id,
-          ...data,
-        }),
+      // Preparar dados para atualização
+      const updateData: any = { ...data };
+      
+      // Remover campos vazios (strings vazias) para evitar erros
+      Object.keys(updateData).forEach(key => {
+        if (updateData[key] === '' || updateData[key] === 'none' || updateData[key] === 'loading') {
+          updateData[key] = null;
+        }
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao atualizar conta a pagar');
-      }
+      // Atualizar conta a pagar usando EntityService
+      await EntityService.update<ContaPagar>({
+        schema: 'financeiro',
+        table: 'contas_pagar',
+        companyId: selectedCompany.id,
+        id: id,
+        data: updateData
+      });
 
       await loadContasPagar();
     } catch (err) {
+      console.error('Erro ao atualizar conta a pagar:', err);
       throw err;
     }
   };
@@ -331,22 +419,17 @@ export function useContasPagar(): UseContasPagarReturn {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
     try {
-      const response = await fetch(`/api/financial/contas-pagar/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          company_id: selectedCompany.id,
-        }),
+      // Deletar conta a pagar usando EntityService
+      await EntityService.delete({
+        schema: 'financeiro',
+        table: 'contas_pagar',
+        companyId: selectedCompany.id,
+        id: id
       });
-
-      if (!response.ok) {
-        throw new Error('Erro ao deletar conta a pagar');
-      }
 
       await loadContasPagar();
     } catch (err) {
+      console.error('Erro ao deletar conta a pagar:', err);
       throw err;
     }
   };
@@ -356,25 +439,42 @@ export function useContasPagar(): UseContasPagarReturn {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
     try {
-      const response = await fetch('/api/financial/contas-pagar/approve', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          company_id: selectedCompany.id,
-          conta_pagar_id: id,
-          status: 'aprovado',
-          observacoes,
-        }),
+      // Obter usuário atual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      // Buscar a aprovação pendente para esta conta
+      const { data: aprovacao, error: aprovacaoError } = await supabase
+        .from('aprovacoes_unificada')
+        .select('id')
+        .eq('processo_id', id)
+        .eq('processo_tipo', 'conta_pagar')
+        .eq('company_id', selectedCompany.id)
+        .eq('status', 'pendente')
+        .order('nivel_aprovacao', { ascending: true })
+        .limit(1)
+        .single();
+
+      if (aprovacaoError || !aprovacao) {
+        throw new Error('Aprovação pendente não encontrada para esta conta');
+      }
+
+      // Usar RPC process_approval do sistema de aprovações unificado
+      const { error } = await supabase.rpc('process_approval', {
+        p_aprovacao_id: aprovacao.id,
+        p_status: 'aprovado',
+        p_observacoes: observacoes || null,
+        p_aprovador_id: user.id
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao aprovar conta a pagar');
+      if (error) {
+        console.error('Erro ao aprovar conta a pagar:', error);
+        throw new Error(`Erro ao aprovar conta a pagar: ${error.message}`);
       }
 
       await loadContasPagar();
     } catch (err) {
+      console.error('Erro ao aprovar conta a pagar:', err);
       throw err;
     }
   };
@@ -384,25 +484,42 @@ export function useContasPagar(): UseContasPagarReturn {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
     try {
-      const response = await fetch('/api/financial/contas-pagar/approve', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          company_id: selectedCompany.id,
-          conta_pagar_id: id,
-          status: 'rejeitado',
-          observacoes,
-        }),
+      // Obter usuário atual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      // Buscar a aprovação pendente para esta conta
+      const { data: aprovacao, error: aprovacaoError } = await supabase
+        .from('aprovacoes_unificada')
+        .select('id')
+        .eq('processo_id', id)
+        .eq('processo_tipo', 'conta_pagar')
+        .eq('company_id', selectedCompany.id)
+        .eq('status', 'pendente')
+        .order('nivel_aprovacao', { ascending: true })
+        .limit(1)
+        .single();
+
+      if (aprovacaoError || !aprovacao) {
+        throw new Error('Aprovação pendente não encontrada para esta conta');
+      }
+
+      // Usar RPC process_approval do sistema de aprovações unificado
+      const { error } = await supabase.rpc('process_approval', {
+        p_aprovacao_id: aprovacao.id,
+        p_status: 'rejeitado',
+        p_observacoes: observacoes || null,
+        p_aprovador_id: user.id
       });
 
-      if (!response.ok) {
-        throw new Error('Erro ao rejeitar conta a pagar');
+      if (error) {
+        console.error('Erro ao rejeitar conta a pagar:', error);
+        throw new Error(`Erro ao rejeitar conta a pagar: ${error.message}`);
       }
 
       await loadContasPagar();
     } catch (err) {
+      console.error('Erro ao rejeitar conta a pagar:', err);
       throw err;
     }
   };
@@ -466,25 +583,23 @@ export function useContasPagar(): UseContasPagarReturn {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
     try {
-      const response = await fetch('/api/financial/contas-pagar/pay', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          company_id: selectedCompany.id,
-          conta_pagar_id: id,
+      // Atualizar conta a pagar com dados de pagamento
+      await EntityService.update<ContaPagar>({
+        schema: 'financeiro',
+        table: 'contas_pagar',
+        companyId: selectedCompany.id,
+        id: id,
+        data: {
+          status: 'pago',
           data_pagamento: dataPagamento,
           valor_pago: valorPago,
-        }),
+          valor_atual: valorPago // Atualizar valor atual com o valor pago
+        }
       });
-
-      if (!response.ok) {
-        throw new Error('Erro ao registrar pagamento');
-      }
 
       await loadContasPagar();
     } catch (err) {
+      console.error('Erro ao registrar pagamento:', err);
       throw err;
     }
   };

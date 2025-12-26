@@ -27,6 +27,7 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { ApprovalModal } from '@/components/approvals/ApprovalModal';
 import { TransferApprovalModal } from '@/components/approvals/TransferApprovalModal';
+import { ContaPagarApprovalCard } from '@/components/approvals/ContaPagarApprovalCard';
 import { Approval } from '@/services/approvals/approvalService';
 
 const CentralAprovacoesExpandida: React.FC = () => {
@@ -406,90 +407,107 @@ const CentralAprovacoesExpandida: React.FC = () => {
               </CardContent>
             </Card>
           ) : (
-            filteredApprovals.map((approval) => (
-              <Card key={approval.id} className={`${getPriorityColor(approval)}`}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      {getProcessoIcon(approval.processo_tipo || '')}
-                      <div>
-                        <CardTitle className="text-lg">
-                          {getProcessoLabel(approval.processo_tipo || '')}
-                        </CardTitle>
-                        <CardDescription>
-                          Nível {approval.nivel_aprovacao} • 
-                          Criado em {new Date(approval.created_at).toLocaleDateString('pt-BR')}
-                        </CardDescription>
+            filteredApprovals.map((approval) => {
+              // Usar card específico para contas a pagar
+              if (approval.processo_tipo === 'conta_pagar') {
+                return (
+                  <ContaPagarApprovalCard
+                    key={approval.id}
+                    approval={approval}
+                    onProcess={openApprovalModal}
+                    onTransfer={openTransferModal}
+                    getStatusColor={getStatusColor}
+                    getPriorityColor={getPriorityColor}
+                  />
+                );
+              }
+
+              // Card padrão para outros tipos
+              return (
+                <Card key={approval.id} className={`${getPriorityColor(approval)}`}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {getProcessoIcon(approval.processo_tipo || '')}
+                        <div>
+                          <CardTitle className="text-lg">
+                            {getProcessoLabel(approval.processo_tipo || '')}
+                          </CardTitle>
+                          <CardDescription>
+                            Nível {approval.nivel_aprovacao} • 
+                            Criado em {new Date(approval.created_at).toLocaleDateString('pt-BR')}
+                          </CardDescription>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={getStatusColor(approval.status)}>
+                          {approval.status.charAt(0).toUpperCase() + approval.status.slice(1)}
+                        </Badge>
+                        {approval.transferido_em && (
+                          <Badge variant="outline" className="text-blue-600">
+                            Transferida
+                          </Badge>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={getStatusColor(approval.status)}>
-                        {approval.status.charAt(0).toUpperCase() + approval.status.slice(1)}
-                      </Badge>
-                      {approval.transferido_em && (
-                        <Badge variant="outline" className="text-blue-600">
-                          Transferida
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-2">
-                      {approval.numero_requisicao ? (
-                        <>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <User className="h-4 w-4" />
-                            <span>Requisição: {approval.numero_requisicao}</span>
-                          </div>
-                          {approval.solicitante_nome && (
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-2">
+                        {approval.numero_requisicao ? (
+                          <>
                             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                               <User className="h-4 w-4" />
-                              <span>Solicitante: {approval.solicitante_nome}</span>
+                              <span>Requisição: {approval.numero_requisicao}</span>
                             </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <User className="h-4 w-4" />
-                          <span>ID da Solicitação: {approval.processo_id?.slice(0, 8) || 'N/A'}...</span>
-                        </div>
-                      )}
-                      {approval.transferido_em && (
-                        <div className="flex items-center gap-2 text-sm text-blue-600">
-                          <ArrowRight className="h-4 w-4" />
-                          <span>Transferida em {new Date(approval.transferido_em).toLocaleDateString('pt-BR')}</span>
-                        </div>
-                      )}
+                            {approval.solicitante_nome && (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <User className="h-4 w-4" />
+                                <span>Solicitante: {approval.solicitante_nome}</span>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <User className="h-4 w-4" />
+                            <span>ID da Solicitação: {approval.processo_id?.slice(0, 8) || 'N/A'}...</span>
+                          </div>
+                        )}
+                        {approval.transferido_em && (
+                          <div className="flex items-center gap-2 text-sm text-blue-600">
+                            <ArrowRight className="h-4 w-4" />
+                            <span>Transferida em {new Date(approval.transferido_em).toLocaleDateString('pt-BR')}</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <PermissionButton
+                          entityName="approvals"
+                          action="edit"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openApprovalModal(approval)}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Processar
+                        </PermissionButton>
+                        <PermissionButton
+                          entityName="approvals"
+                          action="edit"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openTransferModal(approval)}
+                        >
+                          <ArrowRight className="h-4 w-4 mr-2" />
+                          Transferir
+                        </PermissionButton>
+                      </div>
                     </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <PermissionButton
-                        entityName="approvals"
-                        action="edit"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openApprovalModal(approval)}
-                      >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Processar
-                      </PermissionButton>
-                      <PermissionButton
-                        entityName="approvals"
-                        action="edit"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openTransferModal(approval)}
-                      >
-                        <ArrowRight className="h-4 w-4 mr-2" />
-                        Transferir
-                      </PermissionButton>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </div>
 

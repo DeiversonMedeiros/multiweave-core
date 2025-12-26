@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Select,
   SelectContent,
@@ -31,7 +33,8 @@ import {
   AlertCircle,
   Filter,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Users
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -45,6 +48,7 @@ import { useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/gener
 import { RequireEntity } from '@/components/RequireAuth';
 import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
+import { useEmployees } from '@/hooks/rh/useEmployees';
 import { formatDateOnly } from '@/lib/utils';
 
 // =====================================================
@@ -59,14 +63,122 @@ export default function TimeRecordsPageNew() {
     endDate: new Date().toISOString().split('T')[0] // Hoje
   });
   const [searchTerm, setSearchTerm] = useState('');
+  // Estado separado para o filtro de funcionário (como na página antiga)
+  const [employeeFilter, setEmployeeFilter] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<TimeRecord | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('registros');
+  const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set());
+  const [summaryMonth, setSummaryMonth] = useState<string>('');
+  const [summaryYear, setSummaryYear] = useState<string>('');
   // Estado para controlar quais cards têm endereços expandidos
   const [expandedAddresses, setExpandedAddresses] = useState<Set<string>>(new Set());
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
+  
+  // Carregar lista de funcionários para o filtro
+  const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
+  const employees = Array.isArray(employeesData) ? employeesData : [];
+
+  // Log para verificar se os funcionários estão sendo carregados
+  useEffect(() => {
+    console.group('[TimeRecordsPageNew] 👥 Funcionários');
+    console.log('📊 employeesData:', employeesData);
+    console.log('👥 employees (processado):', employees);
+    console.log('📈 Total de funcionários:', employees.length);
+    console.log('⏳ isLoadingEmployees:', isLoadingEmployees);
+    if (employees.length > 0) {
+      console.log('👤 Primeiros 3 funcionários:', employees.slice(0, 3).map(e => ({ id: e.id, nome: e.nome })));
+    }
+    console.groupEnd();
+  }, [employeesData, employees, isLoadingEmployees]);
+
+  // Monitorar mudanças no employeeFilter
+  useEffect(() => {
+    console.group('[TimeRecordsPageNew] 🔍 employeeFilter mudou');
+    console.log('👤 employeeFilter:', employeeFilter);
+    console.log('👤 Tipo:', typeof employeeFilter);
+    console.log('👤 Valor para Select:', employeeFilter || 'all');
+    console.groupEnd();
+  }, [employeeFilter]);
+
+  // Monitorar mudanças no estado filters
+  useEffect(() => {
+    console.group('[TimeRecordsPageNew] 📊 Estado filters mudou');
+    console.log('🔍 Estado completo:', filters);
+    console.log('👤 employeeId:', filters.employeeId);
+    console.log('📅 startDate:', filters.startDate);
+    console.log('📅 endDate:', filters.endDate);
+    console.log('📊 status:', filters.status);
+    console.log('🔍 search:', filters.search);
+    console.groupEnd();
+  }, [filters]);
+
+  // Calcular datas do mês/ano selecionado para o resumo
+  const summaryDateRange = useMemo(() => {
+    if (summaryMonth && summaryYear) {
+      const month = parseInt(summaryMonth);
+      const year = parseInt(summaryYear);
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0); // Último dia do mês
+      return {
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0]
+      };
+    }
+    return null;
+  }, [summaryMonth, summaryYear]);
+
+  // Calcular datas para a query baseado na aba ativa
+  const dateRangeForQuery = useMemo(() => {
+    if (activeTab === 'resumo' && summaryMonth && summaryYear) {
+      const month = parseInt(summaryMonth);
+      const year = parseInt(summaryYear);
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0); // Último dia do mês
+      return {
+        start: startDate.toISOString().split('T')[0],
+        end: endDate.toISOString().split('T')[0]
+      };
+    }
+    return { start: filters.startDate, end: filters.endDate };
+  }, [activeTab, summaryMonth, summaryYear, filters.startDate, filters.endDate]);
+
+  // Preparar parâmetros para a query
+  const queryParams = useMemo(() => {
+    console.group('[TimeRecordsPageNew] 📋 Calculando queryParams');
+    console.log('📊 filters atual:', filters);
+    console.log('👤 filters.employeeId:', filters.employeeId);
+    console.log('📅 dateRangeForQuery:', dateRangeForQuery);
+    
+    const params: {
+      startDate: string;
+      endDate: string;
+      status?: string;
+      pageSize: number;
+      employeeId?: string;
+    } = {
+      startDate: dateRangeForQuery.start,
+      endDate: dateRangeForQuery.end,
+      status: filters.status !== 'all' ? filters.status : undefined,
+      pageSize: activeTab === 'resumo' && summaryMonth && summaryYear ? 100 : 10,
+    };
+    
+    // Adicionar employeeId apenas se estiver definido (exatamente como na página antiga)
+    if (employeeFilter) {
+      params.employeeId = employeeFilter;
+      console.log('✅ employeeId adicionado aos params:', employeeFilter);
+    } else {
+      console.log('⚠️ employeeId não está definido, não será incluído nos params');
+    }
+    
+    console.log('📦 Parâmetros finais:', params);
+    console.groupEnd();
+    
+    return params;
+  }, [dateRangeForQuery.start, dateRangeForQuery.end, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear]);
 
   // Usar paginação infinita otimizada
   const {
@@ -77,13 +189,7 @@ export default function TimeRecordsPageNew() {
     isLoading,
     refetch,
     error
-  } = useTimeRecordsPaginated({
-    startDate: filters.startDate,
-    endDate: filters.endDate,
-    status: filters.status !== 'all' ? filters.status : undefined,
-    ...(filters.employeeId && { employeeId: filters.employeeId }),
-    pageSize: 10, // Carregar 10 registros por vez
-  });
+  } = useTimeRecordsPaginated(queryParams);
 
   // Combinar todas as páginas em um único array
   const records = data?.pages.flatMap(page => page.data) || [];
@@ -95,10 +201,150 @@ export default function TimeRecordsPageNew() {
 
   // Removido IntersectionObserver - agora só carrega ao clicar no botão "Carregar mais"
 
-  // Refetch quando filtros mudarem
+  // Refetch quando filtros mudarem ou quando mudar a aba/mês/ano (exatamente como na página antiga)
   useEffect(() => {
+    console.log('[TimeRecordsPageNew] 🔄 Refetch disparado por mudança nos filtros:', {
+      employeeFilter,
+      status: filters.status,
+      startDate: filters.startDate,
+      endDate: filters.endDate
+    });
     refetch();
-  }, [filters.startDate, filters.endDate, filters.status, filters.employeeId, refetch]);
+  }, [filters.startDate, filters.endDate, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear, dateRangeForQuery.start, dateRangeForQuery.end, refetch]);
+
+  // Carregar todas as páginas quando estiver na aba de resumo e tiver mês/ano selecionado
+  useEffect(() => {
+    if (activeTab === 'resumo' && summaryMonth && summaryYear && hasNextPage && !isFetchingNextPage && !isLoading) {
+      // Carregar todas as páginas disponíveis
+      const loadAllPages = async () => {
+        let attempts = 0;
+        while (hasNextPage && !isFetchingNextPage && attempts < 50) { // Limite de segurança
+          await fetchNextPage();
+          attempts++;
+          // Pequeno delay para evitar muitas requisições simultâneas
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      };
+      loadAllPages();
+    }
+  }, [activeTab, summaryMonth, summaryYear, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage]);
+
+  // Filtrar registros por termo de busca
+  const filteredRecords = useMemo(() => {
+    if (!searchTerm) return records;
+    const searchLower = searchTerm.toLowerCase();
+    return records.filter(record => {
+      const employeeName = (record.employee_nome || '').toLowerCase();
+      const employeeMatricula = (record.employee_matricula || '').toLowerCase();
+      const observacoes = (record.observacoes || '').toLowerCase();
+      return employeeName.includes(searchLower) || 
+             employeeMatricula.includes(searchLower) ||
+             observacoes.includes(searchLower);
+    });
+  }, [records, searchTerm]);
+
+  // Filtrar registros por mês e ano para o resumo
+  const filteredRecordsForSummary = useMemo(() => {
+    if (!summaryMonth || !summaryYear) {
+      return [];
+    }
+
+    const month = parseInt(summaryMonth);
+    const year = parseInt(summaryYear);
+
+    return filteredRecords.filter(record => {
+      const recordDate = new Date(record.data_registro);
+      return recordDate.getMonth() + 1 === month && recordDate.getFullYear() === year;
+    });
+  }, [filteredRecords, summaryMonth, summaryYear]);
+
+  // Agrupar registros por funcionário e calcular totais
+  const employeeSummary = useMemo(() => {
+    if (!summaryMonth || !summaryYear) {
+      return [];
+    }
+
+    const grouped = new Map<string, {
+      employeeId: string;
+      employeeName: string;
+      employeeMatricula?: string;
+      records: TimeRecord[];
+      totalHorasTrabalhadas: number;
+      totalHorasNegativas: number;
+      totalHorasExtras50: number;
+      totalHorasExtras100: number;
+      totalHorasNoturnas: number;
+    }>();
+
+    filteredRecordsForSummary.forEach(record => {
+      const employeeId = record.employee_id;
+      const employeeName = record.employee_nome || 'Funcionário sem nome';
+      const employeeMatricula = record.employee_matricula;
+
+      if (!grouped.has(employeeId)) {
+        grouped.set(employeeId, {
+          employeeId,
+          employeeName,
+          employeeMatricula,
+          records: [],
+          totalHorasTrabalhadas: 0,
+          totalHorasNegativas: 0,
+          totalHorasExtras50: 0,
+          totalHorasExtras100: 0,
+          totalHorasNoturnas: 0,
+        });
+      }
+
+      const summary = grouped.get(employeeId)!;
+      summary.records.push(record);
+      // Converter para número e garantir que não seja NaN
+      const horasTrabalhadas = Number(record.horas_trabalhadas) || 0;
+      const horasNegativas = Number(record.horas_negativas) || 0;
+      const horasExtras50 = Number(record.horas_extras_50) || 0;
+      const horasExtras100 = Number(record.horas_extras_100) || 0;
+      
+      summary.totalHorasTrabalhadas += horasTrabalhadas;
+      summary.totalHorasNegativas += horasNegativas;
+      summary.totalHorasExtras50 += horasExtras50;
+      summary.totalHorasExtras100 += horasExtras100;
+      // Nota: horas_noturnas não existe no tipo, mas vamos deixar preparado caso seja adicionado
+      // summary.totalHorasNoturnas += (record as any).horas_noturnas || 0;
+    });
+
+    const result = Array.from(grouped.values()).sort((a, b) => 
+      a.employeeName.localeCompare(b.employeeName)
+    );
+    
+    // Debug: Log dos resultados
+    console.log('[TimeRecordsPageNew] Resumo calculado:', {
+      totalFuncionarios: result.length,
+      totalRegistros: filteredRecordsForSummary.length,
+      mes: summaryMonth,
+      ano: summaryYear,
+      exemplos: result.slice(0, 3).map(s => ({
+        nome: s.employeeName,
+        totalHoras: s.totalHorasTrabalhadas,
+        totalExtras50: s.totalHorasExtras50,
+        totalExtras100: s.totalHorasExtras100,
+        totalNegativas: s.totalHorasNegativas,
+        qtdRegistros: s.records.length
+      }))
+    });
+    
+    return result;
+  }, [filteredRecordsForSummary, summaryMonth, summaryYear]);
+
+  const toggleEmployeeExpanded = (employeeId: string) => {
+    setExpandedEmployees(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(employeeId)) {
+        newSet.delete(employeeId);
+      } else {
+        newSet.add(employeeId);
+      }
+      return newSet;
+    });
+  };
 
   // Handlers
   const handleSearch = (value: string) => {
@@ -107,10 +353,35 @@ export default function TimeRecordsPageNew() {
   };
 
   const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value === 'all' ? undefined : value
-    }));
+    console.group(`[TimeRecordsPageNew] 🔄 handleFilterChange - ${key}`);
+    console.log('📥 Parâmetros recebidos:', { key, value });
+    const newValue = value === 'all' ? undefined : value;
+    console.log('🔄 Valor processado:', { original: value, processed: newValue });
+    
+    setFilters(prev => {
+      console.log('📊 Estado anterior:', prev);
+      const updated = {
+        ...prev,
+        [key]: newValue
+      };
+      console.log('✅ Estado atualizado:', updated);
+      console.log('🔍 employeeId no estado:', updated.employeeId);
+      console.groupEnd();
+      return updated;
+    });
+  };
+
+  // Handler específico para o filtro de funcionário (exatamente como na página antiga)
+  const handleEmployeeFilter = (value: string) => {
+    console.group('[TimeRecordsPageNew] 👤 handleEmployeeFilter');
+    console.log('📥 Valor recebido:', value);
+    console.log('📥 Tipo do valor:', typeof value);
+    const newFilter = value === 'all' ? '' : value;
+    console.log('🔄 Novo filtro:', newFilter);
+    console.log('🔄 Tipo do novo filtro:', typeof newFilter);
+    setEmployeeFilter(newFilter);
+    console.log('✅ employeeFilter atualizado');
+    console.groupEnd();
   };
 
   const handleCreate = () => {
@@ -307,19 +578,9 @@ export default function TimeRecordsPageNew() {
       startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0]
     });
+    setEmployeeFilter('');
     setSearchTerm('');
   };
-
-  // Filtrar dados por busca
-  const filteredRecords = records.filter(record => {
-    if (!searchTerm) return true;
-    const search = searchTerm.toLowerCase();
-    return (
-      record.employee_nome?.toLowerCase().includes(search) ||
-      record.employee_matricula?.toLowerCase().includes(search) ||
-      record.observacoes?.toLowerCase().includes(search)
-    );
-  });
 
   // Colunas e actions removidas - agora usamos visualização em cards
 
@@ -369,7 +630,7 @@ export default function TimeRecordsPageNew() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Buscar</label>
               <div className="relative">
@@ -381,6 +642,36 @@ export default function TimeRecordsPageNew() {
                   className="pl-8"
                 />
               </div>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Funcionário</label>
+              <Select
+                value={employeeFilter || 'all'}
+                onValueChange={(value) => {
+                  console.log('🎯 [Select] onValueChange disparado com valor:', value);
+                  handleEmployeeFilter(value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os funcionários" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os funcionários</SelectItem>
+                  {employees.length > 0 ? (
+                    employees.map((employee) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.nome} {employee.matricula ? `(${employee.matricula})` : ''}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="loading" disabled>Carregando funcionários...</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {employees.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum funcionário encontrado</p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -402,44 +693,71 @@ export default function TimeRecordsPageNew() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">&nbsp;</label>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={resetFilters}
-                  className="w-full"
-                >
-                  <ArrowUpDown className="h-4 w-4 mr-2" />
-                  Limpar
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleExportCsv}
-                  className="w-full"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Exportar
-                </Button>
-              </div>
+              <label className="text-sm font-medium">Data Inicial</label>
+              <Input
+                type="date"
+                value={filters.startDate || ''}
+                onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+              />
             </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Data Final</label>
+              <Input
+                type="date"
+                value={filters.endDate || ''}
+                onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={resetFilters}
+            >
+              <ArrowUpDown className="h-4 w-4 mr-2" />
+              Limpar Filtros
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleExportCsv}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Exportar
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Lista de Registros em Cards */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Registros de Ponto</CardTitle>
-          <CardDescription>
-            {isLoading 
-              ? 'Carregando registros...'
-              : filteredRecords && filteredRecords.length > 0 
-                ? `${filteredRecords.length} registro(s) encontrado(s)`
-                : 'Nenhum registro encontrado'
-            }
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Tabs de Navegação */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="registros" className="flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Registros de Ponto
+          </TabsTrigger>
+          <TabsTrigger value="resumo" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Resumo por Funcionário
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Aba: Registros de Ponto */}
+        <TabsContent value="registros" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Registros de Ponto</CardTitle>
+              <CardDescription>
+                {isLoading 
+                  ? 'Carregando registros...'
+                  : filteredRecords && filteredRecords.length > 0 
+                    ? `${filteredRecords.length} registro(s) encontrado(s)`
+                    : 'Nenhum registro encontrado'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="flex items-center space-x-2">
@@ -945,6 +1263,263 @@ export default function TimeRecordsPageNew() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* Aba: Resumo por Funcionário */}
+        <TabsContent value="resumo" className="mt-6">
+          {/* Filtros de Mês e Ano */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <Filter className="h-5 w-5" />
+                <span>Filtros</span>
+              </CardTitle>
+              <CardDescription>
+                Selecione o mês e o ano para visualizar o resumo
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Mês</label>
+                  <Select
+                    value={summaryMonth}
+                    onValueChange={setSummaryMonth}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o mês" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Janeiro</SelectItem>
+                      <SelectItem value="2">Fevereiro</SelectItem>
+                      <SelectItem value="3">Março</SelectItem>
+                      <SelectItem value="4">Abril</SelectItem>
+                      <SelectItem value="5">Maio</SelectItem>
+                      <SelectItem value="6">Junho</SelectItem>
+                      <SelectItem value="7">Julho</SelectItem>
+                      <SelectItem value="8">Agosto</SelectItem>
+                      <SelectItem value="9">Setembro</SelectItem>
+                      <SelectItem value="10">Outubro</SelectItem>
+                      <SelectItem value="11">Novembro</SelectItem>
+                      <SelectItem value="12">Dezembro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Ano</label>
+                  <Select
+                    value={summaryYear}
+                    onValueChange={setSummaryYear}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o ano" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 10 }, (_, i) => {
+                        const year = new Date().getFullYear() - i;
+                        return (
+                          <SelectItem key={year} value={year.toString()}>
+                            {year}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Resumo por Funcionário</CardTitle>
+              <CardDescription>
+                {summaryMonth && summaryYear 
+                  ? `Resumo de ${new Date(parseInt(summaryYear), parseInt(summaryMonth) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`
+                  : 'Visualize o resumo de horas trabalhadas, horas negativas, horas extras e horas noturnas por funcionário'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!summaryMonth || !summaryYear ? (
+                <div className="text-center py-12">
+                  <Calendar className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600 font-medium mb-2">Selecione o mês e o ano</p>
+                  <p className="text-sm text-gray-500">
+                    Por favor, selecione o mês e o ano nos filtros acima para visualizar o resumo
+                  </p>
+                </div>
+              ) : isLoading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-6 w-6 animate-spin" />
+                    <span>Carregando resumo...</span>
+                  </div>
+                </div>
+              ) : employeeSummary.length > 0 ? (
+                <div className="space-y-4">
+                  {employeeSummary.map((summary) => {
+                    const isExpanded = expandedEmployees.has(summary.employeeId);
+                    return (
+                      <Card key={summary.employeeId} className="overflow-hidden">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <CardTitle className="text-lg">
+                                {summary.employeeName}
+                              </CardTitle>
+                              {summary.employeeMatricula && (
+                                <CardDescription>
+                                  Matrícula: {summary.employeeMatricula}
+                                </CardDescription>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleEmployeeExpanded(summary.employeeId)}
+                              className="h-8 w-8 p-0"
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Horas Trabalhadas</p>
+                              <p className="text-2xl font-bold text-blue-600">
+                                {summary.totalHorasTrabalhadas.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Horas Negativas</p>
+                              <p className="text-2xl font-bold text-red-600">
+                                {summary.totalHorasNegativas > 0 ? '-' : ''}{summary.totalHorasNegativas.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Extras 50%</p>
+                              <p className="text-2xl font-bold text-orange-600">
+                                {summary.totalHorasExtras50.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Extras 100%</p>
+                              <p className="text-2xl font-bold text-purple-600">
+                                {summary.totalHorasExtras100.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Horas Noturnas</p>
+                              <p className="text-2xl font-bold text-indigo-600">
+                                {summary.totalHorasNoturnas.toFixed(2)}h
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Tabela de detalhes quando expandido */}
+                          {isExpanded && (
+                            <div className="mt-6 border-t pt-4">
+                              <h4 className="text-sm font-semibold mb-3">Registros Dia a Dia</h4>
+                              <div className="overflow-x-auto">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Data</TableHead>
+                                      <TableHead>Horas Trabalhadas</TableHead>
+                                      <TableHead>Horas Negativas</TableHead>
+                                      <TableHead>Extras 50%</TableHead>
+                                      <TableHead>Extras 100%</TableHead>
+                                      <TableHead>Horas Noturnas</TableHead>
+                                      <TableHead>Status</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {summary.records
+                                      .sort((a, b) => 
+                                        new Date(b.data_registro).getTime() - new Date(a.data_registro).getTime()
+                                      )
+                                      .map((record) => (
+                                        <TableRow key={record.id}>
+                                          <TableCell>
+                                            {formatDateOnly(record.data_registro)}
+                                          </TableCell>
+                                          <TableCell>
+                                            <span className="font-medium">
+                                              {record.horas_trabalhadas?.toFixed(2) || '0.00'}h
+                                            </span>
+                                          </TableCell>
+                                          <TableCell>
+                                            {record.horas_negativas && record.horas_negativas > 0 ? (
+                                              <span className="text-red-600 font-medium">
+                                                -{record.horas_negativas.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {record.horas_extras_50 && record.horas_extras_50 > 0 ? (
+                                              <span className="text-orange-600 font-medium">
+                                                +{record.horas_extras_50.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {record.horas_extras_100 && record.horas_extras_100 > 0 ? (
+                                              <span className="text-purple-600 font-medium">
+                                                +{record.horas_extras_100.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            <span className="text-indigo-600 font-medium">
+                                              {/* Nota: horas_noturnas não existe no tipo ainda */}
+                                              0.00h
+                                            </span>
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge className={getStatusColor(record.status || '')}>
+                                              {getStatusLabel(record.status || '')}
+                                            </Badge>
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Nenhum registro encontrado</p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Não há registros de ponto para {summaryMonth && summaryYear 
+                      ? new Date(parseInt(summaryYear), parseInt(summaryMonth) - 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+                      : 'o período selecionado'
+                    }
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Modal */}
       <FormModal

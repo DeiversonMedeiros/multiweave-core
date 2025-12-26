@@ -1,3 +1,4 @@
+import { EntityService } from '@/services/generic/entityService';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Payroll, 
@@ -22,98 +23,207 @@ export const PayrollService = {
     year?: number;
     status?: string;
   }) => {
-    const { data, error } = await supabase.rpc('get_payroll_simple', {
-      company_id_param: params.companyId
-    });
+    try {
+      const filters: any = {};
+      
+      if (params.month) {
+        filters.mes_referencia = params.month;
+      }
+      
+      if (params.year) {
+        filters.ano_referencia = params.year;
+      }
+      
+      if (params.status) {
+        filters.status = params.status;
+      }
 
-    if (error) {
+      const result = await EntityService.list<Payroll>({
+        schema: 'rh',
+        table: 'payroll',
+        companyId: params.companyId,
+        filters,
+        orderBy: 'ano_referencia',
+        orderDirection: 'DESC'
+      });
+
+      // Buscar dados dos funcionários para cada folha
+      const payrollsWithEmployees = await Promise.all(
+        result.data.map(async (payroll) => {
+          try {
+            const employee = await EntityService.getById<Employee>({
+              schema: 'rh',
+              table: 'employees',
+              companyId: params.companyId,
+              id: payroll.employee_id
+            });
+
+            return {
+              ...payroll,
+              employee: employee || undefined
+            };
+          } catch (error) {
+            console.warn(`Erro ao buscar funcionário ${payroll.employee_id}:`, error);
+            return {
+              ...payroll,
+              employee: undefined
+            };
+          }
+        })
+      );
+
+      return payrollsWithEmployees;
+    } catch (error) {
       console.error('Erro ao buscar folhas de pagamento:', error);
       throw error;
     }
-
-    // Aplicar filtros no lado do cliente
-    let filteredData = data || [];
-    
-    if (params.month) {
-      filteredData = filteredData.filter(payroll => payroll.mes_referencia === params.month);
-    }
-    
-    if (params.year) {
-      filteredData = filteredData.filter(payroll => payroll.ano_referencia === params.year);
-    }
-    
-    if (params.status) {
-      filteredData = filteredData.filter(payroll => payroll.status === params.status);
-    }
-
-    return filteredData;
   },
 
   /**
    * Busca uma folha de pagamento por ID
    */
   getById: async (id: string, companyId: string): Promise<Payroll | null> => {
-    const { data, error } = await supabase.rpc('get_payroll_simple', {
-      company_id_param: companyId
-    });
+    try {
+      const result = await EntityService.getById<Payroll>({
+        schema: 'rh',
+        table: 'payroll',
+        companyId,
+        id
+      });
 
-    if (error) {
+      return result || null;
+    } catch (error) {
       console.error('Erro ao buscar folha de pagamento:', error);
       throw error;
     }
-
-    const payroll = data?.find((p: Payroll) => p.id === id);
-    return payroll || null;
   },
 
   /**
    * Cria uma nova folha de pagamento
    */
-  create: async (payroll: PayrollInsert): Promise<Payroll> => {
-    const { data, error } = await supabase
-      .from('payroll')
-      .insert(payroll)
-      .select()
-      .single();
+  create: async (payroll: PayrollInsert & { company_id: string }): Promise<Payroll> => {
+    try {
+      if (!payroll.company_id) {
+        throw new Error('company_id é obrigatório');
+      }
 
-    if (error) {
+      const result = await EntityService.create<Payroll>({
+        schema: 'rh',
+        table: 'payroll',
+        companyId: payroll.company_id,
+        data: payroll
+      });
+
+      return result;
+    } catch (error) {
       console.error('Erro ao criar folha de pagamento:', error);
       throw error;
     }
-
-    return data;
   },
 
   /**
    * Atualiza uma folha de pagamento
    */
-  update: async (id: string, payroll: PayrollUpdate): Promise<Payroll> => {
-    const { data, error } = await supabase
-      .from('payroll')
-      .update(payroll)
-      .eq('id', id)
-      .select()
-      .single();
+  update: async (id: string, payroll: PayrollUpdate, companyId: string): Promise<Payroll> => {
+    try {
+      const result = await EntityService.update<Payroll>({
+        schema: 'rh',
+        table: 'payroll',
+        companyId,
+        id,
+        data: payroll
+      });
 
-    if (error) {
+      return result;
+    } catch (error) {
       console.error('Erro ao atualizar folha de pagamento:', error);
       throw error;
     }
-
-    return data;
   },
 
   /**
    * Remove uma folha de pagamento
    */
-  delete: async (id: string): Promise<void> => {
-    const { error } = await supabase
-      .from('payroll')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
+  delete: async (id: string, companyId: string): Promise<void> => {
+    try {
+      await EntityService.delete({
+        schema: 'rh',
+        table: 'payroll',
+        companyId,
+        id
+      });
+    } catch (error) {
       console.error('Erro ao remover folha de pagamento:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Busca folha por funcionário e período
+   */
+  getByEmployeeAndPeriod: async (employeeId: string, month: number, year: number, companyId: string): Promise<Payroll | null> => {
+    try {
+      const result = await EntityService.list<Payroll>({
+        schema: 'rh',
+        table: 'payroll',
+        companyId,
+        filters: {
+          employee_id: employeeId,
+          mes_referencia: month,
+          ano_referencia: year
+        },
+        pageSize: 1
+      });
+
+      return result.data.length > 0 ? result.data[0] : null;
+    } catch (error) {
+      console.error('Erro ao buscar folha por funcionário e período:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Busca estatísticas de folha
+   */
+  getStats: async (companyId: string, month: number, year: number) => {
+    try {
+      const result = await EntityService.list<Payroll>({
+        schema: 'rh',
+        table: 'payroll',
+        companyId,
+        filters: {
+          mes_referencia: month,
+          ano_referencia: year
+        }
+      });
+
+      const payrolls = result.data;
+      
+      // Contar funcionários únicos
+      const uniqueEmployees = new Set(payrolls.map(p => p.employee_id).filter(Boolean));
+      
+      const totalEarnings = payrolls.reduce((sum, p) => sum + (p.total_vencimentos || 0), 0);
+      const totalDiscounts = payrolls.reduce((sum, p) => sum + (p.total_descontos || 0), 0);
+      const totalNet = payrolls.reduce((sum, p) => sum + (p.salario_liquido || 0), 0);
+      const processed = payrolls.filter(p => p.status === 'processado' || p.status === 'pago').length;
+      
+      return {
+        total_employees: uniqueEmployees.size,
+        total_net_salary: totalNet,
+        total_taxes: totalDiscounts,
+        processed: processed,
+        // Manter compatibilidade com versões antigas
+        total: payrolls.length,
+        totalEarnings: totalEarnings,
+        totalDiscounts: totalDiscounts,
+        totalNet: totalNet,
+        byStatus: payrolls.reduce((acc, p) => {
+          acc[p.status] = (acc[p.status] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>)
+      };
+    } catch (error) {
+      console.error('Erro ao buscar estatísticas de folha:', error);
       throw error;
     }
   },
@@ -129,12 +239,15 @@ export const PayrollService = {
   }): Promise<Payroll> => {
     try {
       // Buscar dados do funcionário
-      const { data: employee } = await supabase.rpc('get_employees_by_string', {
-        company_id_param: params.companyId
+      const employeeResult = await EntityService.getById<Employee>({
+        schema: 'rh',
+        table: 'employees',
+        companyId: params.companyId,
+        id: params.employeeId
       });
       
-      const emp = (employee as Employee[])?.find(e => e.id === params.employeeId);
-      if (!emp) throw new Error('Funcionário não encontrado');
+      if (!employeeResult) throw new Error('Funcionário não encontrado');
+      const emp = employeeResult;
 
       // Buscar registros de ponto do mês
       const { data: timeRecords } = await supabase.rpc('get_time_records_simple', {
@@ -149,14 +262,24 @@ export const PayrollService = {
       });
 
       // Verificar se funcionário tem banco de horas ativo
-      const { data: bankHoursConfig } = await supabase
-        .from('rh.bank_hours_config')
-        .select('has_bank_hours, is_active')
-        .eq('employee_id', params.employeeId)
-        .eq('company_id', params.companyId)
-        .single();
-
-      const hasActiveBankHours = bankHoursConfig?.has_bank_hours && bankHoursConfig?.is_active;
+      let hasActiveBankHours = false;
+      try {
+        const bankHoursResult = await EntityService.list({
+          schema: 'rh',
+          table: 'bank_hours_config',
+          companyId: params.companyId,
+          filters: {
+            employee_id: params.employeeId
+          },
+          pageSize: 1
+        });
+        
+        const bankHoursConfig = bankHoursResult.data[0];
+        hasActiveBankHours = bankHoursConfig?.has_bank_hours && bankHoursConfig?.is_active;
+      } catch (error) {
+        console.warn('Erro ao buscar configuração de banco de horas:', error);
+        // Continua sem banco de horas se não conseguir buscar
+      }
 
       // Calcular horas trabalhadas
       const totalHours = monthRecords?.reduce((sum, record) => {
@@ -238,8 +361,9 @@ export const PayrollService = {
       }, 0) || 0;
 
       // Criar registro de folha
-      const payrollData: PayrollInsert = {
+      const payrollData: PayrollInsert & { company_id: string } = {
         employee_id: params.employeeId,
+        company_id: params.companyId,
         mes_referencia: params.month,
         ano_referencia: params.year,
         salario_base: baseSalary,
@@ -320,11 +444,16 @@ export const PayrollService = {
       const { EntityService } = await import('@/services/generic/entityService');
       
       // Buscar todos os funcionários ativos
-      const { data: employees } = await supabase.rpc('get_employees_by_string', {
-        company_id_param: params.companyId
+      const employeesResult = await EntityService.list<Employee>({
+        schema: 'rh',
+        table: 'employees',
+        companyId: params.companyId,
+        filters: { status: 'ativo' },
+        orderBy: 'nome',
+        orderDirection: 'ASC'
       });
 
-      const activeEmployees = (employees as Employee[])?.filter(emp => emp.status === 'ativo') || [];
+      const activeEmployees = employeesResult.data || [];
       
       const payrolls: Payroll[] = [];
       

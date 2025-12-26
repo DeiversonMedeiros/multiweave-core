@@ -91,7 +91,14 @@ export function useContasReceber(): UseContasReceberReturn {
   // Criar conta a receber
   const createContaReceber = async (data: ContaReceberFormData) => {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
-    await createMutation.mutateAsync(data);
+    
+    // Garantir que valor_atual seja preenchido (inicialmente igual ao valor_original)
+    const contaData: ContaReceberFormData = {
+      ...data,
+      valor_atual: data.valor_atual ?? data.valor_original,
+    };
+    
+    await createMutation.mutateAsync(contaData);
   };
 
   // Atualizar conta a receber

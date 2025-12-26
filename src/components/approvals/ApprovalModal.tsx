@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Approval } from '@/services/approvals/approvalService';
 import { RequisicaoCompraDetails } from './RequisicaoCompraDetails';
+import { ContaPagarDetails } from './ContaPagarDetails';
 
 interface ApprovalModalProps {
   approval: Approval | null;
@@ -120,6 +121,13 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
           {approval.processo_tipo === 'requisicao_compra' && (
             <div className="border-t pt-6">
               <RequisicaoCompraDetails requisicaoId={approval.processo_id} />
+            </div>
+          )}
+
+          {/* Detalhes da Conta a Pagar */}
+          {approval.processo_tipo === 'conta_pagar' && (
+            <div className="border-t pt-6">
+              <ContaPagarDetails contaPagarId={approval.processo_id} />
             </div>
           )}
 

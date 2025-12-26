@@ -5,7 +5,7 @@
 // Descrição: Página principal para gerenciar contas a receber
 // Autor: Sistema MultiWeave Core
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,17 @@ import {
   Building,
   AlertTriangle,
   TrendingUp,
-  Clock
+  Clock,
+  FileText,
+  User,
+  Building2,
+  CreditCard,
+  Tag,
+  FileCheck,
+  Percent,
+  Info,
+  X,
+  CheckCircle2
 } from 'lucide-react';
 import { useContasReceber } from '@/hooks/financial/useContasReceber';
 import { ContaReceberFormData } from '@/integrations/supabase/financial-types';
@@ -34,12 +44,28 @@ import { ContaReceberFilters } from './ContaReceberFilters';
 import { ContaReceberForm } from './ContaReceberForm';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateOnly } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
+import { useCostCenters } from '@/hooks/useCostCenters';
+import { useProjects } from '@/hooks/useProjects';
+import { useClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
+import { useTesouraria } from '@/hooks/financial/useTesouraria';
+import { EntityService } from '@/services/generic/entityService';
+import { useCompany } from '@/lib/company-context';
 
 interface ContasReceberPageProps {
   className?: string;
 }
 
 export function ContasReceberPage({ className }: ContasReceberPageProps) {
+  const { selectedCompany } = useCompany();
   const {
     contasReceber,
     loading,
@@ -58,12 +84,26 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
     canConfirm,
   } = useContasReceber();
 
+  // Buscar dados relacionados
+  const { data: costCentersData } = useCostCenters();
+  const { data: projectsData } = useProjects();
+  const { contasBancarias } = useTesouraria();
+  const { data: classesFinanceirasData } = useClassesFinanceiras();
+
   const [showForm, setShowForm] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedConta, setSelectedConta] = useState<any>(null);
   const [editingConta, setEditingConta] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Estados para dados relacionados da conta selecionada
+  const [relatedData, setRelatedData] = useState<{
+    centroCustoNome?: string;
+    projetoNome?: string;
+    classeFinanceiraNome?: string;
+    contaBancariaNome?: string;
+  }>({});
 
   // Filtrar contas por termo de busca
   const filteredContas = contasReceber.filter(conta =>
@@ -173,8 +213,128 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
   };
 
   const formatDate = (date: string) => {
-    return format(new Date(date), 'dd/MM/yyyy', { locale: ptBR });
+    return formatDateOnly(date);
   };
+
+  // Função para formatar timestamp (data com hora) sem problemas de timezone
+  const formatDateTime = (dateString: string) => {
+    if (!dateString) return '-';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '-';
+      // Extrair apenas a parte da data para evitar problemas de timezone
+      const datePart = formatDateOnly(dateString);
+      // Extrair hora local
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${datePart} ${hours}:${minutes}`;
+    } catch {
+      return '-';
+    }
+  };
+
+  // Buscar dados relacionados quando uma conta é selecionada
+  useEffect(() => {
+    async function loadRelatedData() {
+      if (!selectedConta || !selectedCompany?.id) {
+        setRelatedData({});
+        return;
+      }
+
+      const data: typeof relatedData = {};
+
+      // Buscar centro de custo
+      if (selectedConta.centro_custo_id) {
+        try {
+          const centroCusto = costCentersData?.data?.find(cc => cc.id === selectedConta.centro_custo_id);
+          if (centroCusto) {
+            data.centroCustoNome = centroCusto.nome;
+          } else {
+            const result = await EntityService.getById<{ id: string; nome: string }>({
+              schema: 'public',
+              table: 'cost_centers',
+              id: selectedConta.centro_custo_id,
+              companyId: selectedCompany.id
+            });
+            data.centroCustoNome = result?.nome;
+          }
+        } catch (err) {
+          console.warn('Erro ao buscar centro de custo:', err);
+        }
+      }
+
+      // Buscar projeto
+      if (selectedConta.projeto_id) {
+        try {
+          const projeto = projectsData?.data?.find(p => p.id === selectedConta.projeto_id);
+          if (projeto) {
+            data.projetoNome = projeto.nome;
+          } else {
+            const result = await EntityService.getById<{ id: string; nome: string }>({
+              schema: 'public',
+              table: 'projects',
+              id: selectedConta.projeto_id,
+              companyId: selectedCompany.id
+            });
+            data.projetoNome = result?.nome;
+          }
+        } catch (err) {
+          console.warn('Erro ao buscar projeto:', err);
+        }
+      }
+
+      // Buscar classe financeira
+      if (selectedConta.classe_financeira) {
+        try {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (uuidRegex.test(selectedConta.classe_financeira)) {
+            const classe = classesFinanceirasData?.data?.find(cf => cf.id === selectedConta.classe_financeira);
+            if (classe) {
+              data.classeFinanceiraNome = classe.codigo ? `${classe.codigo} - ${classe.nome}` : classe.nome;
+            } else {
+              const result = await EntityService.getById<{ id: string; nome: string; codigo?: string }>({
+                schema: 'financeiro',
+                table: 'classes_financeiras',
+                id: selectedConta.classe_financeira,
+                companyId: selectedCompany.id
+              });
+              data.classeFinanceiraNome = result?.codigo ? `${result.codigo} - ${result.nome}` : result?.nome;
+            }
+          } else {
+            data.classeFinanceiraNome = selectedConta.classe_financeira;
+          }
+        } catch (err) {
+          console.warn('Erro ao buscar classe financeira:', err);
+        }
+      }
+
+      // Buscar conta bancária
+      if (selectedConta.conta_bancaria_id) {
+        try {
+          const contaBancaria = contasBancarias?.find(cb => cb.id === selectedConta.conta_bancaria_id);
+          if (contaBancaria) {
+            data.contaBancariaNome = `${contaBancaria.banco} - ${contaBancaria.agencia}/${contaBancaria.conta}`;
+          } else {
+            const result = await EntityService.getById<{ id: string; banco: string; agencia: string; conta: string }>({
+              schema: 'financeiro',
+              table: 'contas_bancarias',
+              id: selectedConta.conta_bancaria_id,
+              companyId: selectedCompany.id
+            });
+            if (result) {
+              data.contaBancariaNome = `${result.banco} - ${result.agencia}/${result.conta}`;
+            }
+          }
+        } catch (err) {
+          console.warn('Erro ao buscar conta bancária:', err);
+        }
+      }
+
+      setRelatedData(data);
+    }
+
+    loadRelatedData();
+  }, [selectedConta, selectedCompany?.id, costCentersData, projectsData, classesFinanceirasData, contasBancarias]);
 
   if (loading) {
     return (
@@ -403,23 +563,469 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
         />
       )}
 
-      {showDetails && selectedConta && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-2xl">
-            <CardHeader>
-              <CardTitle>Detalhes da Conta a Receber</CardTitle>
-              <CardDescription>
-                Em desenvolvimento...
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+      {/* Modal de Detalhes */}
+      <Dialog open={showDetails} onOpenChange={setShowDetails}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          {selectedConta && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <DialogTitle className="text-2xl font-bold">
+                      Detalhes da Conta a Receber
+                    </DialogTitle>
+                    <DialogDescription className="mt-2">
+                      {selectedConta.numero_titulo} - {selectedConta.descricao}
+                    </DialogDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {getStatusBadge(selectedConta.status)}
+                  </div>
+                </div>
+              </DialogHeader>
+
+              <div className="space-y-6 mt-4">
+                {/* Informações Básicas */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Informações Básicas
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Número do Título
+                      </label>
+                      <p className="text-sm font-medium">{selectedConta.numero_titulo}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Status
+                      </label>
+                      <div className="mt-1">{getStatusBadge(selectedConta.status)}</div>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Descrição
+                      </label>
+                      <p className="text-sm">{selectedConta.descricao || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Categoria
+                      </label>
+                      <p className="text-sm">{selectedConta.categoria || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Departamento
+                      </label>
+                      <p className="text-sm">{selectedConta.departamento || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Informações do Cliente */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    Informações do Cliente
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Nome do Cliente
+                      </label>
+                      <p className="text-sm font-medium">{selectedConta.cliente_nome || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        CNPJ/CPF
+                      </label>
+                      <p className="text-sm">{selectedConta.cliente_cnpj || '-'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Valores e Financeiro */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <DollarSign className="h-5 w-5" />
+                    Valores e Financeiro
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Valor Original
+                      </label>
+                      <p className="text-lg font-bold text-green-600">
+                        {formatCurrency(selectedConta.valor_original)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Valor Atual
+                      </label>
+                      <p className="text-lg font-bold text-blue-600">
+                        {formatCurrency(selectedConta.valor_atual)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Valor Recebido
+                      </label>
+                      <p className="text-sm font-medium">
+                        {formatCurrency(selectedConta.valor_recebido || 0)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Valor Restante
+                      </label>
+                      <p className="text-sm font-medium">
+                        {formatCurrency(selectedConta.valor_atual - (selectedConta.valor_recebido || 0))}
+                      </p>
+                    </div>
+                    {(selectedConta.valor_desconto > 0 || selectedConta.valor_juros > 0 || selectedConta.valor_multa > 0) && (
+                      <>
+                        {selectedConta.valor_desconto > 0 && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Desconto
+                            </label>
+                            <p className="text-sm text-green-600">
+                              - {formatCurrency(selectedConta.valor_desconto)}
+                            </p>
+                          </div>
+                        )}
+                        {selectedConta.valor_juros > 0 && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Juros
+                            </label>
+                            <p className="text-sm text-red-600">
+                              + {formatCurrency(selectedConta.valor_juros)}
+                            </p>
+                          </div>
+                        )}
+                        {selectedConta.valor_multa > 0 && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Multa
+                            </label>
+                            <p className="text-sm text-red-600">
+                              + {formatCurrency(selectedConta.valor_multa)}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Impostos */}
+                {(selectedConta.valor_pis || selectedConta.valor_cofins || selectedConta.valor_csll || 
+                  selectedConta.valor_ir || selectedConta.valor_inss || selectedConta.valor_iss) && (
+                  <>
+                    <Separator />
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Percent className="h-5 w-5" />
+                        Impostos e Retenções
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {selectedConta.valor_pis && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              PIS
+                            </label>
+                            <p className="text-sm">{formatCurrency(selectedConta.valor_pis)}</p>
+                          </div>
+                        )}
+                        {selectedConta.valor_cofins && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              COFINS
+                            </label>
+                            <p className="text-sm">{formatCurrency(selectedConta.valor_cofins)}</p>
+                          </div>
+                        )}
+                        {selectedConta.valor_csll && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              CSLL
+                            </label>
+                            <p className="text-sm">{formatCurrency(selectedConta.valor_csll)}</p>
+                          </div>
+                        )}
+                        {selectedConta.valor_ir && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              IR
+                            </label>
+                            <p className="text-sm">{formatCurrency(selectedConta.valor_ir)}</p>
+                          </div>
+                        )}
+                        {selectedConta.valor_inss && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              INSS
+                            </label>
+                            <p className="text-sm">{formatCurrency(selectedConta.valor_inss)}</p>
+                          </div>
+                        )}
+                        {selectedConta.valor_iss && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              ISS
+                            </label>
+                            <p className="text-sm">{formatCurrency(selectedConta.valor_iss)}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <Separator />
+
+                {/* Datas */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Calendar className="h-5 w-5" />
+                    Datas
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Data de Emissão
+                      </label>
+                      <p className="text-sm">{formatDate(selectedConta.data_emissao)}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Data de Vencimento
+                      </label>
+                      <p className="text-sm font-medium">
+                        {formatDate(selectedConta.data_vencimento)}
+                        {new Date(selectedConta.data_vencimento) < new Date() && selectedConta.status !== 'recebido' && (
+                          <span className="ml-2 text-red-600 text-xs">(Vencida)</span>
+                        )}
+                      </p>
+                    </div>
+                    {selectedConta.data_recebimento && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">
+                          Data de Recebimento
+                        </label>
+                        <p className="text-sm">{formatDate(selectedConta.data_recebimento)}</p>
+                      </div>
+                    )}
+                    {selectedConta.data_confirmacao && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">
+                          Data de Confirmação
+                        </label>
+                        <p className="text-sm">
+                          {formatDateTime(selectedConta.data_confirmacao)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Classificação e Projeto */}
+                {(selectedConta.centro_custo_id || selectedConta.projeto_id || selectedConta.classe_financeira) && (
+                  <>
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Tag className="h-5 w-5" />
+                        Classificação
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {relatedData.centroCustoNome && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Centro de Custo
+                            </label>
+                            <p className="text-sm">{relatedData.centroCustoNome}</p>
+                          </div>
+                        )}
+                        {relatedData.projetoNome && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Projeto
+                            </label>
+                            <p className="text-sm">{relatedData.projetoNome}</p>
+                          </div>
+                        )}
+                        {relatedData.classeFinanceiraNome && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Classe Financeira
+                            </label>
+                            <p className="text-sm">{relatedData.classeFinanceiraNome}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <Separator />
+                  </>
+                )}
+
+                {/* Forma de Recebimento */}
+                {(selectedConta.forma_recebimento || selectedConta.conta_bancaria_id || selectedConta.condicao_recebimento) && (
+                  <>
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <CreditCard className="h-5 w-5" />
+                        Forma de Recebimento
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {selectedConta.forma_recebimento && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Forma de Recebimento
+                            </label>
+                            <p className="text-sm">{selectedConta.forma_recebimento}</p>
+                          </div>
+                        )}
+                        {relatedData.contaBancariaNome && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Conta Bancária
+                            </label>
+                            <p className="text-sm">{relatedData.contaBancariaNome}</p>
+                          </div>
+                        )}
+                        {selectedConta.condicao_recebimento && (
+                          <div>
+                            <label className="text-sm font-medium text-muted-foreground">
+                              Condição de Recebimento
+                            </label>
+                            <p className="text-sm">{selectedConta.condicao_recebimento} dias</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <Separator />
+                  </>
+                )}
+
+                {/* Observações e Anexos */}
+                {(selectedConta.observacoes || (selectedConta.anexos && selectedConta.anexos.length > 0)) && (
+                  <>
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold flex items-center gap-2">
+                        <Info className="h-5 w-5" />
+                        Informações Adicionais
+                      </h3>
+                      {selectedConta.observacoes && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">
+                            Observações
+                          </label>
+                          <p className="text-sm mt-1 whitespace-pre-wrap">{selectedConta.observacoes}</p>
+                        </div>
+                      )}
+                      {selectedConta.anexos && selectedConta.anexos.length > 0 && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">
+                            Anexos ({selectedConta.anexos.length})
+                          </label>
+                          <div className="mt-2 space-y-1">
+                            {selectedConta.anexos.map((anexo, index) => (
+                              <a
+                                key={index}
+                                href={anexo}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                              >
+                                <FileCheck className="h-4 w-4" />
+                                Anexo {index + 1}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <Separator />
+                  </>
+                )}
+
+                {/* Informações do Sistema */}
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <Building2 className="h-5 w-5" />
+                    Informações do Sistema
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Data de Criação
+                      </label>
+                      <p className="text-sm">
+                        {formatDateTime(selectedConta.created_at)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Última Atualização
+                      </label>
+                      <p className="text-sm">
+                        {formatDateTime(selectedConta.updated_at)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">
+                        Status do Registro
+                      </label>
+                      <p className="text-sm">
+                        {selectedConta.is_active ? (
+                          <span className="flex items-center gap-1 text-green-600">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Ativo
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-red-600">
+                            <X className="h-4 w-4" />
+                            Inativo
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+                {canEdit && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowDetails(false);
+                      handleEdit(selectedConta);
+                    }}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Editar
+                  </Button>
+                )}
               <Button onClick={() => setShowDetails(false)}>
                 Fechar
               </Button>
-            </CardContent>
-          </Card>
         </div>
+            </>
       )}
+        </DialogContent>
+      </Dialog>
 
       {showFilters && (
         <ContaReceberFilters

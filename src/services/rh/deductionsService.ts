@@ -254,49 +254,54 @@ export const DeductionsService = {
     anoReferencia?: number
   ): Promise<EmployeeDeduction[]> => {
     try {
-      // Usar call_schema_rpc para chamar função do schema rh
-      const { data, error } = await supabase.rpc('call_schema_rpc', {
-        p_schema_name: 'rh',
-        p_function_name: 'get_pending_deductions',
-        p_params: {
-          p_company_id: companyId,
-          p_employee_id: employeeId || null,
-          p_mes_referencia: mesReferencia || null,
-          p_ano_referencia: anoReferencia || null,
-        }
+      // Construir filtros base
+      const baseFilters: any = {
+        aplicar_na_folha: true
+      };
+
+      if (employeeId) {
+        baseFilters.employee_id = employeeId;
+      }
+
+      // Buscar todas as deduções com aplicar_na_folha = true
+      // Filtrar status no lado do cliente (EntityService não suporta arrays diretamente)
+      const result = await EntityService.list<EmployeeDeduction>({
+        schema: 'rh',
+        table: 'employee_deductions',
+        companyId,
+        filters: baseFilters,
+        orderBy: 'data_origem',
+        orderDirection: 'DESC',
+        pageSize: 1000 // Buscar muitas para garantir que pegamos todas
       });
 
-      if (error) {
-        console.error('Erro na chamada RPC:', error);
-        throw error;
+      // Filtrar no lado do cliente
+      let deducoes = (result.data || []).filter(deducao => {
+        // Filtrar por status pendente, em_aberto ou parcelado
+        return deducao.status === 'pendente' || 
+               deducao.status === 'em_aberto' || 
+               deducao.status === 'parcelado';
+      });
+
+      // Filtrar por período se fornecido
+      if (mesReferencia && anoReferencia) {
+        deducoes = deducoes.filter(deducao => {
+          // Se tem mes_referencia_folha e ano_referencia_folha definidos, usar eles
+          if (deducao.mes_referencia_folha && deducao.ano_referencia_folha) {
+            return deducao.mes_referencia_folha === mesReferencia && 
+                   deducao.ano_referencia_folha === anoReferencia;
+          }
+          // Se não tem período específico definido, considerar válida
+          // (a dedução será aplicada no período solicitado)
+          return true;
+        });
       }
-      
-      // call_schema_rpc retorna { result: ... } ou { error: true, message: ... }
-      if (data?.error) {
-        throw new Error(data.message || 'Erro ao buscar deduções pendentes');
-      }
-      
-      // Funções que retornam TABLE podem retornar como array direto ou dentro de result
-      // Verificar se data é um array (retorno direto de TABLE)
-      if (Array.isArray(data)) {
-        return data as EmployeeDeduction[];
-      }
-      
-      // Se data.result existe e é um array, usar ele
-      if (data?.result && Array.isArray(data.result)) {
-        return data.result as EmployeeDeduction[];
-      }
-      
-      // Se data.result existe mas não é array, tentar converter
-      if (data?.result) {
-        return [data.result] as EmployeeDeduction[];
-      }
-      
-      // Retornar array vazio se não houver dados
-      return [];
+
+      return deducoes;
     } catch (error) {
       console.error('Erro ao buscar deduções pendentes:', error);
-      throw error;
+      // Retornar array vazio em caso de erro para não quebrar o cálculo
+      return [];
     }
   },
 

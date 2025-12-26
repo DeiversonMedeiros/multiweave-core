@@ -130,7 +130,7 @@ const DeductionForm = React.forwardRef<HTMLFormElement, {
                 </SelectItem>
               ))
             ) : (
-              <SelectItem value="" disabled>Nenhum funcionário encontrado</SelectItem>
+              <SelectItem value="none" disabled>Nenhum funcionário encontrado</SelectItem>
             )}
           </SelectContent>
         </Select>

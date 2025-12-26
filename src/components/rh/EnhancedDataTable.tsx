@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   ColumnDef,
   flexRender,
@@ -268,20 +268,18 @@ export function EnhancedDataTable<TData, TValue>({
                   {table
                     .getAllColumns()
                     .filter((column) => column.getCanHide())
-                    .map((column) => {
-                      return (
-                        <DropdownMenuCheckboxItem
-                          key={column.id}
-                          className="capitalize"
-                          checked={column.getIsVisible()}
-                          onCheckedChange={(value) =>
-                            column.toggleVisibility(!!value)
-                          }
-                        >
-                          {column.id}
-                        </DropdownMenuCheckboxItem>
-                      );
-                    })}
+                    .map((column) => (
+                      <DropdownMenuCheckboxItem
+                        key={column.id}
+                        className="capitalize"
+                        checked={column.getIsVisible()}
+                        onCheckedChange={(value) =>
+                          column.toggleVisibility(!!value)
+                        }
+                      >
+                        {column.id}
+                      </DropdownMenuCheckboxItem>
+                    ))}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}

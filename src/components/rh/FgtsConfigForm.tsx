@@ -304,15 +304,15 @@ export default function FgtsConfigForm({ isOpen, onClose, mode, config }: FgtsCo
             <div className="space-y-2">
               <Label htmlFor="tipo_contrato">Tipo de Contrato (Opcional)</Label>
               <Select
-                value={formData.tipo_contrato || ''}
-                onValueChange={(value) => handleInputChange('tipo_contrato', value === '' ? null : value)}
+                value={formData.tipo_contrato || 'general'}
+                onValueChange={(value) => handleInputChange('tipo_contrato', value === 'general' ? null : value)}
                 disabled={isDisabled}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Configuração Geral (aplica a todos)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Configuração Geral (aplica a todos)</SelectItem>
+                  <SelectItem value="general">Configuração Geral (aplica a todos)</SelectItem>
                   {getContractTypes().map((tipo) => (
                     <SelectItem key={tipo.value} value={tipo.value}>
                       {tipo.label}

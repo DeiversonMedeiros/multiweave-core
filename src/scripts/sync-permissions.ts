@@ -59,7 +59,7 @@ const PERMISSION_MANAGER_ENTITIES = [
   'employment_contracts', 'medical_agreements', 'benefits', 'payroll_config', 'payroll', 'income_statements', 'esocial',
   'inss_brackets', 'irrf_brackets', 'fgts_config', 'delay_reasons', 'absence_types', 'cid_codes', 'allowance_types',
   'deficiency_types', 'awards_productivity', 'medical_plans', 'employee_medical_plans', 'unions', 'employee_union_memberships',
-  'payroll_calculation', 'event_consolidation', 'contas_pagar', 'contas_receber', 'borderos', 'remessas_bancarias',
+  'payroll_calculation', 'contas_pagar', 'contas_receber', 'borderos', 'remessas_bancarias',
   'retornos_bancarios', 'contas_bancarias', 'conciliacoes_bancarias', 'fluxo_caixa', 'nfe', 'nfse', 'plano_contas',
   'lancamentos_contabeis', 'configuracoes_aprovacao', 'aprovacoes', 'accounts_payable', 'configuracao_fiscal',
   'configuracao_bancaria', 'estoque_atual', 'movimentacoes_estoque', 'entradas_materiais', 'entrada_itens',

@@ -78,7 +78,13 @@ export function useCalculationLog(id: string | undefined) {
     queryFn: async () => {
       if (!selectedCompany?.id || !id) throw new Error('Parâmetros inválidos');
       
-      const result = await getCalculationLogs(selectedCompany.id, { id });
+      // Verificar se é um UUID válido
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      
+      // Se não for UUID, filtrar por processo_id em vez de id
+      const filters = isUUID ? { id } : { processo_id: id };
+      
+      const result = await getCalculationLogs(selectedCompany.id, filters);
       return result.data.length > 0 ? result.data[0] : null;
     },
     enabled: !!selectedCompany?.id && !!id,

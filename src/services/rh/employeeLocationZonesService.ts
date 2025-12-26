@@ -76,7 +76,8 @@ export const EmployeeLocationZonesService = {
       schema: 'rh',
       table: 'employee_location_zones',
       companyId,
-      id
+      id,
+      skipCompanyFilter: true // Tabela de relacionamento não tem company_id
     });
   },
 

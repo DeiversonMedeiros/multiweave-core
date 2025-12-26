@@ -21,7 +21,8 @@ export const EmployeesService = {
         companyId,
         filters: { status: 'ativo' }, // Restaurando filtro de status
         orderBy: 'nome',
-        orderDirection: 'ASC'
+        orderDirection: 'ASC',
+        pageSize: 5000 // Aumentar limite para garantir que todos os funcionários sejam retornados
       });
 
       return result.data;
@@ -109,7 +110,8 @@ export const EmployeesService = {
       companyId,
       filters: { status: 'ativo' },
       orderBy: 'nome',
-      orderDirection: 'ASC'
+      orderDirection: 'ASC',
+      pageSize: 5000 // Aumentar limite para garantir que todos os funcionários sejam retornados
     });
 
     return result.data;
@@ -125,7 +127,8 @@ export const EmployeesService = {
       companyId,
       filters: { departamento_id: departmentId },
       orderBy: 'nome',
-      orderDirection: 'ASC'
+      orderDirection: 'ASC',
+      pageSize: 5000 // Aumentar limite para garantir que todos os funcionários sejam retornados
     });
 
     return result.data;
@@ -141,7 +144,8 @@ export const EmployeesService = {
       companyId,
       filters: { cargo_id: positionId },
       orderBy: 'nome',
-      orderDirection: 'ASC'
+      orderDirection: 'ASC',
+      pageSize: 5000 // Aumentar limite para garantir que todos os funcionários sejam retornados
     });
 
     return result.data;

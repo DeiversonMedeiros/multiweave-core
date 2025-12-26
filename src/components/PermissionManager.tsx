@@ -124,8 +124,7 @@ export const PermissionManager: React.FC = () => {
     'employee_union_memberships', // Tabela: rh.employee_union_memberships
     
     // Entidades RH - Processamento
-    'payroll_calculation', // Tabela: rh.payroll_calculations
-    'event_consolidation', // Tabela: rh.event_consolidations
+    'payroll_calculation', // Tabela: rh.payroll_calculations (mantido para compatibilidade, mas não mais usado)
     
     // Entidades Financeiras
     'contas_pagar', // Tabela: financeiro.contas_pagar
@@ -428,7 +427,6 @@ export const PermissionManager: React.FC = () => {
       'unions': 'rh',
       'employee_union_memberships': 'rh',
       'payroll_calculation': 'rh',
-      'event_consolidation': 'rh',
       
       // Entidades Financeiras
       'contas_pagar': 'financeiro',
@@ -565,7 +563,6 @@ export const PermissionManager: React.FC = () => {
       'employee_union_memberships': 'Vínculos Sindicais (rh.employee_union_memberships)',
       // RH - Processamento
       'payroll_calculation': 'Cálculo de Folha (rh.payroll_calculations)',
-      'event_consolidation': 'Consolidação de Eventos (rh.event_consolidations)',
       // Financeiro
       'contas_pagar': 'Contas a Pagar',
       'contas_receber': 'Contas a Receber',

@@ -5,7 +5,7 @@
 // Descrição: Modal com detalhes completos da conta a pagar
 // Autor: Sistema MultiWeave Core
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,12 +25,25 @@ import {
   Clock,
   User,
   RotateCcw,
-  Ban
+  Ban,
+  CreditCard,
+  Target,
+  FolderKanban,
+  Zap
 } from 'lucide-react';
 import { ContaPagar } from '@/integrations/supabase/financial-types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateOnly } from '@/lib/utils';
 import { RetencoesFonteManager } from './RetencoesFonteManager';
+import { useCostCenters } from '@/hooks/useCostCenters';
+import { useProjects } from '@/hooks/useProjects';
+import { useTesouraria } from '@/hooks/financial/useTesouraria';
+import { useContasPagarParcelas } from '@/hooks/financial/useContasPagarParcelas';
+import { useClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { EntityService } from '@/services/generic/entityService';
+import { useCompany } from '@/lib/company-context';
 
 interface ContaPagarDetailsProps {
   conta: ContaPagar;
@@ -61,6 +74,64 @@ export function ContaPagarDetails({
   canDelete,
   canApprove,
 }: ContaPagarDetailsProps) {
+  const { selectedCompany } = useCompany();
+  // Buscar dados relacionados
+  const { data: costCentersData } = useCostCenters();
+  const { data: projectsData } = useProjects();
+  const { contasBancarias } = useTesouraria();
+  const { data: parcelasData, isLoading: loadingParcelas } = useContasPagarParcelas(conta.id);
+  const { data: classesFinanceirasData } = useClassesFinanceiras();
+  const [classeFinanceiraNome, setClasseFinanceiraNome] = useState<string | undefined>(undefined);
+
+  // Encontrar nomes dos relacionamentos
+  const centroCusto = costCentersData?.data?.find(cc => cc.id === conta.centro_custo_id);
+  const projeto = projectsData?.data?.find(p => p.id === conta.projeto_id);
+  const contaBancaria = contasBancarias?.find(cb => cb.id === conta.conta_bancaria_id);
+  const parcelas = parcelasData?.data || [];
+
+  // Buscar nome da classe financeira
+  useEffect(() => {
+    async function loadClasseFinanceiraNome() {
+      if (!conta.classe_financeira || !selectedCompany?.id) {
+        setClasseFinanceiraNome(undefined);
+        return;
+      }
+
+      // Verificar se é um UUID válido
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(conta.classe_financeira)) {
+        try {
+          // Tentar buscar na lista de classes financeiras primeiro (mais rápido)
+          const classeEncontrada = classesFinanceirasData?.data?.find(
+            cf => cf.id === conta.classe_financeira
+          );
+          
+          if (classeEncontrada) {
+            setClasseFinanceiraNome(classeEncontrada.nome || (classeEncontrada.codigo ? `${classeEncontrada.codigo} - ${classeEncontrada.nome}` : undefined));
+            return;
+          }
+
+          // Se não encontrou na lista, buscar diretamente
+          const classeFinanceira = await EntityService.getById<{ id: string; nome: string; codigo?: string }>({
+            schema: 'financeiro',
+            table: 'classes_financeiras',
+            id: conta.classe_financeira,
+            companyId: selectedCompany.id
+          });
+          setClasseFinanceiraNome(classeFinanceira?.nome || (classeFinanceira?.codigo ? `${classeFinanceira.codigo} - ${classeFinanceira.nome}` : undefined));
+        } catch (err) {
+          console.warn('Erro ao buscar classe financeira:', err);
+          setClasseFinanceiraNome(conta.classe_financeira); // Fallback para o valor original
+        }
+      } else {
+        // Se não for UUID, usar o valor diretamente como nome
+        setClasseFinanceiraNome(conta.classe_financeira);
+      }
+    }
+
+    loadClasseFinanceiraNome();
+  }, [conta.classe_financeira, selectedCompany?.id, classesFinanceirasData]);
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -69,7 +140,21 @@ export function ContaPagarDetails({
   };
 
   const formatDate = (date: string) => {
-    return format(new Date(date), 'dd/MM/yyyy', { locale: ptBR });
+    return formatDateOnly(date);
+  };
+
+  const getIntervaloLabel = (intervalo?: string) => {
+    const labels: Record<string, string> = {
+      diario: 'Diário',
+      semanal: 'Semanal',
+      quinzenal: 'Quinzenal',
+      mensal: 'Mensal',
+      bimestral: 'Bimestral',
+      trimestral: 'Trimestral',
+      semestral: 'Semestral',
+      anual: 'Anual'
+    };
+    return intervalo ? labels[intervalo] || intervalo : '-';
   };
 
   const getStatusBadge = (status: string) => {
@@ -138,8 +223,12 @@ export function ContaPagarDetails({
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
+                  <Label className="text-sm font-medium text-muted-foreground">Número do Título</Label>
+                  <p className="text-sm font-semibold">{conta.numero_titulo}</p>
+                </div>
+                <div>
                   <Label className="text-sm font-medium text-muted-foreground">Fornecedor</Label>
-                  <p className="text-sm">{conta.fornecedor_nome}</p>
+                  <p className="text-sm">{conta.fornecedor_nome || '-'}</p>
                 </div>
                 {conta.fornecedor_cnpj && (
                   <div>
@@ -233,7 +322,7 @@ export function ContaPagarDetails({
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Pagamento</CardTitle>
+                <CardTitle className="text-lg">Pagamento e Classificação</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {conta.forma_pagamento && (
@@ -242,21 +331,188 @@ export function ContaPagarDetails({
                     <p className="text-sm capitalize">{conta.forma_pagamento}</p>
                   </div>
                 )}
+                {contaBancaria && (
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Conta Bancária</Label>
+                    <p className="text-sm">{contaBancaria.nome} - {contaBancaria.banco}</p>
+                  </div>
+                )}
                 {conta.departamento && (
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">Departamento</Label>
                     <p className="text-sm">{conta.departamento}</p>
                   </div>
                 )}
-                {conta.classe_financeira && (
+                {classeFinanceiraNome && (
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">Classe Financeira</Label>
-                    <p className="text-sm">{conta.classe_financeira}</p>
+                    <p className="text-sm">{classeFinanceiraNome}</p>
+                  </div>
+                )}
+                {centroCusto && (
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Centro de Custo</Label>
+                    <p className="text-sm">{centroCusto.codigo} - {centroCusto.nome}</p>
+                  </div>
+                )}
+                {projeto && (
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Projeto</Label>
+                    <p className="text-sm">{projeto.codigo} - {projeto.nome}</p>
                   </div>
                 )}
               </CardContent>
             </Card>
           </div>
+
+          {/* Informações de Parcelamento */}
+          {conta.is_parcelada && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FolderKanban className="h-5 w-5" />
+                  Parcelamento
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium text-muted-foreground">Conta Parcelada</Label>
+                    <p className="text-sm font-semibold">Sim</p>
+                  </div>
+                  {conta.numero_parcelas && (
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Número de Parcelas</Label>
+                      <p className="text-sm">{conta.numero_parcelas} parcela(s)</p>
+                    </div>
+                  )}
+                  {conta.intervalo_parcelas && (
+                    <div>
+                      <Label className="text-sm font-medium text-muted-foreground">Intervalo</Label>
+                      <p className="text-sm">{getIntervaloLabel(conta.intervalo_parcelas)}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Lista de Parcelas */}
+                {loadingParcelas ? (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    Carregando parcelas...
+                  </div>
+                ) : parcelas.length > 0 ? (
+                  <div className="mt-4">
+                    <Label className="text-sm font-medium mb-2 block">Parcelas</Label>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Parcela</TableHead>
+                            <TableHead>Nº Título</TableHead>
+                            <TableHead>Valor</TableHead>
+                            <TableHead>Vencimento</TableHead>
+                            <TableHead>Status</TableHead>
+                            {parcelas.some(p => p.valor_pago > 0) && (
+                              <TableHead>Valor Pago</TableHead>
+                            )}
+                            {parcelas.some(p => p.data_pagamento) && (
+                              <TableHead>Data Pagamento</TableHead>
+                            )}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {parcelas.map((parcela) => (
+                            <TableRow key={parcela.id}>
+                              <TableCell className="font-medium">
+                                {parcela.numero_parcela}ª
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {parcela.numero_titulo || '-'}
+                              </TableCell>
+                              <TableCell>
+                                {formatCurrency(parcela.valor_atual)}
+                              </TableCell>
+                              <TableCell>
+                                {formatDate(parcela.data_vencimento)}
+                              </TableCell>
+                              <TableCell>
+                                {getStatusBadge(parcela.status)}
+                              </TableCell>
+                              {parcelas.some(p => p.valor_pago > 0) && (
+                                <TableCell>
+                                  {parcela.valor_pago > 0 ? (
+                                    <span className="text-green-600 font-medium">
+                                      {formatCurrency(parcela.valor_pago)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                              )}
+                              {parcelas.some(p => p.data_pagamento) && (
+                                <TableCell>
+                                  {parcela.data_pagamento ? (
+                                    formatDate(parcela.data_pagamento)
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    {parcelas.length > 0 && (
+                      <div className="mt-3 pt-3 border-t">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-muted-foreground">Total das Parcelas:</span>
+                          <span className="font-semibold">
+                            {formatCurrency(parcelas.reduce((sum, p) => sum + p.valor_atual, 0))}
+                          </span>
+                        </div>
+                        {parcelas.some(p => p.valor_pago > 0) && (
+                          <div className="flex justify-between items-center text-sm mt-1">
+                            <span className="text-muted-foreground">Total Pago:</span>
+                            <span className="font-semibold text-green-600">
+                              {formatCurrency(parcelas.reduce((sum, p) => sum + p.valor_pago, 0))}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    Nenhuma parcela encontrada
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Informações de Urgência */}
+          {conta.is_urgente && (
+            <Card className="border-orange-200 bg-orange-50">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-orange-800">
+                  <Zap className="h-5 w-5" />
+                  Pagamento Urgente
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label className="text-sm font-medium text-orange-700">Status</Label>
+                  <p className="text-sm font-semibold text-orange-800">Pagamento Urgente</p>
+                </div>
+                {conta.motivo_urgencia && (
+                  <div>
+                    <Label className="text-sm font-medium text-orange-700">Motivo da Urgência</Label>
+                    <p className="text-sm text-orange-900 whitespace-pre-wrap">{conta.motivo_urgencia}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Retenções na Fonte */}
           <Card>
@@ -317,26 +573,6 @@ export function ContaPagarDetails({
                 <Edit className="h-4 w-4 mr-2" />
                 Editar
               </Button>
-            )}
-            {canApprove && conta.status === 'pendente' && (
-              <>
-                <Button 
-                  variant="outline" 
-                  onClick={() => onApprove(conta)}
-                  className="text-green-600 hover:text-green-700"
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Aprovar
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => onReject(conta)}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Rejeitar
-                </Button>
-              </>
             )}
             {canApprove && onReprovar && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && (
               <Button 

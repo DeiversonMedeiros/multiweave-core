@@ -8,7 +8,7 @@ import PositionsPageNew from './PositionsPageNew';
 import UnitsPageNew from './UnitsPageNew';
 import TimeRecordsPageNew from './TimeRecordsPageNew';
 import BenefitsPageNew from './BenefitsPageNew';
-import PayrollPageNew from './PayrollPageNew';
+import PayrollPage from './PayrollPage';
 import PayrollIndividualPage from './PayrollIndividualPage';
 
 // Importar novas páginas - FASE 1: ESTRUTURA ORGANIZACIONAL
@@ -23,8 +23,7 @@ import InssBracketsPage from './InssBracketsPage';
 import IrrfBracketsPage from './IrrfBracketsPage';
 import FgtsConfigPage from './FgtsConfigPage';
 
-// Importar páginas - FASE 4: MOTOR DE CÁLCULO
-import PayrollCalculationPage from './PayrollCalculationPage';
+// Importar páginas - FASE 4: CONFIGURAÇÕES
 import PayrollConfigPage from './PayrollConfigPage';
 import BankHoursPage from './BankHours';
 import HolidaysPage from './HolidaysPage';
@@ -71,8 +70,7 @@ import AbsenceTypesPage from './AbsenceTypesPage';
 import AllowanceTypesPage from './AllowanceTypesPage';
 import DeficiencyTypesPage from './DeficiencyTypesPage';
 
-// Importar páginas - FASE 7: PROCESSAMENTO AVANÇADO
-import EventConsolidationPage from './EventConsolidationPage';
+// Importar páginas - FASE 7: PROCESSAMENTO AVANÇADO (removido - unificado em PayrollPage)
 
 // Importar páginas - FASE 8: INTEGRAÇÕES
 import EsocialIntegrationPage from './EsocialIntegrationPage';
@@ -184,10 +182,10 @@ export function RHRoutesNew() {
       <Route path="/configuracao-flash" element={<ConfiguracaoFlashPage />} />
       
       {/* Folha de Pagamento - NOVA ABORDAGEM */}
-      <Route path="/payroll" element={<PayrollPageNew />} />
-      <Route path="/payroll/new" element={<PayrollPageNew />} />
-      <Route path="/payroll/:id" element={<PayrollPageNew />} />
-      <Route path="/payroll/:id/edit" element={<PayrollPageNew />} />
+      <Route path="/payroll" element={<PayrollPage />} />
+      <Route path="/payroll/new" element={<PayrollPage />} />
+      <Route path="/payroll/:id" element={<PayrollPage />} />
+      <Route path="/payroll/:id/edit" element={<PayrollPage />} />
       
       {/* Folhas Individuais por Funcionário */}
       <Route path="/payroll-individual" element={<PayrollIndividualPage />} />
@@ -237,10 +235,9 @@ export function RHRoutesNew() {
       {/* Configuração de Integração Financeira */}
       <Route path="/financial-integration-config" element={<FinancialIntegrationConfigPage />} />
 
-      {/* FASE 4: MOTOR DE CÁLCULO */}
+      {/* FASE 4: CONFIGURAÇÕES */}
       
-      {/* Motor de Cálculo */}
-      <Route path="/payroll-calculation" element={<PayrollCalculationPage />} />
+      {/* Configurações de Folha */}
       <Route path="/payroll-config" element={<PayrollConfigPage />} />
 
       {/* FASE 5: GESTÃO OPERACIONAL (Em desenvolvimento) */}
@@ -358,11 +355,7 @@ export function RHRoutesNew() {
 
       {/* FASE 7: PROCESSAMENTO AVANÇADO */}
       
-      {/* Consolidação de Eventos */}
-      <Route path="/event-consolidation" element={<EventConsolidationPage />} />
-      <Route path="/event-consolidation/new" element={<EventConsolidationPage />} />
-      <Route path="/event-consolidation/:id" element={<EventConsolidationPage />} />
-      <Route path="/event-consolidation/:id/edit" element={<EventConsolidationPage />} />
+      {/* Consolidação de Eventos - REMOVIDO: Funcionalidade unificada em Folha de Pagamento */}
 
       {/* FASE 8: INTEGRAÇÕES */}
       

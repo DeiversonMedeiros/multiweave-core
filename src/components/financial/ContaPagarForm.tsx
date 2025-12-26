@@ -23,7 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { CalendarIcon, Building, DollarSign, FileText, Save, X, AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
-import { format, addDays, addWeeks, addMonths, addYears } from 'date-fns';
+import { format, addDays, addWeeks, addMonths, addYears, parseISO, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { ContaPagar, ContaPagarFormData, ContaPagarParcelaFormData } from '@/integrations/supabase/financial-types';
@@ -183,7 +183,9 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
     }
 
     const novasParcelas: ContaPagarParcelaFormData[] = [];
-    const dataInicio = new Date(dataPrimeiraParcela);
+    // CORREÇÃO: Usar parseISO para evitar problemas de timezone
+    // parseISO interpreta a data como local, não UTC
+    const dataInicio = startOfDay(parseISO(dataPrimeiraParcela));
 
     for (let i = 1; i <= numeroParcelas; i++) {
       let dataVencimento: Date;
@@ -755,7 +757,7 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                                   {formatCurrency(parcela.valor_parcela)}
                                 </TableCell>
                                 <TableCell>
-                                  {format(new Date(parcela.data_vencimento), 'dd/MM/yyyy', { locale: ptBR })}
+                                  {format(parseISO(parcela.data_vencimento), 'dd/MM/yyyy', { locale: ptBR })}
                                 </TableCell>
                                 <TableCell className="text-sm text-muted-foreground">
                                   {parcela.observacoes}

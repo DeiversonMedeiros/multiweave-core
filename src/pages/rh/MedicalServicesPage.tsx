@@ -155,14 +155,14 @@ const MedicalServiceForm = React.forwardRef<HTMLFormElement, {
         <div>
           <label className="text-sm font-medium">Dependente (opcional)</label>
           <Select
-            value={formData.dependent_id || ''}
-            onValueChange={(value) => setFormData({ ...formData, dependent_id: value || undefined })}
+            value={formData.dependent_id || 'titular'}
+            onValueChange={(value) => setFormData({ ...formData, dependent_id: value === 'titular' ? undefined : value })}
           >
             <SelectTrigger>
               <SelectValue placeholder="Titular" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Titular</SelectItem>
+              <SelectItem value="titular">Titular</SelectItem>
               {availableDependents.map((dep) => (
                 <SelectItem key={dep.id} value={dep.id}>
                   {dep.nome}

@@ -32,10 +32,12 @@ export function usePayroll(params: {
  * Hook para buscar folha por ID
  */
 export function usePayrollById(id: string) {
+  const { selectedCompany } = useCompany();
+  
   return useQuery({
-    queryKey: ['rh', 'payroll', id],
-    queryFn: () => PayrollService.getById(id),
-    enabled: !!id,
+    queryKey: ['rh', 'payroll', id, selectedCompany?.id],
+    queryFn: () => PayrollService.getById(id, selectedCompany?.id || ''),
+    enabled: !!id && !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -44,10 +46,12 @@ export function usePayrollById(id: string) {
  * Hook para buscar folha por funcionário e período
  */
 export function usePayrollByEmployee(employeeId: string, month: number, year: number) {
+  const { selectedCompany } = useCompany();
+  
   return useQuery({
-    queryKey: ['rh', 'payroll', 'employee', employeeId, month, year],
-    queryFn: () => PayrollService.getByEmployeeAndPeriod(employeeId, month, year),
-    enabled: !!employeeId && !!month && !!year,
+    queryKey: ['rh', 'payroll', 'employee', employeeId, month, year, selectedCompany?.id],
+    queryFn: () => PayrollService.getByEmployeeAndPeriod(employeeId, month, year, selectedCompany?.id || ''),
+    enabled: !!employeeId && !!month && !!year && !!selectedCompany?.id,
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -75,9 +79,13 @@ export function usePayrollStats(month: number, year: number) {
  */
 export function useCreatePayroll() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (payroll: PayrollInsert) => PayrollService.create(payroll),
+    mutationFn: (payroll: PayrollInsert) => PayrollService.create({
+      ...payroll,
+      company_id: selectedCompany?.id || ''
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'payroll'] });
     },
@@ -92,10 +100,11 @@ export function useCreatePayroll() {
  */
 export function useUpdatePayroll() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
     mutationFn: ({ id, payroll }: { id: string; payroll: PayrollUpdate }) => 
-      PayrollService.update(id, payroll),
+      PayrollService.update(id, payroll, selectedCompany?.id || ''),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'payroll'] });
       queryClient.setQueryData(['rh', 'payroll', variables.id], data);
@@ -111,9 +120,10 @@ export function useUpdatePayroll() {
  */
 export function useDeletePayroll() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (id: string) => PayrollService.delete(id),
+    mutationFn: (id: string) => PayrollService.delete(id, selectedCompany?.id || ''),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'payroll'] });
       queryClient.removeQueries({ queryKey: ['rh', 'payroll', id] });

@@ -156,13 +156,16 @@ export function ConciliacaoBancariaPage({ className }: ConciliacaoBancariaPagePr
           <div className="grid grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>Conta Bancária</Label>
-              <Select value={contaBancariaId} onValueChange={setContaBancariaId}>
+              <Select 
+                value={contaBancariaId || 'all'} 
+                onValueChange={(value) => setContaBancariaId(value === 'all' ? '' : value)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione a conta" />
                 </SelectTrigger>
                 <SelectContent>
                   {/* TODO: Carregar contas bancárias */}
-                  <SelectItem value="">Todas</SelectItem>
+                  <SelectItem value="all">Todas</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -32,7 +32,8 @@ import {
   TrendingUp,
   TrendingDown,
   RotateCcw,
-  Ban
+  Ban,
+  Target
 } from 'lucide-react';
 import { useContasPagar } from '@/hooks/financial/useContasPagar';
 import { ContaPagar, ContaPagarFormData } from '@/integrations/supabase/financial-types';
@@ -41,7 +42,11 @@ import { ContaPagarDetails } from './ContaPagarDetails';
 import { ContaPagarFilters } from './ContaPagarFilters';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateOnly } from '@/lib/utils';
 import { getAlertBadgeColor, getAlertBadgeText } from '@/utils/financial/dueDateUtils';
+import { useCostCenters } from '@/hooks/useCostCenters';
+import { useProjects } from '@/hooks/useProjects';
+import { FolderKanban } from 'lucide-react';
 
 interface ContasPagarPageProps {
   className?: string;
@@ -68,6 +73,18 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     canDelete,
     canApprove,
   } = useContasPagar();
+
+  // Buscar dados relacionados para exibir nomes
+  const { data: costCentersData } = useCostCenters();
+  const { data: projectsData } = useProjects();
+
+  // Criar mapas para busca rápida
+  const costCentersMap = new Map(
+    costCentersData?.data?.map(cc => [cc.id, cc]) || []
+  );
+  const projectsMap = new Map(
+    projectsData?.data?.map(p => [p.id, p]) || []
+  );
 
   const [showForm, setShowForm] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -313,7 +330,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
   };
 
   const formatDate = (date: string) => {
-    return format(new Date(date), 'dd/MM/yyyy', { locale: ptBR });
+    return formatDateOnly(date);
   };
 
   if (loading) {
@@ -558,7 +575,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                         <span className="mx-2">•</span>
                         <span>{conta.descricao}</span>
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
                           Venc: {formatDate(conta.data_vencimento)}
@@ -567,6 +584,24 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                           <DollarSign className="h-3 w-3" />
                           {formatCurrency(conta.valor_atual)}
                         </span>
+                        {conta.centro_custo_id && costCentersMap.has(conta.centro_custo_id) && (
+                          <span className="flex items-center gap-1">
+                            <Building className="h-3 w-3" />
+                            CC: {costCentersMap.get(conta.centro_custo_id)?.codigo || costCentersMap.get(conta.centro_custo_id)?.nome}
+                          </span>
+                        )}
+                        {conta.projeto_id && projectsMap.has(conta.projeto_id) && (
+                          <span className="flex items-center gap-1">
+                            <Target className="h-3 w-3" />
+                            Proj: {projectsMap.get(conta.projeto_id)?.codigo || projectsMap.get(conta.projeto_id)?.nome}
+                          </span>
+                        )}
+                        {conta.is_parcelada && conta.numero_parcelas && (
+                          <span className="flex items-center gap-1">
+                            <FolderKanban className="h-3 w-3" />
+                            {conta.numero_parcelas} parcela(s)
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -586,28 +621,6 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                    )}
-                    {canApprove && conta.status === 'pendente' && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleApprove(conta)}
-                          className="text-green-600 hover:text-green-700"
-                          title="Aprovar"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleReject(conta)}
-                          className="text-red-600 hover:text-red-700"
-                          title="Rejeitar"
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </>
                     )}
                     {canApprove && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && (
                       <>

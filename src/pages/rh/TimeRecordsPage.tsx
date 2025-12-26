@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Select,
   SelectContent,
@@ -28,7 +30,10 @@ import {
   Clock3,
   Clock4,
   Camera,
-  ArrowUpDown
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Users
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -62,6 +67,8 @@ export default function TimeRecordsPage() {
   const [selectedRecord, setSelectedRecord] = useState<TimeRecord | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
   const [showTimeClock, setShowTimeClock] = useState(false);
+  const [activeTab, setActiveTab] = useState('registros');
+  const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set());
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
 
   // Hooks
@@ -146,6 +153,66 @@ export default function TimeRecordsPage() {
     }
   }, [timeRecords.length, filteredRecords.length]);
 
+  // Agrupar registros por funcionário e calcular totais
+  const employeeSummary = useMemo(() => {
+    const grouped = new Map<string, {
+      employeeId: string;
+      employeeName: string;
+      employeeMatricula?: string;
+      records: TimeRecord[];
+      totalHorasTrabalhadas: number;
+      totalHorasNegativas: number;
+      totalHorasExtras50: number;
+      totalHorasExtras100: number;
+      totalHorasNoturnas: number;
+    }>();
+
+    filteredRecords.forEach(record => {
+      const employeeId = record.employee_id;
+      const employeeName = record.employee_nome || 'Funcionário sem nome';
+      const employeeMatricula = record.employee_matricula;
+
+      if (!grouped.has(employeeId)) {
+        grouped.set(employeeId, {
+          employeeId,
+          employeeName,
+          employeeMatricula,
+          records: [],
+          totalHorasTrabalhadas: 0,
+          totalHorasNegativas: 0,
+          totalHorasExtras50: 0,
+          totalHorasExtras100: 0,
+          totalHorasNoturnas: 0,
+        });
+      }
+
+      const summary = grouped.get(employeeId)!;
+      summary.records.push(record);
+      summary.totalHorasTrabalhadas += record.horas_trabalhadas || 0;
+      summary.totalHorasNegativas += record.horas_negativas || 0;
+      summary.totalHorasExtras50 += record.horas_extras_50 || 0;
+      summary.totalHorasExtras100 += record.horas_extras_100 || 0;
+      // Nota: horas_noturnas não existe no tipo, mas vamos deixar preparado caso seja adicionado
+      // summary.totalHorasNoturnas += (record as any).horas_noturnas || 0;
+    });
+
+    return Array.from(grouped.values()).sort((a, b) => 
+      a.employeeName.localeCompare(b.employeeName)
+    );
+  }, [filteredRecords]);
+
+  const toggleEmployeeExpanded = (employeeId: string) => {
+    setExpandedEmployees(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(employeeId)) {
+        newSet.delete(employeeId);
+      } else {
+        newSet.add(employeeId);
+      }
+      return newSet;
+    });
+  };
+
   // Refetch quando filtros mudarem
   useEffect(() => {
     refetch();
@@ -157,11 +224,11 @@ export default function TimeRecordsPage() {
   };
 
   const handleStatusFilter = (value: string) => {
-    setStatusFilter(value);
+    setStatusFilter(value === 'all' ? '' : value);
   };
 
   const handleEmployeeFilter = (value: string) => {
-    setEmployeeFilter(value);
+    setEmployeeFilter(value === 'all' ? '' : value);
   };
 
   const handleDateRangeChange = (field: 'start' | 'end', value: string) => {
@@ -398,14 +465,14 @@ export default function TimeRecordsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Status</label>
               <Select
-                value={statusFilter}
+                value={statusFilter || 'all'}
                 onValueChange={handleStatusFilter}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos os status</SelectItem>
+                  <SelectItem value="all">Todos os status</SelectItem>
                   <SelectItem value="pendente">Pendente</SelectItem>
                   <SelectItem value="aprovado">Aprovado</SelectItem>
                   <SelectItem value="rejeitado">Rejeitado</SelectItem>
@@ -416,14 +483,14 @@ export default function TimeRecordsPage() {
             <div className="space-y-2">
               <label className="text-sm font-medium">Funcionário</label>
               <Select
-                value={employeeFilter}
+                value={employeeFilter || 'all'}
                 onValueChange={handleEmployeeFilter}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os funcionários" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todos os funcionários</SelectItem>
+                  <SelectItem value="all">Todos os funcionários</SelectItem>
                   {employees.map((employee) => (
                     <SelectItem key={employee.id} value={employee.id}>
                       {employee.nome}
@@ -478,20 +545,34 @@ export default function TimeRecordsPage() {
         </CardContent>
       </Card>
 
-      {/* Lista de Registros em Cards */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Registros de Ponto</CardTitle>
-          <CardDescription>
-            {isLoading 
-              ? 'Carregando registros...'
-              : filteredRecords && filteredRecords.length > 0 
-                ? `${filteredRecords.length} registro(s) encontrado(s) no período selecionado`
-                : 'Nenhum registro encontrado no período selecionado'
-            }
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Tabs de Navegação */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="registros" className="flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Registros de Ponto
+          </TabsTrigger>
+          <TabsTrigger value="resumo" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Resumo por Funcionário
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Aba: Registros de Ponto */}
+        <TabsContent value="registros" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Registros de Ponto</CardTitle>
+              <CardDescription>
+                {isLoading 
+                  ? 'Carregando registros...'
+                  : filteredRecords && filteredRecords.length > 0 
+                    ? `${filteredRecords.length} registro(s) encontrado(s) no período selecionado`
+                    : 'Nenhum registro encontrado no período selecionado'
+                }
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
           {isLoading ? (
             <div className="flex items-center justify-center h-64">
               <div className="flex items-center space-x-2">
@@ -861,6 +942,186 @@ export default function TimeRecordsPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* Aba: Resumo por Funcionário */}
+        <TabsContent value="resumo" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Resumo por Funcionário</CardTitle>
+              <CardDescription>
+                Visualize o resumo de horas trabalhadas, horas negativas, horas extras e horas noturnas por funcionário
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-6 w-6 animate-spin" />
+                    <span>Carregando resumo...</span>
+                  </div>
+                </div>
+              ) : employeeSummary.length > 0 ? (
+                <div className="space-y-4">
+                  {employeeSummary.map((summary) => {
+                    const isExpanded = expandedEmployees.has(summary.employeeId);
+                    return (
+                      <Card key={summary.employeeId} className="overflow-hidden">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <CardTitle className="text-lg">
+                                {summary.employeeName}
+                              </CardTitle>
+                              {summary.employeeMatricula && (
+                                <CardDescription>
+                                  Matrícula: {summary.employeeMatricula}
+                                </CardDescription>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleEmployeeExpanded(summary.employeeId)}
+                              className="h-8 w-8 p-0"
+                            >
+                              {isExpanded ? (
+                                <ChevronUp className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Horas Trabalhadas</p>
+                              <p className="text-2xl font-bold text-blue-600">
+                                {summary.totalHorasTrabalhadas.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Horas Negativas</p>
+                              <p className="text-2xl font-bold text-red-600">
+                                {summary.totalHorasNegativas > 0 ? '-' : ''}{summary.totalHorasNegativas.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Extras 50%</p>
+                              <p className="text-2xl font-bold text-orange-600">
+                                {summary.totalHorasExtras50.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Extras 100%</p>
+                              <p className="text-2xl font-bold text-purple-600">
+                                {summary.totalHorasExtras100.toFixed(2)}h
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Horas Noturnas</p>
+                              <p className="text-2xl font-bold text-indigo-600">
+                                {summary.totalHorasNoturnas.toFixed(2)}h
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Tabela de detalhes quando expandido */}
+                          {isExpanded && (
+                            <div className="mt-6 border-t pt-4">
+                              <h4 className="text-sm font-semibold mb-3">Registros Dia a Dia</h4>
+                              <div className="overflow-x-auto">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Data</TableHead>
+                                      <TableHead>Horas Trabalhadas</TableHead>
+                                      <TableHead>Horas Negativas</TableHead>
+                                      <TableHead>Extras 50%</TableHead>
+                                      <TableHead>Extras 100%</TableHead>
+                                      <TableHead>Horas Noturnas</TableHead>
+                                      <TableHead>Status</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {summary.records
+                                      .sort((a, b) => 
+                                        new Date(b.data_registro).getTime() - new Date(a.data_registro).getTime()
+                                      )
+                                      .map((record) => (
+                                        <TableRow key={record.id}>
+                                          <TableCell>
+                                            {formatDateOnly(record.data_registro)}
+                                          </TableCell>
+                                          <TableCell>
+                                            <span className="font-medium">
+                                              {record.horas_trabalhadas?.toFixed(2) || '0.00'}h
+                                            </span>
+                                          </TableCell>
+                                          <TableCell>
+                                            {record.horas_negativas && record.horas_negativas > 0 ? (
+                                              <span className="text-red-600 font-medium">
+                                                -{record.horas_negativas.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {record.horas_extras_50 && record.horas_extras_50 > 0 ? (
+                                              <span className="text-orange-600 font-medium">
+                                                +{record.horas_extras_50.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            {record.horas_extras_100 && record.horas_extras_100 > 0 ? (
+                                              <span className="text-purple-600 font-medium">
+                                                +{record.horas_extras_100.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            <span className="text-indigo-600 font-medium">
+                                              {/* Nota: horas_noturnas não existe no tipo ainda */}
+                                              0.00h
+                                            </span>
+                                          </TableCell>
+                                          <TableCell>
+                                            <Badge className={getStatusColor(record.status || '')}>
+                                              {getStatusLabel(record.status || '')}
+                                            </Badge>
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Nenhum funcionário encontrado</p>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Ajuste os filtros ou registre os primeiros pontos
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Modal */}
       <FormModal

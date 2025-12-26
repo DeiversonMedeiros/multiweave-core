@@ -1124,24 +1124,8 @@ export const useMenu = () => {
               title: 'Folha de Pagamento',
               url: '/rh/payroll',
               icon: DollarSign,
-              description: 'Folha de pagamento',
+              description: 'Gere e gerencie a folha de pagamento dos funcionários',
               requiresPermission: { type: 'entity', name: 'payroll', action: 'read' }
-            },
-            {
-              id: 'rh-motor-calculo',
-              title: 'Motor de Cálculo',
-              url: '/rh/payroll-calculation',
-              icon: Calculator,
-              description: 'Engine de folha de pagamento',
-              requiresPermission: { type: 'entity', name: 'payroll_calculation', action: 'read' }
-            },
-            {
-              id: 'rh-consolidacao-eventos',
-              title: 'Consolidação de Eventos',
-              url: '/rh/event-consolidation',
-              icon: Calculator,
-              description: 'Consolidação de eventos da folha',
-              requiresPermission: { type: 'entity', name: 'event_consolidation', action: 'read' }
             },
             {
               id: 'rh-pagamentos-mensais-alugueis',
