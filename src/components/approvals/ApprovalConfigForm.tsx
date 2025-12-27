@@ -159,7 +159,8 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
       'requisicao_compra': 'Requisições de Compra',
       'cotacao_compra': 'Cotações de Compra',
       'solicitacao_saida_material': 'Saídas de Materiais',
-      'solicitacao_transferencia_material': 'Transferências de Materiais'
+      'solicitacao_transferencia_material': 'Transferências de Materiais',
+      'logistica': 'Logística'
     };
     return labels[tipo] || tipo;
   };
@@ -203,6 +204,7 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
                 <SelectItem value="cotacao_compra">Cotações de Compra</SelectItem>
                 <SelectItem value="solicitacao_saida_material">Saídas de Materiais</SelectItem>
                 <SelectItem value="solicitacao_transferencia_material">Transferências de Materiais</SelectItem>
+                <SelectItem value="logistica">Logística</SelectItem>
               </SelectContent>
             </Select>
           </div>

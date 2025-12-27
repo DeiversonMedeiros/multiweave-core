@@ -1,40 +1,60 @@
 #!/usr/bin/env python3
+"""
+Script para aplicar migrações SQL no banco de dados Supabase
+"""
 import psycopg2
 import sys
+from pathlib import Path
 
-# Configuração de conexão
-conn_string = "postgresql://postgres:81hbcoNDXaGiPIpp!@db.wmtftyaqucwfsnnjepiy.supabase.co:5432/postgres"
+# Configurações de conexão
+DB_URL = "postgresql://postgres:81hbcoNDXaGiPIpp!@db.wmtftyaqucwfsnnjepiy.supabase.co:5432/postgres"
 
-try:
-    # Conectar ao banco
-    conn = psycopg2.connect(conn_string)
-    conn.autocommit = True
-    cursor = conn.cursor()
-    
-    # Ler e executar migração 1
-    print("Aplicando migração 1: Views Materializadas...")
-    with open('supabase/migrations/20251109000001_create_dashboard_materialized_views.sql', 'r', encoding='utf-8') as f:
-        sql1 = f.read()
-        cursor.execute(sql1)
-    print("✅ Migração 1 aplicada com sucesso!")
-    
-    # Ler e executar migração 2
-    print("Aplicando migração 2: Funções de Refresh...")
-    with open('supabase/migrations/20251109000002_create_refresh_statistics_views_function.sql', 'r', encoding='utf-8') as f:
-        sql2 = f.read()
-        cursor.execute(sql2)
-    print("✅ Migração 2 aplicada com sucesso!")
-    
-    # Executar refresh inicial
-    print("Executando refresh inicial das views...")
-    cursor.execute("SELECT public.refresh_all_statistics_views();")
-    print("✅ Refresh inicial executado com sucesso!")
-    
-    cursor.close()
-    conn.close()
-    print("\n🎉 Todas as migrações foram aplicadas com sucesso!")
-    
-except Exception as e:
-    print(f"❌ Erro ao aplicar migrações: {e}")
-    sys.exit(1)
+# Arquivos de migração na ordem
+MIGRATIONS = [
+    "supabase/migrations/20251220000020_create_logistica_schema.sql",
+    "supabase/migrations/20251220000021_create_logistica_rpc_functions.sql",
+    "supabase/migrations/20251220000022_add_logistica_to_approval_system.sql"
+]
 
+def apply_migration(conn, migration_file):
+    """Aplica uma migração SQL"""
+    try:
+        with open(migration_file, 'r', encoding='utf-8') as f:
+            sql = f.read()
+        
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            conn.commit()
+        
+        print(f"✅ Migração aplicada: {migration_file}")
+        return True
+    except Exception as e:
+        print(f"❌ Erro ao aplicar {migration_file}: {e}")
+        conn.rollback()
+        return False
+
+def main():
+    """Função principal"""
+    try:
+        conn = psycopg2.connect(DB_URL)
+        print("✅ Conectado ao banco de dados")
+        
+        for migration in MIGRATIONS:
+            migration_path = Path(migration)
+            if not migration_path.exists():
+                print(f"⚠️  Arquivo não encontrado: {migration}")
+                continue
+            
+            if not apply_migration(conn, migration_path):
+                print(f"❌ Falha ao aplicar {migration}")
+                sys.exit(1)
+        
+        conn.close()
+        print("\n✅ Todas as migrações foram aplicadas com sucesso!")
+        
+    except Exception as e:
+        print(f"❌ Erro de conexão: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

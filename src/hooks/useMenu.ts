@@ -53,7 +53,9 @@ import {
   Clock3,
   Inbox,
   BarChart3 as BarChart3Icon,
-  Target
+  Target,
+  Route,
+  Bell
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -749,6 +751,14 @@ export const useMenu = () => {
           icon: FileText,
           description: 'Solicitações e devoluções de veículos',
           requiresPermission: { type: 'module', name: 'frota', action: 'read' }
+        },
+        {
+          id: 'frota-alertas',
+          title: 'Alertas',
+          url: '/frota/alertas',
+          icon: Bell,
+          description: 'Alertas de documentos, manutenções e vencimentos',
+          requiresPermission: { type: 'module', name: 'frota', action: 'read' }
         }
       ]
     },
@@ -758,7 +768,41 @@ export const useMenu = () => {
       url: '/logistica',
       icon: MapPin,
       description: 'Gestão logística',
-      requiresPermission: { type: 'module', name: 'logistica', action: 'read' }
+      requiresPermission: { type: 'module', name: 'logistica', action: 'read' },
+      children: [
+        {
+          id: 'logistica-dashboard',
+          title: 'Dashboard',
+          url: '/logistica/dashboard',
+          icon: LayoutDashboard,
+          description: 'Painel principal de logística',
+          requiresPermission: { type: 'module', name: 'logistica', action: 'read' }
+        },
+        {
+          id: 'logistica-calendario',
+          title: 'Calendário',
+          url: '/logistica/calendario',
+          icon: Calendar,
+          description: 'Calendário de disponibilidade de veículos',
+          requiresPermission: { type: 'module', name: 'logistica', action: 'read' }
+        },
+        {
+          id: 'logistica-viagens',
+          title: 'Viagens',
+          url: '/logistica/viagens',
+          icon: Route,
+          description: 'Gestão de viagens e entregas',
+          requiresPermission: { type: 'module', name: 'logistica', action: 'read' }
+        },
+        {
+          id: 'logistica-custos',
+          title: 'Custos Logísticos',
+          url: '/logistica/custos',
+          icon: DollarSign,
+          description: 'Gestão de custos logísticos',
+          requiresPermission: { type: 'module', name: 'logistica', action: 'read' }
+        }
+      ]
     },
     {
       id: 'rh',

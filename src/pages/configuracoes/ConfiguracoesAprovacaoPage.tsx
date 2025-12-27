@@ -16,7 +16,8 @@ import {
   DollarSign,
   Building2,
   User,
-  FolderKanban
+  FolderKanban,
+  Truck
 } from 'lucide-react';
 import { useApprovalConfigs, useCreateApprovalConfig, useUpdateApprovalConfig, useDeleteApprovalConfig } from '@/hooks/approvals/useApprovalConfigs';
 import { useCompany } from '@/lib/company-context';
@@ -131,7 +132,8 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
       'requisicao_compra': 'Requisições de Compra',
       'cotacao_compra': 'Cotações de Compra',
       'solicitacao_saida_material': 'Saídas de Materiais',
-      'solicitacao_transferencia_material': 'Transferências de Materiais'
+      'solicitacao_transferencia_material': 'Transferências de Materiais',
+      'logistica': 'Logística'
     };
     return labels[tipo] || tipo;
   };
@@ -142,7 +144,8 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
       'requisicao_compra': <Building2 className="h-4 w-4" />,
       'cotacao_compra': <Building2 className="h-4 w-4" />,
       'solicitacao_saida_material': <Settings className="h-4 w-4" />,
-      'solicitacao_transferencia_material': <Settings className="h-4 w-4" />
+      'solicitacao_transferencia_material': <Settings className="h-4 w-4" />,
+      'logistica': <Truck className="h-4 w-4" />
     };
     return icons[tipo] || <Settings className="h-4 w-4" />;
   };

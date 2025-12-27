@@ -12,6 +12,7 @@ import VistoriasPage from './VistoriasPage';
 import ManutencoesPage from './ManutencoesPage';
 import OcorrenciasPage from './OcorrenciasPage';
 import SolicitacoesPage from './SolicitacoesPage';
+import AlertasPage from './AlertasPage';
 
 export default function FrotaRoutes() {
   return (
@@ -24,6 +25,7 @@ export default function FrotaRoutes() {
       <Route path="/manutencoes" element={<ManutencoesPage />} />
       <Route path="/ocorrencias" element={<OcorrenciasPage />} />
       <Route path="/solicitacoes" element={<SolicitacoesPage />} />
+      <Route path="/alertas" element={<AlertasPage />} />
     </Routes>
   );
 }

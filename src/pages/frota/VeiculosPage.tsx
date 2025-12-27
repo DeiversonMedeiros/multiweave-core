@@ -4,6 +4,7 @@
 // =====================================================
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   Car, 
   Plus, 
@@ -35,11 +43,13 @@ import {
   FileText,
   AlertTriangle
 } from 'lucide-react';
-import { useVehicles, useDeleteVehicle } from '@/hooks/frota/useFrotaData';
+import { useVehicles, useDeleteVehicle, useVehicle, useVehicleDocuments } from '@/hooks/frota/useFrotaData';
 import { Vehicle, VehicleType, VehicleStatus } from '@/types/frota';
 import VehicleForm from '@/components/frota/VehicleForm';
+import { VehicleDocumentsTab } from '@/components/frota/VehicleDocumentsTab';
 
 export default function VeiculosPage() {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState({
     search: '',
     tipo: '',
@@ -50,9 +60,15 @@ export default function VeiculosPage() {
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isDocumentsDialogOpen, setIsDocumentsDialogOpen] = useState(false);
+  const [viewingVehicleId, setViewingVehicleId] = useState<string | null>(null);
+  const [viewingVehicle, setViewingVehicle] = useState<Vehicle | null>(null);
 
   const { data: vehicles, isLoading, refetch } = useVehicles(filters);
   const deleteVehicle = useDeleteVehicle();
+  const { data: vehicleDetails, isLoading: isLoadingDetails } = useVehicle(viewingVehicleId || '');
+  const { data: vehicleDocuments, isLoading: isLoadingDocuments } = useVehicleDocuments(viewingVehicleId || '');
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir este veículo?')) {
@@ -77,6 +93,21 @@ export default function VeiculosPage() {
 
   const handleFormSuccess = () => {
     refetch();
+  };
+
+  const handleViewVehicle = (vehicle: Vehicle) => {
+    setViewingVehicle(vehicle);
+    setViewingVehicleId(vehicle.id);
+    setIsViewDialogOpen(true);
+  };
+
+  const handleViewMaintenances = (vehicle: Vehicle) => {
+    navigate('/frota/manutencoes', { state: { vehicleId: vehicle.id } });
+  };
+
+  const handleViewDocuments = (vehicle: Vehicle) => {
+    setViewingVehicleId(vehicle.id);
+    setIsDocumentsDialogOpen(true);
   };
 
   const getStatusBadge = (status: VehicleStatus) => {
@@ -250,20 +281,36 @@ export default function VeiculosPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center space-x-2">
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleViewVehicle(vehicle)}
+                              title="Visualizar detalhes"
+                            >
                               <Eye className="w-4 h-4" />
                             </Button>
                             <Button 
                               variant="ghost" 
                               size="sm"
                               onClick={() => handleEditVehicle(vehicle)}
+                              title="Editar veículo"
                             >
                               <Edit className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleViewMaintenances(vehicle)}
+                              title="Ver manutenções"
+                            >
                               <Wrench className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleViewDocuments(vehicle)}
+                              title="Ver documentos"
+                            >
                               <FileText className="w-4 h-4" />
                             </Button>
                             <Button 
@@ -271,6 +318,7 @@ export default function VeiculosPage() {
                               size="sm"
                               onClick={() => handleDelete(vehicle.id)}
                               className="text-red-600 hover:text-red-700"
+                              title="Excluir veículo"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -335,6 +383,116 @@ export default function VeiculosPage() {
         vehicle={selectedVehicle}
         onSuccess={handleFormSuccess}
       />
+
+      {/* Dialog de Visualização */}
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="w-5 h-5" />
+              Detalhes do Veículo
+            </DialogTitle>
+            <DialogDescription>
+              Informações completas do veículo
+            </DialogDescription>
+          </DialogHeader>
+          {isLoadingDetails && !vehicleDetails ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#049940]"></div>
+            </div>
+          ) : (vehicleDetails || viewingVehicle) ? (
+            <div className="space-y-4">
+              {(() => {
+                const vehicle = vehicleDetails || viewingVehicle;
+                if (!vehicle) return null;
+                
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Placa</p>
+                      <p className="text-base font-semibold">{vehicle.placa}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Marca</p>
+                      <p className="text-base">{vehicle.marca || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Modelo</p>
+                      <p className="text-base">{vehicle.modelo || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Ano</p>
+                      <p className="text-base">{vehicle.ano || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Cor</p>
+                      <p className="text-base">{vehicle.cor || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Tipo</p>
+                      <div>{getTypeBadge(vehicle.tipo)}</div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Situação</p>
+                      <div>{getStatusBadge(vehicle.situacao)}</div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Quilometragem</p>
+                      <p className="text-base">
+                        {typeof vehicle.quilometragem === 'number' 
+                          ? vehicle.quilometragem.toLocaleString('pt-BR') 
+                          : vehicle.quilometragem || '0'} km
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">RENAVAM</p>
+                      <p className="text-base">{vehicle.renavam || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Chassi</p>
+                      <p className="text-base">{vehicle.chassi || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Locadora</p>
+                      <p className="text-base">{vehicle.locadora || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Criado em</p>
+                      <p className="text-base">
+                        {vehicle.created_at 
+                          ? new Date(vehicle.created_at).toLocaleDateString('pt-BR')
+                          : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-gray-500">Não foi possível carregar os detalhes do veículo</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Documentos */}
+      <Dialog open={isDocumentsDialogOpen} onOpenChange={setIsDocumentsDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Documentos do Veículo
+            </DialogTitle>
+            <DialogDescription>
+              Gerencie os documentos do veículo
+            </DialogDescription>
+          </DialogHeader>
+          {viewingVehicleId && (
+            <VehicleDocumentsTab vehicleId={viewingVehicleId} mode="edit" />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

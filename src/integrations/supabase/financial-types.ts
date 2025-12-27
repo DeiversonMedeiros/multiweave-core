@@ -28,6 +28,7 @@ export interface ContaPagar {
   conta_bancaria_id?: string;
   observacoes?: string;
   anexos?: string[];
+  numero_nota_fiscal?: string;
   valor_desconto: number;
   valor_juros: number;
   valor_multa: number;
@@ -105,6 +106,7 @@ export interface ContaReceber {
   conta_bancaria_id?: string;
   observacoes?: string;
   anexos?: string[];
+  numero_nota_fiscal?: string;
   valor_desconto: number;
   valor_juros: number;
   valor_multa: number;
@@ -376,6 +378,7 @@ export interface ContaPagarFormData {
   conta_bancaria_id?: string;
   observacoes?: string;
   anexos?: string[];
+  numero_nota_fiscal?: string;
   // Campos de parcelamento
   is_parcelada?: boolean;
   numero_parcelas?: number;
@@ -412,6 +415,7 @@ export interface ContaReceberFormData {
   conta_bancaria_id?: string;
   observacoes?: string;
   anexos?: string[];
+  numero_nota_fiscal?: string;
   // Novos campos
   condicao_recebimento?: number; // 30, 45, 60 ou 90 dias
   valor_pis?: number;

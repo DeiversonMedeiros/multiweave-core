@@ -54,7 +54,8 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
       'requisicao_compra': 'Requisições de Compra',
       'cotacao_compra': 'Cotações de Compra',
       'solicitacao_saida_material': 'Saídas de Materiais',
-      'solicitacao_transferencia_material': 'Transferências de Materiais'
+      'solicitacao_transferencia_material': 'Transferências de Materiais',
+      'logistica': 'Logística'
     };
     return labels[tipo] || tipo;
   };

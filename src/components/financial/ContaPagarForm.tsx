@@ -20,7 +20,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Building, DollarSign, FileText, Save, X, AlertCircle, Plus, Trash2 } from 'lucide-react';
+import { CalendarIcon, Building, DollarSign, FileText, Save, X, AlertCircle, Plus, Trash2, Upload, File } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, addDays, addWeeks, addMonths, addYears, parseISO, startOfDay } from 'date-fns';
@@ -58,6 +58,7 @@ const contaPagarSchema = z.object({
   conta_bancaria_id: z.string().optional(),
   observacoes: z.string().optional(),
   anexos: z.array(z.string()).optional(),
+  numero_nota_fiscal: z.string().optional(),
   // Campos de parcelamento
   is_parcelada: z.boolean().optional(),
   numero_parcelas: z.number().min(1).max(360).optional(),
@@ -97,6 +98,8 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingTitulo, setLoadingTitulo] = useState(false);
   const [parcelas, setParcelas] = useState<ContaPagarParcelaFormData[]>([]);
+  const [uploadingNotaFiscal, setUploadingNotaFiscal] = useState(false);
+  const [notaFiscalUrl, setNotaFiscalUrl] = useState<string | null>(null);
 
   const form = useForm<ContaPagarFormValues>({
     resolver: zodResolver(contaPagarSchema),
@@ -121,6 +124,7 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
       conta_bancaria_id: '',
       observacoes: '',
       anexos: [],
+      numero_nota_fiscal: '',
       is_parcelada: false,
       numero_parcelas: 1,
       intervalo_parcelas: 'mensal',
@@ -274,7 +278,13 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         is_urgente: conta.is_urgente || false,
         motivo_urgencia: conta.motivo_urgencia || '',
         anexos: conta.anexos || [],
+        numero_nota_fiscal: conta.numero_nota_fiscal || '',
       });
+      
+      // Se houver anexos, definir o primeiro como nota fiscal para exibição
+      if (conta.anexos && conta.anexos.length > 0) {
+        setNotaFiscalUrl(conta.anexos[0]);
+      }
     }
   }, [conta, form]);
 
@@ -457,6 +467,125 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                         </FormItem>
                       )}
                     />
+
+                    <FormField
+                      control={form.control}
+                      name="numero_nota_fiscal"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Número da Nota Fiscal</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="Ex: 123456" 
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Número da nota fiscal relacionada a esta conta
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Upload de Nota Fiscal */}
+                  <div className="space-y-2">
+                    <Label>Anexar Nota Fiscal</Label>
+                    <div className="flex items-center gap-4">
+                      <Input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file || !selectedCompany?.id) return;
+
+                          // Validar tamanho (10MB)
+                          if (file.size > 10 * 1024 * 1024) {
+                            alert('Arquivo muito grande. Tamanho máximo: 10MB');
+                            return;
+                          }
+
+                          setUploadingNotaFiscal(true);
+                          try {
+                            // Sanitizar nome do arquivo
+                            const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                            const timestamp = Date.now();
+                            const fileName = `${timestamp}_${sanitizedName}`;
+                            const filePath = `${selectedCompany.id}/notas-fiscais/${fileName}`;
+
+                            // Upload do arquivo
+                            const { data, error: uploadError } = await supabase.storage
+                              .from('notas-fiscais')
+                              .upload(filePath, file, {
+                                cacheControl: '3600',
+                                upsert: false
+                              });
+
+                            if (uploadError) {
+                              throw uploadError;
+                            }
+
+                            // Obter URL do arquivo (signed URL para bucket privado)
+                            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                              .from('notas-fiscais')
+                              .createSignedUrl(filePath, 3600);
+                            
+                            let fileUrl = '';
+                            if (signedUrlError || !signedUrlData) {
+                              const { data: publicUrlData } = supabase.storage
+                                .from('notas-fiscais')
+                                .getPublicUrl(filePath);
+                              fileUrl = publicUrlData.publicUrl;
+                            } else {
+                              fileUrl = signedUrlData.signedUrl;
+                            }
+
+                            setNotaFiscalUrl(fileUrl);
+                            
+                            // Adicionar ao array de anexos
+                            const currentAnexos = form.getValues('anexos') || [];
+                            form.setValue('anexos', [...currentAnexos, fileUrl]);
+                          } catch (error: any) {
+                            console.error('Erro no upload:', error);
+                            alert('Erro ao enviar nota fiscal: ' + (error.message || 'Não foi possível enviar o arquivo.'));
+                          } finally {
+                            setUploadingNotaFiscal(false);
+                            // Limpar input
+                            e.target.value = '';
+                          }
+                        }}
+                        disabled={uploadingNotaFiscal}
+                        className="max-w-sm"
+                      />
+                      {uploadingNotaFiscal && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                          Enviando...
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)
+                    </p>
+                    {notaFiscalUrl && (
+                      <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+                        <File className="h-4 w-4" />
+                        <span className="text-sm">Nota fiscal anexada</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setNotaFiscalUrl(null);
+                            const currentAnexos = form.getValues('anexos') || [];
+                            form.setValue('anexos', currentAnexos.filter(url => url !== notaFiscalUrl));
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
                   <FormField

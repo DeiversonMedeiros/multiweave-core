@@ -66,6 +66,7 @@ import ContratosRecorrentes from "./pages/Compras/ContratosRecorrentes";
 import HistoricoCompras from "./pages/Compras/HistoricoCompras";
 // Imports das páginas de Frota
 import FrotaRoutes from "./pages/frota/FrotaRoutes";
+import LogisticaRoutes from "./pages/logistica/LogisticaRoutes";
 
 // Configuração otimizada do QueryClient
 const queryClient = new QueryClient({
@@ -235,7 +236,7 @@ function App() {
                 <Route path="/almoxarifado/localizacoes" element={<LocalizacoesFisicasPage />} />
                 <Route path="/almoxarifado/test" element={<TestPage />} />
                 <Route path="/frota/*" element={<FrotaRoutes />} />
-                <Route path="/logistica" element={<div className="text-2xl font-bold">Logística - Em desenvolvimento</div>} />
+                <Route path="/logistica/*" element={<LogisticaRoutes />} />
                 <Route path="/rh/*" element={<RHRoutesNew />} />
                 <Route path="/portal-colaborador/*" element={<PortalColaboradorRoutes />} />
                 <Route path="/portal-gestor/*" element={<PortalGestorRoutes />} />

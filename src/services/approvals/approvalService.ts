@@ -6,7 +6,7 @@ export interface ApprovalConfig {
   id: string;
   company_id: string;
   nome?: string;
-  processo_tipo: 'conta_pagar' | 'requisicao_compra' | 'cotacao_compra' | 'solicitacao_saida_material' | 'solicitacao_transferencia_material';
+  processo_tipo: 'conta_pagar' | 'requisicao_compra' | 'cotacao_compra' | 'solicitacao_saida_material' | 'solicitacao_transferencia_material' | 'logistica';
   centro_custo_id?: string;
   projeto_id?: string;
   classe_financeiras?: string[];

@@ -3,7 +3,8 @@
 // Sistema ERP MultiWeave Core
 // =====================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +45,7 @@ import { VehicleMaintenance, MaintenanceType, MaintenanceStatus } from '@/types/
 import MaintenanceForm from '@/components/frota/MaintenanceForm';
 
 export default function ManutencoesPage() {
+  const location = useLocation();
   const [filters, setFilters] = useState({
     search: '',
     vehicle_id: '',
@@ -52,6 +54,15 @@ export default function ManutencoesPage() {
     limit: 50,
     offset: 0
   });
+
+  // Aplicar filtro de vehicle_id se vier da navegação
+  useEffect(() => {
+    if (location.state?.vehicleId) {
+      setFilters(prev => ({ ...prev, vehicle_id: location.state.vehicleId }));
+      // Limpar o state após aplicar para não manter o filtro em navegações futuras
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedMaintenance, setSelectedMaintenance] = useState<VehicleMaintenance | null>(null);

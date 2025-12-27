@@ -58,7 +58,9 @@ export const useVehicle = (vehicleId: string) => {
   return useQuery({
     queryKey: ['frota', 'vehicle', vehicleId, selectedCompany?.id],
     queryFn: async () => {
-      if (!selectedCompany?.id || !vehicleId) throw new Error('Dados necessários não fornecidos');
+      if (!selectedCompany?.id || !vehicleId) {
+        return null;
+      }
       
       const result = await EntityService.getById({
         schema: 'frota',
@@ -67,7 +69,8 @@ export const useVehicle = (vehicleId: string) => {
         id: vehicleId
       });
       
-      return result.data;
+      // EntityService.getById já retorna o objeto diretamente ou null
+      return result || null;
     },
     enabled: !!selectedCompany?.id && !!vehicleId,
   });
@@ -761,6 +764,34 @@ export const useCreateDocument = () => {
     },
     onError: (error: any) => {
       toast.error('Erro ao adicionar documento: ' + error.message);
+    },
+  });
+};
+
+export const useDeleteDocument = () => {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      
+      const result = await EntityService.delete({
+        schema: 'frota',
+        table: 'vehicle_documents',
+        companyId: selectedCompany.id,
+        id
+      });
+      
+      return result.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['frota', 'documents'] });
+      queryClient.invalidateQueries({ queryKey: ['frota', 'expiring_documents'] });
+      toast.success('Documento excluído com sucesso!');
+    },
+    onError: (error: any) => {
+      toast.error('Erro ao excluir documento: ' + error.message);
     },
   });
 };
