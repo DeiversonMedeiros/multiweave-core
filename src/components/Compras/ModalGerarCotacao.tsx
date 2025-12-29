@@ -50,11 +50,17 @@ import {
   PieChart,
   AlertTriangle,
   CheckCircle2,
-  Info
+  Info,
+  Image as ImageIcon,
+  Eye,
+  Paperclip,
+  X as XIcon,
+  File
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { EntityService } from '@/services/generic/entityService';
 import { useStartQuoteCycle } from '@/hooks/compras/useComprasData';
 import { useActivePartners } from '@/hooks/usePartners';
@@ -103,6 +109,7 @@ interface ItemAgrupado {
   tipo_requisicao: string; // Tipo da requisição (reposicao, compra_direta, emergencial)
   selecionado: boolean;
   itens_origem: RequisicaoItem[];
+  imagem_url?: string | null;
 }
 
 interface FornecedorCotacao {
@@ -188,6 +195,20 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   // Fornecedores
   const [fornecedores, setFornecedores] = useState<FornecedorCotacao[]>([]);
   const [fornecedoresDisponiveis, setFornecedoresDisponiveis] = useState<any[]>([]);
+  
+  // Estado para gerenciar anexos por fornecedor
+  // Estrutura: { [fornecedorId]: Array<{ id: string, file_name: string, storage_path: string, url: string }> }
+  const [anexosPorFornecedor, setAnexosPorFornecedor] = useState<Record<string, Array<{
+    id: string;
+    file_name: string;
+    storage_path: string;
+    url: string;
+    mime_type?: string;
+    size_bytes?: number;
+  }>>>({});
+  
+  // Estado para controlar upload em progresso por fornecedor
+  const [uploadingFornecedor, setUploadingFornecedor] = useState<string | null>(null);
   const [buscaFornecedor, setBuscaFornecedor] = useState<string>('');
 
   // Mapa item x fornecedor (dados do mapa de cotação)
@@ -272,6 +293,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   // Modal de Informações Adicionais do Fornecedor
   const [fornecedorModalAberto, setFornecedorModalAberto] = useState(false);
   const [fornecedorSelecionadoModal, setFornecedorSelecionadoModal] = useState<string | null>(null);
+  
+  // Modal de Visualização de Imagem do Item
+  const [imagemModalAberto, setImagemModalAberto] = useState(false);
+  const [imagemSelecionada, setImagemSelecionada] = useState<{ url: string; nome: string } | null>(null);
 
   // Criar string estável a partir de requisicoesIds para usar como dependência
   const requisicoesIdsKey = useMemo(() => {
@@ -369,10 +394,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
           // Coletar todos os IDs de materiais únicos
           const materialIds = [...new Set(itensRaw.map((item: any) => item.material_id).filter(Boolean))];
           
+          console.log('📋 IDs de materiais das requisições:', materialIds);
+          
           // Buscar todos os materiais de uma vez
           const materiaisMap = new Map<string, any>();
           if (materialIds.length > 0) {
             try {
+              // Buscar materiais filtrando pelos IDs específicos
               const materiaisResult = await EntityService.list({
                 schema: 'almoxarifado',
                 table: 'materiais_equipamentos',
@@ -382,13 +410,36 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                 pageSize: 1000,
               });
 
-              // Criar mapa de materiais por ID
+              console.log('📦 Materiais encontrados no banco:', materiaisResult.data?.length || 0);
+              console.log('📦 Todos os materiais do banco:', materiaisResult.data);
+
+              // Criar mapa de materiais por ID (usando múltiplas chaves para garantir correspondência)
               if (materiaisResult.data) {
                 materiaisResult.data.forEach((material: any) => {
                   const materialIdStr = String(material.id);
-                  if (materialIds.includes(material.id) || materialIds.some(id => String(id) === materialIdStr)) {
-                    materiaisMap.set(materialIdStr, material);
+                  // Mapear pelo ID como string
+                  materiaisMap.set(materialIdStr, material);
+                  // Também mapear pelo ID original (UUID) se for diferente
+                  if (material.id && String(material.id) !== materialIdStr) {
+                    materiaisMap.set(String(material.id), material);
                   }
+                  // Mapear também pelo material_id se existir (pode ser referência a public.materials)
+                  if (material.material_id) {
+                    materiaisMap.set(String(material.material_id), material);
+                  }
+                  
+                  // Debug: log de cada material encontrado
+                  console.log('✅ Material mapeado:', {
+                    id: material.id,
+                    material_id: material.material_id,
+                    nome: material.nome || material.descricao,
+                    imagem_url: material.imagem_url,
+                    imagem_url_tipo: typeof material.imagem_url,
+                    imagem_url_length: material.imagem_url?.length,
+                    imagem_url_trim: material.imagem_url?.trim(),
+                    tem_imagem: !!(material.imagem_url && material.imagem_url.trim() !== ''),
+                    material_completo: JSON.parse(JSON.stringify(material)) // Mostrar objeto completo serializado
+                  });
                 });
               }
             } catch (error) {
@@ -399,13 +450,77 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
           // Mapear itens com dados dos materiais
           const itens = itensRaw.map((item: any) => {
             const materialIdStr = String(item.material_id);
-            const material = materiaisMap.get(materialIdStr);
+            
+            // Estratégia 1: Tentar buscar diretamente pelo ID (se material_id da requisição = id do materiais_equipamentos)
+            let material = materiaisMap.get(materialIdStr);
+            
+            // Estratégia 2: Se não encontrou, pode ser que o material_id da requisição seja referência a public.materials
+            // e precisamos buscar pelo campo material_id do materiais_equipamentos (que referencia public.materials.id)
+            if (!material) {
+              // Procurar em todos os materiais pelo material_id
+              for (const [key, mat] of materiaisMap.entries()) {
+                if (mat.material_id && String(mat.material_id) === materialIdStr) {
+                  material = mat;
+                  console.log('✅ Material encontrado pelo material_id:', {
+                    item_material_id: item.material_id,
+                    material_id_encontrado: mat.material_id,
+                    material_nome: mat.nome || mat.descricao
+                  });
+                  break;
+                }
+              }
+            }
+            
+            // Estratégia 3: Tentar buscar pelo ID original também (caso haja diferença de tipo)
+            if (!material) {
+              material = materiaisMap.get(String(item.material_id));
+            }
+            
+            // Buscar imagem_url do material - verificar se existe e não está vazia
+            const imagemUrl = material?.imagem_url && typeof material.imagem_url === 'string' && material.imagem_url.trim() !== '' 
+              ? material.imagem_url.trim() 
+              : null;
+            
+            // Debug: log para verificar se a imagem está sendo encontrada
+            console.log('🔍 Mapeamento item -> material:', {
+              item_material_id: item.material_id,
+              materialIdStr,
+              material_encontrado: !!material,
+              material_id: material?.id,
+              material_material_id: material?.material_id,
+              material_nome: material?.nome || material?.descricao,
+              imagem_url_original: material?.imagem_url,
+              imagem_url_original_tipo: typeof material?.imagem_url,
+              imagem_url_original_length: material?.imagem_url?.length,
+              imagem_url_original_trim: material?.imagem_url?.trim(),
+              imagem_url_final: imagemUrl,
+              imagem_url_final_tipo: typeof imagemUrl,
+              tem_imagem: !!imagemUrl,
+              item_imagem_url: item.imagem_url // Verificar se já está no item
+            });
+            
+            // Log adicional se não encontrou material
+            if (!material) {
+              console.warn('⚠️ Material NÃO encontrado para item:', {
+                item_material_id: item.material_id,
+                materialIdStr,
+                chaves_disponiveis_no_map: Array.from(materiaisMap.keys()).slice(0, 10) // Limitar a 10 para não poluir
+              });
+            } else if (!imagemUrl) {
+              console.warn('⚠️ Material encontrado mas SEM imagem_url:', {
+                material_id: material.id,
+                material_nome: material.nome || material.descricao,
+                imagem_url: material.imagem_url,
+                imagem_url_tipo: typeof material.imagem_url
+              });
+            }
             
             return {
               ...item,
               requisicao_numero: requisicao.numero_requisicao,
               material_nome: material?.nome || material?.descricao || item.material_nome || 'Material não encontrado',
               material_codigo: material?.codigo_interno || material?.codigo || item.material_codigo || '',
+              imagem_url: imagemUrl,
             };
           });
 
@@ -445,6 +560,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                 tipo_requisicao: tipoReq,
                 selecionado: true,
                 itens_origem: [],
+                imagem_url: item.imagem_url, // Preservar imagem_url do item
               });
             }
             const agrupado = itensMap.get(key)!;
@@ -454,6 +570,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
               agrupado.origem.push(req.numero_requisicao);
             }
             agrupado.itens_origem.push(item);
+            // Se o item atual tem imagem_url e o agrupado não tem, atualizar
+            if (item.imagem_url && !agrupado.imagem_url) {
+              agrupado.imagem_url = item.imagem_url;
+            }
           });
         });
 
@@ -1551,6 +1671,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                               <TableHead className="w-[100px]">Unidade</TableHead>
                               <TableHead className="w-[120px] text-right">Quantidade</TableHead>
                               <TableHead className="w-[150px]">Origem</TableHead>
+                              <TableHead className="w-[80px] text-center">Ações</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1570,6 +1691,58 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                         </Badge>
                                       ))}
                                     </div>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    {(() => {
+                                      const imagemUrl = item.imagem_url;
+                                      const temImagem = imagemUrl && typeof imagemUrl === 'string' && imagemUrl.trim() !== '';
+                                      
+                                      // Debug: log do item antes de renderizar botão
+                                      console.log('🖼️ Renderizando botão de imagem:', {
+                                        material_nome: item.material_nome,
+                                        material_codigo: item.material_codigo,
+                                        imagem_url: item.imagem_url,
+                                        imagemUrl,
+                                        imagemUrl_tipo: typeof imagemUrl,
+                                        imagemUrl_length: imagemUrl?.length,
+                                        temImagem
+                                      });
+                                      
+                                      if (temImagem) {
+                                        return (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 hover:bg-primary/10 cursor-pointer"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              console.log('🖱️ Clicou no botão de imagem:', {
+                                                url: imagemUrl,
+                                                nome: item.material_nome
+                                              });
+                                              setImagemSelecionada({
+                                                url: imagemUrl,
+                                                nome: item.material_nome
+                                              });
+                                              setImagemModalAberto(true);
+                                            }}
+                                            title={`Visualizar foto: ${item.material_nome}`}
+                                          >
+                                            <Eye className="h-4 w-4 text-primary" />
+                                          </Button>
+                                        );
+                                      }
+                                      
+                                      return (
+                                        <div 
+                                          className="h-8 w-8 flex items-center justify-center text-muted-foreground opacity-30"
+                                          title="Item sem foto cadastrada"
+                                        >
+                                          <ImageIcon className="h-4 w-4" />
+                                        </div>
+                                      );
+                                    })()}
                                   </TableCell>
                                 </TableRow>
                               );
@@ -2511,6 +2684,183 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                     );
                                   })()}
                                 </div>
+                                
+                                {/* Anexos */}
+                                <div className="mt-3 pt-3 border-t">
+                                  <Label className="text-xs text-muted-foreground mb-2 block">Anexos</Label>
+                                  <div className="space-y-2">
+                                    {/* Lista de anexos existentes */}
+                                    {anexosPorFornecedor[f.id]?.map((anexo) => (
+                                      <div key={anexo.id} className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
+                                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                                          <File className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                                          <a
+                                            href={anexo.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-primary hover:underline truncate"
+                                            title={anexo.file_name}
+                                          >
+                                            {anexo.file_name}
+                                          </a>
+                                        </div>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                          onClick={async () => {
+                                            try {
+                                              // Remover do storage
+                                              const { error: deleteError } = await supabase.storage
+                                                .from('cotacao-anexos')
+                                                .remove([anexo.storage_path]);
+                                              
+                                              if (deleteError) throw deleteError;
+                                              
+                                              // Remover do estado
+                                              setAnexosPorFornecedor(prev => ({
+                                                ...prev,
+                                                [f.id]: prev[f.id]?.filter(a => a.id !== anexo.id) || []
+                                              }));
+                                              
+                                              toast({
+                                                title: 'Anexo removido',
+                                                description: 'O anexo foi removido com sucesso.',
+                                              });
+                                            } catch (error: any) {
+                                              toast({
+                                                title: 'Erro ao remover anexo',
+                                                description: error.message || 'Não foi possível remover o anexo.',
+                                                variant: 'destructive',
+                                              });
+                                            }
+                                          }}
+                                        >
+                                          <XIcon className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                    
+                                    {/* Botão de upload */}
+                                    <div className="relative">
+                                      <input
+                                        type="file"
+                                        id={`anexo-${f.id}`}
+                                        className="hidden"
+                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt,.zip"
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file || !selectedCompany?.id) return;
+                                          
+                                          // Validar tamanho (10MB)
+                                          if (file.size > 10 * 1024 * 1024) {
+                                            toast({
+                                              title: 'Arquivo muito grande',
+                                              description: 'O arquivo deve ter no máximo 10MB.',
+                                              variant: 'destructive',
+                                            });
+                                            return;
+                                          }
+                                          
+                                          setUploadingFornecedor(f.id);
+                                          
+                                          try {
+                                            // Sanitizar nome do arquivo
+                                            const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                                            const timestamp = Date.now();
+                                            const fileName = `${timestamp}_${sanitizedName}`;
+                                            
+                                            // Estrutura: {company_id}/{cotacao_id}/{fornecedor_id}/{filename}
+                                            // Como ainda não temos cotacao_id, usamos temporário
+                                            const filePath = `${selectedCompany.id}/temp/${f.id}/${fileName}`;
+                                            
+                                            // Upload do arquivo
+                                            const { data: uploadData, error: uploadError } = await supabase.storage
+                                              .from('cotacao-anexos')
+                                              .upload(filePath, file, {
+                                                cacheControl: '3600',
+                                                upsert: false
+                                              });
+                                            
+                                            if (uploadError) throw uploadError;
+                                            
+                                            // Obter URL do arquivo (signed URL para bucket privado)
+                                            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                                              .from('cotacao-anexos')
+                                              .createSignedUrl(filePath, 3600 * 24 * 365); // 1 ano
+                                            
+                                            let fileUrl = '';
+                                            if (signedUrlError || !signedUrlData) {
+                                              const { data: publicUrlData } = supabase.storage
+                                                .from('cotacao-anexos')
+                                                .getPublicUrl(filePath);
+                                              fileUrl = publicUrlData.publicUrl;
+                                            } else {
+                                              fileUrl = signedUrlData.signedUrl;
+                                            }
+                                            
+                                            // Adicionar ao estado
+                                            const novoAnexo = {
+                                              id: `${Date.now()}-${Math.random()}`,
+                                              file_name: file.name,
+                                              storage_path: filePath,
+                                              url: fileUrl,
+                                              mime_type: file.type,
+                                              size_bytes: file.size
+                                            };
+                                            
+                                            setAnexosPorFornecedor(prev => ({
+                                              ...prev,
+                                              [f.id]: [...(prev[f.id] || []), novoAnexo]
+                                            }));
+                                            
+                                            toast({
+                                              title: 'Anexo enviado',
+                                              description: 'O arquivo foi anexado com sucesso.',
+                                            });
+                                            
+                                          } catch (error: any) {
+                                            console.error('Erro no upload:', error);
+                                            toast({
+                                              title: 'Erro no upload',
+                                              description: error.message || 'Não foi possível fazer upload do arquivo.',
+                                              variant: 'destructive',
+                                            });
+                                          } finally {
+                                            setUploadingFornecedor(null);
+                                            // Limpar input
+                                            e.target.value = '';
+                                          }
+                                        }}
+                                        disabled={uploadingFornecedor === f.id}
+                                      />
+                                      <label htmlFor={`anexo-${f.id}`}>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="w-full text-xs"
+                                          disabled={uploadingFornecedor === f.id}
+                                          asChild
+                                        >
+                                          <span className="flex items-center justify-center gap-2 cursor-pointer">
+                                            {uploadingFornecedor === f.id ? (
+                                              <>
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                Enviando...
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Paperclip className="h-3 w-3" />
+                                                Anexar arquivo
+                                              </>
+                                            )}
+                                          </span>
+                                        </Button>
+                                      </label>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             );
                           })}
@@ -2677,7 +3027,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                       const descontoPct = f.desconto_percentual || 0;
                       const descontoValor = f.desconto_valor || 0;
                       const descontoCalculado = subtotalParcial * (descontoPct / 100) + descontoValor;
-                      const totalAdjudicado = subtotalParcial + frete + imposto - descontoCalculado;
+                      const totalSelecionado = subtotalParcial + frete + imposto - descontoCalculado;
 
                       // Contar itens vencedores
                       const qtdItensVencedores = itensAgrupados
@@ -2691,21 +3041,67 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                       return {
                         fornecedor: f,
                         subtotalParcial,
-                        totalAdjudicado,
+                        totalSelecionado,
                         qtdItensVencedores,
                       };
                     })
                     .filter(f => f.qtdItensVencedores > 0);
 
-                  // Encontrar fornecedor líder (maior valor total adjudicado)
+                  // Encontrar fornecedor líder (maior valor total selecionado)
                   const fornecedorLider = fornecedoresVencedores.length > 0
                     ? fornecedoresVencedores.reduce((lider, atual) => 
-                        atual.totalAdjudicado > lider.totalAdjudicado ? atual : lider
+                        atual.totalSelecionado > lider.totalSelecionado ? atual : lider
                       )
                     : null;
 
                   // Calcular valor total da cotação
-                  const valorTotalCotacao = fornecedoresVencedores.reduce((sum, f) => sum + f.totalAdjudicado, 0);
+                  const valorTotalCotacao = fornecedoresVencedores.reduce((sum, f) => sum + f.totalSelecionado, 0);
+                  
+                  // Calcular economia estimada: diferença entre valor selecionado e média das propostas
+                  const economiaEstimada = (() => {
+                    // Para cada item selecionado, calcular a média de todos os fornecedores que cotaram
+                    let somaValoresMedios = 0;
+                    let somaValoresSelecionados = 0;
+                    
+                    itensAgrupados
+                      .filter((item) => itensSelecionados.has(getItemKey(item)))
+                      .forEach((item) => {
+                        const itemKey = getItemKey(item);
+                        const valoresFornecedores: number[] = [];
+                        
+                        // Coletar todos os valores cotados para este item
+                        fornecedores.filter(f => f.fornecedor_id).forEach((f) => {
+                          const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                          if (cell) {
+                            const valor = valorItemCalculado(cell);
+                            if (valor > 0) {
+                              valoresFornecedores.push(valor);
+                            }
+                          }
+                        });
+                        
+                        if (valoresFornecedores.length > 0) {
+                          // Calcular média dos valores
+                          const mediaValor = valoresFornecedores.reduce((sum, v) => sum + v, 0) / valoresFornecedores.length;
+                          somaValoresMedios += mediaValor;
+                          
+                          // Encontrar valor selecionado (vencedor)
+                          const fornecedorVencedor = fornecedores.find(f => {
+                            const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                            return cell && cell.is_vencedor === true;
+                          });
+                          
+                          if (fornecedorVencedor) {
+                            const cell = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
+                            const valorSelecionado = cell ? valorItemCalculado(cell) : 0;
+                            somaValoresSelecionados += valorSelecionado;
+                          }
+                        }
+                      });
+                    
+                    // Economia = Média - Selecionado (se positivo, houve economia)
+                    return somaValoresMedios - somaValoresSelecionados;
+                  })();
 
                   // Verificar se é decisão única ou distribuída
                   const isDecisaoUnica = fornecedoresVencedores.length === 1;
@@ -2726,11 +3122,49 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                       if (!fornecedorVencedor) return null;
 
                       const cell = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
-                      const valorAdjudicado = cell ? valorItemCalculado(cell) : 0;
+                      const valorSelecionado = cell ? valorItemCalculado(cell) : 0;
 
-                      // Encontrar menor valor para este item
+                      // Calcular Preço Negociado (valor unitário * quantidade, sem descontos, frete, imposto)
+                      const precoNegociado = cell ? (cell.valor_unitario || 0) * (cell.quantidade_ofertada || 0) : 0;
+                      
+                      // Calcular descontos aplicados ao item
+                      const descontoItem = cell ? (precoNegociado * ((cell.desconto_percentual || 0) / 100) + (cell.desconto_valor || 0)) : 0;
+                      
+                      // Calcular proporção de frete e imposto para este item
+                      // Primeiro, calcular o subtotal parcial do fornecedor (itens vencedores, após descontos)
+                      const subtotalParcialFornecedor = itensAgrupados
+                        .filter((i) => itensSelecionados.has(getItemKey(i)))
+                        .reduce((sum, i) => {
+                          const key = getItemKey(i);
+                          const c = mapaFornecedorItens[fornecedorVencedor.id]?.[key];
+                          if (c && c.is_vencedor) {
+                            return sum + valorItemCalculado(c);
+                          }
+                          return sum;
+                        }, 0);
+                      
+                      // Usar o valor do item após descontos para calcular a proporção
+                      const valorItemAposDescontos = precoNegociado - descontoItem;
+                      const proporcaoItem = subtotalParcialFornecedor > 0 
+                        ? valorItemAposDescontos / subtotalParcialFornecedor 
+                        : 0;
+                      
+                      const frete = fornecedorVencedor.valor_frete || 0;
+                      const imposto = fornecedorVencedor.valor_imposto || 0;
+                      const freteProporcional = frete * proporcaoItem;
+                      const impostoProporcional = imposto * proporcaoItem;
+                      
+                      // Custos Adicionais = frete + imposto (proporcionais)
+                      // Nota: descontos já estão aplicados no valorItemCalculado, então não entram aqui
+                      const custosAdicionais = freteProporcional + impostoProporcional;
+
+                      // Encontrar menor valor TOTAL para este item (para comparação)
                       let menorValor: number | null = null;
                       let fornecedorMenorValor: typeof fornecedorVencedor | null = null;
+                      
+                      // Encontrar menor valor UNITÁRIO para este item (para badge de eficiência)
+                      let menorValorUnitario: number | null = null;
+                      let fornecedorMenorValorUnitario: typeof fornecedorVencedor | null = null;
                       
                       fornecedores.filter(f => f.fornecedor_id).forEach((f) => {
                         const cellFornecedor = mapaFornecedorItens[f.id]?.[itemKey];
@@ -2740,12 +3174,29 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             menorValor = total;
                             fornecedorMenorValor = f;
                           }
+                          
+                          // Comparar valor unitário
+                          const valorUnit = cellFornecedor.valor_unitario || 0;
+                          if (valorUnit > 0 && (menorValorUnitario === null || valorUnit < menorValorUnitario)) {
+                            menorValorUnitario = valorUnit;
+                            fornecedorMenorValorUnitario = f;
+                          }
                         }
                       });
 
-                      const isMelhorPreco = menorValor !== null && valorAdjudicado === menorValor;
+                      const isMelhorPreco = menorValor !== null && valorSelecionado === menorValor;
                       const diferencaValor = menorValor !== null && !isMelhorPreco 
-                        ? valorAdjudicado - menorValor 
+                        ? valorSelecionado - menorValor 
+                        : 0;
+                      
+                      // Verificar se tem o menor valor unitário (Eficiência em Compras)
+                      const valorUnitarioSelecionado = cell ? (cell.valor_unitario || 0) : 0;
+                      const temEficienciaCompras = menorValorUnitario !== null && valorUnitarioSelecionado === menorValorUnitario;
+                      
+                      // Calcular economia na negociação (quando escolhido é menor que o menor disponível = economia positiva)
+                      // Se escolhido > menor disponível = economia negativa (gasto extra)
+                      const economiaNegociacao = menorValorUnitario !== null && valorUnitarioSelecionado > 0
+                        ? (menorValorUnitario - valorUnitarioSelecionado) * (cell?.quantidade_ofertada || 0)
                         : 0;
 
                       const fornecedorDados = fornecedoresDadosMap.get(fornecedorVencedor.fornecedor_id);
@@ -2760,14 +3211,23 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                         itemKey,
                         fornecedorVencedor,
                         nomeFornecedor,
-                        valorAdjudicado,
+                        valorSelecionado,
+                        precoNegociado,
+                        custosAdicionais,
                         isMelhorPreco,
                         menorValor,
                         diferencaValor,
+                        temEficienciaCompras,
+                        economiaNegociacao,
                         observacoesFornecedor,
                       };
                     })
                     .filter(Boolean);
+                  
+                  // Calcular economia na negociação (soma de todas as economias por item)
+                  const economiaNegociacaoTotal = decisaoPorItem.reduce((sum, decisao) => {
+                    return sum + (decisao.economiaNegociacao || 0);
+                  }, 0);
 
                   return (
                     <div className="space-y-4">
@@ -2781,9 +3241,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                 <CardTitle className="text-lg">Modelo de Decisão</CardTitle>
                                 <p className="text-sm text-muted-foreground mt-1">
                                   {isDecisaoUnica 
-                                    ? 'Cotação adjudicada a um único fornecedor'
+                                    ? 'Cotação selecionada para um único fornecedor'
                                     : isDecisaoDistribuida
-                                    ? `Cotação distribuída por item (${fornecedoresVencedores.length} fornecedores vencedores)`
+                                    ? `Cotação distribuída por item (${fornecedoresVencedores.length} fornecedores ganhadores)`
                                     : 'Nenhuma decisão tomada ainda'
                           }
                         </p>
@@ -2797,9 +3257,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                       </div>
                                 <div className="font-bold text-lg">
                                   {(() => {
-                                    const fornecedorDados = fornecedoresDadosMap.get(fornecedorLider.fornecedor.id);
+                                    const fornecedorDados = fornecedoresDadosMap.get(fornecedorLider.fornecedor.fornecedor_id);
                                     const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
-                                    return partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+                                    return partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${fornecedorLider.fornecedor.id.substring(0, 8)}`;
                                   })()}
                       </div>
                     </div>
@@ -2811,7 +3271,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             <Alert className="border-blue-200 bg-blue-50">
                               <Info className="h-4 w-4 text-blue-600" />
                               <AlertDescription className="text-blue-900">
-                                Esta cotação foi distribuída entre múltiplos fornecedores. Cada item foi adjudicado ao fornecedor selecionado como vencedor.
+                                Esta cotação foi distribuída entre múltiplos fornecedores. Cada item foi selecionado para o fornecedor ganhador.
                               </AlertDescription>
                             </Alert>
                           </CardContent>
@@ -2826,7 +3286,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             Impacto Financeiro por Fornecedor
                           </CardTitle>
                           <p className="text-sm text-muted-foreground">
-                            Valores adjudicados e percentual de participação no total da cotação
+                            Valores selecionados e percentual de participação no total da cotação
                           </p>
                         </CardHeader>
                         <CardContent>
@@ -2839,14 +3299,14 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                           ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                               {fornecedoresVencedores
-                                .sort((a, b) => b.totalAdjudicado - a.totalAdjudicado)
+                                .sort((a, b) => b.totalSelecionado - a.totalSelecionado)
                                 .map((f) => {
-                                  const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor.id);
+                                  const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor.fornecedor_id);
                             const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
-                                  const displayName = partner?.nome_fantasia || partner?.razao_social || 'Fornecedor';
+                                  const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.fornecedor.id.substring(0, 8)}`;
                                   const isLider = fornecedorLider && fornecedorLider.fornecedor.id === f.fornecedor.id;
                                   const percentual = valorTotalCotacao > 0 
-                                    ? (f.totalAdjudicado / valorTotalCotacao) * 100 
+                                    ? (f.totalSelecionado / valorTotalCotacao) * 100 
                                     : 0;
 
                             return (
@@ -2865,7 +3325,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                             <span className="font-semibold text-sm">{displayName}</span>
                                 </div>
                                           <div className="text-xs text-muted-foreground">
-                                            {f.qtdItensVencedores} {f.qtdItensVencedores === 1 ? 'item' : 'itens'} adjudicado{f.qtdItensVencedores > 1 ? 's' : ''}
+                                            {f.qtdItensVencedores} {f.qtdItensVencedores === 1 ? 'item' : 'itens'} selecionado{f.qtdItensVencedores > 1 ? 's' : ''}
                                   </div>
                                         </div>
                                         {isLider && (
@@ -2873,9 +3333,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                         )}
                                       </div>
                                       <div className="mt-3 pt-3 border-t">
-                                        <div className="text-xs text-muted-foreground mb-1">Total Adjudicado</div>
+                                        <div className="text-xs text-muted-foreground mb-1">Total Selecionado</div>
                                         <div className="font-bold text-xl text-primary">
-                                          R$ {f.totalAdjudicado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                          R$ {f.totalSelecionado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </div>
                                         <div className="text-xs text-muted-foreground mt-2">
                                           {percentual.toFixed(1)}% do valor total da cotação
@@ -2897,7 +3357,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                             Decisão por Item
                           </CardTitle>
                           <p className="text-sm text-muted-foreground">
-                            Detalhamento da adjudicação de cada item da cotação
+                            Detalhamento da seleção de cada item da cotação
                           </p>
                         </CardHeader>
                         <CardContent>
@@ -2927,26 +3387,48 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                   </div>
                                 </div>
                                 <div className="text-right">
-                                      <div className="font-bold text-lg">
-                                        R$ {decisao.valorAdjudicado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                  </div>
-                                      {decisao.isMelhorPreco ? (
-                                        <Badge className="mt-1 bg-green-600">
-                                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                                          Melhor preço
-                                        </Badge>
-                                      ) : (
-                                        <Badge variant="destructive" className="mt-1">
-                                          <AlertTriangle className="h-3 w-3 mr-1" />
-                                          Não é menor preço
-                                        </Badge>
-                                      )}
+                                      <div className="space-y-1 mb-2">
+                                        <div className="text-xs text-muted-foreground">Preço Negociado</div>
+                                        <div className="font-semibold text-base">
+                                          R$ {decisao.precoNegociado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">Custos Adicionais</div>
+                                        <div className="font-semibold text-sm text-orange-600">
+                                          R$ {decisao.custosAdicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground pt-1 border-t">Total</div>
+                                        <div className="font-bold text-lg">
+                                          R$ {(decisao.valorSelecionado + decisao.custosAdicionais).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col gap-1 mt-2">
+                                        {decisao.temEficienciaCompras && (
+                                          <Badge className="bg-blue-600 text-white">
+                                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                                            Eficiência em Compras
+                                          </Badge>
+                                        )}
+                                        {decisao.isMelhorPreco ? (
+                                          <Badge className="bg-green-600">
+                                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                                            Melhor preço
+                                          </Badge>
+                                        ) : (
+                                          <Badge variant="destructive">
+                                            <AlertTriangle className="h-3 w-3 mr-1" />
+                                            Não é menor preço
+                                          </Badge>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                   
                                   <div className="mt-3 pt-3 border-t">
-                                    <div className="text-xs font-semibold text-muted-foreground mb-2">
-                                      Fornecedor Vencedor: {decisao.nomeFornecedor}
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <span className="text-xs font-semibold text-muted-foreground">Fornecedor Ganhador:</span>
+                                      <Badge className="bg-primary text-primary-foreground">
+                                        {decisao.nomeFornecedor}
+                                      </Badge>
                                     </div>
                                     
                                     {!decisao.isMelhorPreco && decisao.menorValor !== null && (
@@ -2954,7 +3436,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                         <AlertTriangle className="h-4 w-4 text-orange-600" />
                                         <AlertDescription className="text-sm">
                                           <div className="font-semibold mb-1">
-                                            Este item não foi adjudicado ao menor preço
+                                            Este item não foi selecionado pelo menor preço
                                           </div>
                                           <div className="text-xs space-y-1">
                                             <div>
@@ -3010,7 +3492,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                           <CardTitle>Resumo Final da Cotação</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             <div>
                               <Label className="text-muted-foreground text-xs">Tipo de Cotação</Label>
                               <p className="font-medium">{formData.tipo_cotacao}</p>
@@ -3025,14 +3507,34 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                               </p>
                 </div>
                             <div>
-                              <Label className="text-muted-foreground text-xs">Total Adjudicado</Label>
+                              <Label className="text-muted-foreground text-xs">Total Selecionado</Label>
                               <p className="font-bold text-lg text-primary">
                                 R$ {valorTotalCotacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                             </div>
                             <div>
-                              <Label className="text-muted-foreground text-xs">Fornecedores Vencedores</Label>
+                              <Label className="text-muted-foreground text-xs">Fornecedores Ganhadores</Label>
                               <p className="font-medium">{fornecedoresVencedores.length}</p>
+                            </div>
+                            <div className="md:col-span-2">
+                              <Label className="text-muted-foreground text-xs">Economia Estimada</Label>
+                              <p className={`font-bold text-lg ${economiaEstimada >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {economiaEstimada >= 0 ? '+' : ''}R$ {economiaEstimada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {economiaEstimada >= 0 
+                                  ? 'Economia em relação à média das propostas'
+                                  : 'Acima da média das propostas'
+                                }
+                              </p>
+                              {economiaNegociacaoTotal !== 0 && (
+                                <div className="mt-2 pt-2 border-t">
+                                  <p className="text-xs text-muted-foreground">Economia gerada na negociação do item:</p>
+                                  <p className={`font-semibold text-sm ${economiaNegociacaoTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {economiaNegociacaoTotal >= 0 ? '+' : ''}R$ {economiaNegociacaoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </CardContent>
@@ -3044,6 +3546,45 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
             </div>
           </Tabs>
         )}
+
+        {/* Modal de Visualização de Imagem do Item */}
+        <Dialog open={imagemModalAberto} onOpenChange={setImagemModalAberto}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            {imagemSelecionada && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{imagemSelecionada.nome}</DialogTitle>
+                  <DialogDescription>
+                    Foto do item para referência na cotação
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-4 flex items-center justify-center">
+                  <img
+                    src={imagemSelecionada.url}
+                    alt={imagemSelecionada.nome}
+                    className="max-w-full max-h-[70vh] object-contain rounded-lg border"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const errorDiv = document.createElement('div');
+                      errorDiv.className = 'text-center py-8 text-muted-foreground';
+                      errorDiv.textContent = 'Erro ao carregar imagem';
+                      target.parentElement?.appendChild(errorDiv);
+                    }}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setImagemModalAberto(false)}
+                  >
+                    Fechar
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
 
         {/* Modal de Informações Adicionais do Fornecedor */}
         <Dialog open={fornecedorModalAberto} onOpenChange={setFornecedorModalAberto}>
@@ -3285,6 +3826,183 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                         className={`text-sm min-h-[80px] mt-1 ${isObrigatorio ? 'border-red-300 focus:border-red-500' : ''}`}
                         required={isObrigatorio}
                       />
+                    </div>
+
+                    {/* Anexos */}
+                    <div className="pt-3 border-t">
+                      <Label className="text-xs text-muted-foreground mb-2 block">Anexos</Label>
+                      <div className="space-y-2">
+                        {/* Lista de anexos existentes */}
+                        {anexosPorFornecedor[f.id]?.map((anexo) => (
+                          <div key={anexo.id} className="flex items-center justify-between p-2 bg-muted/30 rounded text-xs">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <File className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              <a
+                                href={anexo.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline truncate"
+                                title={anexo.file_name}
+                              >
+                                {anexo.file_name}
+                              </a>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                              onClick={async () => {
+                                try {
+                                  // Remover do storage
+                                  const { error: deleteError } = await supabase.storage
+                                    .from('cotacao-anexos')
+                                    .remove([anexo.storage_path]);
+                                  
+                                  if (deleteError) throw deleteError;
+                                  
+                                  // Remover do estado
+                                  setAnexosPorFornecedor(prev => ({
+                                    ...prev,
+                                    [f.id]: prev[f.id]?.filter(a => a.id !== anexo.id) || []
+                                  }));
+                                  
+                                  toast({
+                                    title: 'Anexo removido',
+                                    description: 'O anexo foi removido com sucesso.',
+                                  });
+                                } catch (error: any) {
+                                  toast({
+                                    title: 'Erro ao remover anexo',
+                                    description: error.message || 'Não foi possível remover o anexo.',
+                                    variant: 'destructive',
+                                  });
+                                }
+                              }}
+                            >
+                              <XIcon className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                        
+                        {/* Botão de upload */}
+                        <div className="relative">
+                          <input
+                            type="file"
+                            id={`anexo-modal-${f.id}`}
+                            className="hidden"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt,.zip"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file || !selectedCompany?.id) return;
+                              
+                              // Validar tamanho (10MB)
+                              if (file.size > 10 * 1024 * 1024) {
+                                toast({
+                                  title: 'Arquivo muito grande',
+                                  description: 'O arquivo deve ter no máximo 10MB.',
+                                  variant: 'destructive',
+                                });
+                                return;
+                              }
+                              
+                              setUploadingFornecedor(f.id);
+                              
+                              try {
+                                // Sanitizar nome do arquivo
+                                const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                                const timestamp = Date.now();
+                                const fileName = `${timestamp}_${sanitizedName}`;
+                                
+                                // Estrutura: {company_id}/{cotacao_id}/{fornecedor_id}/{filename}
+                                // Como ainda não temos cotacao_id, usamos temporário
+                                const filePath = `${selectedCompany.id}/temp/${f.id}/${fileName}`;
+                                
+                                // Upload do arquivo
+                                const { data: uploadData, error: uploadError } = await supabase.storage
+                                  .from('cotacao-anexos')
+                                  .upload(filePath, file, {
+                                    cacheControl: '3600',
+                                    upsert: false
+                                  });
+                                
+                                if (uploadError) throw uploadError;
+                                
+                                // Obter URL do arquivo (signed URL para bucket privado)
+                                const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                                  .from('cotacao-anexos')
+                                  .createSignedUrl(filePath, 3600 * 24 * 365); // 1 ano
+                                
+                                let fileUrl = '';
+                                if (signedUrlError || !signedUrlData) {
+                                  const { data: publicUrlData } = supabase.storage
+                                    .from('cotacao-anexos')
+                                    .getPublicUrl(filePath);
+                                  fileUrl = publicUrlData.publicUrl;
+                                } else {
+                                  fileUrl = signedUrlData.signedUrl;
+                                }
+                                
+                                // Adicionar ao estado
+                                const novoAnexo = {
+                                  id: `${Date.now()}-${Math.random()}`,
+                                  file_name: file.name,
+                                  storage_path: filePath,
+                                  url: fileUrl,
+                                  mime_type: file.type,
+                                  size_bytes: file.size
+                                };
+                                
+                                setAnexosPorFornecedor(prev => ({
+                                  ...prev,
+                                  [f.id]: [...(prev[f.id] || []), novoAnexo]
+                                }));
+                                
+                                toast({
+                                  title: 'Anexo enviado',
+                                  description: 'O arquivo foi anexado com sucesso.',
+                                });
+                                
+                              } catch (error: any) {
+                                console.error('Erro no upload:', error);
+                                toast({
+                                  title: 'Erro no upload',
+                                  description: error.message || 'Não foi possível fazer upload do arquivo.',
+                                  variant: 'destructive',
+                                });
+                              } finally {
+                                setUploadingFornecedor(null);
+                                // Limpar input
+                                e.target.value = '';
+                              }
+                            }}
+                            disabled={uploadingFornecedor === f.id}
+                          />
+                          <label htmlFor={`anexo-modal-${f.id}`}>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-xs"
+                              disabled={uploadingFornecedor === f.id}
+                              asChild
+                            >
+                              <span className="flex items-center justify-center gap-2 cursor-pointer">
+                                {uploadingFornecedor === f.id ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Enviando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Paperclip className="h-3 w-3" />
+                                    Anexar arquivo
+                                  </>
+                                )}
+                              </span>
+                            </Button>
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   </div>
 

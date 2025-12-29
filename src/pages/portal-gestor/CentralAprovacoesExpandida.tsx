@@ -19,7 +19,8 @@ import {
   User,
   AlertTriangle,
   RefreshCw,
-  Truck
+  Truck,
+  Fuel
 } from 'lucide-react';
 import { usePendingApprovals, useProcessApproval, useTransferApproval } from '@/hooks/approvals/useApprovals';
 import { useCompany } from '@/lib/company-context';
