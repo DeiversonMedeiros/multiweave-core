@@ -1,11 +1,13 @@
 import React from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { PermissionAction } from '@/hooks/useAuthorization';
+import { Button, ButtonProps } from '@/components/ui/button';
 
 interface PermissionGuardProps {
   children: React.ReactNode;
   module?: string;
   entity?: string;
+  entityName?: string; // Alias para entity para compatibilidade
   action?: PermissionAction;
   fallback?: React.ReactNode;
   showFallback?: boolean;
@@ -15,6 +17,7 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
   children,
   module,
   entity,
+  entityName,
   action = 'read',
   fallback,
   showFallback = true
@@ -31,6 +34,9 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
     hasModuleAccess,
     isAdmin
   } = usePermissions();
+
+  // Usar entityName se fornecido, caso contrário usar entity
+  const entityToCheck = entityName || entity;
 
   const checkPermission = () => {
     // Super admin tem acesso a tudo
@@ -53,18 +59,18 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
     }
 
     // Verificar permissão de entidade
-    if (entity) {
+    if (entityToCheck) {
       switch (action) {
         case 'read':
-          return canReadEntity(entity);
+          return canReadEntity(entityToCheck);
         case 'create':
-          return canCreateEntity(entity);
+          return canCreateEntity(entityToCheck);
         case 'edit':
-          return canEditEntity(entity);
+          return canEditEntity(entityToCheck);
         case 'delete':
-          return canDeleteEntity(entity);
+          return canDeleteEntity(entityToCheck);
         default:
-          return canReadEntity(entity);
+          return canReadEntity(entityToCheck);
       }
     }
 
@@ -84,13 +90,12 @@ export const PermissionGuard: React.FC<PermissionGuardProps> = ({
 };
 
 // Componente para proteger botões
-interface PermissionButtonProps {
+interface PermissionButtonProps extends Omit<ButtonProps, 'onClick'> {
   children: React.ReactNode;
   module?: string;
   entity?: string;
+  entityName?: string; // Alias para entity para compatibilidade
   action?: PermissionAction;
-  disabled?: boolean;
-  className?: string;
   onClick?: () => void;
 }
 
@@ -98,10 +103,12 @@ export const PermissionButton: React.FC<PermissionButtonProps> = ({
   children,
   module,
   entity,
+  entityName,
   action = 'read',
   disabled = false,
   className = '',
-  onClick
+  onClick,
+  ...buttonProps
 }) => {
   const {
     canReadModule,
@@ -115,6 +122,9 @@ export const PermissionButton: React.FC<PermissionButtonProps> = ({
     hasModuleAccess,
     isAdmin
   } = usePermissions();
+
+  // Usar entityName se fornecido, caso contrário usar entity
+  const entityToCheck = entityName || entity;
 
   const checkPermission = () => {
     if (isAdmin) return true;
@@ -134,18 +144,18 @@ export const PermissionButton: React.FC<PermissionButtonProps> = ({
       }
     }
 
-    if (entity) {
+    if (entityToCheck) {
       switch (action) {
         case 'read':
-          return canReadEntity(entity);
+          return canReadEntity(entityToCheck);
         case 'create':
-          return canCreateEntity(entity);
+          return canCreateEntity(entityToCheck);
         case 'edit':
-          return canEditEntity(entity);
+          return canEditEntity(entityToCheck);
         case 'delete':
-          return canDeleteEntity(entity);
+          return canDeleteEntity(entityToCheck);
         default:
-          return canReadEntity(entity);
+          return canReadEntity(entityToCheck);
       }
     }
 
@@ -159,13 +169,14 @@ export const PermissionButton: React.FC<PermissionButtonProps> = ({
   }
 
   return (
-    <button
+    <Button
       className={className}
       disabled={disabled}
       onClick={onClick}
+      {...buttonProps}
     >
       {children}
-    </button>
+    </Button>
   );
 };
 

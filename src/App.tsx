@@ -67,6 +67,7 @@ import HistoricoCompras from "./pages/Compras/HistoricoCompras";
 // Imports das páginas de Frota
 import FrotaRoutes from "./pages/frota/FrotaRoutes";
 import LogisticaRoutes from "./pages/logistica/LogisticaRoutes";
+import CombustivelRoutes from "./pages/combustivel/CombustivelRoutes";
 
 // Configuração otimizada do QueryClient
 const queryClient = new QueryClient({
@@ -242,7 +243,7 @@ function App() {
                 <Route path="/portal-gestor/*" element={<PortalGestorRoutes />} />
                 <Route path="/test-portal" element={<TestPortal />} />
                 <Route path="/debug-permissions" element={<DebugPermissions />} />
-                <Route path="/combustivel" element={<div className="text-2xl font-bold">Combustível - Em desenvolvimento</div>} />
+                <Route path="/combustivel/*" element={<CombustivelRoutes />} />
                 <Route path="/metalurgica" element={<div className="text-2xl font-bold">Metalúrgica - Em desenvolvimento</div>} />
                 <Route path="/comercial" element={<div className="text-2xl font-bold">Comercial - Em desenvolvimento</div>} />
                 <Route path="/implantacao" element={<div className="text-2xl font-bold">Implantação - Em desenvolvimento</div>} />

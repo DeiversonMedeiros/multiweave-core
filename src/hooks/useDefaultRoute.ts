@@ -13,6 +13,7 @@ const MODULE_ROUTE_MAP: Record<string, string> = {
   'frota': '/frota',
   'rh': '/rh',
   'logistica': '/logistica',
+  'combustivel': '/combustivel',
   'configuracoes': '/permissoes',
   // Sub-módulos com rotas específicas
   'users': '/cadastros/usuarios',
@@ -32,6 +33,7 @@ const MODULE_PRIORITY_ORDER = [
   'almoxarifado',
   'frota',
   'logistica',
+  'combustivel',
   'cadastros',
   'users',
   'companies',

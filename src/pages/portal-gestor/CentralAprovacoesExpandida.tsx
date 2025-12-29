@@ -29,6 +29,7 @@ import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard'
 import { ApprovalModal } from '@/components/approvals/ApprovalModal';
 import { TransferApprovalModal } from '@/components/approvals/TransferApprovalModal';
 import { ContaPagarApprovalCard } from '@/components/approvals/ContaPagarApprovalCard';
+import { CombustivelApprovalCard } from '@/components/approvals/CombustivelApprovalCard';
 import { Approval } from '@/services/approvals/approvalService';
 
 const CentralAprovacoesExpandida: React.FC = () => {
@@ -177,7 +178,8 @@ const CentralAprovacoesExpandida: React.FC = () => {
       'cotacao_compra': 'Cotações de Compra',
       'solicitacao_saida_material': 'Saídas de Materiais',
       'solicitacao_transferencia_material': 'Transferências de Materiais',
-      'logistica': 'Logística'
+      'logistica': 'Logística',
+      'combustivel': 'Combustível'
     };
     return labels[tipo] || tipo;
   };
@@ -189,7 +191,8 @@ const CentralAprovacoesExpandida: React.FC = () => {
       'cotacao_compra': <Building2 className="h-4 w-4" />,
       'solicitacao_saida_material': <Settings className="h-4 w-4" />,
       'solicitacao_transferencia_material': <Settings className="h-4 w-4" />,
-      'logistica': <Truck className="h-4 w-4" />
+      'logistica': <Truck className="h-4 w-4" />,
+      'combustivel': <Fuel className="h-4 w-4" />
     };
     return icons[tipo] || <Settings className="h-4 w-4" />;
   };
@@ -373,6 +376,8 @@ const CentralAprovacoesExpandida: React.FC = () => {
                     <SelectItem value="cotacao_compra">Cotações de Compra</SelectItem>
                     <SelectItem value="solicitacao_saida_material">Saídas de Materiais</SelectItem>
                     <SelectItem value="solicitacao_transferencia_material">Transferências de Materiais</SelectItem>
+                    <SelectItem value="logistica">Logística</SelectItem>
+                    <SelectItem value="combustivel">Combustível</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -421,6 +426,17 @@ const CentralAprovacoesExpandida: React.FC = () => {
                     onTransfer={openTransferModal}
                     getStatusColor={getStatusColor}
                     getPriorityColor={getPriorityColor}
+                  />
+                );
+              }
+
+              // Usar card específico para combustível
+              if (approval.processo_tipo === 'combustivel') {
+                return (
+                  <CombustivelApprovalCard
+                    key={approval.id}
+                    approval={approval}
+                    onViewDetails={openApprovalModal}
                   />
                 );
               }

@@ -12,6 +12,7 @@ import ReembolsosPage from './ReembolsosPage';
 import AtestadosPage from './AtestadosPage';
 import ExamesPage from './ExamesPage';
 import ComprovantesPage from './ComprovantesPage';
+import RegistroAbastecimento from './RegistroAbastecimento';
 
 export default function PortalColaboradorRoutes() {
   return (
@@ -29,6 +30,7 @@ export default function PortalColaboradorRoutes() {
         <Route path="atestados" element={<AtestadosPage />} />
         <Route path="exames" element={<ExamesPage />} />
         <Route path="comprovantes" element={<ComprovantesPage />} />
+        <Route path="registro-abastecimento" element={<RegistroAbastecimento />} />
       </Route>
     </Routes>
   );

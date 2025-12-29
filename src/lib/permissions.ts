@@ -96,7 +96,20 @@ export const PERMISSION_CONFIG = {
     'fornecedores': ['read', 'create', 'edit', 'delete'],
     'contratos_compra': ['read', 'create', 'edit', 'delete'],
     'historico_compras': ['read', 'create', 'edit', 'delete'],
-    'avaliacao_fornecedores': ['read', 'create', 'edit', 'delete']
+    'avaliacao_fornecedores': ['read', 'create', 'edit', 'delete'],
+    
+    // Entidades do Módulo Combustível
+    'fuel_types': ['read', 'create', 'edit', 'delete'],
+    'approved_gas_stations': ['read', 'create', 'edit', 'delete'],
+    'refuel_limits': ['read', 'create', 'edit', 'delete'],
+    'fuel_budgets': ['read', 'create', 'edit', 'delete'],
+    'budget_revisions': ['read', 'create', 'edit', 'delete'],
+    'refuel_requests': ['read', 'create', 'edit', 'delete'],
+    'scheduled_refuels': ['read', 'create', 'edit', 'delete'],
+    'refuel_records': ['read', 'create', 'edit', 'delete'],
+    'vehicle_consumption': ['read', 'create', 'edit', 'delete'],
+    'driver_consumption': ['read', 'create', 'edit', 'delete'],
+    'consumption_alerts': ['read', 'create', 'edit', 'delete']
   },
   
   // Perfis especiais e suas permissões

@@ -25,7 +25,8 @@ import {
   Building2,
   Bell,
   History,
-  Edit
+  Edit,
+  Fuel
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NotificationCenter } from '@/components/NotificationCenter';
@@ -102,6 +103,12 @@ const menuItems = [
     href: '/portal-colaborador/comprovantes',
     icon: Download,
     description: 'Baixe comprovantes de rendimentos'
+  },
+  {
+    title: 'Registro de Abastecimento',
+    href: '/portal-colaborador/registro-abastecimento',
+    icon: Fuel,
+    description: 'Registre abastecimentos de combustível'
   }
 ];
 

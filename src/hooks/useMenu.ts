@@ -55,7 +55,8 @@ import {
   BarChart3 as BarChart3Icon,
   Target,
   Route,
-  Bell
+  Bell,
+  Car
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -1295,7 +1296,65 @@ export const useMenu = () => {
       url: '/combustivel',
       icon: Fuel,
       description: 'Gestão de combustível',
-      requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+      requiresPermission: { type: 'module', name: 'combustivel', action: 'read' },
+      children: [
+        {
+          id: 'combustivel-dashboard',
+          title: 'Dashboard',
+          url: '/combustivel/dashboard',
+          icon: LayoutDashboard,
+          description: 'Visão geral do consumo e orçamento',
+          requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+        },
+        {
+          id: 'combustivel-parametros',
+          title: 'Parâmetros',
+          url: '/combustivel/parametros',
+          icon: Settings,
+          description: 'Configurar tipos, postos e limites',
+          requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+        },
+        {
+          id: 'combustivel-orcamento',
+          title: 'Orçamento',
+          url: '/combustivel/orcamento',
+          icon: DollarSign,
+          description: 'Orçamento de combustível',
+          requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+        },
+        {
+          id: 'combustivel-solicitacoes',
+          title: 'Solicitações',
+          url: '/combustivel/solicitacoes',
+          icon: FileText,
+          description: 'Solicitações de abastecimento',
+          requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+        },
+        {
+          id: 'combustivel-consumo-veiculo',
+          title: 'Consumo por Veículo',
+          url: '/combustivel/consumo/veiculo',
+          icon: Car,
+          description: 'Análise de consumo por veículo',
+          requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+        },
+        {
+          id: 'combustivel-consumo-colaborador',
+          title: 'Consumo por Colaborador',
+          url: '/combustivel/consumo/colaborador',
+          icon: Users,
+          description: 'Análise de consumo por colaborador',
+          requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+        },
+        {
+          id: 'combustivel-relatorios',
+          title: 'Relatórios e Auditoria',
+          url: '/combustivel/relatorios',
+          icon: FileText,
+          description: 'Relatórios e auditoria de combustível',
+          requiresPermission: { type: 'module', name: 'combustivel', action: 'read' }
+        }
+      ]
     },
     {
       id: 'metalurgica',
