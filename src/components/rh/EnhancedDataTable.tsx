@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ColumnDef,
   flexRender,
@@ -72,6 +72,7 @@ interface EnhancedDataTableProps<TData, TValue> {
   searchable?: boolean;
   filterable?: boolean;
   pagination?: boolean;
+  initialSorting?: SortingState;
 }
 
 // =====================================================
@@ -96,8 +97,9 @@ export function EnhancedDataTable<TData, TValue>({
   searchable = true,
   filterable = true,
   pagination = true,
+  initialSorting = [],
 }: EnhancedDataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState({});
@@ -107,11 +109,38 @@ export function EnhancedDataTable<TData, TValue>({
     pageSize: pageSize,
   });
 
+  // Logs para debug
+  useEffect(() => {
+    console.log('🔍 [EnhancedDataTable] Props recebidas:', {
+      dataLength: data.length,
+      initialSorting,
+      currentSorting: sorting,
+      pageSize
+    });
+  }, [data.length, initialSorting, sorting, pageSize]);
+
+  // Aplicar ordenação inicial quando os dados mudarem
+  useEffect(() => {
+    console.log('🔄 [EnhancedDataTable] Verificando ordenação inicial:', {
+      hasInitialSorting: initialSorting.length > 0,
+      hasData: data.length > 0,
+      initialSorting
+    });
+    
+    if (initialSorting.length > 0 && data.length > 0) {
+      console.log('✅ [EnhancedDataTable] Aplicando ordenação inicial:', initialSorting);
+      setSorting(initialSorting);
+    }
+  }, [data.length, initialSorting]);
+
   // Configuração da tabela
   const table = useReactTable({
     data,
     columns,
-    onSortingChange: setSorting,
+    onSortingChange: (updater) => {
+      console.log('🔄 [EnhancedDataTable] onSortingChange chamado:', updater);
+      setSorting(updater);
+    },
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -130,6 +159,19 @@ export function EnhancedDataTable<TData, TValue>({
       pagination: paginationState,
     },
   });
+
+  // Log dos dados ordenados pela tabela
+  useEffect(() => {
+    const sortedRows = table.getSortedRowModel().rows;
+    console.log('📊 [EnhancedDataTable] Dados ordenados pela tabela:', {
+      totalRows: sortedRows.length,
+      sortingState: sorting,
+      firstThreeNames: sortedRows.slice(0, 3).map(row => {
+        const data = row.original as any;
+        return data?.nome || 'N/A';
+      })
+    });
+  }, [table, sorting]);
 
   // Estatísticas
   const totalRows = table.getFilteredRowModel().rows.length;

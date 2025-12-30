@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Table,
   TableBody,
@@ -39,6 +39,7 @@ interface SimpleDataTableProps<T> {
   emptyMessage?: string;
   pageSize?: number;
   className?: string;
+  externalSearchTerm?: string; // Permite controlar a busca externamente
 }
 
 // =====================================================
@@ -57,29 +58,75 @@ export function SimpleDataTable<T>({
   emptyMessage = "Nenhum registro encontrado",
   pageSize = 10,
   className = "",
+  externalSearchTerm,
 }: SimpleDataTableProps<T>) {
   console.log('🔍 [SimpleDataTable] data:', data);
   console.log('🔍 [SimpleDataTable] data length:', data?.length);
   console.log('🔍 [SimpleDataTable] columns:', columns);
   console.log('🔍 [SimpleDataTable] loading:', loading);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [internalSearchTerm, setInternalSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  
+  // Usar searchTerm externo se fornecido, caso contrário usar o interno
+  const searchTerm = externalSearchTerm !== undefined ? externalSearchTerm : internalSearchTerm;
+
+  // Ordenar e filtrar dados
+  const processedData = useMemo(() => {
+    const dataArray = Array.isArray(data) ? data : [];
+    
+    // Ordenar alfabeticamente por nome (se existir campo 'nome')
+    const sortedData = [...dataArray].sort((a: any, b: any) => {
+      // Tentar ordenar por 'nome' primeiro
+      if (a?.nome && b?.nome) {
+        const nomeA = (a.nome || '').toLowerCase().trim();
+        const nomeB = (b.nome || '').toLowerCase().trim();
+        return nomeA.localeCompare(nomeB, 'pt-BR');
+      }
+      // Se não tiver 'nome', tentar ordenar por 'id' ou manter ordem original
+      return 0;
+    });
+    
+    console.log('🔍 [SimpleDataTable] Dados ordenados:', {
+      total: sortedData.length,
+      firstThree: sortedData.slice(0, 3).map((item: any) => item?.nome || item?.id || 'N/A')
+    });
+    
+    return sortedData;
+  }, [data]);
 
   // Filtrar dados baseado no termo de pesquisa
-  const filteredData = (Array.isArray(data) ? data : []).filter((item: any) => {
-    if (!searchTerm) return true;
+  const filteredData = useMemo(() => {
+    if (!searchTerm) return processedData;
     
-    // Buscar em todos os campos string do objeto
-    return Object.values(item).some((value: any) => {
-      if (typeof value === 'string') {
-        return value.toLowerCase().includes(searchTerm.toLowerCase());
-      }
-      return false;
+    const searchLower = searchTerm.toLowerCase().trim();
+    
+    return processedData.filter((item: any) => {
+      // Buscar especificamente em campos importantes: nome, matrícula, CPF
+      const nome = (item?.nome || '').toLowerCase();
+      const matricula = (item?.matricula || '').toLowerCase();
+      const cpf = (item?.cpf || '').toLowerCase();
+      
+      // Buscar também em campos aninhados (se existirem)
+      const cargoNome = (item?.cargo?.nome || '').toLowerCase();
+      const departamentoNome = (item?.departamento?.nome || '').toLowerCase();
+      
+      return nome.includes(searchLower) || 
+             matricula.includes(searchLower) || 
+             cpf.includes(searchLower) ||
+             cargoNome.includes(searchLower) ||
+             departamentoNome.includes(searchLower);
     });
-  });
+  }, [processedData, searchTerm]);
   
-  console.log('🔍 [SimpleDataTable] filteredData:', filteredData);
-  console.log('🔍 [SimpleDataTable] filteredData length:', filteredData.length);
+  console.log('🔍 [SimpleDataTable] Filtro aplicado:', {
+    searchTerm,
+    totalAntes: processedData.length,
+    totalDepois: filteredData.length,
+    primeirosFiltrados: filteredData.slice(0, 3).map((item: any) => ({
+      nome: item?.nome,
+      matricula: item?.matricula
+    }))
+  });
 
   // Paginação
   const totalPages = Math.ceil(filteredData.length / pageSize);
@@ -92,7 +139,10 @@ export function SimpleDataTable<T>({
 
   // Handlers
   const handleSearchChange = (value: string) => {
-    setSearchTerm(value);
+    if (externalSearchTerm === undefined) {
+      // Só atualizar o estado interno se não houver controle externo
+      setInternalSearchTerm(value);
+    }
     setCurrentPage(1); // Reset para primeira página ao pesquisar
   };
 
@@ -106,6 +156,56 @@ export function SimpleDataTable<T>({
     if (currentPage < totalPages) {
       setCurrentPage(currentPage + 1);
     }
+  };
+
+  // Função para calcular quais números de página mostrar
+  const getPageNumbers = () => {
+    const delta = 2; // Número de páginas a mostrar antes e depois da atual
+    const pages: (number | string)[] = [];
+
+    // Se há poucas páginas, mostrar todas
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    // Sempre incluir primeira página
+    pages.push(1);
+
+    // Calcular início e fim do range central
+    let start = Math.max(2, currentPage - delta);
+    let end = Math.min(totalPages - 1, currentPage + delta);
+
+    // Ajustar se estiver muito próximo do início
+    if (currentPage <= delta + 2) {
+      end = Math.min(5, totalPages - 1);
+    }
+
+    // Ajustar se estiver muito próximo do fim
+    if (currentPage >= totalPages - delta - 1) {
+      start = Math.max(2, totalPages - 4);
+    }
+
+    // Adicionar "..." após primeira página se necessário
+    if (start > 2) {
+      pages.push('...');
+    }
+
+    // Adicionar páginas do range central
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+
+    // Adicionar "..." antes da última página se necessário
+    if (end < totalPages - 1) {
+      pages.push('...');
+    }
+
+    // Sempre incluir última página
+    if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+
+    return pages;
   };
 
   if (loading) {
@@ -247,17 +347,29 @@ export function SimpleDataTable<T>({
             </Button>
             
             <div className="flex items-center space-x-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <Button
-                  key={page}
-                  variant={currentPage === page ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setCurrentPage(page)}
-                  className="w-8 h-8 p-0"
-                >
-                  {page}
-                </Button>
-              ))}
+              {getPageNumbers().map((page, index) => {
+                if (page === '...') {
+                  return (
+                    <span
+                      key={`ellipsis-${index}`}
+                      className="px-2 text-muted-foreground"
+                    >
+                      ...
+                    </span>
+                  );
+                }
+                return (
+                  <Button
+                    key={page}
+                    variant={currentPage === page ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(page as number)}
+                    className="w-8 h-8 p-0"
+                  >
+                    {page}
+                  </Button>
+                );
+              })}
             </div>
             
             <Button

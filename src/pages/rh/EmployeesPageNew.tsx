@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -55,8 +55,29 @@ export default function EmployeesPageNew() {
   const updateEmployee = useUpdateEntity<Employee>('rh', 'employees', selectedCompany?.id || '');
   const deleteEmployee = useDeleteEntity('rh', 'employees', selectedCompany?.id || '');
 
-  // Dados
-  const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
+  // Dados - ordenar alfabeticamente por nome
+  const employees = useMemo(() => {
+    const data = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
+    if (data.length === 0) return [];
+    
+    console.log('🔍 [EmployeesPageNew] Dados recebidos:', data.length, 'funcionários');
+    console.log('📋 [EmployeesPageNew] Primeiros 5 nomes ANTES da ordenação:', 
+      data.slice(0, 5).map((e: any) => e.nome)
+    );
+    
+    // Ordenar funcionários alfabeticamente por nome
+    const sorted = [...data].sort((a: any, b: any) => {
+      const nomeA = (a.nome || '').toLowerCase().trim();
+      const nomeB = (b.nome || '').toLowerCase().trim();
+      return nomeA.localeCompare(nomeB, 'pt-BR');
+    });
+    
+    console.log('✅ [EmployeesPageNew] Primeiros 5 nomes DEPOIS da ordenação:', 
+      sorted.slice(0, 5).map((e: any) => e.nome)
+    );
+    
+    return sorted;
+  }, [employeesData]);
   const totalCount = Array.isArray(employeesData) ? employeesData.length : employeesData?.totalCount || 0;
 
   // Handlers
@@ -363,6 +384,8 @@ export default function EmployeesPageNew() {
         searchPlaceholder="Pesquisar funcionários..."
         emptyMessage="Nenhum funcionário encontrado"
         className="mt-6"
+        searchable={false}
+        externalSearchTerm={searchTerm}
       />
 
       {/* Modal */}

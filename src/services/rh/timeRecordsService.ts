@@ -82,17 +82,48 @@ export const TimeRecordsService = {
       throw error;
     }
 
-    if (!data || data.length === 0) {
+    // Verificar se data é um array
+    const dataArray = Array.isArray(data) ? data : [];
+    
+    if (!dataArray || dataArray.length === 0) {
       console.log(`[TimeRecordsService.listPaginated] RPC: ${rpcDuration.toFixed(2)}ms | Sem dados`);
       return { data: [], totalCount: 0 };
     }
 
     // O último registro contém o total_count (todos os registros têm o mesmo valor)
-    const totalCount = data[0]?.total_count || 0;
+    const totalCount = dataArray[0]?.total_count || 0;
+
+    // LOG DETALHADO: Verificar dados brutos retornados pela RPC
+    console.log(`[TimeRecordsService.listPaginated] 📊 Dados brutos da RPC:`, {
+      totalRegistros: dataArray.length,
+      totalCount,
+      pageOffset: params.pageOffset,
+      pageLimit: params.pageLimit,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      employeeId: params.employeeId,
+      sampleRecords: dataArray.slice(0, 5).map((r: any) => ({
+        id: r.id,
+        data_registro: r.data_registro,
+        employee_nome: r.employee_nome,
+        horas_trabalhadas: r.horas_trabalhadas,
+        horas_extras_50: r.horas_extras_50,
+        horas_extras_100: r.horas_extras_100,
+        horas_noturnas: r.horas_noturnas,
+        horas_negativas: r.horas_negativas,
+        tipo_horas_trabalhadas: typeof r.horas_trabalhadas,
+        valor_horas_trabalhadas: r.horas_trabalhadas,
+        is_null: r.horas_trabalhadas === null,
+        is_zero: r.horas_trabalhadas === 0,
+      })),
+      registrosZerados: dataArray.filter((r: any) => !r.horas_trabalhadas || r.horas_trabalhadas === 0).length,
+      registrosComDados: dataArray.filter((r: any) => r.horas_trabalhadas && r.horas_trabalhadas > 0).length,
+      registrosNull: dataArray.filter((r: any) => r.horas_trabalhadas === null).length,
+    });
 
     // Processar dados
     const processStartTime = performance.now();
-    const processedData = data.map((r: any) => {
+    const processedData = dataArray.map((r: any, index: number) => {
       // Processar all_photos e all_locations se vierem como string JSON
       let allPhotos = r.all_photos;
       if (typeof allPhotos === 'string') {
@@ -112,7 +143,7 @@ export const TimeRecordsService = {
         }
       }
       
-      return {
+      const processed = {
         ...r,
         horas_trabalhadas: r.horas_trabalhadas != null ? Number(r.horas_trabalhadas) : r.horas_trabalhadas,
         horas_extras: r.horas_extras != null ? Number(r.horas_extras) : r.horas_extras,
@@ -121,6 +152,7 @@ export const TimeRecordsService = {
         horas_para_banco: r.horas_para_banco != null ? Number(r.horas_para_banco) : r.horas_para_banco,
         horas_para_pagamento: r.horas_para_pagamento != null ? Number(r.horas_para_pagamento) : r.horas_para_pagamento,
         horas_negativas: r.horas_negativas != null ? Number(r.horas_negativas) : r.horas_negativas,
+        horas_noturnas: r.horas_noturnas != null ? Number(r.horas_noturnas) : r.horas_noturnas,
         horas_faltas: r.horas_faltas != null ? Number(r.horas_faltas) : r.horas_faltas,
         is_feriado: r.is_feriado || false,
         is_domingo: r.is_domingo || false,
@@ -128,9 +160,52 @@ export const TimeRecordsService = {
         all_photos: allPhotos,
         all_locations: allLocations,
       };
+      
+      // LOG DETALHADO: Verificar transformação (apenas para primeiros 3 registros)
+      if (index < 3) {
+        console.log(`[TimeRecordsService.listPaginated] 🔄 Transformando registro ${index + 1}:`, {
+          id: r.id,
+          data_registro: r.data_registro,
+          employee_nome: r.employee_nome,
+          antes: {
+            horas_trabalhadas: r.horas_trabalhadas,
+            horas_extras_50: r.horas_extras_50,
+            horas_extras_100: r.horas_extras_100,
+            horas_noturnas: r.horas_noturnas,
+            tipo: typeof r.horas_trabalhadas,
+          },
+          depois: {
+            horas_trabalhadas: processed.horas_trabalhadas,
+            horas_extras_50: processed.horas_extras_50,
+            horas_extras_100: processed.horas_extras_100,
+            horas_noturnas: processed.horas_noturnas,
+            tipo: typeof processed.horas_trabalhadas,
+          },
+        });
+      }
+      
+      return processed;
     });
     const processEndTime = performance.now();
     const processDuration = processEndTime - processStartTime;
+    
+    // LOG DETALHADO: Verificar dados processados
+    console.log(`[TimeRecordsService.listPaginated] ✅ Dados processados:`, {
+      totalRegistros: processedData.length,
+      registrosZerados: processedData.filter(r => !r.horas_trabalhadas || r.horas_trabalhadas === 0).length,
+      registrosComDados: processedData.filter(r => r.horas_trabalhadas && r.horas_trabalhadas > 0).length,
+      registrosNull: processedData.filter(r => r.horas_trabalhadas === null).length,
+      sampleProcessed: processedData.slice(0, 3).map(r => ({
+        id: r.id,
+        data_registro: r.data_registro,
+        employee_nome: r.employee_nome,
+        horas_trabalhadas: r.horas_trabalhadas,
+        horas_extras_50: r.horas_extras_50,
+        horas_extras_100: r.horas_extras_100,
+        horas_noturnas: r.horas_noturnas,
+        tipo: typeof r.horas_trabalhadas,
+      })),
+    });
 
     // Gerar signed URLs para todas as fotos em all_photos (OTIMIZADO: em paralelo)
     const signedUrlsStartTime = performance.now();
@@ -140,12 +215,28 @@ export const TimeRecordsService = {
     // Coletar todas as fotos que precisam de signed URL
     for (const rec of processedData) {
       if (rec.all_photos && Array.isArray(rec.all_photos) && rec.all_photos.length > 0) {
-        totalPhotos += rec.all_photos.length;
         for (let i = 0; i < rec.all_photos.length; i++) {
           const photo = rec.all_photos[i];
           if (!photo || !photo.photo_url) {
             continue;
           }
+          
+          // Se já tem signed URL, usar diretamente e pular
+          if (photo.signed_thumb_url || photo.signed_full_url) {
+            continue;
+          }
+          
+          // Se já é uma signed URL, usar diretamente
+          if (photo.photo_url.includes('/storage/v1/object/sign/')) {
+            rec.all_photos[i] = {
+              ...photo,
+              signed_thumb_url: photo.photo_url,
+              signed_full_url: photo.photo_url
+            };
+            continue;
+          }
+          
+          totalPhotos++;
           
           // Extrair path relativo do photo_url
           const rawUrl: string = photo.photo_url;
@@ -196,36 +287,93 @@ export const TimeRecordsService = {
           
           if (!cleanPath) continue;
           
-          // Criar promise para gerar signed URL em paralelo
-          const promise = supabase
-            .storage
-            .from('time-record-photos')
-            .createSignedUrl(cleanPath, 3600)
-            .then(({ data: signedFull, error: signFullErr }) => {
-              if (!signFullErr && signedFull) {
-                rec.all_photos[i] = {
-                  ...rec.all_photos[i],
-                  signed_full_url: signedFull.signedUrl,
-                  signed_thumb_url: signedFull.signedUrl
-                };
+          // Criar promise para gerar signed URL em paralelo com retry para erros 502
+          const promise = (async () => {
+            let retries = 2; // Tentar até 2 vezes em caso de erro 502
+            while (retries >= 0) {
+              try {
+                const { data: signedFull, error: signFullErr } = await supabase
+                  .storage
+                  .from('time-record-photos')
+                  .createSignedUrl(cleanPath, 3600);
+                
+                if (!signFullErr && signedFull) {
+                  rec.all_photos[i] = {
+                    ...rec.all_photos[i],
+                    signed_full_url: signedFull.signedUrl,
+                    signed_thumb_url: signedFull.signedUrl
+                  };
+                  return; // Sucesso, sair do loop
+                } else if (signFullErr) {
+                  // Verificar se é erro 502 (Bad Gateway) ou erro de rede/CORS
+                  const errorMessage = signFullErr.message || signFullErr.toString() || '';
+                  const isRetryableError = signFullErr.status === 502 || 
+                                         errorMessage.includes('502') || 
+                                         errorMessage.includes('Bad Gateway') ||
+                                         errorMessage.includes('network') ||
+                                         errorMessage.includes('CORS') ||
+                                         errorMessage.includes('ERR_FAILED');
+                  
+                  if (isRetryableError && retries > 0) {
+                    // Aguardar antes de tentar novamente (backoff exponencial)
+                    await new Promise(resolve => setTimeout(resolve, 500 * (3 - retries)));
+                    retries--;
+                    continue; // Tentar novamente
+                  } else {
+                    // Não é erro retryable ou sem tentativas, sair silenciosamente
+                    return;
+                  }
+                }
+              } catch (err: any) {
+                // Capturar erros de rede ou outros erros
+                const errorMessage = err?.message || err?.toString() || '';
+                const isRetryableError = err?.status === 502 || 
+                                       errorMessage.includes('502') || 
+                                       errorMessage.includes('Bad Gateway') ||
+                                       errorMessage.includes('network') ||
+                                       errorMessage.includes('CORS') ||
+                                       errorMessage.includes('ERR_FAILED') ||
+                                       errorMessage.includes('Failed to fetch');
+                
+                if (isRetryableError && retries > 0) {
+                  // Aguardar antes de tentar novamente (backoff exponencial)
+                  await new Promise(resolve => setTimeout(resolve, 500 * (3 - retries)));
+                  retries--;
+                  continue; // Tentar novamente
+                } else {
+                  // Outro erro ou sem tentativas, sair silenciosamente
+                  return;
+                }
               }
-            })
-            .catch(() => {
-              // Silenciosamente ignorar erros de signed URL
-            });
+              retries--;
+            }
+          })();
           
           photoPromises.push({ rec, index: i, promise });
         }
       }
     }
     
-    // Executar todas as gerações de signed URL em paralelo
+    // Executar todas as gerações de signed URL em paralelo (limitado para evitar sobrecarga e erros 502)
     let signedUrlsGenerated = 0;
     try {
-      const results = await Promise.allSettled(photoPromises.map(p => p.promise));
-      signedUrlsGenerated = results.filter(r => r.status === 'fulfilled').length;
+      // Processar em batches menores para evitar sobrecarga do servidor Supabase
+      const BATCH_SIZE = 10; // Reduzido de 20 para 10
+      const DELAY_BETWEEN_BATCHES = 200; // Aumentado de 50ms para 200ms
+      
+      for (let i = 0; i < photoPromises.length; i += BATCH_SIZE) {
+        const batch = photoPromises.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(batch.map(p => p.promise));
+        signedUrlsGenerated += results.filter(r => r.status === 'fulfilled').length;
+        
+        // Delay entre batches para evitar rate limiting e erros 502
+        if (i + BATCH_SIZE < photoPromises.length) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+        }
+      }
     } catch (e) {
-      // Silenciosamente ignorar erros
+      // Silenciosamente ignorar erros - não quebrar o fluxo se houver falhas
+      console.warn('[TimeRecordsService.listPaginated] Erro ao processar signed URLs:', e);
     }
     const signedUrlsEndTime = performance.now();
     const signedUrlsDuration = signedUrlsEndTime - signedUrlsStartTime;
@@ -296,6 +444,7 @@ export const TimeRecordsService = {
         horas_para_banco: r.horas_para_banco != null ? Number(r.horas_para_banco) : r.horas_para_banco,
         horas_para_pagamento: r.horas_para_pagamento != null ? Number(r.horas_para_pagamento) : r.horas_para_pagamento,
         horas_negativas: r.horas_negativas != null ? Number(r.horas_negativas) : r.horas_negativas,
+        horas_noturnas: r.horas_noturnas != null ? Number(r.horas_noturnas) : r.horas_noturnas,
         horas_faltas: r.horas_faltas != null ? Number(r.horas_faltas) : r.horas_faltas,
         is_feriado: r.is_feriado || false,
         is_domingo: r.is_domingo || false,

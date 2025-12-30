@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,7 +59,7 @@ export default function TimeRecordsPageNew() {
   const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({
-    startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 90 dias atrás
+    startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 365 dias atrás (1 ano)
     endDate: new Date().toISOString().split('T')[0] // Hoje
   });
   const [searchTerm, setSearchTerm] = useState('');
@@ -134,24 +134,35 @@ export default function TimeRecordsPageNew() {
   // Calcular datas para a query baseado na aba ativa
   const dateRangeForQuery = useMemo(() => {
     if (activeTab === 'resumo' && summaryMonth && summaryYear) {
+      // Na aba resumo, quando há mês/ano selecionado, buscar apenas aquele mês
       const month = parseInt(summaryMonth);
       const year = parseInt(summaryYear);
       const startDate = new Date(year, month - 1, 1);
-      const endDate = new Date(year, month, 0); // Último dia do mês
+      // Último dia do mês: usar new Date(year, month, 0) que retorna o último dia do mês anterior
+      const endDate = new Date(year, month, 0);
       return {
         start: startDate.toISOString().split('T')[0],
         end: endDate.toISOString().split('T')[0]
       };
+    }
+    // Se estiver na aba resumo sem mês/ano, não buscar dados (retornar null para desabilitar query)
+    if (activeTab === 'resumo' && (!summaryMonth || !summaryYear)) {
+      return null;
     }
     return { start: filters.startDate, end: filters.endDate };
   }, [activeTab, summaryMonth, summaryYear, filters.startDate, filters.endDate]);
 
   // Preparar parâmetros para a query
   const queryParams = useMemo(() => {
-    console.group('[TimeRecordsPageNew] 📋 Calculando queryParams');
-    console.log('📊 filters atual:', filters);
-    console.log('👤 filters.employeeId:', filters.employeeId);
-    console.log('📅 dateRangeForQuery:', dateRangeForQuery);
+    // Se estiver na aba resumo sem mês/ano selecionado, não executar query
+    if (activeTab === 'resumo' && (!summaryMonth || !summaryYear)) {
+      return null;
+    }
+    
+    // Se dateRangeForQuery for null, não executar query
+    if (!dateRangeForQuery) {
+      return null;
+    }
     
     const params: {
       startDate: string;
@@ -163,24 +174,32 @@ export default function TimeRecordsPageNew() {
       startDate: dateRangeForQuery.start,
       endDate: dateRangeForQuery.end,
       status: filters.status !== 'all' ? filters.status : undefined,
-      pageSize: activeTab === 'resumo' && summaryMonth && summaryYear ? 100 : 10,
+      pageSize: activeTab === 'resumo' && summaryMonth && summaryYear ? 100 : 10, // Na aba resumo com mês/ano, usar pageSize maior
     };
     
-    // Adicionar employeeId apenas se estiver definido (exatamente como na página antiga)
+    // Adicionar employeeId apenas se estiver definido
     if (employeeFilter) {
       params.employeeId = employeeFilter;
-      console.log('✅ employeeId adicionado aos params:', employeeFilter);
-    } else {
-      console.log('⚠️ employeeId não está definido, não será incluído nos params');
     }
     
-    console.log('📦 Parâmetros finais:', params);
-    console.groupEnd();
-    
     return params;
-  }, [dateRangeForQuery.start, dateRangeForQuery.end, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear]);
+  }, [dateRangeForQuery, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear]);
 
   // Usar paginação infinita otimizada
+  // Se estiver na aba resumo sem mês/ano selecionado, não executar query
+  const shouldFetch = activeTab !== 'resumo' || (summaryMonth && summaryYear);
+  
+  const queryResult = useTimeRecordsPaginated(
+    shouldFetch && queryParams ? queryParams : {
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      pageSize: 10
+    },
+    {
+      enabled: shouldFetch && !!queryParams
+    }
+  );
+  
   const {
     data,
     fetchNextPage,
@@ -189,10 +208,88 @@ export default function TimeRecordsPageNew() {
     isLoading,
     refetch,
     error
-  } = useTimeRecordsPaginated(queryParams);
+  } = queryResult;
 
   // Combinar todas as páginas em um único array
-  const records = data?.pages.flatMap(page => page.data) || [];
+  const records = useMemo(() => {
+    const allRecords = data?.pages.flatMap(page => page.data) || [];
+    
+    // Log detalhado da combinação
+    if (data?.pages && data.pages.length > 0) {
+      console.log('[TimeRecordsPageNew] 🔄 Combinando páginas:', {
+        totalPages: data.pages.length,
+        totalRecords: allRecords.length,
+        recordsPorPagina: data.pages.map((p, idx) => ({
+          pagina: idx + 1,
+          count: p.data.length,
+          hasMore: p.hasMore,
+          nextCursor: p.nextCursor,
+          totalCount: p.totalCount
+        })),
+        idsUnicos: new Set(allRecords.map(r => r.id)).size,
+        idsDuplicados: allRecords.length - new Set(allRecords.map(r => r.id)).size
+      });
+    }
+    
+    return allRecords;
+  }, [data?.pages]);
+  
+  // Log detalhado para debug
+  useEffect(() => {
+    if (activeTab === 'resumo' && summaryMonth && summaryYear) {
+      console.log('[TimeRecordsPageNew] 📊 DEBUG - Estado da paginação:', {
+        totalPages: data?.pages?.length || 0,
+        totalRecords: records.length,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading,
+        summaryMonth,
+        summaryYear,
+        dateRange: dateRangeForQuery,
+        queryParams: queryParams ? {
+          startDate: queryParams.startDate,
+          endDate: queryParams.endDate,
+          pageSize: queryParams.pageSize
+        } : null
+      });
+      
+      // Log das datas dos registros carregados
+      if (records.length > 0) {
+        const dates = records.map(r => r.data_registro).sort();
+        const registrosZerados = records.filter(r => !r.horas_trabalhadas || r.horas_trabalhadas === 0);
+        const registrosComDados = records.filter(r => r.horas_trabalhadas && r.horas_trabalhadas > 0);
+        
+        console.log('[TimeRecordsPageNew] 📅 DEBUG - Datas dos registros carregados:', {
+          total: records.length,
+          primeiraData: dates[0],
+          ultimaData: dates[dates.length - 1],
+          todasDatas: dates.slice(0, 20), // Primeiras 20 datas
+          registrosZerados: registrosZerados.length,
+          registrosComDados: registrosComDados.length,
+          sampleZerados: registrosZerados.slice(0, 3).map(r => ({
+            id: r.id,
+            data_registro: r.data_registro,
+            employee_nome: r.employee_nome,
+            horas_trabalhadas: r.horas_trabalhadas,
+            horas_extras_50: r.horas_extras_50,
+            horas_extras_100: r.horas_extras_100,
+            horas_noturnas: r.horas_noturnas,
+            tipo: typeof r.horas_trabalhadas,
+          })),
+          sampleComDados: registrosComDados.slice(0, 3).map(r => ({
+            id: r.id,
+            data_registro: r.data_registro,
+            employee_nome: r.employee_nome,
+            horas_trabalhadas: r.horas_trabalhadas,
+            horas_extras_50: r.horas_extras_50,
+            horas_extras_100: r.horas_extras_100,
+            horas_noturnas: r.horas_noturnas,
+            tipo: typeof r.horas_trabalhadas,
+          })),
+        });
+      }
+    }
+  }, [activeTab, summaryMonth, summaryYear, records.length, data?.pages?.length, hasNextPage, isFetchingNextPage, isLoading, dateRangeForQuery, queryParams]);
   const createRecord = useCreateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
   const updateRecord = useUpdateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
   const deleteRecordMutation = useDeleteTimeRecord();
@@ -202,32 +299,240 @@ export default function TimeRecordsPageNew() {
   // Removido IntersectionObserver - agora só carrega ao clicar no botão "Carregar mais"
 
   // Refetch quando filtros mudarem ou quando mudar a aba/mês/ano (exatamente como na página antiga)
+  // NOTA: Não incluir refetch nas dependências para evitar loops infinitos
+  // O React Query já invalida a query quando a queryKey muda
   useEffect(() => {
-    console.log('[TimeRecordsPageNew] 🔄 Refetch disparado por mudança nos filtros:', {
-      employeeFilter,
-      status: filters.status,
-      startDate: filters.startDate,
-      endDate: filters.endDate
-    });
-    refetch();
-  }, [filters.startDate, filters.endDate, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear, dateRangeForQuery.start, dateRangeForQuery.end, refetch]);
+    // O refetch será automático quando a queryKey mudar devido aos parâmetros
+    // Não precisamos chamar refetch() manualmente aqui
+  }, [filters.startDate, filters.endDate, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear, dateRangeForQuery?.start, dateRangeForQuery?.end]);
 
-  // Carregar todas as páginas quando estiver na aba de resumo e tiver mês/ano selecionado
+  // Carregar todas as páginas quando estiver na aba de resumo E tiver mês/ano selecionado
+  // Usar useRef para evitar loops infinitos
+  const loadingAllPagesRef = useRef(false);
+  const lastSummaryKey = useRef<string>('');
+  
   useEffect(() => {
-    if (activeTab === 'resumo' && summaryMonth && summaryYear && hasNextPage && !isFetchingNextPage && !isLoading) {
-      // Carregar todas as páginas disponíveis
+    const summaryKey = `${summaryMonth}-${summaryYear}`;
+    const keyChanged = lastSummaryKey.current !== summaryKey;
+    
+    // Só iniciar carregamento se:
+    // 1. Está na aba resumo
+    // 2. Tem mês/ano selecionado
+    // 3. A chave mudou (novo mês/ano) OU ainda não carregou todas as páginas
+    // 4. Não está carregando atualmente
+    // 5. A query inicial terminou de carregar (isLoading === false)
+    // 6. Há mais páginas para carregar (hasNextPage === true)
+    if (activeTab === 'resumo' && summaryMonth && summaryYear && !loadingAllPagesRef.current && !isLoading && hasNextPage) {
+      // Se a chave mudou, resetar o ref
+      if (keyChanged) {
+        lastSummaryKey.current = summaryKey;
+        loadingAllPagesRef.current = false; // Reset para permitir novo carregamento
+      }
+      
+      // Se já está carregando ou já carregou para esta chave, não fazer nada
+      if (loadingAllPagesRef.current) {
+        return;
+      }
+      
+      console.log('[TimeRecordsPageNew] 🔄 Iniciando carregamento de todas as páginas para:', { summaryMonth, summaryYear, hasNextPage });
+      
+      // Aguardar um pouco para garantir que a query inicial foi executada
       const loadAllPages = async () => {
-        let attempts = 0;
-        while (hasNextPage && !isFetchingNextPage && attempts < 50) { // Limite de segurança
-          await fetchNextPage();
-          attempts++;
-          // Pequeno delay para evitar muitas requisições simultâneas
-          await new Promise(resolve => setTimeout(resolve, 100));
+        loadingAllPagesRef.current = true;
+        try {
+          let attempts = 0;
+          const maxAttempts = 50; // Limite máximo de tentativas
+          
+          console.log('[TimeRecordsPageNew] 📄 Estado inicial:', { 
+            hasNextPage, 
+            isFetchingNextPage, 
+            isLoading,
+            totalPages: data?.pages?.length || 0,
+            totalRecords: records.length,
+            totalCount: data?.pages[0]?.totalCount || 0
+          });
+          
+          // Continuar enquanto houver mais páginas
+          // Usar uma função helper para obter o estado atualizado
+          const getCurrentState = () => {
+            const currentData = queryResult.data;
+            const currentRecords = currentData?.pages.flatMap(page => page.data) || [];
+            return {
+              totalPages: currentData?.pages?.length || 0,
+              totalRecords: currentRecords.length,
+              hasNextPage: queryResult.hasNextPage,
+              isFetching: queryResult.isFetchingNextPage,
+              totalCount: currentData?.pages[0]?.totalCount || 0
+            };
+          };
+          
+          let lastState = getCurrentState();
+          
+          while (lastState.hasNextPage && !lastState.isFetching && attempts < maxAttempts) {
+            // Obter estado atual do React Query ANTES do fetch (sempre do queryResult)
+            const stateBefore = getCurrentState();
+            const pagesBefore = queryResult.data?.pages || [];
+            const pageIdsBefore = pagesBefore.flatMap(p => p.data.map(r => r.id));
+            
+            console.log(`[TimeRecordsPageNew] 📥 Carregando página ${attempts + 1}...`, {
+              ...stateBefore,
+              attempts,
+              pagesCount: pagesBefore.length,
+              pageIdsCount: pageIdsBefore.length,
+              pageIdsSample: pageIdsBefore.slice(0, 5),
+              nextCursor: stateBefore.hasNextPage ? (stateBefore.totalRecords) : undefined,
+              reactQueryState: {
+                hasNextPage: queryResult.hasNextPage,
+                isFetchingNextPage: queryResult.isFetchingNextPage,
+                isLoading: queryResult.isLoading,
+                dataPagesCount: queryResult.data?.pages?.length || 0
+              }
+            });
+            
+            // Fazer fetch da próxima página
+            await fetchNextPage();
+            attempts++;
+            
+            // Aguardar para que o React Query atualize o estado
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Obter estado atualizado do React Query (sempre do queryResult)
+            const newState = getCurrentState();
+            const pagesAfter = queryResult.data?.pages || [];
+            const pageIdsAfter = pagesAfter.flatMap(p => p.data.map(r => r.id));
+            const newPageIds = pageIdsAfter.filter(id => !pageIdsBefore.includes(id));
+            
+            console.log(`[TimeRecordsPageNew] 📊 Após fetch ${attempts}:`, {
+              antes: {
+                ...stateBefore,
+                pagesCount: pagesBefore.length,
+                pageIdsCount: pageIdsBefore.length
+              },
+              depois: {
+                ...newState,
+                pagesCount: pagesAfter.length,
+                pageIdsCount: pageIdsAfter.length
+              },
+              registrosAdicionados: newState.totalRecords - stateBefore.totalRecords,
+              novosIds: newPageIds.length,
+              novosIdsSample: newPageIds.slice(0, 5),
+              detalhesPaginas: pagesAfter.map((p, idx) => ({
+                index: idx,
+                dataLength: p.data.length,
+                hasMore: p.hasMore,
+                totalCount: p.totalCount,
+                nextCursor: p.nextCursor,
+                sampleIds: p.data.slice(0, 3).map(r => r.id)
+              })),
+              reactQueryState: {
+                hasNextPage: queryResult.hasNextPage,
+                isFetchingNextPage: queryResult.isFetchingNextPage,
+                isLoading: queryResult.isLoading,
+                dataPagesCount: queryResult.data?.pages?.length || 0
+              }
+            });
+            
+            // Se não há mais páginas, parar
+            if (!newState.hasNextPage) {
+              console.log(`[TimeRecordsPageNew] ✅ Não há mais páginas. Total carregado: ${newState.totalRecords} de ${newState.totalCount}`);
+              break;
+            }
+            
+            // Verificar se as páginas aumentaram (mais confiável que totalRecords)
+            const pagesIncreased = pagesAfter.length > pagesBefore.length;
+            const recordsIncreased = newState.totalRecords > stateBefore.totalRecords;
+            
+            // Se os registros não aumentaram após 2 tentativas, verificar se as páginas aumentaram
+            if (attempts >= 2 && !recordsIncreased && !pagesIncreased) {
+              console.warn(`[TimeRecordsPageNew] ⚠️ Registros não aumentaram após ${attempts} tentativas. Verificando se há mais páginas...`, {
+                antes: {
+                  totalRecords: stateBefore.totalRecords,
+                  pagesCount: pagesBefore.length,
+                  pageIdsCount: pageIdsBefore.length
+                },
+                depois: {
+                  totalRecords: newState.totalRecords,
+                  pagesCount: pagesAfter.length,
+                  pageIdsCount: pageIdsAfter.length,
+                  novosIds: newPageIds.length
+                },
+                reactQueryState: {
+                  hasNextPage: queryResult.hasNextPage,
+                  isFetchingNextPage: queryResult.isFetchingNextPage,
+                  isLoading: queryResult.isLoading,
+                  dataPages: queryResult.data?.pages?.length,
+                  dataPagesDetails: queryResult.data?.pages?.map((p, idx) => ({
+                    index: idx,
+                    dataLength: p.data.length,
+                    hasMore: p.hasMore,
+                    nextCursor: p.nextCursor
+                  }))
+                }
+              });
+              
+              // Aguardar um pouco mais e verificar novamente
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              const recheckState = getCurrentState();
+              const recheckPages = queryResult.data?.pages || [];
+              const recheckRecords = recheckPages.flatMap(p => p.data);
+              
+              // Se ainda não há mudança e hasNextPage é true, pode ser um bug
+              // Mas verificar se as páginas aumentaram (mais confiável)
+              if (recheckState.hasNextPage && recheckState.totalRecords === stateBefore.totalRecords && recheckPages.length === pagesBefore.length) {
+                console.error(`[TimeRecordsPageNew] 🛑 Possível bug: hasNextPage=true mas registros/páginas não aumentam. Parando para evitar loop infinito.`, {
+                  estado: recheckState,
+                  pagesCount: recheckPages.length,
+                  pagesCountAntes: pagesBefore.length,
+                  pagesDetails: recheckPages.map((p, idx) => ({
+                    index: idx,
+                    dataLength: p.data.length,
+                    hasMore: p.hasMore,
+                    nextCursor: p.nextCursor,
+                    totalCount: p.totalCount,
+                    sampleIds: p.data.slice(0, 3).map(r => r.id)
+                  })),
+                  recordsCount: recheckRecords.length,
+                  recordsSample: recheckRecords.slice(0, 3).map(r => ({ id: r.id, data_registro: r.data_registro })),
+                  reactQueryState: {
+                    hasNextPage: queryResult.hasNextPage,
+                    isFetchingNextPage: queryResult.isFetchingNextPage,
+                    isLoading: queryResult.isLoading
+                  }
+                });
+                break;
+              }
+              
+              // Se as páginas aumentaram, continuar
+              if (recheckPages.length > pagesBefore.length) {
+                console.log(`[TimeRecordsPageNew] ✅ Páginas aumentaram após recheck: ${pagesBefore.length} -> ${recheckPages.length}`);
+                lastState = recheckState;
+              } else {
+                lastState = recheckState;
+              }
+            } else {
+              // Se registros ou páginas aumentaram, continuar normalmente
+              lastState = newState;
+            }
+          }
+          
+          const finalState = getCurrentState();
+          
+          console.log('[TimeRecordsPageNew] ✅ Carregamento concluído:', {
+            ...finalState,
+            totalAttempts: attempts
+          });
+          
+          if (finalState.totalRecords < finalState.totalCount && !finalState.hasNextPage) {
+            console.warn(`[TimeRecordsPageNew] ⚠️ ATENÇÃO: Carregados ${finalState.totalRecords} de ${finalState.totalCount} registros, mas hasNextPage=false. Pode haver um problema na paginação.`);
+          }
+        } finally {
+          loadingAllPagesRef.current = false;
         }
       };
       loadAllPages();
     }
-  }, [activeTab, summaryMonth, summaryYear, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage]);
+  }, [activeTab, summaryMonth, summaryYear, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage, data, records]);
 
   // Filtrar registros por termo de busca
   const filteredRecords = useMemo(() => {
@@ -245,6 +550,7 @@ export default function TimeRecordsPageNew() {
 
   // Filtrar registros por mês e ano para o resumo
   const filteredRecordsForSummary = useMemo(() => {
+    // Se não há mês/ano selecionado, retornar array vazio (não calcular resumo)
     if (!summaryMonth || !summaryYear) {
       return [];
     }
@@ -252,17 +558,119 @@ export default function TimeRecordsPageNew() {
     const month = parseInt(summaryMonth);
     const year = parseInt(summaryYear);
 
-    return filteredRecords.filter(record => {
-      const recordDate = new Date(record.data_registro);
-      return recordDate.getMonth() + 1 === month && recordDate.getFullYear() === year;
+    console.log(`[TimeRecordsPageNew] 🔍 Iniciando filtro para ${month}/${year}. Total de registros antes do filtro: ${filteredRecords.length}`);
+    
+    const filtered = filteredRecords.filter(record => {
+      // Parse da data de forma segura, evitando problemas de timezone
+      // data_registro vem como string no formato YYYY-MM-DD
+      const dateStr = record.data_registro;
+      if (!dateStr) {
+        console.warn('[TimeRecordsPageNew] ⚠️ Registro sem data_registro:', record.id);
+        return false;
+      }
+      
+      // Extrair ano, mês e dia diretamente da string para evitar problemas de timezone
+      const [yearStr, monthStr] = dateStr.split('-');
+      const recordYear = parseInt(yearStr);
+      const recordMonth = parseInt(monthStr);
+      
+      const matches = recordMonth === month && recordYear === year;
+      
+      // Log apenas para alguns registros para não poluir o console
+      if (filteredRecords.length < 50 || Math.random() < 0.01) {
+        console.log(`[TimeRecordsPageNew] 🔍 Verificando registro: ${dateStr} -> ${recordMonth}/${recordYear} (esperado: ${month}/${year}) -> ${matches ? '✅' : '❌'}`);
+      }
+      
+      return matches;
     });
+    
+    // Debug: Log detalhado
+    console.log(`[TimeRecordsPageNew] ✅ Filtro concluído: ${filtered.length} registros de ${filteredRecords.length} total para ${month}/${year}`);
+    
+    if (filtered.length > 0) {
+      const dates = filtered.map(r => r.data_registro).sort();
+      const uniqueDates = [...new Set(dates)];
+      console.log(`[TimeRecordsPageNew] 📅 Datas filtradas:`, {
+        total: filtered.length,
+        datasUnicas: uniqueDates.length,
+        primeiraData: dates[0],
+        ultimaData: dates[dates.length - 1],
+        todasDatasUnicas: uniqueDates
+      });
+    } else if (filteredRecords.length > 0) {
+      // Se não encontrou nenhum registro mas havia registros para filtrar, investigar
+      const sampleDates = filteredRecords.slice(0, 10).map(r => r.data_registro);
+      console.warn(`[TimeRecordsPageNew] ⚠️ Nenhum registro encontrado para ${month}/${year}, mas havia ${filteredRecords.length} registros. Amostra de datas:`, sampleDates);
+    }
+    
+    return filtered;
   }, [filteredRecords, summaryMonth, summaryYear]);
 
   // Agrupar registros por funcionário e calcular totais
   const employeeSummary = useMemo(() => {
+    // Só calcular resumo se houver mês/ano selecionado
     if (!summaryMonth || !summaryYear) {
       return [];
     }
+
+    // Log detalhado dos registros filtrados
+    const sampleRecords = filteredRecordsForSummary.slice(0, 10).map(r => ({
+      id: r.id,
+      data: r.data_registro,
+      funcionario: r.employee_nome,
+      horas_trabalhadas: r.horas_trabalhadas,
+      horas_extras_50: r.horas_extras_50,
+      horas_extras_100: r.horas_extras_100,
+      horas_noturnas: r.horas_noturnas,
+      horas_negativas: r.horas_negativas,
+      status: r.status
+    }));
+    
+    // Verificar quantos registros têm valores zerados
+    const registrosZerados = filteredRecordsForSummary.filter(r => 
+      (r.horas_trabalhadas || 0) === 0 && 
+      (r.horas_extras_50 || 0) === 0 && 
+      (r.horas_extras_100 || 0) === 0 && 
+      (r.horas_noturnas || 0) === 0 && 
+      (r.horas_negativas || 0) === 0
+    );
+    
+    console.log(`[TimeRecordsPageNew] 📊 Iniciando cálculo do resumo por funcionário:`, {
+      totalRegistrosFiltrados: filteredRecordsForSummary.length,
+      registrosZerados: registrosZerados.length,
+      registrosComDados: filteredRecordsForSummary.length - registrosZerados.length,
+      sampleRecords: sampleRecords.slice(0, 10).map(r => ({
+        id: r.id,
+        data_registro: r.data_registro,
+        employee_nome: r.employee_nome,
+        horas_trabalhadas: r.horas_trabalhadas,
+        horas_extras_50: r.horas_extras_50,
+        horas_extras_100: r.horas_extras_100,
+        horas_noturnas: r.horas_noturnas,
+        horas_negativas: r.horas_negativas,
+        tipo_horas_trabalhadas: typeof r.horas_trabalhadas,
+        tipo_horas_extras_50: typeof r.horas_extras_50,
+        tipo_horas_extras_100: typeof r.horas_extras_100,
+        tipo_horas_noturnas: typeof r.horas_noturnas,
+        status: r.status,
+        is_null: r.horas_trabalhadas === null,
+        is_zero: r.horas_trabalhadas === 0,
+      })),
+      registrosZeradosSample: registrosZerados.slice(0, 5).map(r => ({
+        id: r.id,
+        data_registro: r.data_registro,
+        employee_nome: r.employee_nome,
+        horas_trabalhadas: r.horas_trabalhadas,
+        horas_extras_50: r.horas_extras_50,
+        horas_extras_100: r.horas_extras_100,
+        horas_noturnas: r.horas_noturnas,
+        horas_negativas: r.horas_negativas,
+        tipo_horas_trabalhadas: typeof r.horas_trabalhadas,
+        status: r.status,
+        is_null: r.horas_trabalhadas === null,
+        is_zero: r.horas_trabalhadas === 0,
+      }))
+    });
 
     const grouped = new Map<string, {
       employeeId: string;
@@ -297,18 +705,75 @@ export default function TimeRecordsPageNew() {
 
       const summary = grouped.get(employeeId)!;
       summary.records.push(record);
+      
       // Converter para número e garantir que não seja NaN
       const horasTrabalhadas = Number(record.horas_trabalhadas) || 0;
       const horasNegativas = Number(record.horas_negativas) || 0;
       const horasExtras50 = Number(record.horas_extras_50) || 0;
       const horasExtras100 = Number(record.horas_extras_100) || 0;
+      const horasNoturnas = Number(record.horas_noturnas) || 0;
+      
+      // Log detalhado para registros zerados ou com dados
+      const isZerado = horasTrabalhadas === 0 && horasNegativas === 0 && horasExtras50 === 0 && 
+                       horasExtras100 === 0 && horasNoturnas === 0;
+      
+      // Log todos os registros zerados e alguns com dados
+      if (isZerado || Math.random() < 0.1) {
+        console.log(`[TimeRecordsPageNew] 📝 Processando registro ${isZerado ? '(ZERADO)' : '(COM DADOS)'}:`, {
+          id: record.id,
+          data: record.data_registro,
+          funcionario: employeeName,
+          horas_trabalhadas_original: record.horas_trabalhadas,
+          horas_trabalhadas_convertida: horasTrabalhadas,
+          horas_extras_50_original: record.horas_extras_50,
+          horas_extras_50_convertida: horasExtras50,
+          horas_extras_100_original: record.horas_extras_100,
+          horas_extras_100_convertida: horasExtras100,
+          horas_noturnas_original: record.horas_noturnas,
+          horas_noturnas_convertida: horasNoturnas,
+          horas_negativas_original: record.horas_negativas,
+          horas_negativas_convertida: horasNegativas,
+          tipo_horas_trabalhadas: typeof record.horas_trabalhadas,
+          tipo_horas_extras_50: typeof record.horas_extras_50,
+          tipo_horas_extras_100: typeof record.horas_extras_100,
+          tipo_horas_noturnas: typeof record.horas_noturnas,
+          is_null: record.horas_trabalhadas === null,
+          is_zero: record.horas_trabalhadas === 0,
+          status: record.status,
+          antes_soma: {
+            totalHorasTrabalhadas: summary.totalHorasTrabalhadas,
+            totalHorasExtras50: summary.totalHorasExtras50,
+            totalHorasExtras100: summary.totalHorasExtras100,
+            totalHorasNoturnas: summary.totalHorasNoturnas,
+          }
+        });
+      }
       
       summary.totalHorasTrabalhadas += horasTrabalhadas;
       summary.totalHorasNegativas += horasNegativas;
       summary.totalHorasExtras50 += horasExtras50;
       summary.totalHorasExtras100 += horasExtras100;
-      // Nota: horas_noturnas não existe no tipo, mas vamos deixar preparado caso seja adicionado
-      // summary.totalHorasNoturnas += (record as any).horas_noturnas || 0;
+      summary.totalHorasNoturnas += horasNoturnas;
+      
+      // LOG DETALHADO: Verificar valores após somar (apenas para primeiros 3 registros de cada funcionário)
+      if (summary.records.length <= 3) {
+        console.log(`[TimeRecordsPageNew] 📊 Após somar registro ${summary.records.length}:`, {
+          id: record.id,
+          valores_somados: {
+            horasTrabalhadas,
+            horasNegativas,
+            horasExtras50,
+            horasExtras100,
+            horasNoturnas,
+          },
+          depois_soma: {
+            totalHorasTrabalhadas: summary.totalHorasTrabalhadas,
+            totalHorasExtras50: summary.totalHorasExtras50,
+            totalHorasExtras100: summary.totalHorasExtras100,
+            totalHorasNoturnas: summary.totalHorasNoturnas,
+          }
+        });
+      }
     });
 
     const result = Array.from(grouped.values()).sort((a, b) => 
@@ -575,7 +1040,7 @@ export default function TimeRecordsPageNew() {
 
   const resetFilters = () => {
     setFilters({
-      startDate: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 365 dias atrás (1 ano)
       endDate: new Date().toISOString().split('T')[0]
     });
     setEmployeeFilter('');
@@ -1482,10 +1947,13 @@ export default function TimeRecordsPageNew() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            <span className="text-indigo-600 font-medium">
-                                              {/* Nota: horas_noturnas não existe no tipo ainda */}
-                                              0.00h
-                                            </span>
+                                            {record.horas_noturnas && record.horas_noturnas > 0 ? (
+                                              <span className="text-indigo-600 font-medium">
+                                                +{record.horas_noturnas.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
                                           </TableCell>
                                           <TableCell>
                                             <Badge className={getStatusColor(record.status || '')}>

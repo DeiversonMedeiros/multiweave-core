@@ -58,14 +58,19 @@ export function useTimeRecords(params: {
  * Hook para listar registros de ponto com paginação infinita (otimizado)
  * Usa paginação no servidor para reduzir significativamente o uso de egress
  */
-export function useTimeRecordsPaginated(params: {
-  employeeId?: string;
-  startDate?: string;
-  endDate?: string;
-  status?: string;
-  pageSize?: number;
-  managerUserId?: string;
-}) {
+export function useTimeRecordsPaginated(
+  params: {
+    employeeId?: string;
+    startDate?: string;
+    endDate?: string;
+    status?: string;
+    pageSize?: number;
+    managerUserId?: string;
+  },
+  options?: {
+    enabled?: boolean;
+  }
+) {
   const { selectedCompany } = useCompany();
   const { pageSize = 50, employeeId, startDate, endDate, status, managerUserId } = params;
 
@@ -81,25 +86,12 @@ export function useTimeRecordsPaginated(params: {
   
   // Se o parâmetro foi explicitamente passado (mesmo que undefined), 
   // requeremos que seja truthy antes de habilitar a query
-  const isEnabled = !!selectedCompany?.id && 
+  const isEnabled = (options?.enabled !== false) && 
+    !!selectedCompany?.id && 
     (!hasEmployeeIdParam || !!employeeId) && 
     (!hasManagerUserIdParam || !!managerUserId);
 
   const queryKey = ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId];
-  
-  // Log quando a query key muda
-  useEffect(() => {
-    console.log('[useTimeRecordsPaginated] 🔑 Query key mudou:', queryKey);
-    console.log('[useTimeRecordsPaginated] 🔑 Parâmetros:', {
-      selectedCompanyId: selectedCompany?.id,
-      employeeId,
-      startDate,
-      endDate,
-      status,
-      pageSize,
-      managerUserId,
-    });
-  }, [selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId]);
 
   return useInfiniteQuery({
     queryKey,
@@ -110,26 +102,8 @@ export function useTimeRecordsPaginated(params: {
       totalCount: number;
     }> => {
       const queryStartTime = performance.now();
-      const pageNum = (pageParam as number) / pageSize + 1;
-      
-      // Log com stack trace para ver quem chamou
-      const stackTrace = new Error().stack;
-      console.group(`[useTimeRecordsPaginated] 🔄 queryFn executada - Página ${pageNum} (offset: ${pageParam})`);
-      console.log('📍 Stack trace da chamada:', stackTrace);
-      console.log('📊 Parâmetros:', {
-        companyId: selectedCompany?.id,
-        pageOffset: pageParam,
-        pageLimit: pageSize,
-        employeeId,
-        startDate,
-        endDate,
-        status,
-        managerUserId,
-      });
 
       if (!selectedCompany?.id) {
-        console.warn('⚠️ Company ID não disponível');
-        console.groupEnd();
         return { data: [], hasMore: false, totalCount: 0 };
       }
 
@@ -149,13 +123,36 @@ export function useTimeRecordsPaginated(params: {
       const serviceDuration = serviceEndTime - serviceStartTime;
 
       const hasMore = (pageParam as number) + pageSize < result.totalCount;
-      const queryEndTime = performance.now();
-      const queryDuration = queryEndTime - queryStartTime;
 
-      console.log(`⏱️ Tempo de serviço (RPC + processamento): ${serviceDuration.toFixed(2)}ms`);
-      console.log(`⏱️ Tempo total da query: ${queryDuration.toFixed(2)}ms`);
-      console.log(`📦 Resultado: ${result.data.length} registros, total: ${result.totalCount}, hasMore: ${hasMore}`);
-      console.groupEnd();
+      // LOG DETALHADO: Verificar dados recebidos do serviço
+      const pageNum = Math.floor((pageParam as number) / pageSize) + 1;
+      const registrosZerados = result.data.filter(r => !r.horas_trabalhadas || r.horas_trabalhadas === 0).length;
+      const registrosComDados = result.data.filter(r => r.horas_trabalhadas && r.horas_trabalhadas > 0).length;
+      
+      console.log(`[useTimeRecordsPaginated] 📄 Página ${pageNum} carregada:`, {
+        pageParam,
+        pageSize,
+        pageNum,
+        totalCount: result.totalCount,
+        dataLength: result.data.length,
+        hasMore,
+        nextCursor: hasMore ? ((pageParam as number) + pageSize) : undefined,
+        calculo: `(${pageParam} + ${pageSize}) < ${result.totalCount} = ${hasMore}`,
+        progresso: `${(pageParam as number) + result.data.length} de ${result.totalCount}`,
+        sampleData: result.data.slice(0, 3).map(r => ({
+          id: r.id,
+          data_registro: r.data_registro,
+          employee_nome: r.employee_nome,
+          horas_trabalhadas: r.horas_trabalhadas,
+          horas_extras_50: r.horas_extras_50,
+          horas_extras_100: r.horas_extras_100,
+          horas_noturnas: r.horas_noturnas,
+          tipo: typeof r.horas_trabalhadas,
+        })),
+        registrosZerados,
+        registrosComDados,
+        sampleIds: result.data.slice(0, 5).map(r => r.id)
+      });
 
       return {
         data: result.data,
@@ -164,18 +161,24 @@ export function useTimeRecordsPaginated(params: {
         totalCount: result.totalCount,
       };
     },
-    getNextPageParam: (lastPage) => {
+    getNextPageParam: (lastPage, allPages) => {
       // Só retornar nextCursor se houver mais páginas
       // O React Query não faz prefetch automático por padrão
       const nextParam = lastPage.hasMore ? lastPage.nextCursor : undefined;
-      const stackTrace = new Error().stack;
-      console.log(`[useTimeRecordsPaginated] 🔍 getNextPageParam chamado:`, {
+      const totalRecordsLoaded = allPages.reduce((sum, page) => sum + page.data.length, 0);
+      
+      console.log(`[useTimeRecordsPaginated] 🔍 getNextPageParam:`, {
         hasMore: lastPage.hasMore,
-        nextParam,
+        nextCursor: lastPage.nextCursor,
         totalCount: lastPage.totalCount,
+        dataLength: lastPage.data.length,
+        totalPages: allPages.length,
+        totalRecordsLoaded,
+        progresso: `${totalRecordsLoaded} de ${lastPage.totalCount}`,
+        retornando: nextParam,
+        ultimaPaginaIds: lastPage.data.slice(0, 3).map(r => r.id)
       });
-      console.log(`[useTimeRecordsPaginated] 📍 Stack trace:`, stackTrace);
-      console.log(`[useTimeRecordsPaginated] ⚠️ getNextPageParam NÃO deve causar carregamento automático - apenas define o parâmetro`);
+      
       return nextParam;
     },
     enabled: isEnabled,

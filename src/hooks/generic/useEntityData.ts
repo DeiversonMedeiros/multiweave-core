@@ -147,7 +147,7 @@ export function useSearchEntity<T = any>(
 // =====================================================
 
 // Hook para RH
-export function useRHData<T = any>(table: string, companyId: string, filters?: EntityFilters) {
+export function useRHData<T = any>(table: string, companyId: string, filters?: EntityFilters, pageSize?: number) {
   console.log('🔍 [DEBUG] useRHData - chamado para table:', table, 'companyId:', companyId);
   
   const query = useEntityData<T>({
@@ -156,7 +156,7 @@ export function useRHData<T = any>(table: string, companyId: string, filters?: E
     companyId,
     filters,
     page: 1,
-    pageSize: 100
+    pageSize: pageSize ?? 100
   });
 
   console.log('🔍 [DEBUG] useRHData - query.data:', query.data);

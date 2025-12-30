@@ -936,6 +936,7 @@ export interface TimeRecord {
   horas_para_banco?: number; // Horas que vão para o banco de horas
   horas_para_pagamento?: number; // Horas que devem ser pagas diretamente
   horas_negativas?: number; // Horas negativas quando trabalhou menos que o esperado
+  horas_noturnas?: number; // Horas trabalhadas no período noturno (22h às 5h)
   horas_faltas: number;
   is_feriado?: boolean; // Indica se o dia é feriado
   is_domingo?: boolean; // Indica se o dia é domingo

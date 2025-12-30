@@ -76,7 +76,35 @@ export default function EmployeeManagement() {
   const deleteEmployee = useDeleteEntity('rh', 'employees', selectedCompany?.id || '');
 
   // Dados
-  const employees = employeesData?.data || [];
+  const employees = useMemo(() => {
+    const data = employeesData?.data || [];
+    console.log('🔍 [EmployeeManagement] Dados recebidos:', data.length, 'funcionários');
+    
+    if (data.length === 0) {
+      console.log('⚠️ [EmployeeManagement] Nenhum funcionário encontrado');
+      return [];
+    }
+    
+    // Log dos primeiros nomes antes da ordenação
+    console.log('📋 [EmployeeManagement] Primeiros 5 nomes ANTES da ordenação:', 
+      data.slice(0, 5).map(e => e.nome)
+    );
+    
+    // Ordenar funcionários alfabeticamente por nome
+    const sorted = [...data].sort((a, b) => {
+      const nomeA = (a.nome || '').toLowerCase().trim();
+      const nomeB = (b.nome || '').toLowerCase().trim();
+      const result = nomeA.localeCompare(nomeB, 'pt-BR');
+      return result;
+    });
+    
+    // Log dos primeiros nomes depois da ordenação
+    console.log('✅ [EmployeeManagement] Primeiros 5 nomes DEPOIS da ordenação:', 
+      sorted.slice(0, 5).map(e => e.nome)
+    );
+    
+    return sorted;
+  }, [employeesData]);
   const positions = positionsData?.data || [];
   const units = unitsData?.data || [];
   const workShifts = workShiftsData?.data || [];
@@ -606,6 +634,14 @@ export default function EmployeeManagement() {
       )}
 
       {/* Tabela */}
+      {(() => {
+        console.log('🎯 [EmployeeManagement] Renderizando tabela com:', {
+          employeesCount: employees.length,
+          firstThreeNames: employees.slice(0, 3).map(e => e.nome),
+          initialSorting: [{ id: 'nome', desc: false }]
+        });
+        return null;
+      })()}
       <EnhancedDataTable
         data={employees}
         columns={columns}
@@ -619,6 +655,7 @@ export default function EmployeeManagement() {
         emptyMessage="Nenhum funcionário encontrado"
         pageSize={10}
         title="Funcionários"
+        initialSorting={[{ id: 'nome', desc: false }]}
       />
 
       {/* Modal */}

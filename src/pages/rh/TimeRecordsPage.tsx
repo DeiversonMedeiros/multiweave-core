@@ -192,8 +192,7 @@ export default function TimeRecordsPage() {
       summary.totalHorasNegativas += record.horas_negativas || 0;
       summary.totalHorasExtras50 += record.horas_extras_50 || 0;
       summary.totalHorasExtras100 += record.horas_extras_100 || 0;
-      // Nota: horas_noturnas não existe no tipo, mas vamos deixar preparado caso seja adicionado
-      // summary.totalHorasNoturnas += (record as any).horas_noturnas || 0;
+      summary.totalHorasNoturnas += record.horas_noturnas || 0;
     });
 
     return Array.from(grouped.values()).sort((a, b) => 
@@ -1087,10 +1086,13 @@ export default function TimeRecordsPage() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            <span className="text-indigo-600 font-medium">
-                                              {/* Nota: horas_noturnas não existe no tipo ainda */}
-                                              0.00h
-                                            </span>
+                                            {record.horas_noturnas && record.horas_noturnas > 0 ? (
+                                              <span className="text-indigo-600 font-medium">
+                                                +{record.horas_noturnas.toFixed(2)}h
+                                              </span>
+                                            ) : (
+                                              <span className="text-muted-foreground">0.00h</span>
+                                            )}
                                           </TableCell>
                                           <TableCell>
                                             <Badge className={getStatusColor(record.status || '')}>

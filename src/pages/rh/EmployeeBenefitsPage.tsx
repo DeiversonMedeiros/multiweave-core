@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -44,13 +44,36 @@ export default function EmployeeBenefitsPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
 
   // Hooks para dados
-  const { data: assignmentsData, isLoading, error } = useRHData<EmployeeBenefitAssignment>('employee_benefit_assignments', selectedCompany?.id || '');
+  // Usando pageSize grande para buscar todos os registros (10000 deve ser suficiente para a maioria dos casos)
+  const { data: assignmentsData, isLoading, error } = useRHData<EmployeeBenefitAssignment>('employee_benefit_assignments', selectedCompany?.id || '', undefined, 10000);
   const { data: employees = [] } = useEmployees();
-  const { data: benefitsData } = useRHData<BenefitConfiguration>('benefit_configurations', selectedCompany?.id || '');
+  const { data: benefitsData } = useRHData<BenefitConfiguration>('benefit_configurations', selectedCompany?.id || '', undefined, 10000);
+
+  // Função para buscar dados relacionados
+  const getEmployeeName = (employeeId: string) => {
+    if (!Array.isArray(employees)) return 'Funcionário não encontrado';
+    const employee = employees.find(emp => emp.id === employeeId);
+    return employee?.nome || 'Funcionário não encontrado';
+  };
 
   // Extrair dados dos objetos de resposta
-  const assignments = Array.isArray(assignmentsData) ? assignmentsData : assignmentsData?.data || [];
+  const assignmentsRaw = Array.isArray(assignmentsData) ? assignmentsData : assignmentsData?.data || [];
   const benefits = Array.isArray(benefitsData) ? benefitsData : benefitsData?.data || [];
+  
+  // Ordenar assignments por nome do funcionário em ordem alfabética usando useMemo
+  const assignments = useMemo(() => {
+    if (!Array.isArray(assignmentsRaw) || assignmentsRaw.length === 0) return [];
+    if (!Array.isArray(employees) || employees.length === 0) return assignmentsRaw;
+    
+    return [...assignmentsRaw].sort((a, b) => {
+      // Buscar nomes dos funcionários diretamente
+      const employeeA = employees.find(emp => emp.id === a.employee_id);
+      const employeeB = employees.find(emp => emp.id === b.employee_id);
+      const nameA = (employeeA?.nome || '').toLowerCase().trim();
+      const nameB = (employeeB?.nome || '').toLowerCase().trim();
+      return nameA.localeCompare(nameB, 'pt-BR', { sensitivity: 'base' });
+    });
+  }, [assignmentsRaw, employees]);
   
   const createAssignment = useCreateEntity<EmployeeBenefitAssignment>('rh', 'employee_benefit_assignments', selectedCompany?.id || '');
   const updateAssignment = useUpdateEntity<EmployeeBenefitAssignment>('rh', 'employee_benefit_assignments', selectedCompany?.id || '');
@@ -118,13 +141,6 @@ export default function EmployeeBenefitsPage() {
 
   const handleExportCsv = () => {
     console.log('Exportando vínculos para CSV...');
-  };
-
-  // Função para buscar dados relacionados
-  const getEmployeeName = (employeeId: string) => {
-    if (!Array.isArray(employees)) return 'Funcionário não encontrado';
-    const employee = employees.find(emp => emp.id === employeeId);
-    return employee?.nome || 'Funcionário não encontrado';
   };
 
   const getBenefitName = (benefitId: string) => {
