@@ -46,6 +46,8 @@ export const TenantSelector: React.FC = () => {
       if (success) {
         setIsOpen(false);
         setSelectedCompanyId('');
+        // Recarregar a página para atualizar todos os dados com a nova empresa
+        window.location.reload();
       }
     }
   };

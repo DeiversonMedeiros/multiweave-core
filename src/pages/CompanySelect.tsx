@@ -109,7 +109,8 @@ export default function CompanySelect() {
 
   const handleSelectCompany = (company: Company) => {
     setSelectedCompany(company);
-    navigate("/");
+    // Recarregar a página para atualizar todos os dados com a nova empresa
+    window.location.reload();
   };
 
   // Renderização única e estável - evitar múltiplas renderizações condicionais

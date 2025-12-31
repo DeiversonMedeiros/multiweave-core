@@ -50,7 +50,8 @@ export default function EmployeesPageNew() {
   const formRef = useRef<EmployeeFormRef>(null);
 
   // Hooks usando nova abordagem genérica
-  const { data: employeesData, isLoading, error } = useRHData<Employee>('employees', selectedCompany?.id || '', filters);
+  // Usando pageSize grande para buscar todos os registros (10000 deve ser suficiente para a maioria dos casos)
+  const { data: employeesData, isLoading, error } = useRHData<Employee>('employees', selectedCompany?.id || '', filters, 10000);
   const createEmployee = useCreateEntity<Employee>('rh', 'employees', selectedCompany?.id || '');
   const updateEmployee = useUpdateEntity<Employee>('rh', 'employees', selectedCompany?.id || '');
   const deleteEmployee = useDeleteEntity('rh', 'employees', selectedCompany?.id || '');

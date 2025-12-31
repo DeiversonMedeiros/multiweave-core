@@ -97,3 +97,8 @@ COMMENT ON FUNCTION rh.recalculate_time_record_hours(uuid) IS
 Esta função foi atualizada para considerar turnos de trabalho, feriados e horas noturnas.';
 
 
+
+
+
+
+

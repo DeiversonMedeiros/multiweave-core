@@ -2,7 +2,8 @@ import { EntityService } from '@/services/generic/entityService';
 import { 
   Employee, 
   EmployeeInsert, 
-  EmployeeUpdate 
+  EmployeeUpdate,
+  EmployeeFilters
 } from '@/integrations/supabase/rh-types';
 
 // =====================================================
@@ -13,22 +14,63 @@ export const EmployeesService = {
   /**
    * Lista todos os funcionários de uma empresa
    */
-  list: async (companyId: string) => {
+  list: async (companyId: string, filters?: EmployeeFilters) => {
     try {
+      // Preparar filtros para a busca
+      const searchFilters: any = {};
+      
+      // Se houver filtro de status, aplicar
+      if (filters?.status) {
+        searchFilters.status = filters.status;
+      }
+      
+      // Se houver busca por texto, aplicar
+      if (filters?.search) {
+        searchFilters.search = filters.search;
+      }
+      
+      // Aplicar outros filtros
+      if (filters) {
+        Object.keys(filters).forEach(key => {
+          if (key !== 'search' && key !== 'status' && filters[key]) {
+            searchFilters[key] = filters[key];
+          }
+        });
+      }
+
+      console.log('🔍 [EmployeesService.list] Buscando funcionários:', {
+        companyId,
+        filters: searchFilters,
+        pageSize: 10000
+      });
+
       const result = await EntityService.list<Employee>({
         schema: 'rh',
         table: 'employees',
         companyId,
-        filters: { status: 'ativo' }, // Restaurando filtro de status
+        filters: searchFilters,
         orderBy: 'nome',
         orderDirection: 'ASC',
-        pageSize: 5000 // Aumentar limite para garantir que todos os funcionários sejam retornados
+        pageSize: 10000 // Aumentar limite para garantir que todos os funcionários sejam retornados
       });
 
-      return result.data;
+      console.log('✅ [EmployeesService.list] Resultado:', {
+        dataCount: result.data.length,
+        totalCount: result.totalCount,
+        hasMore: result.hasMore
+      });
+
+      // Retornar objeto com data e count para compatibilidade com a página
+      return {
+        data: result.data,
+        count: result.totalCount
+      };
     } catch (error) {
       console.error('❌ Erro ao buscar funcionários:', error);
-      return [];
+      return {
+        data: [],
+        count: 0
+      };
     }
   },
 

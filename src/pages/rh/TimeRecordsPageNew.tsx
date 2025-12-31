@@ -50,6 +50,15 @@ import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { formatDateOnly } from '@/lib/utils';
+import { 
+  generateTimeRecordReportHTML, 
+  generateTimeRecordReportCSV, 
+  downloadFile,
+  calculateDSR,
+  getBankHoursBalanceUntilDate,
+  TimeRecordReportData
+} from '@/services/rh/timeRecordReportService';
+import { toast } from 'sonner';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
@@ -917,6 +926,106 @@ export default function TimeRecordsPageNew() {
 
   const handleExportCsv = () => {
     console.log('Exportando registros de ponto para CSV...');
+  };
+
+  // Handler para download de folha de ponto em PDF
+  const handleDownloadTimeRecordPDF = async (summary: typeof employeeSummary[0]) => {
+    if (!summaryMonth || !summaryYear || !selectedCompany?.id) {
+      toast.error('Selecione o mês e o ano para gerar a folha de ponto');
+      return;
+    }
+
+    try {
+      toast.loading('Gerando folha de ponto...', { id: 'generate-time-record-pdf' });
+
+      // Buscar saldo do banco de horas
+      const bankHoursBalance = await getBankHoursBalanceUntilDate(
+        summary.employeeId,
+        selectedCompany.id,
+        new Date(parseInt(summaryYear), parseInt(summaryMonth), 0) // Último dia do mês
+      );
+
+      // Calcular DSR
+      const dsr = calculateDSR(summary.records, parseInt(summaryMonth), parseInt(summaryYear));
+
+      // Preparar dados
+      const reportData: TimeRecordReportData = {
+        employeeId: summary.employeeId,
+        employeeName: summary.employeeName,
+        employeeMatricula: summary.employeeMatricula,
+        month: parseInt(summaryMonth),
+        year: parseInt(summaryYear),
+        records: summary.records,
+        bankHoursBalance,
+        dsr
+      };
+
+      // Gerar HTML
+      const html = generateTimeRecordReportHTML(reportData);
+      
+      // Fazer download
+      const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+      const monthName = monthNames[parseInt(summaryMonth) - 1];
+      const filename = `Folha_Ponto_${summary.employeeName.replace(/\s+/g, '_')}_${monthName}_${summaryYear}.html`;
+      
+      downloadFile(html, filename, 'text/html');
+      
+      toast.success('Folha de ponto gerada com sucesso!', { id: 'generate-time-record-pdf' });
+    } catch (error) {
+      console.error('Erro ao gerar folha de ponto:', error);
+      toast.error('Erro ao gerar folha de ponto', { id: 'generate-time-record-pdf' });
+    }
+  };
+
+  // Handler para download de CSV
+  const handleDownloadTimeRecordCSV = async (summary: typeof employeeSummary[0]) => {
+    if (!summaryMonth || !summaryYear || !selectedCompany?.id) {
+      toast.error('Selecione o mês e o ano para gerar o CSV');
+      return;
+    }
+
+    try {
+      toast.loading('Gerando arquivo CSV...', { id: 'generate-time-record-csv' });
+
+      // Buscar saldo do banco de horas
+      const bankHoursBalance = await getBankHoursBalanceUntilDate(
+        summary.employeeId,
+        selectedCompany.id,
+        new Date(parseInt(summaryYear), parseInt(summaryMonth), 0) // Último dia do mês
+      );
+
+      // Calcular DSR
+      const dsr = calculateDSR(summary.records, parseInt(summaryMonth), parseInt(summaryYear));
+
+      // Preparar dados
+      const reportData: TimeRecordReportData = {
+        employeeId: summary.employeeId,
+        employeeName: summary.employeeName,
+        employeeMatricula: summary.employeeMatricula,
+        month: parseInt(summaryMonth),
+        year: parseInt(summaryYear),
+        records: summary.records,
+        bankHoursBalance,
+        dsr
+      };
+
+      // Gerar CSV
+      const csv = generateTimeRecordReportCSV(reportData);
+      
+      // Fazer download
+      const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+      const monthName = monthNames[parseInt(summaryMonth) - 1];
+      const filename = `Folha_Ponto_${summary.employeeName.replace(/\s+/g, '_')}_${monthName}_${summaryYear}.csv`;
+      
+      downloadFile(csv, filename, 'text/csv;charset=utf-8;');
+      
+      toast.success('Arquivo CSV gerado com sucesso!', { id: 'generate-time-record-csv' });
+    } catch (error) {
+      console.error('Erro ao gerar CSV:', error);
+      toast.error('Erro ao gerar arquivo CSV', { id: 'generate-time-record-csv' });
+    }
   };
 
   const handleClockIn = () => {
@@ -1839,18 +1948,40 @@ export default function TimeRecordsPageNew() {
                                 </CardDescription>
                               )}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleEmployeeExpanded(summary.employeeId)}
-                              className="h-8 w-8 p-0"
-                            >
-                              {isExpanded ? (
-                                <ChevronUp className="h-4 w-4" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4" />
-                              )}
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDownloadTimeRecordPDF(summary)}
+                                className="flex items-center gap-2"
+                                title="Baixar folha de ponto em PDF"
+                              >
+                                <Download className="h-4 w-4" />
+                                <span className="hidden sm:inline">PDF</span>
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDownloadTimeRecordCSV(summary)}
+                                className="flex items-center gap-2"
+                                title="Baixar folha de ponto em CSV"
+                              >
+                                <Download className="h-4 w-4" />
+                                <span className="hidden sm:inline">CSV</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleEmployeeExpanded(summary.employeeId)}
+                                className="h-8 w-8 p-0"
+                              >
+                                {isExpanded ? (
+                                  <ChevronUp className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent>

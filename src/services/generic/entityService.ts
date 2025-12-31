@@ -80,7 +80,37 @@ export const EntityService = {
       order_direction: orderDirection
     };
 
+    console.log('🔍 [EntityService.list] INÍCIO - Preparando chamada RPC:', {
+      schema,
+      table,
+      companyId,
+      pageSize,
+      offset,
+      limit_param: pageSize,
+      offset_param: offset,
+      filters: cleanFilters,
+      rpcParams,
+      timestamp: new Date().toISOString()
+    });
+
     const { data, error } = await (supabase as any).rpc('get_entity_data', rpcParams);
+
+    console.log('🔍 [EntityService.list] Resposta BRUTA da RPC:', {
+      hasData: !!data,
+      dataType: typeof data,
+      isArray: Array.isArray(data),
+      dataLength: data?.length || 0,
+      hasError: !!error,
+      errorMessage: error?.message,
+      errorCode: error?.code,
+      firstItem: data?.[0] ? {
+        id: data[0].id,
+        hasData: !!data[0].data,
+        total_count: data[0].total_count,
+        total_countType: typeof data[0].total_count
+      } : null,
+      timestamp: new Date().toISOString()
+    });
 
     if (error) {
       console.error('❌ [EntityService.list] Erro da RPC:', {
@@ -102,10 +132,33 @@ export const EntityService = {
 
     const result = data || [];
     
+    console.log('🔍 [EntityService.list] Processando resultado:', {
+      resultLength: result.length,
+      firstItemSample: result[0] ? {
+        keys: Object.keys(result[0]),
+        hasId: !!result[0].id,
+        hasData: !!result[0].data,
+        hasTotalCount: !!result[0].total_count,
+        total_countValue: result[0].total_count,
+        total_countType: typeof result[0].total_count
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+    
     // A RPC retorna: { id: text, data: jsonb, total_count: bigint }
     // Precisamos extrair o campo 'data' de cada item
     const totalCount = result.length > 0 ? (Number(result[0]?.total_count) || result.length) : 0;
     const hasMore = offset + pageSize < totalCount;
+
+    console.log('🔍 [EntityService.list] Calculando totalCount e hasMore:', {
+      resultLength: result.length,
+      firstItemTotalCount: result[0]?.total_count,
+      totalCountCalculated: totalCount,
+      offset,
+      pageSize,
+      hasMore,
+      timestamp: new Date().toISOString()
+    });
 
     // Mapear dados - a RPC retorna formato {id, data, total_count}
     let mappedData: T[] = [];
@@ -136,12 +189,29 @@ export const EntityService = {
       }
     }
 
+    console.log('🔍 [EntityService.list] Dados mapeados:', {
+      mappedDataLength: mappedData.length,
+      sampleFirstItem: mappedData[0] ? {
+        keys: Object.keys(mappedData[0] as any),
+        hasId: !!(mappedData[0] as any).id,
+        hasNome: !!(mappedData[0] as any).nome
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+
     const finalResult = {
       data: mappedData,
       totalCount,
       hasMore,
       error: null
     };
+    
+    console.log('✅ [EntityService.list] RESULTADO FINAL:', {
+      dataLength: finalResult.data.length,
+      totalCount: finalResult.totalCount,
+      hasMore: finalResult.hasMore,
+      timestamp: new Date().toISOString()
+    });
     
     return finalResult;
   },

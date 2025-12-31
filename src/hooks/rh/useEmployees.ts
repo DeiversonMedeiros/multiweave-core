@@ -3,7 +3,8 @@ import { EmployeesService } from '@/services/rh/employeesService';
 import { 
   Employee, 
   EmployeeInsert, 
-  EmployeeUpdate 
+  EmployeeUpdate,
+  EmployeeFilters
 } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 import { queryConfig } from '@/lib/react-query-config';
@@ -15,17 +16,28 @@ import { queryConfig } from '@/lib/react-query-config';
 /**
  * Hook para listar funcionários
  */
-export function useEmployees() {
+export function useEmployees(filters?: EmployeeFilters) {
   const { selectedCompany } = useCompany();
 
+  // Serializar filtros para garantir que a query key seja estável
+  const filtersKey = filters ? JSON.stringify(filters) : 'no-filters';
+
   return useQuery({
-    queryKey: ['rh', 'employees', selectedCompany?.id],
+    queryKey: ['rh', 'employees', selectedCompany?.id, filtersKey],
     queryFn: async () => {
-      const data = await EmployeesService.list(selectedCompany?.id || '');
-      return data || [];
+      console.log('🔍 [useEmployees] Buscando funcionários com filtros:', filters);
+      const result = await EmployeesService.list(selectedCompany?.id || '', filters);
+      console.log('✅ [useEmployees] Resultado recebido:', {
+        dataCount: result.data?.length || 0,
+        count: result.count || 0
+      });
+      return result;
     },
     enabled: !!selectedCompany?.id,
-    ...queryConfig.semiStatic,
+    staleTime: 0, // Sempre considerar dados como stale para forçar refetch
+    gcTime: 5 * 60 * 1000, // 5 minutos de cache
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -117,10 +129,12 @@ export function useEmployeeStats() {
     queryFn: async () => {
       if (!selectedCompany?.id) return null;
       
-      const [totalEmployees, activeEmployees] = await Promise.all([
+      const [totalEmployeesResult, activeEmployees] = await Promise.all([
         EmployeesService.list(selectedCompany.id),
         EmployeesService.getActive(selectedCompany.id)
       ]);
+
+      const totalEmployees = totalEmployeesResult.data || [];
 
       return {
         total: totalEmployees.length,

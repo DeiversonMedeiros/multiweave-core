@@ -138,8 +138,23 @@ function App() {
         timestamp: new Date().toISOString(),
         userAgent: navigator.userAgent,
         url: window.location.href,
-        isRemoveChildError: event.reason?.message?.includes('removeChild') || String(event.reason).includes('removeChild')
+        isRemoveChildError: event.reason?.message?.includes('removeChild') || String(event.reason).includes('removeChild'),
+        isAbortError: event.reason?.name === 'AbortError' || 
+                     event.reason?.message?.includes('play() request was interrupted') ||
+                     String(event.reason).includes('AbortError')
       };
+      
+      // Ignorar AbortError - é esperado quando operações de vídeo/áudio são interrompidas
+      if (errorInfo.isAbortError) {
+        // Log apenas em modo debug, não como erro crítico
+        console.debug('[APP][GLOBAL_ERROR] ⚠️ AbortError em promise (suprimido - inofensivo)', {
+          message: event.reason?.message || String(event.reason),
+          name: event.reason?.name
+        });
+        // Prevenir que o erro seja propagado (não é crítico)
+        event.preventDefault();
+        return;
+      }
       
       console.error('[APP][GLOBAL_ERROR] ❌ Promise rejeitada não tratada', errorInfo);
       

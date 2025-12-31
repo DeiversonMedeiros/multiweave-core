@@ -148,7 +148,16 @@ export function useSearchEntity<T = any>(
 
 // Hook para RH
 export function useRHData<T = any>(table: string, companyId: string, filters?: EntityFilters, pageSize?: number) {
-  console.log('🔍 [DEBUG] useRHData - chamado para table:', table, 'companyId:', companyId);
+  const finalPageSize = pageSize ?? 100;
+  
+  console.log('🔍 [useRHData] INÍCIO - Parâmetros recebidos:', {
+    table,
+    companyId,
+    filters,
+    pageSizeParam: pageSize,
+    finalPageSize,
+    timestamp: new Date().toISOString()
+  });
   
   const query = useEntityData<T>({
     schema: 'rh',
@@ -156,13 +165,21 @@ export function useRHData<T = any>(table: string, companyId: string, filters?: E
     companyId,
     filters,
     page: 1,
-    pageSize: pageSize ?? 100
+    pageSize: finalPageSize
   });
 
-  console.log('🔍 [DEBUG] useRHData - query.data:', query.data);
-  console.log('🔍 [DEBUG] useRHData - query.data?.data:', query.data?.data);
-  console.log('🔍 [DEBUG] useRHData - query.isLoading:', query.isLoading);
-  console.log('🔍 [DEBUG] useRHData - query.error:', query.error);
+  console.log('🔍 [useRHData] Resposta do useEntityData:', {
+    hasData: !!query.data,
+    dataType: typeof query.data,
+    isArray: Array.isArray(query.data),
+    dataKeys: query.data ? Object.keys(query.data) : [],
+    dataDataLength: query.data?.data?.length,
+    totalCount: query.data?.totalCount,
+    hasMore: query.data?.hasMore,
+    isLoading: query.isLoading,
+    error: query.error,
+    timestamp: new Date().toISOString()
+  });
 
   const result = {
     ...query,
@@ -171,7 +188,14 @@ export function useRHData<T = any>(table: string, companyId: string, filters?: E
     hasMore: query.data?.hasMore || false
   };
 
-  console.log('🔍 [DEBUG] useRHData - result.data:', result.data);
+  console.log('✅ [useRHData] RESULTADO FINAL:', {
+    dataLength: result.data.length,
+    totalCount: result.totalCount,
+    hasMore: result.hasMore,
+    isLoading: result.isLoading,
+    timestamp: new Date().toISOString()
+  });
+  
   return result;
 }
 

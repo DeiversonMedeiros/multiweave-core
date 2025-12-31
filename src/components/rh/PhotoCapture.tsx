@@ -188,9 +188,63 @@ export function PhotoCapture({
 
       streamRef.current = stream;
       
-      if (videoRef.current) {
+      if (videoRef.current && isMountedRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        
+        // Aguardar o vídeo estar pronto antes de fazer play
+        try {
+          // Aguardar metadata carregar
+          await new Promise<void>((resolve, reject) => {
+            if (!videoRef.current) {
+              reject(new Error('Video ref não disponível'));
+              return;
+            }
+            
+            const video = videoRef.current;
+            
+            const onLoadedMetadata = () => {
+              video.removeEventListener('loadedmetadata', onLoadedMetadata);
+              video.removeEventListener('error', onError);
+              resolve();
+            };
+            
+            const onError = (e: Event) => {
+              video.removeEventListener('loadedmetadata', onLoadedMetadata);
+              video.removeEventListener('error', onError);
+              reject(new Error('Erro ao carregar vídeo'));
+            };
+            
+            video.addEventListener('loadedmetadata', onLoadedMetadata);
+            video.addEventListener('error', onError);
+            
+            // Se já tem metadata, resolver imediatamente
+            if (video.readyState >= 1) {
+              onLoadedMetadata();
+            }
+          });
+          
+          // Verificar se ainda está montado antes de fazer play
+          if (!isMountedRef.current || !videoRef.current) {
+            return;
+          }
+          
+          // Fazer play de forma segura
+          const playPromise = videoRef.current.play();
+          
+          if (playPromise !== undefined) {
+            await playPromise.catch((err: Error) => {
+              // Ignorar AbortError - é esperado quando o vídeo é interrompido
+              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+                console.warn('[PhotoCapture] Erro ao fazer play do vídeo:', err);
+              }
+            });
+          }
+        } catch (err: any) {
+          // Ignorar AbortError - é esperado quando o vídeo é interrompido
+          if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+            console.warn('[PhotoCapture] Erro ao inicializar vídeo:', err);
+          }
+        }
       }
     } catch (err: any) {
       console.error('Erro ao iniciar câmera:', err);
@@ -233,12 +287,38 @@ export function PhotoCapture({
         }
       }
 
-      // Limpar vídeo ref
+      // Limpar vídeo ref de forma segura
       if (videoRef.current) {
         try {
-          videoRef.current.srcObject = null;
-        } catch (err) {
-          console.warn('Erro ao limpar videoRef:', err);
+          // Pausar antes de limpar para evitar AbortError
+          const video = videoRef.current;
+          if (!video.paused) {
+            try {
+              video.pause();
+            } catch (pauseErr) {
+              // Ignorar erro de pause
+            }
+          }
+          
+          // Limpar srcObject
+          if (video.srcObject) {
+            const stream = video.srcObject as MediaStream;
+            if (stream && stream.getTracks) {
+              stream.getTracks().forEach(track => {
+                try {
+                  track.stop();
+                } catch (trackErr) {
+                  // Ignorar erro ao parar track
+                }
+              });
+            }
+            video.srcObject = null;
+          }
+        } catch (err: any) {
+          // Ignorar AbortError - é esperado quando o vídeo é interrompido
+          if (err.name !== 'AbortError') {
+            console.warn('[PhotoCapture] Erro ao limpar videoRef:', err);
+          }
         }
       }
 

@@ -29,7 +29,7 @@ interface BankHoursAssignmentsManagerProps {
 export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsManagerProps) {
   const { data: assignmentsData, loading, error } = useBankHoursAssignments();
   const { data: typesData } = useBankHoursTypes();
-  const { data: employees = [] } = useEmployees();
+  const { data: employeesData } = useEmployees();
   
   const createAssignment = useCreateBankHoursAssignment();
   const updateAssignment = useUpdateBankHoursAssignment();
@@ -39,6 +39,7 @@ export function BankHoursAssignmentsManager({ companyId }: BankHoursAssignmentsM
   
   const assignments = assignmentsData?.data || [];
   const types = typesData?.data || [];
+  const employees = Array.isArray(employeesData?.data) ? employeesData.data : [];
   
   const [showForm, setShowForm] = useState(false);
   const [showBulkAssign, setShowBulkAssign] = useState(false);

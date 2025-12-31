@@ -23,7 +23,8 @@ import { EnhancedDataTable } from '@/components/rh/EnhancedDataTable';
 import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
 import { EmployeeForm } from '@/components/rh/EmployeeForm';
-import { useEmployees, useDeleteEmployee } from '@/hooks/rh/useEmployees';
+import { useDeleteEmployee } from '@/hooks/rh/useEmployees';
+import { useRHData } from '@/hooks/generic/useEntityData';
 import { Employee, EmployeeFilters } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 import { RequireEntity } from '@/components/RequireAuth';
@@ -45,12 +46,31 @@ export default function EmployeesPage() {
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
 
   // Hooks
-  const { data: employeesData, isLoading } = useEmployees(filters);
+  // Usando pageSize grande para buscar todos os registros (10000 deve ser suficiente para a maioria dos casos)
+  const { data: employeesData, isLoading, totalCount } = useRHData<Employee>('employees', selectedCompany?.id || '', filters, 10000);
   const deleteEmployeeMutation = useDeleteEmployee();
 
-  // Dados
-  const employees = employeesData?.data || [];
-  const totalCount = employeesData?.count || 0;
+  // Dados - garantir que seja sempre um array
+  const employees = Array.isArray(employeesData) ? employeesData : [];
+
+  // Logs detalhados na página
+  React.useEffect(() => {
+    console.log('📊 [EmployeesPage] ESTADO ATUAL:', {
+      employeesDataLength: employeesData?.length || 0,
+      employeesLength: employees.length,
+      totalCount,
+      isLoading,
+      filters,
+      selectedCompanyId: selectedCompany?.id,
+      employeesDataType: typeof employeesData,
+      isEmployeesDataArray: Array.isArray(employeesData),
+      firstEmployee: employees[0] ? {
+        id: employees[0].id,
+        nome: employees[0].nome
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+  }, [employees.length, totalCount, isLoading, filters, selectedCompany?.id, employeesData]);
 
   // Handlers
   const handleSearch = (value: string) => {

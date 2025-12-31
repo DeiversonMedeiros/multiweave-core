@@ -25,6 +25,8 @@ export const CompanySelector = () => {
   const handleCompanySelect = (company: Company) => {
     setSelectedCompany(company);
     setOpen(false);
+    // Recarregar a página para atualizar todos os dados com a nova empresa
+    window.location.reload();
   };
 
   if (!companies || companies.length === 0) {
