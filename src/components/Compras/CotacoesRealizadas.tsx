@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { useQuotes, useDeleteQuote } from '@/hooks/compras/useComprasData';
 import { useCompany } from '@/lib/company-context';
+import { useUsers } from '@/hooks/useUsers';
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CotacaoModal } from '@/components/Compras/CotacaoModal';
+import { ModalGerarCotacao } from '@/components/Compras/ModalGerarCotacao';
 
 interface FiltrosCotacoes {
   status: string;
@@ -54,6 +55,7 @@ export function CotacoesRealizadas() {
   const { data: cotacoes = [], isLoading } = useQuotes();
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
+  const { users } = useUsers();
   const deleteQuoteMutation = useDeleteQuote();
   const [search, setSearch] = useState('');
   const [selectedCotacao, setSelectedCotacao] = useState<any>(null);
@@ -71,9 +73,44 @@ export function CotacoesRealizadas() {
     ordenarPor: 'data_desc', // Padrão: mais recentes primeiro
   });
 
+  // Mapa de usuários para busca rápida
+  const usersMap = useMemo(() => {
+    const map = new Map<string, { nome: string; username?: string | null }>();
+    users.forEach((user) => {
+      map.set(user.id, {
+        nome: user.nome || '',
+        username: user.username,
+      });
+    });
+    return map;
+  }, [users]);
+
+  // Função para obter nome do comprador (prioriza username, depois nome)
+  const getCompradorNome = (cotacao: any) => {
+    // Tentar pegar created_by da cotação primeiro
+    if (cotacao.created_by) {
+      const user = usersMap.get(cotacao.created_by);
+      if (user) {
+        return user.username || user.nome || '—';
+      }
+    }
+    
+    // Se não tiver, tentar pegar da requisição
+    if (cotacao.requisicao_created_by) {
+      const user = usersMap.get(cotacao.requisicao_created_by);
+      if (user) {
+        return user.username || user.nome || '—';
+      }
+    }
+    
+    return '—';
+  };
+
   const getStatusBadge = (status: string, workflowState?: string) => {
     const statusValue = workflowState || status || 'pendente';
     switch (statusValue) {
+      case 'rascunho':
+        return <Badge variant="outline" className="text-gray-600"><FileText className="h-3 w-3 mr-1" />Rascunho</Badge>;
       case 'pendente':
       case 'aguardando_resposta':
         return <Badge variant="outline" className="text-yellow-600"><Clock className="h-3 w-3 mr-1" />Pendente</Badge>;
@@ -96,7 +133,17 @@ export function CotacoesRealizadas() {
   };
 
   const filtered = useMemo(() => {
-    let result = cotacoes;
+    // Mostrar cotações em rascunho, aguardando aprovação, aprovadas, reprovadas, ou em processo
+    let result = cotacoes.filter((cotacao: any) => {
+      const state = cotacao.workflow_state || cotacao.status;
+      return state === 'rascunho' ||
+             state === 'em_aprovacao' || 
+             state === 'aprovada' || 
+             state === 'reprovada' || 
+             state === 'rejeitada' ||
+             state === 'aberta' ||
+             state === 'em_cotacao';
+    });
 
     // Filtro de busca por texto
     if (search) {
@@ -316,6 +363,7 @@ export function CotacoesRealizadas() {
             <TableHead>Data Cotação</TableHead>
             <TableHead>Data Limite</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Comprador</TableHead>
             <TableHead>Fornecedor</TableHead>
             <TableHead>Valor Total</TableHead>
             <TableHead>Requisição</TableHead>
@@ -325,13 +373,13 @@ export function CotacoesRealizadas() {
         <TableBody>
           {isLoading ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-muted-foreground">
+              <TableCell colSpan={9} className="text-center text-muted-foreground">
                 Carregando cotações...
               </TableCell>
             </TableRow>
           ) : filtered.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+              <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                 Nenhuma cotação encontrada
               </TableCell>
             </TableRow>
@@ -350,6 +398,11 @@ export function CotacoesRealizadas() {
                     : '--'}
                 </TableCell>
                 <TableCell>{getStatusBadge(cotacao.status, cotacao.workflow_state)}</TableCell>
+                <TableCell>
+                  <span className="text-sm font-medium">
+                    {getCompradorNome(cotacao)}
+                  </span>
+                </TableCell>
                 <TableCell>
                   {cotacao.fornecedor_nome || cotacao.fornecedor_id || 'Aguardando fornecedores'}
                 </TableCell>
@@ -374,39 +427,82 @@ export function CotacoesRealizadas() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleView(cotacao)}
-                      title="Visualizar cotação"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
+                    {(() => {
+                      const state = cotacao.workflow_state || cotacao.status;
+                      const isRascunho = state === 'rascunho';
+                      const isReprovada = state === 'reprovada' || state === 'rejeitada';
+                      
+                      return (
+                        <>
+                          {isRascunho ? (
+                            <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
+                              <Button 
+                                variant="default" 
+                                size="sm"
+                                disabled={!canEditEntity}
+                                onClick={() => handleEdit(cotacao)}
+                                title="Continuar Cotação"
+                              >
+                                <Edit className="h-4 w-4 mr-1" />
+                                Continuar Cotação
+                              </Button>
+                            </PermissionGuard>
+                          ) : (
+                            <>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => handleView(cotacao)}
+                                title="Visualizar cotação"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
 
-                    <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        disabled={!canEditEntity}
-                        onClick={() => handleEdit(cotacao)}
-                        title="Editar cotação"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </PermissionGuard>
+                              {isReprovada && (
+                                <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    disabled={!canEditEntity}
+                                    onClick={() => handleEdit(cotacao)}
+                                    title="Reabrir cotação para ajustes"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </PermissionGuard>
+                              )}
 
-                    <PermissionGuard entity="cotacoes" action="delete" fallback={null}>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 hover:text-red-700"
-                        disabled={!canDeleteEntity}
-                        onClick={() => handleDelete(cotacao)}
-                        title="Excluir cotação"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </PermissionGuard>
+                              {!isReprovada && (
+                                <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    disabled={!canEditEntity}
+                                    onClick={() => handleEdit(cotacao)}
+                                    title="Editar cotação"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </PermissionGuard>
+                              )}
+                            </>
+                          )}
+
+                          <PermissionGuard entity="cotacoes" action="delete" fallback={null}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700"
+                              disabled={!canDeleteEntity}
+                              onClick={() => handleDelete(cotacao)}
+                              title="Excluir cotação"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </PermissionGuard>
+                        </>
+                      );
+                    })()}
                   </div>
                 </TableCell>
               </TableRow>
@@ -415,24 +511,19 @@ export function CotacoesRealizadas() {
         </TableBody>
       </Table>
 
-      {/* Modal Completo de Cotação */}
-      <CotacaoModal
-        cotacao={selectedCotacao}
-        isOpen={isViewModalOpen || isEditModalOpen}
-        isEditMode={isEditModalOpen}
-        onClose={() => {
-          setIsViewModalOpen(false);
-          setIsEditModalOpen(false);
-          setSelectedCotacao(null);
-        }}
-        onSave={async (data) => {
-          toast({
-            title: "Sucesso",
-            description: "Cotação atualizada com sucesso.",
-          });
-          setIsEditModalOpen(false);
-        }}
-      />
+      {/* Modal de Cotação - Usa mesmo componente para gerar/editar/visualizar */}
+      {selectedCotacao && (
+        <ModalGerarCotacao
+          isOpen={isViewModalOpen || isEditModalOpen}
+          onClose={() => {
+            setIsViewModalOpen(false);
+            setIsEditModalOpen(false);
+            setSelectedCotacao(null);
+          }}
+          cotacaoId={selectedCotacao.id}
+          readOnly={isViewModalOpen && !isEditModalOpen}
+        />
+      )}
 
       {/* Modal de Confirmação de Exclusão */}
       <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
@@ -482,6 +573,7 @@ export function CotacoesRealizadas() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os status</SelectItem>
+                  <SelectItem value="rascunho">Rascunho</SelectItem>
                   <SelectItem value="aberta">Aberta</SelectItem>
                   <SelectItem value="em_cotacao">Em Cotação</SelectItem>
                   <SelectItem value="pendente">Pendente</SelectItem>

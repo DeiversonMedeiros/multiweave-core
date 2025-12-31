@@ -1,9 +1,8 @@
 -- =====================================================
--- MIGRAÇÃO: Criar view para cotações com número da requisição
--- Data: 2025-12-12
--- Descrição:
---   - Cria uma view que faz JOIN entre cotacao_ciclos e requisicoes_compra
---   - Inclui numero_requisicao diretamente na view para facilitar consultas
+-- ATUALIZAR VIEW: Adicionar created_by da requisição
+-- Data: 2025-01-31
+-- Descrição: Adiciona campo requisicao_created_by na view
+--            para permitir exibir o nome do comprador no grid
 -- =====================================================
 
 CREATE OR REPLACE VIEW compras.cotacoes_with_requisicao AS
@@ -28,4 +27,5 @@ FROM compras.cotacao_ciclos cc
 LEFT JOIN compras.requisicoes_compra rc ON rc.id = cc.requisicao_id;
 
 COMMENT ON VIEW compras.cotacoes_with_requisicao IS 
-'View que une cotacao_ciclos com requisicoes_compra, incluindo numero_requisicao para facilitar consultas na interface';
+'View que une cotacao_ciclos com requisicoes_compra, incluindo numero_requisicao e created_by para facilitar consultas na interface';
+

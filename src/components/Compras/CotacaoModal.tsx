@@ -115,15 +115,15 @@ function CotacaoModalContent({ cotacao, isOpen, isEditMode, onClose, onSave }: C
 
             <div className="flex-1 overflow-auto mt-4">
               <TabsContent value="contexto" className="mt-0">
-                <QuoteContextTab />
+                <QuoteContextTab isEditMode={isEditMode} />
               </TabsContent>
 
               <TabsContent value="itens-fornecedores" className="mt-0 h-full">
-                <ItemsSuppliersTab />
+                <ItemsSuppliersTab isEditMode={isEditMode} />
               </TabsContent>
 
               <TabsContent value="cotacao" className="mt-0">
-                <QuoteDecisionTab />
+                <QuoteDecisionTab isEditMode={isEditMode} />
               </TabsContent>
             </div>
           </Tabs>

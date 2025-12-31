@@ -3,6 +3,7 @@ import { ApprovalService, Approval } from '@/services/approvals/approvalService'
 import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 export function usePendingApprovals() {
   const { selectedCompany } = useCompany();
@@ -73,17 +74,142 @@ export function useProcessApproval() {
       console.log('✅ [useProcessApproval.mutationFn] Resultado recebido:', result);
       return result;
     },
-    onSuccess: (data) => {
-      console.log('✅ [useProcessApproval.onSuccess] Aprovação processada com sucesso!', data);
+    onSuccess: async (data, variables) => {
+      console.log('✅ [useProcessApproval.onSuccess] Aprovação processada com sucesso!', { data, variables });
+      
+      // VERIFICAÇÃO CRÍTICA: Confirmar que o status foi atualizado no banco antes de invalidar queries
+      // Isso garante que a transação foi commitada e os dados estão consistentes
+      let statusVerified = false;
+      let verificationAttempts = 0;
+      const maxVerificationAttempts = 3;
+      
+      while (!statusVerified && verificationAttempts < maxVerificationAttempts) {
+        try {
+          const { data: approvalStatus, error: statusError } = await supabase
+            .from('aprovacoes_unificada')
+            .select('id, status, processo_id, processo_tipo')
+            .eq('id', variables.aprovacao_id)
+            .single();
+          
+          if (statusError) {
+            console.warn(`⚠️ [useProcessApproval.onSuccess] Erro ao verificar status (tentativa ${verificationAttempts + 1}):`, statusError);
+          } else if (approvalStatus) {
+            const expectedStatus = variables.status;
+            const actualStatus = approvalStatus.status;
+            statusVerified = actualStatus === expectedStatus;
+            
+            console.log(`🔍 [useProcessApproval.onSuccess] Verificação de status (tentativa ${verificationAttempts + 1}):`, {
+              approvalId: variables.aprovacao_id,
+              expectedStatus,
+              actualStatus,
+              verified: statusVerified,
+              timestamp: new Date().toISOString()
+            });
+            
+            if (!statusVerified && verificationAttempts < maxVerificationAttempts - 1) {
+              // Aguardar um pouco antes de tentar novamente
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
+          }
+        } catch (err) {
+          console.warn(`⚠️ [useProcessApproval.onSuccess] Erro ao verificar status (tentativa ${verificationAttempts + 1}):`, err);
+        }
+        
+        verificationAttempts++;
+      }
+      
+      if (!statusVerified) {
+        console.error('❌ [useProcessApproval.onSuccess] ATENÇÃO: Status não foi verificado após múltiplas tentativas!', {
+          approvalId: variables.aprovacao_id,
+          expectedStatus: variables.status,
+          attempts: verificationAttempts
+        });
+      }
+      
+      // Buscar informações da aprovação para identificar o processo
+      let processoId: string | undefined;
+      let processoTipo: string | undefined;
+      
+      try {
+        const { data: approvalData } = await supabase
+          .from('aprovacoes_unificada')
+          .select('processo_id, processo_tipo')
+          .eq('id', variables.aprovacao_id)
+          .single();
+        
+        if (approvalData) {
+          processoId = approvalData.processo_id;
+          processoTipo = approvalData.processo_tipo;
+          console.log('📋 [useProcessApproval.onSuccess] Processo identificado:', { processoId, processoTipo });
+        }
+      } catch (err) {
+        console.warn('⚠️ [useProcessApproval.onSuccess] Erro ao buscar dados da aprovação:', err);
+      }
       
       // Invalidar queries de aprovações
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['approvals-by-process'] });
       
-      // Invalidar queries de compras para garantir que cotações, pedidos e requisições sejam atualizados
-      // Isso é importante porque quando uma cotação é aprovada, pedidos são criados automaticamente
+      // Se for requisição de compra, invalidar queries específicas
+      if (processoTipo === 'requisicao_compra' && processoId) {
+        console.log('🛒 [useProcessApproval.onSuccess] Invalidando queries específicas de requisição:', processoId);
+        // Invalidar query específica desta requisição (se existir)
+        queryClient.invalidateQueries({ 
+          predicate: (query) => {
+            const key = query.queryKey;
+            if (Array.isArray(key)) {
+              // Invalidar se a query contém o ID da requisição
+              return key.some(k => k === processoId || (typeof k === 'object' && k && 'id' in k && k.id === processoId));
+            }
+            return false;
+          }
+        });
+      }
+      
+      // Invalidar TODAS as queries de compras para garantir atualização completa
+      // Isso inclui requisições, cotações, pedidos e detalhes individuais
       queryClient.invalidateQueries({ queryKey: ['compras'] });
-      console.log('🔄 [useProcessApproval] Queries de compras invalidadas');
+      
+      // Invalidar também queries genéricas de entidades que podem estar sendo usadas
+      // para buscar detalhes de requisições (usando EntityService com schema 'compras' e table 'requisicoes_compra')
+      queryClient.invalidateQueries({ 
+        predicate: (query) => {
+          const key = query.queryKey;
+          if (Array.isArray(key)) {
+            // Verificar se é uma query de EntityService para requisições de compra
+            const comprasIndex = key.indexOf('compras');
+            const requisicoesIndex = key.findIndex(k => 
+              typeof k === 'string' && (k === 'requisicoes_compra' || k.toLowerCase().includes('requisicao'))
+            );
+            
+            // Se tem 'compras' no key e 'requisicoes_compra' ou similar, invalidar
+            if (comprasIndex !== -1 && requisicoesIndex !== -1) {
+              console.log('🔄 [useProcessApproval] Invalidando query de EntityService para requisições:', key);
+              return true;
+            }
+          }
+          return false;
+        }
+      });
+      
+      console.log('🔄 [useProcessApproval] Queries de compras e requisições invalidadas');
+      
+      // Aguardar um pequeno delay para garantir que a transação foi commitada no banco
+      // Isso evita race conditions onde o refetch acontece antes do commit
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Forçar refetch aguardando a conclusão para garantir atualização
+      const refetchResults = await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['pending-approvals'] }),
+        queryClient.refetchQueries({ queryKey: ['approvals-by-process'] }),
+        queryClient.refetchQueries({ queryKey: ['compras', 'requisicoes'] })
+      ]);
+      
+      console.log('🔄 [useProcessApproval] Queries invalidadas e refetch forçado com sucesso', {
+        pendingApprovals: refetchResults[0]?.length || 0,
+        approvalsByProcess: refetchResults[1]?.length || 0,
+        requisicoes: refetchResults[2]?.length || 0
+      });
       
       toast.success('Aprovação processada com sucesso!');
     },
@@ -118,9 +244,19 @@ export function useTransferApproval() {
     }) => {
       return ApprovalService.transferApproval(aprovacao_id, novo_aprovador_id, motivo, transferido_por);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['approvals-by-process'] });
+      
+      // Aguardar um pequeno delay para garantir que a transação foi commitada no banco
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Forçar refetch aguardando a conclusão
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['pending-approvals'] }),
+        queryClient.refetchQueries({ queryKey: ['approvals-by-process'] })
+      ]);
+      
       toast.success('Aprovação transferida com sucesso!');
     },
     onError: (error: any) => {

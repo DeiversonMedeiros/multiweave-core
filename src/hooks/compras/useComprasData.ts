@@ -37,6 +37,10 @@ export function usePurchaseRequisitions(filters?: EntityFilters) {
       return result.data;
     },
     enabled: !!selectedCompany?.id,
+    // ✅ REFRESH AUTOMÁTICO: Atualizar a cada 10 segundos para refletir mudanças de outros compradores
+    refetchInterval: 10000, // 10 segundos
+    refetchOnWindowFocus: true, // Refetch quando a aba recebe foco
+    refetchIntervalInBackground: false, // Não refetch quando a aba está em background
   });
 }
 

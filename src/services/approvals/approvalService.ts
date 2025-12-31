@@ -220,18 +220,71 @@ export class ApprovalService {
       // Esta função retorna apenas registros do sistema unificado, não do sistema antigo de RH
       console.log('🔍 [ApprovalService] Buscando aprovações pendentes:', { userId, companyId });
       
-      const { data: approvals, error } = await supabase.rpc('get_pending_approvals_unified_for_user', {
-        p_user_id: userId,
-        p_company_id: companyId
-      });
+      // Buscar diretamente na tabela para evitar problemas de cache da RPC
+      // e garantir que estamos vendo os dados mais atualizados
+      // Adicionar um timestamp único na query para forçar bypass de cache (se houver)
+      const queryTimestamp = Date.now();
+      const { data: approvals, error } = await supabase
+        .from('aprovacoes_unificada')
+        .select('*')
+        .eq('aprovador_id', userId)
+        .eq('company_id', companyId)
+        .eq('status', 'pendente')
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('❌ [ApprovalService] Erro ao buscar aprovações pendentes:', error);
         throw error;
       }
+
+      // VERIFICAÇÃO CRÍTICA: Filtrar explicitamente por status 'pendente' após a query
+      // Isso garante que mesmo se houver algum problema de cache ou timing, apenas itens pendentes serão retornados
+      const rawCount = approvals?.length || 0;
+      const filteredApprovals = (approvals || []).filter(a => {
+        const isPending = a.status === 'pendente';
+        if (!isPending) {
+          console.warn('⚠️ [ApprovalService] Item com status não-pendente encontrado na query:', {
+            id: a.id,
+            status: a.status,
+            processo_tipo: a.processo_tipo,
+            processo_id: a.processo_id,
+            queryTimestamp
+          });
+        }
+        return isPending;
+      });
+
+      console.log('📊 [ApprovalService] Aprovações pendentes encontradas (query direta):', {
+        rawCount,
+        filteredCount: filteredApprovals.length,
+        removedCount: rawCount - filteredApprovals.length,
+        ids: filteredApprovals.map(a => ({ 
+          id: a.id, 
+          status: a.status, 
+          processo_tipo: a.processo_tipo,
+          processo_id: a.processo_id
+        })),
+        queryTimestamp
+      });
+
+      // Se houve itens removidos, logar detalhes
+      if (rawCount > filteredApprovals.length) {
+        const removedItems = (approvals || []).filter(a => a.status !== 'pendente');
+        console.warn('⚠️ [ApprovalService] Itens removidos por não estarem pendentes:', {
+          count: removedItems.length,
+          items: removedItems.map(a => ({
+            id: a.id,
+            status: a.status,
+            processo_tipo: a.processo_tipo,
+            processo_id: a.processo_id,
+            updated_at: a.updated_at
+          }))
+        });
+      }
       
       // Para requisições de compra, buscar informações adicionais de forma otimizada
-      const requisicaoApprovals = (approvals || []).filter(a => a.processo_tipo === 'requisicao_compra');
+      // Usar filteredApprovals em vez de approvals para garantir que só processamos itens pendentes
+      const requisicaoApprovals = filteredApprovals.filter(a => a.processo_tipo === 'requisicao_compra');
       const requisicaoIds = requisicaoApprovals.map(a => a.processo_id);
       
       let requisicoesMap = new Map<string, { numero_requisicao: string; solicitante_id: string }>();
@@ -321,7 +374,8 @@ export class ApprovalService {
       }
       
       // Mapear aprovações com detalhes
-      const approvalsWithDetails = (approvals || []).map((approval) => {
+      // Usar filteredApprovals em vez de approvals para garantir que só retornamos itens pendentes
+      const approvalsWithDetails = filteredApprovals.map((approval) => {
         if (approval.processo_tipo === 'requisicao_compra') {
           const reqData = requisicoesMap.get(approval.processo_id);
           if (reqData) {
@@ -626,6 +680,33 @@ export class ApprovalService {
       }
 
       console.log('✅ [ApprovalService.processApproval] Sucesso! Resultado:', data);
+      
+      // Verificar se a aprovação foi realmente atualizada
+      if (data === true) {
+        const { data: updatedApproval, error: verifyError } = await supabase
+          .from('aprovacoes_unificada')
+          .select('id, status')
+          .eq('id', aprovacao_id)
+          .single();
+        
+        if (verifyError) {
+          console.warn('⚠️ [ApprovalService.processApproval] Erro ao verificar status atualizado:', verifyError);
+        } else {
+          console.log('✅ [ApprovalService.processApproval] Status verificado:', {
+            id: updatedApproval?.id,
+            status: updatedApproval?.status,
+            esperado: status,
+            correto: updatedApproval?.status === status
+          });
+          
+          if (updatedApproval?.status !== status) {
+            console.error('❌ [ApprovalService.processApproval] ATENÇÃO: Status não foi atualizado corretamente!', {
+              esperado: status,
+              atual: updatedApproval?.status
+            });
+          }
+        }
+      }
       
       // Se foi uma requisição de compra aprovada, informar sobre a cotação
       if (!approvalError && approvalData && approvalData.processo_tipo === 'requisicao_compra' && status === 'aprovado') {

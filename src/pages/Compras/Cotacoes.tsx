@@ -18,6 +18,7 @@ export default function CotacoesPage() {
   const [activeTab, setActiveTab] = useState('realizadas');
   const [showGerarCotacao, setShowGerarCotacao] = useState(false);
   const [selectedRequisicoes, setSelectedRequisicoes] = useState<string[]>([]);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
 
   // Calcular estatísticas das cotações
   const { data: cotacoes = [] } = useQuotes();
@@ -112,8 +113,9 @@ export default function CotacoesPage() {
               
               <TabsContent value="disponiveis" className="mt-6">
                 <RequisicoesDisponiveis 
-                  onGerarCotacao={(requisicoes) => {
+                  onGerarCotacao={(requisicoes, itemIds) => {
                     setSelectedRequisicoes(requisicoes);
+                    setSelectedItemIds(itemIds || []);
                     setShowGerarCotacao(true);
                   }}
                 />
@@ -128,8 +130,10 @@ export default function CotacoesPage() {
           onClose={() => {
             setShowGerarCotacao(false);
             setSelectedRequisicoes([]);
+            setSelectedItemIds([]);
           }}
           requisicoesIds={selectedRequisicoes}
+          itemIds={selectedItemIds.length > 0 ? selectedItemIds : undefined}
         />
       </div>
     </RequireAuth>
