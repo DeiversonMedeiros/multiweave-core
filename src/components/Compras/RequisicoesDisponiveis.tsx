@@ -41,17 +41,18 @@ import { useToast } from '@/hooks/use-toast';
 import { EntityService } from '@/services/generic/entityService';
 
 interface RequisicoesDisponiveisProps {
-  onGerarCotacao: (requisicoesIds: string[]) => void;
+  onGerarCotacao: (requisicoesIds: string[], itemIds?: string[]) => void; // itemIds opcional para modo explodido
 }
 
 interface ItemExplodido {
-  id: string;
+  id: string; // ID composto: requisicao_id-requisicao_item_id
   material_id: string;
   material_nome?: string;
   material_codigo?: string;
   quantidade: number;
   unidade_medida: string;
   requisicao_id: string;
+  requisicao_item_id: string; // ID real do item de requisição (requisicao_item.id)
   requisicao_numero: string;
   tipo_requisicao: string;
   prioridade: string;
@@ -86,6 +87,8 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     somente_pendentes: true,
     buscar_item: '',
     grupo_item: 'all',
+    ordenar_por: 'none' as 'none' | 'nome' | 'origem',
+    ordenar_origem_direcao: 'crescente' as 'crescente' | 'decrescente',
   });
 
   // Mapear IDs para nomes
@@ -128,15 +131,16 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
 
   // Buscar cotações para verificar quais requisições já têm cotação criada
   const { data: cotacoes = [] } = useQuotes();
+  const [itensEmCotacao, setItensEmCotacao] = useState<Map<string, boolean>>(new Map());
+  const [itensPorRequisicao, setItensPorRequisicao] = useState<Map<string, any[]>>(new Map());
+  const [loadingItensCotacao, setLoadingItensCotacao] = useState(false);
+
+  // Mapear cotações por requisição
   const cotacoesPorRequisicao = useMemo(() => {
     const map = new Map<string, any>();
     cotacoes.forEach((cotacao: any) => {
-      // A view cotacoes_with_requisicao retorna requisicao_id
-      // E cotacao_ciclos também tem requisicao_id
       const requisicaoId = cotacao.requisicao_id;
       if (requisicaoId) {
-        // Se já existe uma cotação para esta requisição, manter a primeira encontrada
-        // ou substituir se a nova tiver um status mais recente
         if (!map.has(requisicaoId) || 
             (cotacao.workflow_state === 'em_aprovacao' || cotacao.workflow_state === 'aprovada')) {
           map.set(requisicaoId, cotacao);
@@ -146,7 +150,190 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     return map;
   }, [cotacoes]);
 
-  // Filtrar requisições disponíveis
+  // Carregar quais itens já estão em cotações ativas (não reprovadas) e todos os itens das requisições
+  useEffect(() => {
+    const carregarDadosItens = async () => {
+      if (!selectedCompany?.id || requisicoes.length === 0) return;
+      
+      setLoadingItensCotacao(true);
+      try {
+        const itensMap = new Map<string, boolean>();
+        const itensReqMap = new Map<string, any[]>();
+        
+        // Buscar todos os itens de requisição que estão em cotações ativas
+        // Uma cotação ativa é aquela que está em rascunho, aguardando aprovação, ou aprovada
+        // NÃO considerar reprovadas, rejeitadas ou canceladas
+        const cotacoesAtivas = cotacoes.filter((c: any) => {
+          const state = c.workflow_state || c.status;
+          return state === 'rascunho' || 
+                 state === 'em_aprovacao' || 
+                 state === 'aprovada' ||
+                 state === 'aberta' ||
+                 state === 'em_cotacao';
+        });
+
+        // Se não há cotações ativas, buscar apenas itens das requisições
+        if (cotacoesAtivas.length === 0) {
+          // Buscar todos os itens das requisições em paralelo
+          const requisicaoIds = requisicoes.map((req: any) => req.id);
+          const itensRequisicoesPromises = requisicaoIds.map(async (reqId: string) => {
+            try {
+              const itensResult = await EntityService.list({
+                schema: 'compras',
+                table: 'requisicao_itens',
+                companyId: selectedCompany.id,
+                filters: { requisicao_id: reqId },
+                page: 1,
+                pageSize: 1000,
+                skipCompanyFilter: true,
+              });
+              return { reqId, itens: itensResult.data || [] };
+            } catch (error) {
+              console.error(`Erro ao buscar itens da requisição ${reqId}:`, error);
+              return { reqId, itens: [] };
+            }
+          });
+
+          const itensRequisicoesResults = await Promise.all(itensRequisicoesPromises);
+          itensRequisicoesResults.forEach(({ reqId, itens }) => {
+            itensReqMap.set(reqId, itens);
+          });
+
+          setItensEmCotacao(itensMap);
+          setItensPorRequisicao(itensReqMap);
+          setLoadingItensCotacao(false);
+          return;
+        }
+
+        // Buscar todos os ciclos de cotação em paralelo
+        const requisicaoIdsAtivas = [...new Set(cotacoesAtivas.map((c: any) => c.requisicao_id).filter(Boolean))];
+        const ciclosPromises = requisicaoIdsAtivas.map(async (reqId: string) => {
+          try {
+            const ciclosResult = await EntityService.list({
+              schema: 'compras',
+              table: 'cotacao_ciclos',
+              companyId: selectedCompany.id,
+              filters: { requisicao_id: reqId },
+              page: 1,
+              pageSize: 1000,
+              skipCompanyFilter: true,
+            });
+            return ciclosResult.data || [];
+          } catch (error) {
+            console.error('Erro ao buscar ciclos da cotação:', error);
+            return [];
+          }
+        });
+
+        const ciclosArrays = await Promise.all(ciclosPromises);
+        const todosCiclos = ciclosArrays.flat();
+        const cicloIds = todosCiclos.map((ciclo: any) => ciclo.id);
+
+        if (cicloIds.length > 0) {
+          // Buscar todos os fornecedores em uma única query e filtrar no cliente
+          // (EntityService pode não suportar filtros por array diretamente)
+          try {
+            const fornecedoresResult = await EntityService.list({
+              schema: 'compras',
+              table: 'cotacao_fornecedores',
+              companyId: selectedCompany.id,
+              filters: {},
+              page: 1,
+              pageSize: 5000,
+              skipCompanyFilter: true,
+            });
+
+            const todosFornecedores = (fornecedoresResult.data || []).filter((f: any) =>
+              cicloIds.includes(f.cotacao_ciclo_id || f.cotacao_id)
+            );
+            const fornecedorIds = todosFornecedores.map((f: any) => f.id);
+
+            if (fornecedorIds.length > 0) {
+              // Buscar todos os itens em uma única query e filtrar no cliente
+              try {
+                const itensResult = await EntityService.list({
+                  schema: 'compras',
+                  table: 'cotacao_item_fornecedor',
+                  companyId: selectedCompany.id,
+                  filters: {},
+                  page: 1,
+                  pageSize: 5000,
+                  skipCompanyFilter: true,
+                });
+
+                const todosItens = (itensResult.data || []).filter((item: any) =>
+                  fornecedorIds.includes(item.cotacao_fornecedor_id)
+                );
+
+                todosItens.forEach((item: any) => {
+                  if (item.requisicao_item_id) {
+                    // Marcar o item como em cotação
+                    itensMap.set(item.requisicao_item_id, true);
+                  }
+                });
+              } catch (error) {
+                console.error('Erro ao buscar itens de fornecedores:', error);
+              }
+            }
+          } catch (error) {
+            console.error('Erro ao buscar fornecedores:', error);
+          }
+        }
+
+        // Buscar todos os itens das requisições em paralelo
+        const requisicaoIds = requisicoes.map((req: any) => req.id);
+        const itensRequisicoesPromises = requisicaoIds.map(async (reqId: string) => {
+          try {
+            const itensResult = await EntityService.list({
+              schema: 'compras',
+              table: 'requisicao_itens',
+              companyId: selectedCompany.id,
+              filters: { requisicao_id: reqId },
+              page: 1,
+              pageSize: 1000,
+              skipCompanyFilter: true,
+            });
+            return { reqId, itens: itensResult.data || [] };
+          } catch (error) {
+            console.error(`Erro ao buscar itens da requisição ${reqId}:`, error);
+            return { reqId, itens: [] };
+          }
+        });
+
+        const itensRequisicoesResults = await Promise.all(itensRequisicoesPromises);
+        itensRequisicoesResults.forEach(({ reqId, itens }) => {
+          itensReqMap.set(reqId, itens);
+        });
+
+        setItensEmCotacao(itensMap);
+        setItensPorRequisicao(itensReqMap);
+      } catch (error) {
+        console.error('Erro ao carregar itens em cotação:', error);
+      } finally {
+        setLoadingItensCotacao(false);
+      }
+    };
+
+    carregarDadosItens();
+  }, [selectedCompany?.id, requisicoes, cotacoes]);
+
+  // Verificar quais requisições têm cotações em rascunho ou aguardando aprovação
+  const requisicoesComCotacaoAtiva = useMemo(() => {
+    const map = new Set<string>();
+    cotacoes.forEach((cotacao: any) => {
+      const state = cotacao.workflow_state || cotacao.status;
+      // Considerar rascunho e em_aprovacao como "cotação ativa" que bloqueia a requisição
+      if (state === 'rascunho' || state === 'em_aprovacao') {
+        if (cotacao.requisicao_id) {
+          map.add(cotacao.requisicao_id);
+        }
+      }
+    });
+    return map;
+  }, [cotacoes]);
+
+  // Filtrar requisições disponíveis - apenas as que têm pelo menos um item disponível
+  // E que NÃO têm cotação em rascunho ou aguardando aprovação
   const requisicoesDisponiveis = useMemo(() => {
     const filtered = requisicoes.filter((req: any) => {
       const status = req.status;
@@ -154,10 +341,33 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       const hasEmCotacaoState = workflowState === 'em_cotacao';
       const isApproved = status === 'aprovada';
       const isNotCancelled = status !== 'cancelada' && status !== 'reprovada' && workflowState !== 'cancelada' && workflowState !== 'reprovada';
-      return (hasEmCotacaoState || isApproved) && isNotCancelled;
+      
+      // Verificar se a requisição está elegível (status correto)
+      if (!((hasEmCotacaoState || isApproved) && isNotCancelled)) {
+        return false;
+      }
+
+      // NÃO mostrar se tem cotação em rascunho ou aguardando aprovação
+      if (requisicoesComCotacaoAtiva.has(req.id)) {
+        return false;
+      }
+
+      // Se ainda está carregando, mostrar a requisição temporariamente
+      if (loadingItensCotacao) {
+        return true;
+      }
+
+      // Verificar se tem pelo menos um item disponível
+      const itens = itensPorRequisicao.get(req.id) || [];
+      const temItemDisponivel = itens.some((item: any) => {
+        return !itensEmCotacao.get(item.id);
+      });
+
+      return temItemDisponivel;
     });
+
     return filtered;
-  }, [requisicoes]);
+  }, [requisicoes, itensEmCotacao, itensPorRequisicao, loadingItensCotacao, requisicoesComCotacaoAtiva]);
 
   // Carregar itens quando mudar para modo explodido
   useEffect(() => {
@@ -214,13 +424,14 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         const itens = itensRaw.map((item: any) => {
           const material = materiaisMap.get(String(item.material_id));
           return {
-            id: `${req.id}-${item.id}`,
+            id: `${req.id}-${item.id}`, // ID composto para identificação única
             material_id: item.material_id,
             material_nome: material?.nome || material?.descricao || 'Material não encontrado',
             material_codigo: material?.codigo_interno || material?.codigo || '',
             quantidade: item.quantidade,
             unidade_medida: item.unidade_medida || material?.unidade_medida || 'UN',
             requisicao_id: req.id,
+            requisicao_item_id: item.id, // ID real do requisicao_item para filtrar no modal
             requisicao_numero: req.numero_requisicao,
             tipo_requisicao: req.tipo_requisicao || '',
             prioridade: req.prioridade || 'normal',
@@ -236,22 +447,9 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       // Agrupar itens por material_id E tipo_requisicao
       // O mesmo material pode aparecer em tipos diferentes de requisição
       // e deve ser tratado como itens separados
-      const itensAgrupadosMap = new Map<string, ItemExplodido>();
-      todosItens.forEach(item => {
-        // Chave composta: material_id + tipo_requisicao
-        const key = `${item.material_id}_${item.tipo_requisicao || 'sem_tipo'}`;
-        if (itensAgrupadosMap.has(key)) {
-          const existente = itensAgrupadosMap.get(key)!;
-          existente.quantidade += item.quantidade;
-          if (!existente.requisicao_numero.includes(item.requisicao_numero)) {
-            existente.requisicao_numero += `, ${item.requisicao_numero}`;
-          }
-        } else {
-          itensAgrupadosMap.set(key, { ...item });
-        }
-      });
-
-      setItensExplodidos(Array.from(itensAgrupadosMap.values()));
+      // IMPORTANTE: Não agrupar - mostrar cada item individualmente no modo explodido
+      // para permitir seleção granular e rastreamento por item
+      setItensExplodidos(todosItens);
     } catch (error) {
       console.error('Erro ao carregar itens:', error);
       toast({
@@ -268,6 +466,11 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
   const filtered = useMemo(() => {
     if (modoExplodido) {
       let result = itensExplodidos;
+
+      // Filtrar itens que já estão em cotação ativa
+      result = result.filter((item: ItemExplodido) => {
+        return !itensEmCotacao.get(item.requisicao_item_id);
+      });
 
       // Filtro de busca
       if (search) {
@@ -294,6 +497,32 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
           item.material_nome?.toLowerCase().includes(filters.buscar_item.toLowerCase()) ||
           item.material_codigo?.toLowerCase().includes(filters.buscar_item.toLowerCase())
         );
+      }
+
+      // Aplicar ordenação
+      if (filters.ordenar_por === 'nome') {
+        result = [...result].sort((a, b) => {
+          const nomeA = (a.material_nome || '').toLowerCase();
+          const nomeB = (b.material_nome || '').toLowerCase();
+          return nomeA.localeCompare(nomeB, 'pt-BR');
+        });
+      } else if (filters.ordenar_por === 'origem') {
+        result = [...result].sort((a, b) => {
+          // Extrair número da requisição (ex: REQ-000018 -> 18)
+          const extrairNumero = (numeroReq: string): number => {
+            const match = numeroReq?.match(/\d+$/);
+            return match ? parseInt(match[0], 10) : 0;
+          };
+          
+          const numA = extrairNumero(a.requisicao_numero || '');
+          const numB = extrairNumero(b.requisicao_numero || '');
+          
+          if (filters.ordenar_origem_direcao === 'crescente') {
+            return numA - numB;
+          } else {
+            return numB - numA;
+          }
+        });
       }
 
       return result;
@@ -351,7 +580,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
 
       return result;
     }
-  }, [modoExplodido, requisicoesDisponiveis, itensExplodidos, search, filters, usersMap]);
+  }, [modoExplodido, requisicoesDisponiveis, itensExplodidos, itensEmCotacao, search, filters, usersMap]);
 
   // Projetos filtrados por centro de custo
   const filteredProjects = useMemo(() => {
@@ -411,7 +640,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       
       // Coletar requisições dos itens selecionados
       const requisicoesDosItens = new Set<string>();
-      filtered.forEach((item: ItemExplodido) => {
+      (filtered as ItemExplodido[]).forEach((item: ItemExplodido) => {
         if (selectedItens.has(item.id) || item.id === itemId) {
           requisicoesDosItens.add(item.requisicao_id);
         }
@@ -464,7 +693,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
   const handleSelectAll = (checked: boolean) => {
     if (modoExplodido) {
       if (checked) {
-        const tipos = new Set(filtered.map((item: ItemExplodido) => item.tipo_requisicao));
+        const tipos = new Set((filtered as ItemExplodido[]).map((item: ItemExplodido) => item.tipo_requisicao));
         
         // Validar se pode selecionar todos os tipos
         if (tipos.size > 1) {
@@ -494,8 +723,8 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
           }
         }
         
-        setSelectedItens(new Set(filtered.map((item: ItemExplodido) => item.id)));
-        const requisicoesDosItens = new Set(filtered.map((item: ItemExplodido) => item.requisicao_id));
+        setSelectedItens(new Set((filtered as ItemExplodido[]).map((item: ItemExplodido) => item.id)));
+        const requisicoesDosItens = new Set((filtered as ItemExplodido[]).map((item: ItemExplodido) => item.requisicao_id));
         setSelectedRequisicoes(requisicoesDosItens);
       } else {
         setSelectedItens(new Set());
@@ -549,14 +778,19 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         });
         return;
       }
-      // Converter itens selecionados para requisições
+      // Converter itens selecionados para requisições e extrair itemIds
       const requisicoesDosItens = new Set<string>();
-      filtered.forEach((item: ItemExplodido) => {
+      const itemIdsSelecionados: string[] = [];
+      
+      (filtered as ItemExplodido[]).forEach((item: ItemExplodido) => {
         if (selectedItens.has(item.id)) {
           requisicoesDosItens.add(item.requisicao_id);
+          // Adicionar o requisicao_item_id real para filtrar no modal
+          itemIdsSelecionados.push(item.requisicao_item_id);
         }
       });
-      onGerarCotacao(Array.from(requisicoesDosItens));
+      
+      onGerarCotacao(Array.from(requisicoesDosItens), itemIdsSelecionados);
     } else {
       if (selectedRequisicoes.size === 0) {
         toast({
@@ -606,6 +840,50 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       default:
         return <Badge variant="outline">{tipo || '—'}</Badge>;
     }
+  };
+
+  // Função para calcular status derivado baseado no progresso dos itens
+  const getStatusDerivado = (
+    totalItens: number,
+    itensEmCotacaoAtiva: number,
+    itensDisponiveis: number
+  ): { status: 'a_cotar' | 'em_cotacao'; badge: React.ReactNode } => {
+    // Se nenhum item está em cotação ativa → A COTAR
+    if (itensEmCotacaoAtiva === 0) {
+      return {
+        status: 'a_cotar',
+        badge: (
+          <Badge variant="outline" className="text-blue-600 bg-blue-50">
+            <Clock className="h-3 w-3 mr-1" />
+            A COTAR
+          </Badge>
+        ),
+      };
+    }
+
+    // Se pelo menos 1 item está em cotação ativa e ainda há itens disponíveis → EM COTAÇÃO
+    if (itensEmCotacaoAtiva > 0 && itensDisponiveis > 0) {
+      return {
+        status: 'em_cotacao',
+        badge: (
+          <Badge variant="outline" className="text-orange-600 bg-orange-50">
+            <Clock className="h-3 w-3 mr-1" />
+            EM COTAÇÃO ({itensEmCotacaoAtiva} / {totalItens} itens)
+          </Badge>
+        ),
+      };
+    }
+
+    // Fallback (não deveria acontecer se a lógica de visibilidade estiver correta)
+    return {
+      status: 'a_cotar',
+      badge: (
+        <Badge variant="outline" className="text-blue-600 bg-blue-50">
+          <Clock className="h-3 w-3 mr-1" />
+          A COTAR
+        </Badge>
+      ),
+    };
   };
 
   const allSelected = modoExplodido 
@@ -691,25 +969,62 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
               </div>
 
               {modoExplodido && (
-                <div className="space-y-2">
-                  <Label>Grupo de Item</Label>
-                  <Select
-                    value={filters.grupo_item}
-                    onValueChange={(value) => setFilters({ ...filters, grupo_item: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {gruposMateriais.map((grupo) => (
-                        <SelectItem key={grupo} value={grupo}>
-                          {grupo}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <Label>Grupo de Item</Label>
+                    <Select
+                      value={filters.grupo_item}
+                      onValueChange={(value) => setFilters({ ...filters, grupo_item: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {gruposMateriais.map((grupo) => (
+                          <SelectItem key={grupo} value={grupo}>
+                            {grupo}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Ordenar por</Label>
+                    <Select
+                      value={filters.ordenar_por}
+                      onValueChange={(value) => setFilters({ ...filters, ordenar_por: value as 'none' | 'nome' | 'origem' })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhuma ordenação</SelectItem>
+                        <SelectItem value="nome">Nome do Item (A-Z)</SelectItem>
+                        <SelectItem value="origem">Origem (Requisição)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {filters.ordenar_por === 'origem' && (
+                    <div className="space-y-2">
+                      <Label>Direção da Ordenação</Label>
+                      <Select
+                        value={filters.ordenar_origem_direcao}
+                        onValueChange={(value) => setFilters({ ...filters, ordenar_origem_direcao: value as 'crescente' | 'decrescente' })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="crescente">Menor para Maior (REQ-000001 → REQ-000999)</SelectItem>
+                          <SelectItem value="decrescente">Maior para Menor (REQ-000999 → REQ-000001)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </>
               )}
 
               {!modoExplodido && (
@@ -824,6 +1139,8 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                     somente_pendentes: true,
                     buscar_item: '',
                     grupo_item: 'all',
+                    ordenar_por: 'none',
+                    ordenar_origem_direcao: 'crescente',
                   });
                 }}
               >
@@ -868,11 +1185,13 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                     <TableHead>Origem</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Prioridade</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((item: ItemExplodido) => {
+                  {(filtered as ItemExplodido[]).map((item: ItemExplodido) => {
                     const isSelected = selectedItens.has(item.id);
+                    const estaEmCotacao = itensEmCotacao.get(item.requisicao_item_id);
                     return (
                       <TableRow
                         key={item.id}
@@ -905,6 +1224,24 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                         <TableCell>
                           {getPrioridadeBadge(item.prioridade)}
                         </TableCell>
+                        <TableCell>
+                          {loadingItensCotacao ? (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              Carregando...
+                            </Badge>
+                          ) : estaEmCotacao ? (
+                            <Badge variant="outline" className="text-orange-600 bg-orange-50">
+                              <Clock className="h-3 w-3 mr-1" />
+                              Em Cotação
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-blue-600 bg-blue-50">
+                              <Clock className="h-3 w-3 mr-1" />
+                              Disponível
+                            </Badge>
+                          )}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -933,11 +1270,22 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                     <TableHead>Centro de Custo</TableHead>
                     <TableHead>Projeto</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Itens Disponíveis</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((requisicao: any) => {
                     const isSelected = selectedRequisicoes.has(requisicao.id);
+                    const itens = itensPorRequisicao.get(requisicao.id) || [];
+                    const totalItens = itens.length;
+                    
+                    // Calcular itens em cotação ativa (rascunho, em_aprovacao, aprovada, aberta, em_cotacao)
+                    const itensEmCotacaoAtiva = itens.filter((item: any) => itensEmCotacao.get(item.id)).length;
+                    const itensDisponiveis = totalItens - itensEmCotacaoAtiva;
+                    
+                    // Calcular status derivado baseado no progresso
+                    const statusDerivado = getStatusDerivado(totalItens, itensEmCotacaoAtiva, itensDisponiveis);
+                    
                     return (
                       <TableRow
                         key={requisicao.id}
@@ -975,45 +1323,34 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                           {projectsMap.get(requisicao.projeto_id) || '—'}
                         </TableCell>
                         <TableCell>
-                          {(() => {
-                            const temCotacao = cotacoesPorRequisicao.has(requisicao.id);
-                            const cotacao = cotacoesPorRequisicao.get(requisicao.id);
-                            
-                            if (temCotacao) {
-                              // Requisição já tem cotação criada
-                              const cotacaoStatus = cotacao?.workflow_state || cotacao?.status || 'aberta';
-                              if (cotacaoStatus === 'em_aprovacao') {
-                                return (
-                                  <Badge variant="outline" className="text-orange-600">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    Cotação em aprovação
-                                  </Badge>
-                                );
-                              } else if (cotacaoStatus === 'aprovada') {
-                                return (
-                                  <Badge variant="outline" className="text-green-600">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Cotação aprovada
-                                  </Badge>
-                                );
-                              } else {
-                                return (
-                                  <Badge variant="outline" className="text-blue-600">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    Em cotação
-                                  </Badge>
-                                );
-                              }
-                            } else {
-                              // Requisição ainda não tem cotação
-                              return (
-                                <Badge variant="outline" className="text-blue-600">
-                                  <Clock className="h-3 w-3 mr-1" />
-                                  Aguardando cotação
-                                </Badge>
-                              );
-                            }
-                          })()}
+                          {loadingItensCotacao ? (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              Carregando...
+                            </Badge>
+                          ) : (
+                            // Exibir status derivado baseado no progresso dos itens
+                            statusDerivado.badge
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {loadingItensCotacao ? (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                              Carregando...
+                            </Badge>
+                          ) : totalItens > 0 ? (
+                            <Badge 
+                              variant={itensDisponiveis === 0 ? "secondary" : "default"}
+                              className={itensDisponiveis === 0 ? "text-muted-foreground" : ""}
+                            >
+                              {itensDisponiveis} de {totalItens} disponíveis
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              —
+                            </Badge>
+                          )}
                         </TableCell>
                       </TableRow>
                     );

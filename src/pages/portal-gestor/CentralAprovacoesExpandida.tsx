@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +37,7 @@ import { Approval } from '@/services/approvals/approvalService';
 const CentralAprovacoesExpandida: React.FC = () => {
   const { selectedCompany } = useCompany();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterProcesso, setFilterProcesso] = useState<string>('todos');
@@ -128,8 +130,85 @@ const CentralAprovacoesExpandida: React.FC = () => {
         console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Os logs do trigger criar_cotacao_automatica mostrarão o processo completo.');
       }
       
+      // Fechar modal e limpar seleção imediatamente
       setIsApprovalModalOpen(false);
+      
+      // Remover a aprovação processada do cache localmente antes do refetch
+      // Isso garante que ela desapareça imediatamente da UI
+      const approvalId = selectedApproval?.id;
+      const processoId = selectedApproval?.processo_id;
+      const processoTipo = selectedApproval?.processo_tipo;
+      
+      // Atualizar cache removendo a aprovação processada
+      queryClient.setQueryData<Approval[]>(
+        ['pending-approvals', selectedCompany?.id, user?.id],
+        (oldData) => {
+          if (!oldData) return oldData;
+          const filtered = oldData.filter(a => a.id !== approvalId);
+          console.log('🗑️ [CentralAprovacoesExpandida] Removendo aprovação do cache local', {
+            approvalId,
+            processoId,
+            processoTipo,
+            beforeCount: oldData.length,
+            afterCount: filtered.length,
+            removed: oldData.length - filtered.length
+          });
+          return filtered;
+        }
+      );
+      
       setSelectedApproval(null);
+      
+      // Aguardar um delay maior para garantir que a transação foi commitada no banco
+      // Isso evita race conditions onde o refetch acontece antes do commit
+      // Aumentado para 800ms para dar mais tempo para replicação/commit
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Invalidar e refetch forçado com retry
+      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
+      
+      // Fazer refetch com retry até confirmar que a aprovação não está mais na lista
+      let retries = 0;
+      let refetchResult;
+      const maxRetries = 4; // Aumentado para 4 tentativas
+      do {
+        refetchResult = await refetch();
+        const stillPending = refetchResult.data?.some(a => a.id === approvalId) || false;
+        
+        console.log(`🔄 [CentralAprovacoesExpandida.handleProcessApproval] Refetch ${retries + 1}/${maxRetries}`, {
+          count: refetchResult.data?.length || 0,
+          approvalId,
+          stillPending,
+          retries,
+          timestamp: new Date().toISOString()
+        });
+        
+        if (!stillPending) {
+          console.log('✅ [CentralAprovacoesExpandida.handleProcessApproval] Aprovação confirmada como removida da lista!');
+          break;
+        }
+        
+        if (retries >= maxRetries - 1) {
+          console.warn('⚠️ [CentralAprovacoesExpandida.handleProcessApproval] Aprovação ainda aparece como pendente após múltiplos refetches!');
+          break;
+        }
+        
+        // Se ainda está pendente, aguardar mais um pouco e tentar novamente
+        // Delay progressivo: 500ms, 700ms, 1000ms
+        const delay = 500 + (retries * 200);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        retries++;
+      } while (retries < maxRetries);
+      
+      const finalStillPending = refetchResult.data?.some(a => a.id === approvalId) || false;
+      if (finalStillPending) {
+        console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Aprovação ainda aparece como pendente após múltiplos refetches!', {
+          approvalId,
+          processoId,
+          processoTipo,
+          finalCount: refetchResult.data?.length || 0
+        });
+      }
     } catch (error) {
       console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Erro ao processar aprovação:', error);
       console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Detalhes:', {
@@ -155,8 +234,14 @@ const CentralAprovacoesExpandida: React.FC = () => {
         motivo,
         transferido_por: user.id
       });
+      
+      // Fechar modal e limpar seleção
       setIsTransferModalOpen(false);
       setSelectedApproval(null);
+      
+      // Forçar refetch imediato da lista de aprovações pendentes
+      await refetch();
+      console.log('🔄 [CentralAprovacoesExpandida.handleTransferApproval] Lista de aprovações atualizada');
     } catch (error) {
       console.error('Erro ao transferir aprovação:', error);
     }

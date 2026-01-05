@@ -19,7 +19,11 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
-export function QuoteContextTab() {
+interface QuoteContextTabProps {
+  isEditMode?: boolean;
+}
+
+export function QuoteContextTab({ isEditMode = false }: QuoteContextTabProps) {
   const { context, updateGeneralNotes } = usePurchaseQuoteStore();
 
   if (!context) {
@@ -176,10 +180,83 @@ export function QuoteContextTab() {
               onChange={(e) => updateGeneralNotes(e.target.value)}
               placeholder="Adicione observações sobre a cotação..."
               className="min-h-[100px]"
+              disabled={!isEditMode}
+              readOnly={!isEditMode}
             />
           </div>
         </CardContent>
       </Card>
+
+      {/* Alçada de Aprovação - Mostrar quando houver aprovações OU quando status for em_aprovacao */}
+      {((context.approvals && context.approvals.length > 0) || context.status === 'em_aprovacao' || context.workflow_state === 'em_aprovacao') && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              Alçada de Aprovação
+            </CardTitle>
+            <CardDescription>
+              Status das aprovações necessárias para esta cotação
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {context.approvals && context.approvals.length > 0 ? (
+              <div className="space-y-3">
+                {context.approvals.map((approval) => (
+                  <div
+                    key={approval.id}
+                    className="flex items-center justify-between p-3 border rounded-md"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <p className="text-sm font-medium">
+                          Nível {approval.nivel_aprovacao} - {approval.aprovador_nome || 'Aprovador'}
+                        </p>
+                        {approval.observacoes && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {approval.observacoes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      {approval.status === 'aprovado' && (
+                        <Badge variant="default" className="flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Aprovado
+                        </Badge>
+                      )}
+                      {approval.status === 'pendente' && (
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Pendente
+                        </Badge>
+                      )}
+                      {approval.status === 'rejeitado' && (
+                        <Badge variant="destructive" className="flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Rejeitado
+                        </Badge>
+                      )}
+                      {approval.data_aprovacao && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {new Date(approval.data_aprovacao).toLocaleDateString('pt-BR')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-6 text-sm text-muted-foreground">
+                <AlertCircle className="h-8 w-8 mx-auto mb-2 text-orange-500" />
+                <p>Esta cotação está aguardando aprovação.</p>
+                <p className="mt-1 text-xs">As configurações de aprovação serão aplicadas automaticamente.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -112,3 +112,4 @@ GROUP BY processo_tipo;
 SELECT 
     'Função criada com sucesso!' as status,
     'Verifique os resultados acima' as proximo_passo;
+

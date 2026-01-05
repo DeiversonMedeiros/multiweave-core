@@ -273,6 +273,7 @@ export const purchaseService = {
               numero_requisicao: req.numero_requisicao || '',
               prioridade: req.prioridade || 'normal',
               tipo_requisicao: req.tipo_requisicao || 'reposicao',
+              created_by: req.created_by || null,
             });
           }
         });
@@ -293,6 +294,7 @@ export const purchaseService = {
         numero_requisicao: reqData?.numero_requisicao || null,
         prioridade: reqData?.prioridade || 'normal',
         tipo_requisicao: reqData?.tipo_requisicao || 'reposicao',
+        requisicao_created_by: reqData?.created_by || null,
       };
     });
 
@@ -310,11 +312,206 @@ export const purchaseService = {
   },
 
   async deleteQuote(params: { companyId: string; quoteId: string }) {
+    const { companyId, quoteId } = params;
+
+    // Buscar a cotação para verificar se é rascunho
+    let quote = null;
+    try {
+      quote = await EntityService.getById({
+        schema: 'compras',
+        table: 'cotacao_ciclos',
+        id: quoteId,
+        companyId,
+      });
+    } catch (error) {
+      console.error('Erro ao buscar cotação para exclusão:', error);
+      // Continuar mesmo se não encontrar, pode ser que já tenha sido deletada
+    }
+
+    const isRascunho = quote && (quote.workflow_state === 'rascunho' || quote.status === 'rascunho');
+
+    // Se for rascunho, reverter status dos itens antes de deletar
+    if (isRascunho) {
+      try {
+        // Buscar fornecedores da cotação
+        const fornecedoresCotacaoResult = await EntityService.list({
+          schema: 'compras',
+          table: 'cotacao_fornecedores',
+          companyId,
+          filters: { cotacao_id: quoteId },
+          page: 1,
+          pageSize: 100,
+          skipCompanyFilter: true,
+        });
+        const fornecedoresCotacao = fornecedoresCotacaoResult.data || [];
+        const cotacaoFornecedoresIds = fornecedoresCotacao.map((fc: any) => fc.id);
+
+        if (cotacaoFornecedoresIds.length > 0) {
+          // Buscar todos os itens cotados (cotacao_item_fornecedor)
+          const cotacaoItensResult = await EntityService.list({
+            schema: 'compras',
+            table: 'cotacao_item_fornecedor',
+            companyId,
+            filters: {},
+            page: 1,
+            pageSize: 1000,
+            skipCompanyFilter: true,
+          });
+
+          const cotacaoItens = (cotacaoItensResult.data || []).filter((item: any) =>
+            cotacaoFornecedoresIds.includes(item.cotacao_fornecedor_id)
+          );
+
+          // Obter requisicao_item_ids únicos
+          const requisicaoItemIds = [...new Set(cotacaoItens.map((item: any) => item.requisicao_item_id).filter(Boolean))];
+
+          // Reverter status dos itens de 'cotado' para 'pendente'
+          await Promise.all(
+            requisicaoItemIds.map(async (itemId) => {
+              try {
+                await EntityService.update({
+                  schema: 'compras',
+                  table: 'requisicao_itens',
+                  companyId,
+                  id: itemId,
+                  data: { status: 'pendente' },
+                });
+              } catch (error) {
+                console.error(`Erro ao reverter status do item ${itemId}:`, error);
+                // Continuar mesmo se algum falhar
+              }
+            })
+          );
+
+          // Verificar e reverter workflow_state das requisições se necessário
+          const requisicaoIds = new Set<string>();
+          for (const itemId of requisicaoItemIds) {
+            try {
+              const item = await EntityService.getById({
+                schema: 'compras',
+                table: 'requisicao_itens',
+                id: itemId,
+                companyId,
+              });
+              if (item && (item as any).requisicao_id) {
+                requisicaoIds.add((item as any).requisicao_id);
+              }
+            } catch (error) {
+              console.error(`Erro ao buscar item ${itemId}:`, error);
+            }
+          }
+
+          // Para cada requisição, verificar se todos os itens voltaram a pendente
+          for (const reqId of Array.from(requisicaoIds)) {
+            try {
+              const itensRequisicao = await EntityService.list({
+                schema: 'compras',
+                table: 'requisicao_itens',
+                companyId,
+                filters: { requisicao_id: reqId },
+                page: 1,
+                pageSize: 1000,
+                skipCompanyFilter: true,
+              });
+
+              const todosItensPendentes = (itensRequisicao.data || []).every(
+                (item: any) => item.status === 'pendente' || !item.status
+              );
+
+              // Se todos os itens voltaram a pendente, reverter workflow_state da requisição
+              if (todosItensPendentes) {
+                const requisicao = await EntityService.getById({
+                  schema: 'compras',
+                  table: 'requisicoes_compra',
+                  id: reqId,
+                  companyId,
+                });
+
+                const currentState = (requisicao as any)?.workflow_state;
+                
+                // Reverter workflow_state se estava em 'em_cotacao'
+                if (currentState === 'em_cotacao') {
+                  // Buscar o estado anterior nos workflow_logs
+                  try {
+                    const logsResult = await EntityService.list({
+                      schema: 'compras',
+                      table: 'workflow_logs',
+                      companyId,
+                      filters: {
+                        entity_type: 'requisicao_compra',
+                        entity_id: reqId,
+                        to_state: 'em_cotacao',
+                      },
+                      page: 1,
+                      pageSize: 1,
+                      skipCompanyFilter: true,
+                    });
+
+                    const log = logsResult.data && logsResult.data.length > 0 ? logsResult.data[0] : null;
+                    const previousState = (log as any)?.from_state || 'aprovada';
+
+                    // Reverter para o estado anterior (geralmente 'aprovada')
+                    await EntityService.update({
+                      schema: 'compras',
+                      table: 'requisicoes_compra',
+                      companyId,
+                      id: reqId,
+                      data: {
+                        workflow_state: previousState,
+                      },
+                    });
+
+                    // Registrar no log de workflow
+                    await EntityService.create({
+                      schema: 'compras',
+                      table: 'workflow_logs',
+                      companyId,
+                      data: {
+                        entity_type: 'requisicao_compra',
+                        entity_id: reqId,
+                        from_state: 'em_cotacao',
+                        to_state: previousState,
+                        actor_id: null, // Sistema
+                        payload: { motivo: 'cotacao_rascunho_excluida', cotacao_ciclo_id: quoteId },
+                      },
+                    });
+                  } catch (error) {
+                    console.error(`Erro ao buscar logs ou reverter estado da requisição ${reqId}:`, error);
+                    // Tentar reverter para 'aprovada' como fallback
+                    try {
+                      await EntityService.update({
+                        schema: 'compras',
+                        table: 'requisicoes_compra',
+                        companyId,
+                        id: reqId,
+                        data: {
+                          workflow_state: 'aprovada',
+                        },
+                      });
+                    } catch (updateError) {
+                      console.error(`Erro ao reverter estado da requisição ${reqId}:`, updateError);
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              console.error(`Erro ao verificar requisição ${reqId}:`, error);
+              // Continuar mesmo se falhar
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao reverter status dos itens:', error);
+        // Continuar com a exclusão mesmo se a reversão falhar
+      }
+    }
+
+    // Deletar a cotação (isso vai deletar em cascata cotacao_fornecedores e cotacao_item_fornecedor)
     return EntityService.delete({
       schema: 'compras',
       table: 'cotacao_ciclos',
-      companyId: params.companyId,
-      id: params.quoteId,
+      companyId,
+      id: quoteId,
     });
   },
 
@@ -684,6 +881,44 @@ export const purchaseService = {
     userId: string;
     input: QuoteCycleInput;
   }) {
+    // ✅ VERIFICAÇÃO DE CONCORRÊNCIA: Verificar se já existe cotação ativa para esta requisição
+    try {
+      const cotacoesExistentes = await EntityService.list({
+        schema: 'compras',
+        table: 'cotacao_ciclos',
+        companyId: params.companyId,
+        filters: {
+          requisicao_id: params.input.requisicao_id,
+        },
+        page: 1,
+        pageSize: 100,
+        skipCompanyFilter: true,
+      });
+
+      if (cotacoesExistentes.data && cotacoesExistentes.data.length > 0) {
+        // Verificar se há cotação ativa (rascunho, em aprovação ou aberta)
+        const cotacaoAtiva = cotacoesExistentes.data.find((c: any) => {
+          const state = c.workflow_state || c.status;
+          return state === 'rascunho' || state === 'em_aprovacao' || state === 'aberta' || state === 'em_cotacao';
+        });
+
+        if (cotacaoAtiva) {
+          const numeroCotacao = cotacaoAtiva.numero_cotacao || cotacaoAtiva.id.substring(0, 8);
+          throw new Error(
+            `Já existe uma cotação em andamento (${numeroCotacao}) para esta requisição. ` +
+            `Por favor, verifique as "Cotações Realizadas" antes de criar uma nova cotação.`
+          );
+        }
+      }
+    } catch (error: any) {
+      // Se já é nosso erro customizado, relançar
+      if (error.message?.includes('Já existe uma cotação')) {
+        throw error;
+      }
+      // Se for outro erro, logar mas continuar (pode ser problema de conexão)
+      console.warn('Erro ao verificar cotações existentes, continuando:', error);
+    }
+
     // Validar e formatar dados antes de criar
     // Converter string vazia para null para campos opcionais
     const prazoResposta = params.input.prazo_resposta && params.input.prazo_resposta.trim() !== ''

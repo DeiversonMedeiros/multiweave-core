@@ -166,3 +166,4 @@ COMMENT ON FUNCTION public.process_approval IS 'Processa aprovação e atualiza 
 
 
 
+

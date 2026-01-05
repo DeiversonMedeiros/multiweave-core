@@ -16,6 +16,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { 
   Select,
   SelectContent,
@@ -51,6 +59,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  Sparkles,
   Image as ImageIcon,
   Eye,
   Paperclip,
@@ -67,13 +76,18 @@ import { useActivePartners } from '@/hooks/usePartners';
 import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useActiveProjects } from '@/hooks/useProjects';
 import { useUsers } from '@/hooks/useUsers';
+import { useCreateApprovalsForProcess } from '@/hooks/approvals/useApprovals';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { HistoricoComprasItemModal } from './HistoricoComprasItemModal';
 
 interface ModalGerarCotacaoProps {
   isOpen: boolean;
   onClose: () => void;
-  requisicoesIds: string[];
+  requisicoesIds?: string[]; // IDs das requisições (para nova cotação)
+  itemIds?: string[]; // IDs dos itens selecionados no modo explodido (requisicao_item.id)
+  cotacaoId?: string; // ID da cotação existente (para edição/visualização)
+  readOnly?: boolean; // Modo somente leitura (para visualização)
 }
 
 interface RequisicaoData {
@@ -97,6 +111,7 @@ interface RequisicaoItem {
   valor_unitario_estimado?: number;
   requisicao_id: string;
   requisicao_numero?: string;
+  imagem_url?: string | null;
 }
 
 interface ItemAgrupado {
@@ -160,11 +175,12 @@ type MapaFornecedorItens = Record<
   >
 >;
 
-export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGerarCotacaoProps) {
+export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemIds, cotacaoId, readOnly = false }: ModalGerarCotacaoProps) {
   const { selectedCompany } = useCompany();
   const { user } = useAuth();
   const { toast } = useToast();
   const startQuoteCycleMutation = useStartQuoteCycle();
+  const createApprovalsMutation = useCreateApprovalsForProcess();
   const { data: partnersData } = useActivePartners();
   const { data: costCentersData } = useActiveCostCenters();
   const { data: projectsData } = useActiveProjects();
@@ -297,11 +313,19 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
   // Modal de Visualização de Imagem do Item
   const [imagemModalAberto, setImagemModalAberto] = useState(false);
   const [imagemSelecionada, setImagemSelecionada] = useState<{ url: string; nome: string } | null>(null);
+  const [historicoModalAberto, setHistoricoModalAberto] = useState(false);
+  const [itemHistoricoSelecionado, setItemHistoricoSelecionado] = useState<{
+    material_id: string;
+    material_nome: string;
+    unidade_medida: string;
+  } | null>(null);
 
-  // Criar string estável a partir de requisicoesIds para usar como dependência
+  // Criar string estável a partir de requisicoesIds e itemIds para usar como dependência
   const requisicoesIdsKey = useMemo(() => {
-    return requisicoesIds.sort().join(',');
-  }, [requisicoesIds]);
+    const reqKey = requisicoesIds.sort().join(',');
+    const itemKey = itemIds && itemIds.length > 0 ? itemIds.sort().join(',') : '';
+    return `${reqKey}|${itemKey}`;
+  }, [requisicoesIds, itemIds]);
 
   // Mapear IDs para nomes
   const costCentersMap = useMemo(() => {
@@ -340,18 +364,317 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     return map;
   }, [fornecedoresDisponiveis]);
 
+  // Função para carregar cotação existente e reidratar estado
+  const loadExistingQuote = useCallback(async (quoteId: string) => {
+    if (!selectedCompany?.id) return;
+    
+    setLoading(true);
+    try {
+      // Carregar cotação ciclo
+      const quote = await EntityService.getById({
+        schema: 'compras',
+        table: 'cotacao_ciclos',
+        id: quoteId,
+        companyId: selectedCompany.id,
+      });
+
+      if (!quote) {
+        toast({
+          title: "Erro",
+          description: "Cotação não encontrada",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Carregar fornecedores da cotação
+      const fornecedoresCotacaoResult = await EntityService.list({
+        schema: 'compras',
+        table: 'cotacao_fornecedores',
+        companyId: selectedCompany.id,
+        filters: { cotacao_id: quoteId },
+        page: 1,
+        pageSize: 100,
+        skipCompanyFilter: true,
+      });
+      const fornecedoresCotacao = fornecedoresCotacaoResult.data || [];
+
+      // Carregar itens cotados (cotacao_item_fornecedor)
+      const cotacaoFornecedoresIds = fornecedoresCotacao.map((fc: any) => fc.id);
+      const cotacaoItensResult = await EntityService.list({
+        schema: 'compras',
+        table: 'cotacao_item_fornecedor',
+        companyId: selectedCompany.id,
+        filters: {},
+        page: 1,
+        pageSize: 1000,
+        skipCompanyFilter: true,
+      });
+      
+      const cotacaoItens = (cotacaoItensResult.data || []).filter((item: any) => 
+        cotacaoFornecedoresIds.includes(item.cotacao_fornecedor_id)
+      );
+
+      // Obter requisicao_item_ids únicos
+      const requisicaoItemIds = [...new Set(cotacaoItens.map((item: any) => item.requisicao_item_id).filter(Boolean))];
+      
+      // Carregar itens de requisição
+      const requisicaoItensData: any[] = [];
+      const requisicoesIdsSet = new Set<string>();
+      
+      for (const itemId of requisicaoItemIds) {
+        try {
+          const item = await EntityService.getById({
+            schema: 'compras',
+            table: 'requisicao_itens',
+            id: itemId,
+            companyId: selectedCompany.id,
+          });
+          if (item) {
+            requisicaoItensData.push(item);
+            if (item.requisicao_id) {
+              requisicoesIdsSet.add(item.requisicao_id);
+            }
+          }
+        } catch (e) {
+          console.warn(`Erro ao buscar item ${itemId}:`, e);
+        }
+      }
+
+      // Carregar requisições
+      const requisicoesData: RequisicaoData[] = [];
+      for (const reqId of Array.from(requisicoesIdsSet)) {
+        try {
+          const requisicao = await EntityService.getById({
+            schema: 'compras',
+            table: 'requisicoes_compra',
+            id: reqId,
+            companyId: selectedCompany.id,
+          });
+
+          // Filtrar apenas os itens desta requisição
+          const itensDaRequisicao = requisicaoItensData.filter(item => item.requisicao_id === reqId);
+
+          // Carregar materiais
+          const materialIds = [...new Set(itensDaRequisicao.map((item: any) => item.material_id).filter(Boolean))];
+          const materiaisMap = new Map<string, any>();
+          
+          if (materialIds.length > 0) {
+            const materiaisResult = await EntityService.list({
+              schema: 'almoxarifado',
+              table: 'materiais_equipamentos',
+              companyId: selectedCompany.id,
+              filters: {},
+              page: 1,
+              pageSize: 1000,
+            });
+
+            if (materiaisResult.data) {
+              materiaisResult.data.forEach((material: any) => {
+                materiaisMap.set(String(material.id), material);
+              });
+            }
+          }
+
+          // Mapear itens com dados dos materiais
+          const itens = itensDaRequisicao.map((item: any) => {
+            const material = materiaisMap.get(String(item.material_id));
+            const imagemUrl = material?.imagem_url && typeof material.imagem_url === 'string' && material.imagem_url.trim() !== '' 
+              ? material.imagem_url.trim() 
+              : null;
+            
+            return {
+              ...item,
+              requisicao_numero: requisicao.numero_requisicao,
+              material_nome: material?.nome || material?.descricao || item.material_nome || 'Material não encontrado',
+              material_codigo: material?.codigo_interno || material?.codigo || item.material_codigo || '',
+              imagem_url: imagemUrl,
+            };
+          });
+
+          requisicoesData.push({
+            id: requisicao.id,
+            numero_requisicao: requisicao.numero_requisicao || reqId.substring(0, 8),
+            centro_custo_id: requisicao.centro_custo_id,
+            projeto_id: requisicao.projeto_id,
+            tipo_requisicao: requisicao.tipo_requisicao,
+            prioridade: requisicao.prioridade,
+            local_entrega: requisicao.local_entrega,
+            itens,
+          });
+        } catch (e) {
+          console.warn(`Erro ao buscar requisição ${reqId}:`, e);
+        }
+      }
+
+      setRequisicoes(requisicoesData);
+
+      // Agrupar itens (mesma lógica do fluxo de gerar)
+      const itensMap = new Map<string, ItemAgrupado>();
+      requisicoesData.forEach((req) => {
+        req.itens.forEach((item) => {
+          const tipoReq = req.tipo_requisicao || 'sem_tipo';
+          const key = `${item.material_id}_${tipoReq}`;
+          if (!itensMap.has(key)) {
+            itensMap.set(key, {
+              material_id: item.material_id,
+              material_nome: item.material_nome || 'Material sem nome',
+              material_codigo: item.material_codigo || '',
+              unidade_medida: item.unidade_medida || 'UN',
+              quantidade_total: 0,
+              origem: [],
+              tipo_requisicao: tipoReq,
+              selecionado: true,
+              itens_origem: [],
+              imagem_url: item.imagem_url,
+            });
+          }
+          const agrupado = itensMap.get(key)!;
+          agrupado.quantidade_total += Number(item.quantidade) || 0;
+          if (!agrupado.origem.includes(req.numero_requisicao)) {
+            agrupado.origem.push(req.numero_requisicao);
+          }
+          agrupado.itens_origem.push(item);
+          if (item.imagem_url && !agrupado.imagem_url) {
+            agrupado.imagem_url = item.imagem_url;
+          }
+        });
+      });
+
+      const itensAgrupadosArray = Array.from(itensMap.values());
+      setItensAgrupados(itensAgrupadosArray);
+      setItensSelecionados(new Set(itensAgrupadosArray.map(i => getItemKey(i))));
+
+      // Carregar fornecedores disponíveis e mapear para formato esperado
+      const fornecedoresDadosResult = await EntityService.list({
+        schema: 'compras',
+        table: 'fornecedores_dados',
+        companyId: selectedCompany.id,
+        filters: {},
+        page: 1,
+        pageSize: 1000,
+      });
+      const fornecedoresDados = fornecedoresDadosResult.data || [];
+
+      const partnersMapLocal = new Map<string, any>();
+      const partners = (partnersData as any)?.data || partnersData || [];
+      partners.forEach((p: any) => {
+        partnersMapLocal.set(p.id, p);
+      });
+
+      // Mapear fornecedores da cotação
+      const fornecedoresMapeados: FornecedorCotacao[] = fornecedoresCotacao.map((fc: any) => {
+        const fornecedorDados = fornecedoresDados.find((fd: any) => fd.id === fc.fornecedor_id);
+        const partner = fornecedorDados ? partnersMapLocal.get(fornecedorDados.partner_id) : null;
+        
+        return {
+          id: fc.id, // ID do cotacao_fornecedores
+          fornecedor_id: fc.fornecedor_id,
+          fornecedor_nome: partner?.nome_fantasia || partner?.razao_social || 'Fornecedor',
+          valor_frete: fc.valor_frete ? Number(fc.valor_frete) : 0,
+          valor_imposto: fc.valor_imposto ? Number(fc.valor_imposto) : 0,
+          desconto_percentual: fc.desconto_percentual ? Number(fc.desconto_percentual) : 0,
+          desconto_valor: fc.desconto_valor ? Number(fc.desconto_valor) : 0,
+          prazo_entrega: fc.prazo_entrega,
+          condicao_pagamento: fc.condicao_pagamento,
+          observacoes: fc.observacoes,
+        };
+      });
+
+      setFornecedores(fornecedoresMapeados);
+      setFornecedoresDisponiveis(fornecedoresDados);
+
+      // Criar mapa fornecedor x itens com valores cotados
+      const mapa: MapaFornecedorItens = {};
+      
+      // Criar mapa: cotacao_fornecedor_id -> fornecedor_id
+      const cotacaoFornecedorToFornecedorMap = new Map<string, string>();
+      fornecedoresCotacao.forEach((fc: any) => {
+        cotacaoFornecedorToFornecedorMap.set(fc.id, fc.fornecedor_id);
+      });
+
+      cotacaoItens.forEach((cotacaoItem: any) => {
+        const fornecedorId = cotacaoFornecedorToFornecedorMap.get(cotacaoItem.cotacao_fornecedor_id);
+        if (!fornecedorId || !cotacaoItem.requisicao_item_id) return;
+
+        // Encontrar o item de requisição correspondente
+        const requisicaoItem = requisicaoItensData.find(item => item.id === cotacaoItem.requisicao_item_id);
+        if (!requisicaoItem) return;
+
+        // Encontrar a requisição correspondente
+        const requisicao = requisicoesData.find(req => req.id === requisicaoItem.requisicao_id);
+        if (!requisicao) return;
+
+        // Criar chave do item (material_id + tipo_requisicao)
+        const tipoReq = requisicao.tipo_requisicao || 'sem_tipo';
+        const itemKey = `${requisicaoItem.material_id}_${tipoReq}`;
+
+        // Encontrar o fornecedor local ID (id do cotacao_fornecedores)
+        const fornecedorLocal = fornecedoresMapeados.find(f => f.id === cotacaoItem.cotacao_fornecedor_id);
+        if (!fornecedorLocal) return;
+
+        if (!mapa[fornecedorLocal.id]) {
+          mapa[fornecedorLocal.id] = {};
+        }
+
+        mapa[fornecedorLocal.id][itemKey] = {
+          quantidade_ofertada: cotacaoItem.quantidade_ofertada || requisicaoItem.quantidade,
+          valor_unitario: cotacaoItem.valor_unitario || 0,
+          desconto_percentual: cotacaoItem.desconto_percentual || 0,
+          desconto_valor: cotacaoItem.desconto_valor || 0,
+          prazo_entrega_dias: cotacaoItem.prazo_entrega_dias || 0,
+          condicao_pagamento: cotacaoItem.condicao_pagamento || '',
+          observacoes: cotacaoItem.observacoes || '',
+          is_vencedor: cotacaoItem.is_vencedor || false,
+        };
+      });
+
+      setMapaFornecedorItens(mapa);
+
+      // Preencher formData da cotação
+      setFormData({
+        tipo_cotacao: quote.tipo_cotacao || 'reposicao',
+        data_cotacao: quote.data_cotacao ? new Date(quote.data_cotacao).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        data_limite: quote.prazo_resposta ? new Date(quote.prazo_resposta).toISOString().split('T')[0] : '',
+        observacoes_internas: quote.observacoes || '',
+      });
+
+      setLoadedRequisicoesIdsKey(`quote_${quoteId}`);
+      setLoading(false);
+    } catch (error: any) {
+      console.error('Erro ao carregar cotação existente:', error);
+      toast({
+        title: "Erro",
+        description: error.message || "Erro ao carregar cotação",
+        variant: "destructive",
+      });
+      setLoading(false);
+    }
+  }, [selectedCompany?.id, partnersData, toast]);
+
   // Carregar dados iniciais
   useEffect(() => {
-    if (!isOpen || !selectedCompany?.id || requisicoesIds.length === 0) {
-      // Resetar dados quando modal fechar
-      if (!isOpen) {
-        setRequisicoes([]);
-        setItensAgrupados([]);
-        setItensSelecionados(new Set());
-        setFornecedores([]);
-        setRateio([]);
-        setLoadedRequisicoesIdsKey('');
+    // Se for cotação existente, carregar usando função específica
+    if (isOpen && cotacaoId && selectedCompany?.id) {
+      if (loadedRequisicoesIdsKey !== `quote_${cotacaoId}`) {
+        loadExistingQuote(cotacaoId);
       }
+      return;
+    }
+
+    // Resetar dados quando modal fechar
+    if (!isOpen) {
+      setRequisicoes([]);
+      setItensAgrupados([]);
+      setItensSelecionados(new Set());
+      setFornecedores([]);
+      setRateio([]);
+      setLoadedRequisicoesIdsKey('');
+      setMapaFornecedorItens({});
+      return;
+    }
+
+    if (!isOpen || !selectedCompany?.id || requisicoesIds.length === 0) {
       return;
     }
 
@@ -389,7 +712,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
             skipCompanyFilter: true,
           });
 
-          const itensRaw = itensResult.data || [];
+          let itensRaw = itensResult.data || [];
+
+          // Se itemIds foi fornecido (modo explodido), filtrar apenas os itens selecionados
+          if (itemIds && itemIds.length > 0) {
+            itensRaw = itensRaw.filter((item: any) => itemIds.includes(item.id));
+            console.log('🔍 [ModalGerarCotacao] Modo explodido: filtrando itens. Total recebido:', itensResult.data?.length || 0, 'Filtrados:', itensRaw.length);
+          }
 
           // Coletar todos os IDs de materiais únicos
           const materialIds = [...new Set(itensRaw.map((item: any) => item.material_id).filter(Boolean))];
@@ -948,7 +1277,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
           );
           
           // Usar o novo ID real
-          value = novoFornecedorDados.id;
+          value = (novoFornecedorDados as any).id || value;
           
           toast({
             title: "Sucesso",
@@ -1057,6 +1386,50 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     });
   }, []);
 
+  // Função para selecionar automaticamente os valores mais baratos de cada item
+  const handleSelectLowestPrices = useCallback(() => {
+    const fornecedoresValidosList = fornecedores.filter(f => f.fornecedor_id);
+    
+    itensAgrupados
+      .filter((item) => itensSelecionados.has(getItemKey(item)))
+      .forEach((item) => {
+        const itemKey = getItemKey(item);
+        let lowestValue: number | null = null;
+        let lowestSupplierId: string | null = null;
+
+        fornecedoresValidosList.forEach((f) => {
+          const cell = mapaFornecedorItens[f.id]?.[itemKey];
+          if (cell) {
+            const total = valorItemCalculado(cell);
+            if (total > 0) {
+              if (lowestValue === null || total < lowestValue) {
+                lowestValue = total;
+                lowestSupplierId = f.id;
+              }
+            }
+          }
+        });
+
+        if (lowestSupplierId) {
+          handleSelectVencedor(lowestSupplierId, item, true);
+        }
+      });
+  }, [fornecedores, itensAgrupados, itensSelecionados, mapaFornecedorItens, handleSelectVencedor]);
+
+  // Função para selecionar todos os itens de um fornecedor específico
+  const handleSelectSupplierForAllItems = useCallback((fornecedorId: string) => {
+    itensAgrupados
+      .filter((item) => itensSelecionados.has(getItemKey(item)))
+      .forEach((item) => {
+        const itemKey = getItemKey(item);
+        const cell = mapaFornecedorItens[fornecedorId]?.[itemKey];
+        // Verificar se o fornecedor tem valores preenchidos para este item
+        if (cell && valorItemCalculado(cell) > 0) {
+          handleSelectVencedor(fornecedorId, item, true);
+        }
+      });
+  }, [itensAgrupados, itensSelecionados, mapaFornecedorItens, handleSelectVencedor]);
+
   const handleToggleItem = (item: ItemAgrupado) => {
     const itemKey = getItemKey(item);
     setItensSelecionados(prev => {
@@ -1070,12 +1443,356 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     });
   };
 
+  // Função helper para verificar se itens ainda estão disponíveis
+  const verificarItensDisponiveis = useCallback(async (itemIds: Set<string>) => {
+    if (!selectedCompany?.id || itemIds.size === 0) return;
+
+    try {
+      // Buscar estado atual dos itens
+      const itensAtuais = await Promise.all(
+        Array.from(itemIds).map(async (itemId) => {
+          try {
+            return await EntityService.getById({
+              schema: 'compras',
+              table: 'requisicao_itens',
+              id: itemId,
+              companyId: selectedCompany.id,
+            });
+          } catch (error) {
+            console.error(`Erro ao buscar item ${itemId}:`, error);
+            return null;
+          }
+        })
+      );
+
+      // Filtrar itens que já estão cotados
+      const itensIndisponiveis = itensAtuais.filter(
+        (item: any) => item && item.status === 'cotado'
+      );
+
+      if (itensIndisponiveis.length > 0) {
+        const itensInfo = itensIndisponiveis.slice(0, 3).map((item: any) => 
+          item.id.substring(0, 8)
+        ).join(', ');
+        const maisItens = itensIndisponiveis.length > 3 ? ` e mais ${itensIndisponiveis.length - 3}` : '';
+        
+        throw new Error(
+          `Os seguintes itens já foram cotados por outro comprador: ${itensInfo}${maisItens}. ` +
+          `Por favor, recarregue a página e selecione apenas itens disponíveis.`
+        );
+      }
+    } catch (error: any) {
+      if (error.message?.includes('já foram cotados')) {
+        throw error; // Relançar erro específico
+      }
+      console.error('Erro ao verificar disponibilidade dos itens:', error);
+      // Em caso de erro na verificação, continuar mas alertar
+      toast({
+        title: "Atenção",
+        description: "Não foi possível verificar se todos os itens estão disponíveis. Prosseguindo com cautela...",
+        variant: "default",
+      });
+    }
+  }, [selectedCompany?.id, toast]);
+
   const handleSalvarRascunho = async () => {
-    // TODO: Implementar salvamento como rascunho
-    toast({
-      title: "Sucesso",
-      description: "Cotação salva como rascunho.",
-    });
+    // Validações mínimas para rascunho
+    if (itensSelecionados.size === 0) {
+      toast({
+        title: "Erro",
+        description: "Selecione pelo menos um item para salvar como rascunho.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (fornecedoresValidos === 0) {
+      toast({
+        title: "Erro",
+        description: "Selecione pelo menos um fornecedor para salvar como rascunho.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      // ✅ NOVO: Coletar IDs dos itens que serão cotados ANTES de verificar
+      const requisicaoItemIdsParaVerificar = new Set<string>();
+      itensAgrupados
+        .filter((item) => itensSelecionados.has(getItemKey(item)))
+        .forEach((item) => {
+          item.itens_origem.forEach((origem) => {
+            requisicaoItemIdsParaVerificar.add(origem.id);
+          });
+        });
+
+      // ✅ VERIFICAÇÃO DE CONCORRÊNCIA: Verificar se itens ainda estão disponíveis
+      try {
+        await verificarItensDisponiveis(requisicaoItemIdsParaVerificar);
+      } catch (error: any) {
+        setSubmitting(false);
+        toast({
+          title: "Item indisponível",
+          description: error.message,
+          variant: "destructive",
+        });
+        // Invalidar queries para recarregar dados
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+        return;
+      }
+
+      // Preparar dados para envio (similar ao handleEnviarAprovacao, mas sem validações rigorosas)
+      const fornecedoresData = fornecedores.map((f) => ({
+        fornecedor_id: f.fornecedor_id,
+        prazo_entrega: 0,
+        condicoes_comerciais: '',
+      }));
+
+      const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
+        requisicao_id: requisicoesIds[0],
+        fornecedores: fornecedoresData,
+        prazo_resposta: formData.data_limite?.trim() || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 dias padrão se não informado
+        observacoes: formData.observacoes_internas?.trim() || null,
+      });
+
+      const fornecedoresCriados = cicloResponse?.fornecedores || [];
+      const cicloId = cicloResponse?.ciclo?.id || cicloResponse?.id;
+
+      // Atualizar workflow_state do ciclo para 'rascunho' e observações
+      if (cicloId) {
+        try {
+          await EntityService.update({
+            schema: 'compras',
+            table: 'cotacao_ciclos',
+            companyId: selectedCompany!.id,
+            id: cicloId,
+            data: {
+              workflow_state: 'rascunho',
+              observacoes: formData.observacoes_internas?.trim() || null,
+            },
+          });
+        } catch (error) {
+          console.error('Erro ao atualizar workflow_state do ciclo:', error);
+        }
+      }
+
+      const mapFornecedorParaCotacao = new Map<string, string>();
+      fornecedores.forEach((f, idx) => {
+        const created = fornecedoresCriados[idx];
+        if (created?.id) {
+          mapFornecedorParaCotacao.set(f.id, created.id);
+        }
+      });
+
+      // Montar inserts item x fornecedor (mesmo processo do handleEnviarAprovacao)
+      const inserts: Promise<any>[] = [];
+      const requisicaoItemIdsCotados = new Set<string>(); // Para rastrear quais itens foram cotados
+      
+      fornecedores.forEach((fornecedor) => {
+        if (!mapFornecedorParaCotacao.has(fornecedor.id)) return;
+        const cotacaoFornecedorId = mapFornecedorParaCotacao.get(fornecedor.id)!;
+
+        itensAgrupados
+          .filter((item) => itensSelecionados.has(getItemKey(item)))
+          .forEach((item) => {
+            const itemKey = getItemKey(item);
+            const valorMapa = mapaFornecedorItens[fornecedor.id]?.[itemKey];
+            // Para rascunho, permitir salvar mesmo sem valores preenchidos
+            if (!valorMapa) return;
+            
+            // Aplicar para cada item de origem (requisicao_item_id)
+            item.itens_origem.forEach((origem) => {
+              requisicaoItemIdsCotados.add(origem.id);
+              
+              // ✅ VERIFICAÇÃO FINAL: Verificar item individualmente antes de criar
+              inserts.push(
+                (async () => {
+                  // Verificação final antes de criar (última linha de defesa)
+                  try {
+                    const itemAtual = await EntityService.getById({
+                      schema: 'compras',
+                      table: 'requisicao_itens',
+                      id: origem.id,
+                      companyId: selectedCompany!.id,
+                    });
+
+                    if (itemAtual && (itemAtual as any).status === 'cotado') {
+                      throw new Error(`Item ${origem.id.substring(0, 8)} já foi cotado por outro comprador`);
+                    }
+                  } catch (error: any) {
+                    if (error.message?.includes('já foi cotado')) {
+                      throw error;
+                    }
+                    // Se erro ao buscar, continuar mas logar
+                    console.warn(`Não foi possível verificar item ${origem.id} antes de criar:`, error);
+                  }
+
+                  // Criar o registro
+                  return EntityService.create({
+                    schema: 'compras',
+                    table: 'cotacao_item_fornecedor',
+                    companyId: selectedCompany!.id,
+                    data: {
+                      cotacao_fornecedor_id: cotacaoFornecedorId,
+                      requisicao_item_id: origem.id,
+                      material_id: origem.material_id,
+                      quantidade_ofertada: valorMapa.quantidade_ofertada || origem.quantidade,
+                      valor_unitario: valorMapa.valor_unitario || 0,
+                      desconto_percentual: valorMapa.desconto_percentual || 0,
+                      desconto_valor: valorMapa.desconto_valor || 0,
+                      prazo_entrega_dias: valorMapa.prazo_entrega_dias || null,
+                      condicao_pagamento: valorMapa.condicao_pagamento || null,
+                      observacoes: valorMapa.observacoes || null,
+                      status: 'rascunho',
+                      is_vencedor: valorMapa.is_vencedor || false,
+                    },
+                  });
+                })()
+              );
+            });
+          });
+      });
+
+      // Executar inserts com tratamento individual de erros
+      if (inserts.length > 0) {
+        const results = await Promise.allSettled(inserts);
+        const erros = results.filter((r) => r.status === 'rejected');
+        
+        if (erros.length > 0) {
+          // ✅ TRATAMENTO DE ERRO MELHORADO: Verificar se são erros de concorrência
+          const errosConcorrencia = erros.filter((e: any) => 
+            e.reason?.message?.includes('já foi cotado') ||
+            e.reason?.message?.includes('já foi cotado por outro comprador')
+          );
+          
+          if (errosConcorrencia.length > 0) {
+            const mensagem = errosConcorrencia.length === erros.length
+              ? 'Todos os itens selecionados já foram cotados por outro comprador. Por favor, recarregue a página.'
+              : `Alguns itens (${errosConcorrencia.length}) já foram cotados por outro comprador. Por favor, recarregue a página.`;
+            
+            setSubmitting(false);
+            toast({
+              title: "Conflito detectado",
+              description: mensagem,
+              variant: "destructive",
+            });
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+            return;
+          }
+          
+          const mensagensErro = erros.map((e: any) => 
+            e.reason?.message || 'Erro desconhecido ao criar item de cotação'
+          ).join('; ');
+          
+          throw new Error(`Erro ao salvar alguns itens da cotação: ${mensagensErro}`);
+        }
+      }
+
+      // Verificar se todos os itens de cada requisição foram cotados
+      // No modo explodido (itemIds fornecido), não atualizar status se nem todos foram cotados
+      const updatePromises = requisicoesIds.map(async (reqId) => {
+        try {
+          // Buscar todos os itens da requisição
+          const itensRequisicao = await EntityService.list({
+            schema: 'compras',
+            table: 'requisicao_itens',
+            companyId: selectedCompany!.id,
+            filters: { requisicao_id: reqId },
+            page: 1,
+            pageSize: 1000,
+          });
+
+          const totalItens = itensRequisicao.data?.length || 0;
+          const itensCotadosNestaRequisicao = (itensRequisicao.data || []).filter((item: any) =>
+            requisicaoItemIdsCotados.has(item.id)
+          ).length;
+
+          // Se estamos no modo explodido (itemIds fornecido) e nem todos os itens foram cotados,
+          // não atualizar o status da requisição - ela deve permanecer disponível
+          const todosItensCotados = totalItens > 0 && itensCotadosNestaRequisicao === totalItens;
+          
+          const requisicao = await EntityService.getById({
+            schema: 'compras',
+            table: 'requisicoes_compra',
+            companyId: selectedCompany!.id,
+            id: reqId,
+          });
+
+          const currentState = (requisicao as any)?.workflow_state;
+          
+          // Apenas atualizar status se todos os itens foram cotados ou se já está em em_cotacao
+          // No modo explodido parcial, manter a requisição disponível
+          if (todosItensCotados && currentState !== 'em_cotacao') {
+            await EntityService.update({
+              schema: 'compras',
+              table: 'requisicoes_compra',
+              companyId: selectedCompany!.id,
+              id: reqId,
+              data: {
+                workflow_state: 'em_cotacao',
+              },
+            });
+
+            if (user?.id) {
+              await EntityService.create({
+                schema: 'compras',
+                table: 'workflow_logs',
+                companyId: selectedCompany!.id,
+                data: {
+                  entity_type: 'requisicao_compra',
+                  entity_id: reqId,
+                  from_state: currentState,
+                  to_state: 'em_cotacao',
+                  actor_id: user.id,
+                  payload: { cotacao_ciclo_id: cicloId, status: 'rascunho' },
+                },
+              });
+            }
+          } else if (!todosItensCotados && itemIds && itemIds.length > 0) {
+            // Modo explodido: apenas alguns itens foram cotados
+            // Atualizar status dos itens cotados para 'cotado'
+            await Promise.all(
+              Array.from(requisicaoItemIdsCotados).map((itemId) =>
+                EntityService.update({
+                  schema: 'compras',
+                  table: 'requisicao_itens',
+                  companyId: selectedCompany!.id,
+                  id: itemId,
+                  data: { status: 'cotado' },
+                }).catch((error) => {
+                  console.error(`Erro ao atualizar status do item ${itemId}:`, error);
+                })
+              )
+            );
+          }
+        } catch (error) {
+          console.error(`Erro ao atualizar requisição ${reqId}:`, error);
+          // Não relançar - continuar com outras requisições
+        }
+      });
+
+      await Promise.all(updatePromises);
+
+      toast({
+        title: "Sucesso",
+        description: "Cotação salva como rascunho. Você pode continuar editando na aba 'Cotações Realizadas'.",
+      });
+      
+      onClose();
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível salvar a cotação como rascunho.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleEnviarAprovacao = async () => {
@@ -1140,10 +1857,30 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
     for (const item of itensSelecionadosArray) {
       let temFornecedor = false;
       const itemKey = getItemKey(item);
+      
+      // Calcular menor valor e fornecedor para este item
+      let lowestValue: number | null = null;
+      let lowestSupplierId: string | null = null;
+      let cobertura = 0;
+      
       fornecedoresComId.forEach((f) => {
         const cell = mapaFornecedorItens[f.id]?.[itemKey];
         if (cell && cell.quantidade_ofertada > 0 && cell.valor_unitario > 0) {
           temFornecedor = true;
+          // Calcular valor total do item para este fornecedor
+          const valorTotal = (cell.quantidade_ofertada || 0) * (cell.valor_unitario || 0);
+          // Descontos
+          const descontoValor = (cell.desconto_valor || 0) + (valorTotal * (cell.desconto_percentual || 0) / 100);
+          const valorFinal = valorTotal - descontoValor;
+          
+          // Verificar se é o menor preço
+          if (lowestValue === null || valorFinal < lowestValue) {
+            lowestValue = valorFinal;
+            lowestSupplierId = f.id;
+          }
+          
+          // Somar cobertura (quantidade ofertada)
+          cobertura += cell.quantidade_ofertada || 0;
         }
       });
 
@@ -1206,6 +1943,33 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
     setSubmitting(true);
     try {
+      // ✅ NOVO: Coletar IDs dos itens que serão cotados ANTES de verificar
+      const requisicaoItemIdsParaVerificar = new Set<string>();
+      itensAgrupados
+        .filter((item) => itensSelecionados.has(getItemKey(item)))
+        .forEach((item) => {
+          item.itens_origem.forEach((origem) => {
+            requisicaoItemIdsParaVerificar.add(origem.id);
+          });
+        });
+
+      // ✅ VERIFICAÇÃO DE CONCORRÊNCIA: Verificar se itens ainda estão disponíveis
+      try {
+        await verificarItensDisponiveis(requisicaoItemIdsParaVerificar);
+      } catch (error: any) {
+        setSubmitting(false);
+        toast({
+          title: "Item indisponível",
+          description: error.message,
+          variant: "destructive",
+        });
+        // Invalidar queries para recarregar dados
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+        return;
+      }
+
       // Validar data limite
       if (!formData.data_limite || formData.data_limite.trim() === '') {
         toast({
@@ -1244,6 +2008,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
       // Montar inserts item x fornecedor
       const inserts: Promise<any>[] = [];
+      const requisicaoItemIdsCotados = new Set<string>(); // Para rastrear quais itens foram cotados
+      
       fornecedores.forEach((fornecedor) => {
         if (!mapFornecedorParaCotacao.has(fornecedor.id)) return;
         const cotacaoFornecedorId = mapFornecedorParaCotacao.get(fornecedor.id)!;
@@ -1259,39 +2025,117 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
             // Aplicar para cada item de origem (requisicao_item_id)
             item.itens_origem.forEach((origem) => {
+              requisicaoItemIdsCotados.add(origem.id);
+              
+              // ✅ VERIFICAÇÃO FINAL: Verificar item individualmente antes de criar
               inserts.push(
-                EntityService.create({
-                  schema: 'compras',
-                  table: 'cotacao_item_fornecedor',
-                  companyId: selectedCompany!.id,
-                  data: {
-                    cotacao_fornecedor_id: cotacaoFornecedorId,
-                    requisicao_item_id: origem.id,
-                    material_id: origem.material_id,
-                    quantidade_ofertada: valorMapa.quantidade_ofertada,
-                    valor_unitario: valorMapa.valor_unitario,
-                    desconto_percentual: valorMapa.desconto_percentual || 0,
-                    desconto_valor: valorMapa.desconto_valor || 0,
-                    prazo_entrega_dias: valorMapa.prazo_entrega_dias || null,
-                    condicao_pagamento: valorMapa.condicao_pagamento || null,
-                    observacoes: valorMapa.observacoes || null,
-                    status: 'cotado',
-                    is_vencedor: valorMapa.is_vencedor || false,
-                  },
-                })
+                (async () => {
+                  // Verificação final antes de criar (última linha de defesa)
+                  try {
+                    const itemAtual = await EntityService.getById({
+                      schema: 'compras',
+                      table: 'requisicao_itens',
+                      id: origem.id,
+                      companyId: selectedCompany!.id,
+                    });
+
+                    if (itemAtual && (itemAtual as any).status === 'cotado') {
+                      throw new Error(`Item ${origem.id.substring(0, 8)} já foi cotado por outro comprador`);
+                    }
+                  } catch (error: any) {
+                    if (error.message?.includes('já foi cotado')) {
+                      throw error;
+                    }
+                    // Se erro ao buscar, continuar mas logar
+                    console.warn(`Não foi possível verificar item ${origem.id} antes de criar:`, error);
+                  }
+
+                  // Criar o registro
+                  return EntityService.create({
+                    schema: 'compras',
+                    table: 'cotacao_item_fornecedor',
+                    companyId: selectedCompany!.id,
+                    data: {
+                      cotacao_fornecedor_id: cotacaoFornecedorId,
+                      requisicao_item_id: origem.id,
+                      material_id: origem.material_id,
+                      quantidade_ofertada: valorMapa.quantidade_ofertada,
+                      valor_unitario: valorMapa.valor_unitario,
+                      desconto_percentual: valorMapa.desconto_percentual || 0,
+                      desconto_valor: valorMapa.desconto_valor || 0,
+                      prazo_entrega_dias: valorMapa.prazo_entrega_dias || null,
+                      condicao_pagamento: valorMapa.condicao_pagamento || null,
+                      observacoes: valorMapa.observacoes || null,
+                      status: 'cotado',
+                      is_vencedor: valorMapa.is_vencedor || false,
+                    },
+                  });
+                })()
               );
             });
           });
       });
 
+      // Executar inserts com tratamento individual de erros
       if (inserts.length > 0) {
-        await Promise.all(inserts);
+        const results = await Promise.allSettled(inserts);
+        const erros = results.filter((r) => r.status === 'rejected');
+        
+        if (erros.length > 0) {
+          // ✅ TRATAMENTO DE ERRO MELHORADO: Verificar se são erros de concorrência
+          const errosConcorrencia = erros.filter((e: any) => 
+            e.reason?.message?.includes('já foi cotado') ||
+            e.reason?.message?.includes('já foi cotado por outro comprador')
+          );
+          
+          if (errosConcorrencia.length > 0) {
+            const mensagem = errosConcorrencia.length === erros.length
+              ? 'Todos os itens selecionados já foram cotados por outro comprador. Por favor, recarregue a página.'
+              : `Alguns itens (${errosConcorrencia.length}) já foram cotados por outro comprador. Por favor, recarregue a página.`;
+            
+            setSubmitting(false);
+            toast({
+              title: "Conflito detectado",
+              description: mensagem,
+              variant: "destructive",
+            });
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+            return;
+          }
+          
+          const mensagensErro = erros.map((e: any) => 
+            e.reason?.message || 'Erro desconhecido ao criar item de cotação'
+          ).join('; ');
+          
+          throw new Error(`Erro ao salvar alguns itens da cotação: ${mensagensErro}`);
+        }
       }
 
-      // Atualizar workflow_state de todas as requisições selecionadas para 'em_cotacao'
-      // A primeira já foi atualizada pelo startQuoteCycle, mas as outras também precisam ser atualizadas
+      // Verificar se todos os itens de cada requisição foram cotados
+      // No modo explodido (itemIds fornecido), não atualizar status se nem todos foram cotados
       const updatePromises = requisicoesIds.map(async (reqId) => {
         try {
+          // Buscar todos os itens da requisição
+          const itensRequisicao = await EntityService.list({
+            schema: 'compras',
+            table: 'requisicao_itens',
+            companyId: selectedCompany!.id,
+            filters: { requisicao_id: reqId },
+            page: 1,
+            pageSize: 1000,
+          });
+
+          const totalItens = itensRequisicao.data?.length || 0;
+          const itensCotadosNestaRequisicao = (itensRequisicao.data || []).filter((item: any) =>
+            requisicaoItemIdsCotados.has(item.id)
+          ).length;
+
+          // Se estamos no modo explodido (itemIds fornecido) e nem todos os itens foram cotados,
+          // não atualizar o status da requisição - ela deve permanecer disponível
+          const todosItensCotados = totalItens > 0 && itensCotadosNestaRequisicao === totalItens;
+          
           // Buscar o estado atual da requisição
           const requisicao = await EntityService.getById({
             schema: 'compras',
@@ -1302,8 +2146,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
           const currentState = (requisicao as any)?.workflow_state;
           
-          // Se já está em 'em_cotacao', não precisa atualizar
-          if (currentState !== 'em_cotacao') {
+          // Apenas atualizar status se todos os itens foram cotados ou se já está em em_cotacao
+          // No modo explodido parcial, manter a requisição disponível
+          if (todosItensCotados && currentState !== 'em_cotacao') {
             // Atualizar diretamente o workflow_state
             await EntityService.update({
               schema: 'compras',
@@ -1331,6 +2176,22 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                 },
               });
             }
+          } else if (!todosItensCotados && itemIds && itemIds.length > 0) {
+            // Modo explodido: apenas alguns itens foram cotados
+            // Atualizar status dos itens cotados para 'cotado'
+            await Promise.all(
+              Array.from(requisicaoItemIdsCotados).map((itemId) =>
+                EntityService.update({
+                  schema: 'compras',
+                  table: 'requisicao_itens',
+                  companyId: selectedCompany!.id,
+                  id: itemId,
+                  data: { status: 'cotado' },
+                }).catch((error) => {
+                  console.error(`Erro ao atualizar status do item ${itemId}:`, error);
+                })
+              )
+            );
           }
         } catch (error) {
           // Log do erro mas não interrompe o processo
@@ -1340,9 +2201,195 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
       await Promise.all(updatePromises);
 
+      // ✅ Criar aprovações para a cotação se houver configuração
+      let temAprovacoes = false;
+      if (cicloId && selectedCompany?.id) {
+        try {
+          // Aguardar um pouco para garantir que todos os inserts foram commitados
+          await new Promise(resolve => setTimeout(resolve, 800));
+          
+          // Verificar se há configuração de aprovação antes de tentar criar
+          try {
+            const configsResult = await EntityService.list({
+              schema: 'public',
+              table: 'configuracoes_aprovacao_unificada',
+              companyId: selectedCompany.id,
+              filters: {
+                processo_tipo: 'cotacao_compra',
+                ativo: true,
+              },
+              page: 1,
+              pageSize: 10,
+            });
+            
+            const temConfiguracao = configsResult.data && configsResult.data.length > 0;
+            console.log('🔍 [handleEnviarAprovacao] Configurações encontradas:', {
+              count: configsResult.data?.length || 0,
+              configs: configsResult.data?.map((c: any) => ({
+                id: c.id,
+                nivel: c.nivel_aprovacao,
+                valor_limite: c.valor_limite,
+                aprovadores_count: Array.isArray(c.aprovadores) ? c.aprovadores.length : 0
+              }))
+            });
+            
+            if (!temConfiguracao) {
+              console.log('⚠️ [handleEnviarAprovacao] Nenhuma configuração de aprovação encontrada para cotacao_compra');
+            } else {
+              // Verificar quantos itens vencedores foram salvos
+              try {
+                const itensVencedoresCheck = await EntityService.list({
+                  schema: 'compras',
+                  table: 'cotacao_item_fornecedor',
+                  companyId: selectedCompany.id,
+                  filters: {
+                    is_vencedor: true,
+                  },
+                  page: 1,
+                  pageSize: 100,
+                });
+                
+                // Filtrar apenas os itens desta cotação através dos fornecedores
+                const fornecedoresCotacaoIds = fornecedoresCriados.map((f: any) => f.id);
+                const itensVencedoresDestaCotacao = (itensVencedoresCheck.data || []).filter((item: any) => {
+                  return fornecedoresCotacaoIds.includes(item.cotacao_fornecedor_id);
+                });
+                
+                console.log('🔍 [handleEnviarAprovacao] Itens vencedores salvos:', {
+                  total_encontrados: itensVencedoresCheck.data?.length || 0,
+                  desta_cotacao: itensVencedoresDestaCotacao.length,
+                  fornecedores_cotacao: fornecedoresCotacaoIds.length,
+                  itens_ids: itensVencedoresDestaCotacao.map((i: any) => ({
+                    id: i.id,
+                    cotacao_fornecedor_id: i.cotacao_fornecedor_id,
+                    is_vencedor: i.is_vencedor,
+                    valor: i.valor_unitario,
+                    quantidade: i.quantidade_ofertada
+                  }))
+                });
+                
+                if (itensVencedoresDestaCotacao.length === 0) {
+                  console.warn('⚠️ [handleEnviarAprovacao] Nenhum item vencedor encontrado para esta cotação. A função SQL pode calcular valor 0.');
+                }
+              } catch (checkError) {
+                console.warn('⚠️ [handleEnviarAprovacao] Erro ao verificar itens vencedores:', checkError);
+              }
+              
+              console.log('✅ [handleEnviarAprovacao] Configuração de aprovação encontrada, criando aprovações...');
+              
+              // Calcular valor total da cotação (apenas para log)
+              const valorTotalCotacao = itensAgrupados
+                .filter((item) => itensSelecionados.has(getItemKey(item)))
+                .reduce((total, item) => {
+                  // Buscar o fornecedor vencedor
+                  const fornecedorVencedor = fornecedores.find((f) => {
+                    const itemKey = getItemKey(item);
+                    const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                    return cell && cell.is_vencedor === true;
+                  });
+                  
+                  if (fornecedorVencedor) {
+                    const itemKey = getItemKey(item);
+                    const valorMapa = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
+                    if (valorMapa && valorMapa.quantidade_ofertada && valorMapa.valor_unitario) {
+                      const valorTotal = valorMapa.quantidade_ofertada * valorMapa.valor_unitario;
+                      const descontoValor = (valorMapa.desconto_valor || 0) + (valorTotal * (valorMapa.desconto_percentual || 0) / 100);
+                      const valorFinal = valorTotal - descontoValor;
+                      return total + valorFinal;
+                    }
+                  }
+                  return total;
+                }, 0);
+              
+              console.log('💰 [handleEnviarAprovacao] Valor total calculado (frontend):', valorTotalCotacao);
+              
+              // Tentar criar aprovações (a função verifica internamente se há configuração)
+              temAprovacoes = await createApprovalsMutation.mutateAsync({
+                processo_tipo: 'cotacao_compra',
+                processo_id: cicloId,
+              });
+              
+              console.log('✅ [handleEnviarAprovacao] Resultado createApprovalsMutation:', temAprovacoes);
+              
+              // Verificar manualmente se aprovações foram criadas (pode retornar false mas ter criado)
+              if (!temAprovacoes) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const aprovacoesCheck = await EntityService.list({
+                  schema: 'public',
+                  table: 'aprovacoes_unificada',
+                  companyId: selectedCompany.id,
+                  filters: {
+                    processo_tipo: 'cotacao_compra',
+                    processo_id: cicloId,
+                  },
+                  page: 1,
+                  pageSize: 10,
+                });
+                
+                temAprovacoes = aprovacoesCheck.data && aprovacoesCheck.data.length > 0;
+                console.log('🔍 [handleEnviarAprovacao] Verificação manual de aprovações:', {
+                  encontradas: temAprovacoes,
+                  count: aprovacoesCheck.data?.length || 0,
+                  aprovações: aprovacoesCheck.data?.map((a: any) => ({
+                    id: a.id,
+                    nivel: a.nivel_aprovacao,
+                    aprovador_id: a.aprovador_id,
+                    status: a.status
+                  }))
+                });
+              }
+            }
+          } catch (configError: any) {
+            console.error('❌ [handleEnviarAprovacao] Erro ao verificar configuração:', configError);
+          }
+        } catch (error: any) {
+          // Se não houver configuração de aprovação, não é um erro crítico
+          console.error('❌ [handleEnviarAprovacao] Erro ao criar aprovações:', error);
+          console.error('❌ [handleEnviarAprovacao] Stack:', error.stack);
+        }
+      }
+
+      // ✅ Atualizar status do ciclo para 'em_aprovacao' se houver aprovações, senão 'aberta'
+      if (cicloId) {
+        try {
+          await EntityService.update({
+            schema: 'compras',
+            table: 'cotacao_ciclos',
+            companyId: selectedCompany!.id,
+            id: cicloId,
+            data: {
+              workflow_state: temAprovacoes ? 'em_aprovacao' : 'aberta',
+              status: temAprovacoes ? 'em_aprovacao' : 'aberta',
+              observacoes: formData.observacoes_internas?.trim() || null,
+            },
+          });
+
+          // Registrar no log de workflow
+          if (user?.id) {
+            await EntityService.create({
+              schema: 'compras',
+              table: 'workflow_logs',
+              companyId: selectedCompany!.id,
+              data: {
+                entity_type: 'cotacao_compra',
+                entity_id: cicloId,
+                from_state: 'aberta',
+                to_state: temAprovacoes ? 'em_aprovacao' : 'aberta',
+                actor_id: user.id,
+                payload: { motivo: 'cotacao_enviada_aprovacao', tem_aprovacoes: temAprovacoes },
+              },
+            });
+          }
+        } catch (error) {
+          console.error('Erro ao atualizar status do ciclo para em_aprovacao:', error);
+        }
+      }
+
       toast({
         title: "Sucesso",
-        description: "Cotação enviada para aprovação com mapa por item/fornecedor.",
+        description: temAprovacoes 
+          ? "Cotação enviada para aprovação com mapa por item/fornecedor."
+          : "Cotação criada com sucesso.",
       });
       
       onClose();
@@ -1459,7 +2506,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
       <DialogContent className="max-w-6xl max-h-[95vh] overflow-hidden flex flex-col p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
-            Gerar Cotação
+            {readOnly ? 'Visualizar Cotação' : cotacaoId ? 'Editar Cotação' : 'Gerar Cotação'}
             {contextoSelecao.tipoCompra && (
               <Badge variant="outline" className="ml-2">
                 {contextoSelecao.tipoCompra}
@@ -1693,56 +2740,82 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-center">
-                                    {(() => {
-                                      const imagemUrl = item.imagem_url;
-                                      const temImagem = imagemUrl && typeof imagemUrl === 'string' && imagemUrl.trim() !== '';
-                                      
-                                      // Debug: log do item antes de renderizar botão
-                                      console.log('🖼️ Renderizando botão de imagem:', {
-                                        material_nome: item.material_nome,
-                                        material_codigo: item.material_codigo,
-                                        imagem_url: item.imagem_url,
-                                        imagemUrl,
-                                        imagemUrl_tipo: typeof imagemUrl,
-                                        imagemUrl_length: imagemUrl?.length,
-                                        temImagem
-                                      });
-                                      
-                                      if (temImagem) {
+                                    <div className="flex items-center justify-center gap-1">
+                                      {/* Botão Histórico de Compras */}
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-8 w-8 p-0 hover:bg-primary/10 cursor-pointer"
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setItemHistoricoSelecionado({
+                                                  material_id: item.material_id,
+                                                  material_nome: item.material_nome,
+                                                  unidade_medida: item.unidade_medida,
+                                                });
+                                                setHistoricoModalAberto(true);
+                                              }}
+                                              title="Ver histórico de compras"
+                                            >
+                                              <DollarSign className="h-4 w-4 text-primary" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>Ver histórico de compras</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+
+                                      {/* Botão Visualizar Imagem */}
+                                      {(() => {
+                                        const imagemUrl = item.imagem_url;
+                                        const temImagem = imagemUrl && typeof imagemUrl === 'string' && imagemUrl.trim() !== '';
+                                        
+                                        if (temImagem) {
+                                          return (
+                                            <TooltipProvider>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 w-8 p-0 hover:bg-primary/10 cursor-pointer"
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      setImagemSelecionada({
+                                                        url: imagemUrl,
+                                                        nome: item.material_nome
+                                                      });
+                                                      setImagemModalAberto(true);
+                                                    }}
+                                                    title={`Visualizar foto: ${item.material_nome}`}
+                                                  >
+                                                    <Eye className="h-4 w-4 text-primary" />
+                                                  </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  <p>Visualizar foto</p>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                          );
+                                        }
+                                        
                                         return (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0 hover:bg-primary/10 cursor-pointer"
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              e.stopPropagation();
-                                              console.log('🖱️ Clicou no botão de imagem:', {
-                                                url: imagemUrl,
-                                                nome: item.material_nome
-                                              });
-                                              setImagemSelecionada({
-                                                url: imagemUrl,
-                                                nome: item.material_nome
-                                              });
-                                              setImagemModalAberto(true);
-                                            }}
-                                            title={`Visualizar foto: ${item.material_nome}`}
+                                          <div 
+                                            className="h-8 w-8 flex items-center justify-center text-muted-foreground opacity-30"
+                                            title="Item sem foto cadastrada"
                                           >
-                                            <Eye className="h-4 w-4 text-primary" />
-                                          </Button>
+                                            <ImageIcon className="h-4 w-4" />
+                                          </div>
                                         );
-                                      }
-                                      
-                                      return (
-                                        <div 
-                                          className="h-8 w-8 flex items-center justify-center text-muted-foreground opacity-30"
-                                          title="Item sem foto cadastrada"
-                                        >
-                                          <ImageIcon className="h-4 w-4" />
-                                        </div>
-                                      );
-                                    })()}
+                                      })()}
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               );
@@ -2108,9 +3181,63 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                   </Alert>
                 ) : (
                   <div className="space-y-6">
-                    <div className="flex items-center space-x-4">
-                      <Label className="text-lg font-semibold">Mapa de Cotação - Comparativo de Valores</Label>
-                      <Badge variant="secondary">{itensSelecionados.size} itens selecionados</Badge>
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center space-x-4">
+                        <Label className="text-lg font-semibold">Mapa de Cotação - Comparativo de Valores</Label>
+                        <Badge variant="secondary">{itensSelecionados.size} itens selecionados</Badge>
+                      </div>
+                      {fornecedoresValidos > 0 && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleSelectLowestPrices}
+                            className="flex items-center gap-2"
+                            title="Seleciona automaticamente o fornecedor com menor valor para cada item"
+                          >
+                            <Sparkles className="h-4 w-4" />
+                            <span className="hidden sm:inline">Selecionar Mais Baratos</span>
+                            <span className="sm:hidden">Mais Baratos</span>
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex items-center gap-2"
+                                title="Seleciona todos os itens de um fornecedor específico"
+                              >
+                                <Users className="h-4 w-4" />
+                                <span className="hidden sm:inline">Selecionar Fornecedor</span>
+                                <span className="sm:hidden">Fornecedor</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuLabel>Selecionar todos os itens de:</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {fornecedores.filter(f => f.fornecedor_id).map((f) => {
+                                const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
+                                const partner = fornecedorDados?.partner_id ? partnersMap.get(fornecedorDados.partner_id) : null;
+                                const displayName = partner?.nome_fantasia || partner?.razao_social || fornecedorDados?.contato_principal || `Fornecedor ${f.id.substring(0, 8)}`;
+                                return (
+                                  <DropdownMenuItem
+                                    key={f.id}
+                                    onClick={() => handleSelectSupplierForAllItems(f.id)}
+                                    className="cursor-pointer"
+                                  >
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">{displayName}</span>
+                                      {partner?.cnpj && (
+                                        <span className="text-xs text-muted-foreground">{partner.cnpj}</span>
+                                      )}
+                                    </div>
+                                  </DropdownMenuItem>
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      )}
                     </div>
 
                     {/* Tabela Principal: Itens x Fornecedores com Scroll Horizontal */}
@@ -3054,6 +4181,17 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                       )
                     : null;
 
+                  // Calcular valores para o resumo detalhado
+                  const subtotalItens = fornecedoresVencedores.reduce((sum, f) => sum + f.subtotalParcial, 0);
+                  const freteTotal = fornecedoresVencedores.reduce((sum, f) => sum + (f.fornecedor.valor_frete || 0), 0);
+                  const impostoTotal = fornecedoresVencedores.reduce((sum, f) => sum + (f.fornecedor.valor_imposto || 0), 0);
+                  const descontoTotal = fornecedoresVencedores.reduce((sum, f) => {
+                    const descontoPct = f.fornecedor.desconto_percentual || 0;
+                    const descontoValor = f.fornecedor.desconto_valor || 0;
+                    const descontoCalculado = f.subtotalParcial * (descontoPct / 100) + descontoValor;
+                    return sum + descontoCalculado;
+                  }, 0);
+                  
                   // Calcular valor total da cotação
                   const valorTotalCotacao = fornecedoresVencedores.reduce((sum, f) => sum + f.totalSelecionado, 0);
                   
@@ -3492,33 +4630,80 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
                           <CardTitle>Resumo Final da Cotação</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Tipo de Cotação</Label>
-                              <p className="font-medium">{formData.tipo_cotacao}</p>
-                  </div>
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Data Limite</Label>
-                              <p className="font-medium">
-                                {formData.data_limite 
-                                  ? new Date(formData.data_limite).toLocaleDateString('pt-BR')
-                                  : '—'
-                                }
-                              </p>
-                </div>
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Total Selecionado</Label>
-                              <p className="font-bold text-lg text-primary">
-                                R$ {valorTotalCotacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                              </p>
+                          <div className="space-y-4">
+                            {/* Informações gerais */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              <div>
+                                <Label className="text-muted-foreground text-xs">Tipo de Cotação</Label>
+                                <p className="font-medium">{formData.tipo_cotacao}</p>
+                              </div>
+                              <div>
+                                <Label className="text-muted-foreground text-xs">Data Limite</Label>
+                                <p className="font-medium">
+                                  {formData.data_limite 
+                                    ? new Date(formData.data_limite).toLocaleDateString('pt-BR')
+                                    : '—'
+                                  }
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-muted-foreground text-xs">Fornecedores Ganhadores</Label>
+                                <p className="font-medium">{fornecedoresVencedores.length}</p>
+                              </div>
                             </div>
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Fornecedores Ganhadores</Label>
-                              <p className="font-medium">{fornecedoresVencedores.length}</p>
+
+                            {/* Detalhamento de valores */}
+                            <div className="border-t pt-4">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <Label className="text-muted-foreground text-sm">Subtotal dos Itens</Label>
+                                  <p className="font-medium text-sm">
+                                    R$ {subtotalItens.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                
+                                {freteTotal > 0 && (
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm">Frete</Label>
+                                    <p className="font-medium text-sm text-blue-600">
+                                      + R$ {freteTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {impostoTotal > 0 && (
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm">Impostos</Label>
+                                    <p className="font-medium text-sm text-blue-600">
+                                      + R$ {impostoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {descontoTotal > 0 && (
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm">Desconto</Label>
+                                    <p className="font-medium text-sm text-green-600">
+                                      - R$ {descontoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                <div className="border-t pt-2 mt-2">
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm font-semibold">Total Final</Label>
+                                    <p className="font-bold text-lg text-primary">
+                                      R$ {valorTotalCotacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="md:col-span-2">
+
+                            {/* Economia Estimada */}
+                            <div className="border-t pt-4">
                               <Label className="text-muted-foreground text-xs">Economia Estimada</Label>
-                              <p className={`font-bold text-lg ${economiaEstimada >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              <p className={`font-bold text-lg mt-1 ${economiaEstimada >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 {economiaEstimada >= 0 ? '+' : ''}R$ {economiaEstimada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                               <p className="text-xs text-muted-foreground mt-1">
@@ -3548,6 +4733,19 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
         )}
 
         {/* Modal de Visualização de Imagem do Item */}
+        {/* Modal de Histórico de Compras */}
+        {itemHistoricoSelecionado && (
+          <HistoricoComprasItemModal
+            isOpen={historicoModalAberto}
+            onClose={() => {
+              setHistoricoModalAberto(false);
+              setItemHistoricoSelecionado(null);
+            }}
+            item={itemHistoricoSelecionado}
+          />
+        )}
+
+        {/* Modal de Imagem */}
         <Dialog open={imagemModalAberto} onOpenChange={setImagemModalAberto}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             {imagemSelecionada && (
@@ -4022,54 +5220,58 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds }: ModalGera
 
         <DialogFooter className="px-6 py-4 border-t flex-shrink-0">
           <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancelar
+            {readOnly ? 'Fechar' : 'Cancelar'}
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleSalvarRascunho}
-            disabled={submitting}
-          >
-            Salvar como Rascunho
-          </Button>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-block">
-          <Button
-            onClick={handleEnviarAprovacao}
-                    disabled={loading || submitting || !podeEnviarAprovacao}
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Enviando...
-              </>
-            ) : (
-              <>
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Enviar para Aprovação
-              </>
-            )}
-          </Button>
-                </span>
-              </TooltipTrigger>
-              {!podeEnviarAprovacao && !loading && !submitting && (
-                <TooltipContent>
-                  <div className="max-w-xs">
-                    {!fornecedoresOk ? (
-                      <p>Selecione {isEmergencial ? '1' : 'entre 2 e 6'} fornecedor(es) conforme o tipo de cotação</p>
-                    ) : !validarFornecedoresComValores ? (
-                      <p>Cada fornecedor deve ter pelo menos um item com valor preenchido no mapa de cotação</p>
-                    ) : itensSelecionados.size === 0 ? (
-                      <p>Selecione pelo menos um item</p>
-                    ) : (
-                      <p>Preencha todos os requisitos para enviar</p>
-                    )}
-                  </div>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+          {!readOnly && (
+            <>
+              <Button
+                variant="outline"
+                onClick={handleSalvarRascunho}
+                disabled={submitting || !!cotacaoId}
+              >
+                {cotacaoId ? 'Atualizar Rascunho' : 'Salvar como Rascunho'}
+              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-block">
+                      <Button
+                        onClick={handleEnviarAprovacao}
+                        disabled={loading || submitting || !podeEnviarAprovacao}
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Enviando...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            {cotacaoId ? 'Atualizar e Enviar para Aprovação' : 'Enviar para Aprovação'}
+                          </>
+                        )}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {!podeEnviarAprovacao && !loading && !submitting && (
+                    <TooltipContent>
+                      <div className="max-w-xs">
+                        {!fornecedoresOk ? (
+                          <p>Selecione {isEmergencial ? '1' : 'entre 2 e 6'} fornecedor(es) conforme o tipo de cotação</p>
+                        ) : !validarFornecedoresComValores ? (
+                          <p>Cada fornecedor deve ter pelo menos um item com valor preenchido no mapa de cotação</p>
+                        ) : itensSelecionados.size === 0 ? (
+                          <p>Selecione pelo menos um item</p>
+                        ) : (
+                          <p>Preencha todos os requisitos para enviar</p>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

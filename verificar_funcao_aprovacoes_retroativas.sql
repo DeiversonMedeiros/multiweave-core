@@ -42,3 +42,4 @@ SELECT
     'Teste de sintaxe:' as info,
     'Para testar a execução, use:' as instrucao,
     'SELECT * FROM public.create_retroactive_approvals(''requisicao_compra'', ''SEU-COMPANY-ID'', 5);' as exemplo;
+

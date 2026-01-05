@@ -20,6 +20,16 @@ export type SupplierType = 'LOCAL' | 'NACIONAL' | 'INTERNACIONAL';
 
 export type QuoteValueField = 'price' | 'discount' | 'leadTime' | 'commercialTerms';
 
+export interface ApprovalInfo {
+  id: string;
+  nivel_aprovacao: number;
+  aprovador_id: string;
+  aprovador_nome?: string;
+  status: 'pendente' | 'aprovado' | 'rejeitado';
+  data_aprovacao?: string;
+  observacoes?: string;
+}
+
 export interface QuoteContextState {
   id: string;
   numero_cotacao: string;
@@ -32,6 +42,7 @@ export interface QuoteContextState {
   prazo_resposta?: string;
   status: string;
   workflow_state?: string;
+  approvals?: ApprovalInfo[];
 }
 
 export interface PurchaseItemState {
@@ -265,43 +276,29 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
         });
       });
 
-      // Mapear fornecedores a partir dos partners
-      // Usar fornecedores_dados.id se existir, senão usar partner.id como fallback
-      const suppliers: SupplierState[] = fornecedorPartners.map((partner: any) => {
-        const fornecedorDados = fornecedoresDadosMap.get(partner.id);
+      // Mapear fornecedores APENAS os que foram inseridos na cotação (fornecedoresCotacao)
+      // Não mostrar todos os fornecedores disponíveis, apenas os que estão na cotação
+      const suppliers: SupplierState[] = fornecedoresCotacao.map((fc: any) => {
+        // Buscar fornecedores_dados pelo fornecedor_id
+        const fornecedorDados = fornecedoresDados.find((fd: any) => fd.id === fc.fornecedor_id);
+        if (!fornecedorDados) {
+          console.warn(`Fornecedor dados não encontrado para fornecedor_id: ${fc.fornecedor_id}`);
+          return null;
+        }
         
-        // Se existe fornecedores_dados, usar o id dele, senão usar partner.id
-        const supplierId = fornecedorDados?.id || partner.id;
+        // Buscar partner pelo partner_id do fornecedor_dados
+        const partner = partnersMap.get(fornecedorDados.partner_id);
+        if (!partner) {
+          console.warn(`Partner não encontrado para partner_id: ${fornecedorDados.partner_id}`);
+          return null;
+        }
         
-        // Verificar se está selecionado na cotação
-        // cotacao_fornecedores referencia fornecedores_dados.id, então precisamos verificar ambos
-        const isSelected = fornecedoresCotacao.some((fc: any) => {
-          // Se temos fornecedores_dados, verificar pelo id dele
-          if (fornecedorDados) {
-            return fc.fornecedor_id === fornecedorDados.id;
-          }
-          // Se não temos fornecedores_dados, não pode estar selecionado (pois cotacao_fornecedores requer fornecedores_dados.id)
-          return false;
-        });
-        
-        const cotacaoFornecedor = fornecedoresCotacaoMap.get(supplierId);
+        const supplierId = fornecedorDados.id;
         
         // Determinar status: se tem fornecedores_dados, usar status dele, senão considerar ativo
         let status: SupplierStatus = 'ACTIVE';
-        if (fornecedorDados) {
-          status = (fornecedorDados.status === 'bloqueado' ? 'BLOCKED' : 
-                   fornecedorDados.status === 'inativo' ? 'BLOCKED' : 'ACTIVE') as SupplierStatus;
-        }
-        
-        // Log para debug
-        if (isSelected && cotacaoFornecedor) {
-          console.log('📦 [loadQuoteData] Fornecedor cotação:', {
-            supplier_id: supplierId,
-            partner_id: partner.id,
-            cotacao_fornecedor: cotacaoFornecedor,
-            valor_frete: cotacaoFornecedor.valor_frete,
-            valor_imposto: cotacaoFornecedor.valor_imposto,
-          });
+        if (fornecedorDados.status === 'bloqueado' || fornecedorDados.status === 'inativo') {
+          status = 'BLOCKED';
         }
         
         return {
@@ -310,14 +307,14 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
           cnpj: partner.cnpj || '',
           type: 'NACIONAL' as SupplierType, // Default, pode ser melhorado com dados de endereço
           status,
-          selected: isSelected,
+          selected: true, // Todos os fornecedores aqui já estão na cotação
           partner_id: partner.id,
-          valor_frete: cotacaoFornecedor?.valor_frete ? Number(cotacaoFornecedor.valor_frete) : 0,
-          valor_imposto: cotacaoFornecedor?.valor_imposto ? Number(cotacaoFornecedor.valor_imposto) : 0,
-          desconto_percentual: cotacaoFornecedor?.desconto_percentual ? Number(cotacaoFornecedor.desconto_percentual) : 0,
-          desconto_valor: cotacaoFornecedor?.desconto_valor ? Number(cotacaoFornecedor.desconto_valor) : 0,
+          valor_frete: fc.valor_frete ? Number(fc.valor_frete) : 0,
+          valor_imposto: fc.valor_imposto ? Number(fc.valor_imposto) : 0,
+          desconto_percentual: fc.desconto_percentual ? Number(fc.desconto_percentual) : 0,
+          desconto_valor: fc.desconto_valor ? Number(fc.desconto_valor) : 0,
         };
-      });
+      }).filter((s) => s !== null) as SupplierState[];
       
       console.log('📦 [loadQuoteData] Suppliers mapeados:', suppliers.map(s => ({
         id: s.id,
@@ -330,6 +327,8 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
       // Carregar itens cotados (cotacao_item_fornecedor)
       const quoteMatrix: QuoteMatrixState = {};
       const cotacaoFornecedoresIds = fornecedoresCotacao.map((fc: any) => fc.id);
+      // Inicializar conjunto de IDs dos itens cotados fora do bloco para usar depois
+      const itensCotadosIds = new Set<string>();
       
       if (cotacaoFornecedoresIds.length > 0) {
         try {
@@ -350,6 +349,13 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
 
           console.log('📦 [loadQuoteData] Itens cotados encontrados:', cotacaoItens.length);
           console.log('📦 [loadQuoteData] IDs de requisicao_item_id únicos:', [...new Set(cotacaoItens.map((item: any) => item.requisicao_item_id))]);
+
+          // Coletar IDs dos itens cotados
+          cotacaoItens.forEach((item: any) => {
+            if (item.requisicao_item_id) {
+              itensCotadosIds.add(item.requisicao_item_id);
+            }
+          });
 
           // Criar mapa: cotacao_fornecedor_id -> fornecedor_id
           const cotacaoFornecedorToFornecedorMap = new Map<string, string>();
@@ -376,14 +382,12 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
               leadTime: cotacaoItem.prazo_entrega_dias || null,
               commercialTerms: cotacaoItem.condicao_pagamento || null,
               finalValue: cotacaoItem.valor_total_calculado || null,
-              quantity: cotacaoItem.quantidade_ofertada || null,
             };
           });
 
           // Garantir que todos os itens cotados estejam na lista de itens
           // Se um item foi cotado mas não está em requisicaoItens, adicionar
           const requisicaoItemIds = new Set(requisicaoItens.map((item: any) => item.id));
-          const itensCotadosIds = new Set(cotacaoItens.map((item: any) => item.requisicao_item_id).filter(Boolean));
           
           console.log('📦 [loadQuoteData] Itens da requisição principal:', requisicaoItens.length);
           console.log('📦 [loadQuoteData] IDs de itens cotados:', Array.from(itensCotadosIds));
@@ -476,16 +480,15 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
       }
 
       // Carregar comprador (criador da cotação)
-      // cotacao_ciclos não tem created_by, então usar valor padrão
-      // Se necessário, pode buscar o criador através da requisição ou de outra forma
+      // Tentar buscar através de quote.created_by primeiro, depois requisicaoData.created_by
       let buyer = { id: '', nome: 'Usuário', email: '' };
-      // Tentar buscar o criador através da requisição se disponível
-      if (requisicaoData?.created_by) {
+      const userIdToLoad = quote.created_by || requisicaoData?.created_by;
+      if (userIdToLoad) {
         try {
           const user = await EntityService.getById({
             schema: 'public',
             table: 'users',
-            id: requisicaoData.created_by,
+            id: userIdToLoad,
             companyId,
           });
           buyer = {
@@ -526,8 +529,12 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Mapear itens - DEPOIS de adicionar os itens faltantes
-      const items: PurchaseItemState[] = requisicaoItens.map((item: any) => {
+      // Filtrar apenas os itens que foram cotados (já coletado anteriormente em itensCotadosIds)
+      const requisicaoItensCotados = requisicaoItens.filter((item: any) => 
+        itensCotadosIds.has(item.id)
+      );
+      
+      const items: PurchaseItemState[] = requisicaoItensCotados.map((item: any) => {
         const materialIdStr = item.material_id ? String(item.material_id) : null;
         const material = materialIdStr ? materiaisMap.get(materialIdStr) : null;
         const numeroRequisicao = item.requisicao_id ? requisicoesMap.get(item.requisicao_id) || 'Requisição' : (requisicaoData?.numero_requisicao || 'Requisição');
@@ -548,6 +555,104 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
       console.log('📦 [loadQuoteData] Total de itens mapeados:', items.length);
       console.log('📦 [loadQuoteData] Itens:', items.map(i => ({ id: i.id, desc: i.description })));
 
+      // Buscar aprovações pendentes da cotação
+      let approvals: ApprovalInfo[] = [];
+      try {
+        const aprovacoesResult = await EntityService.list({
+          schema: 'public',
+          table: 'aprovacoes_unificada',
+          companyId,
+          filters: {
+            processo_tipo: 'cotacao_compra',
+            processo_id: quote.id,
+          },
+          page: 1,
+          pageSize: 100,
+        });
+
+        if (aprovacoesResult.data && aprovacoesResult.data.length > 0) {
+          // Buscar nomes dos aprovadores
+          const aprovadorIds = [...new Set(aprovacoesResult.data.map((a: any) => a.aprovador_id))];
+          const aprovadoresMap = new Map<string, { nome: string }>();
+          
+          for (const aprovadorId of aprovadorIds) {
+            try {
+              const user = await EntityService.getById({
+                schema: 'public',
+                table: 'users',
+                id: aprovadorId,
+                companyId,
+              });
+              if (user) {
+                aprovadoresMap.set(aprovadorId, { nome: user.nome || user.name || 'Usuário' });
+              }
+            } catch (e) {
+              console.warn(`Erro ao buscar aprovador ${aprovadorId}:`, e);
+            }
+          }
+
+          approvals = aprovacoesResult.data
+            .sort((a: any, b: any) => {
+              if (a.nivel_aprovacao !== b.nivel_aprovacao) {
+                return a.nivel_aprovacao - b.nivel_aprovacao;
+              }
+              return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+            })
+            .map((aprov: any) => ({
+              id: aprov.id,
+              nivel_aprovacao: aprov.nivel_aprovacao,
+              aprovador_id: aprov.aprovador_id,
+              aprovador_nome: aprovadoresMap.get(aprov.aprovador_id)?.nome || 'Usuário',
+              status: aprov.status,
+              data_aprovacao: aprov.data_aprovacao,
+              observacoes: aprov.observacoes,
+            }));
+        }
+      } catch (e) {
+        console.warn('Erro ao buscar aprovações da cotação:', e);
+      }
+
+      // Determinar status correto baseado nas aprovações
+      let finalStatus = quote.status || '';
+      let finalWorkflowState = quote.workflow_state || quote.status || '';
+      
+      // Verificar status das aprovações
+      const temAprovacoesPendentes = approvals.length > 0 && approvals.some(a => a.status === 'pendente');
+      const temAprovacoesRejeitadas = approvals.length > 0 && approvals.some(a => a.status === 'rejeitado');
+      const todasAprovadas = approvals.length > 0 && approvals.every(a => a.status === 'aprovado');
+      
+      // Se há aprovações pendentes, status deve ser 'em_aprovacao'
+      if (temAprovacoesPendentes) {
+        finalStatus = 'em_aprovacao';
+        finalWorkflowState = 'em_aprovacao';
+      }
+      // Se todas foram aprovadas e status ainda é 'em_aprovacao', mudar para 'aprovada'
+      else if (todasAprovadas && (finalStatus === 'em_aprovacao' || finalWorkflowState === 'em_aprovacao')) {
+        finalStatus = 'aprovada';
+        finalWorkflowState = 'aprovada';
+        
+        // Atualizar no banco também (opcional - pode ser feito via trigger)
+        try {
+          await EntityService.update({
+            schema: 'compras',
+            table: 'cotacao_ciclos',
+            companyId,
+            id: quote.id,
+            data: {
+              status: 'aprovada',
+              workflow_state: 'aprovada',
+            },
+          });
+        } catch (e) {
+          console.warn('Erro ao atualizar status para aprovada:', e);
+        }
+      }
+      // Se foi rejeitada
+      else if (temAprovacoesRejeitadas) {
+        finalStatus = 'reprovada';
+        finalWorkflowState = 'reprovada';
+      }
+
       const context: QuoteContextState = {
         id: quote.id,
         numero_cotacao: quote.numero_cotacao || '',
@@ -559,8 +664,9 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
         buyer,
         generalNotes: quote.observacoes || '',
         prazo_resposta: quote.prazo_resposta,
-        status: quote.status || '',
-        workflow_state: quote.workflow_state || quote.status,
+        status: finalStatus,
+        workflow_state: finalWorkflowState,
+        approvals,
       };
 
       setState({
@@ -568,7 +674,9 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
         items,
         suppliers,
         quoteMatrix,
+        globalWinnerSupplierId: null,
         loading: false,
+        saving: false,
         validationErrors: [],
       });
     } catch (error) {
@@ -676,11 +784,13 @@ export function PurchaseQuoteProvider({ children }: { children: ReactNode }) {
     (itemId: string, supplierId: string | null, justification?: string) => {
       setState((prev) => {
         const quoteMatrix = { ...prev.quoteMatrix };
+        const currentRow = quoteMatrix[itemId] || {};
+        // Preservar todas as propriedades de fornecedores e adicionar winner/justification
         quoteMatrix[itemId] = {
-          ...(quoteMatrix[itemId] || {}),
+          ...currentRow,
           winnerSupplierId: supplierId,
           justificationIfNotLowest: justification || null,
-        };
+        } as QuoteMatrixState[string];
         return { ...prev, quoteMatrix };
       });
     },
