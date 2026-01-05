@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +12,16 @@ export default function Login() {
   const [loginInput, setLoginInput] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const { user, signIn } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (user) {
-      navigate("/company-select");
+      // Usar startTransition para tornar a navegação não-bloqueante e evitar condições de corrida
+      startTransition(() => {
+        navigate("/company-select", { replace: true });
+      });
     }
   }, [user, navigate]);
 
@@ -33,7 +37,8 @@ export default function Login() {
       }
       
       toast.success("Login realizado com sucesso!");
-      navigate("/company-select");
+      // Não navegar manualmente aqui - o useEffect já cuida disso quando user muda
+      // Isso evita condições de corrida e múltiplas navegações simultâneas
     } catch (error: any) {
       toast.error(error.message || "Erro ao fazer login");
     } finally {

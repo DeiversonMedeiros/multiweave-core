@@ -1362,7 +1362,97 @@ export const useMenu = () => {
       url: '/metalurgica',
       icon: Factory,
       description: 'Gestão metalúrgica',
-      requiresPermission: { type: 'module', name: 'metalurgica', action: 'read' }
+      requiresPermission: { type: 'module', name: 'metalurgica', action: 'read' },
+      children: [
+        {
+          id: 'metalurgica-dashboard',
+          title: 'Dashboard',
+          url: '/metalurgica/dashboard',
+          icon: LayoutDashboard,
+          description: 'Painel principal com KPIs de produção',
+          requiresPermission: { type: 'module', name: 'metalurgica', action: 'read' }
+        },
+        {
+          id: 'metalurgica-ordens-producao',
+          title: 'Ordens de Produção (OP)',
+          url: '/metalurgica/ordens-producao',
+          icon: Package,
+          description: 'Gestão de ordens de produção de produtos finais',
+          requiresPermission: { type: 'entity', name: 'ordens_producao', action: 'read' }
+        },
+        {
+          id: 'metalurgica-ordens-servico',
+          title: 'Ordens de Serviço (OS)',
+          url: '/metalurgica/ordens-servico',
+          icon: Factory,
+          description: 'Gestão de ordens de serviço de semiacabados',
+          requiresPermission: { type: 'entity', name: 'ordens_servico', action: 'read' }
+        },
+        {
+          id: 'metalurgica-lotes',
+          title: 'Lotes',
+          url: '/metalurgica/lotes',
+          icon: Package,
+          description: 'Gestão de lotes de produção',
+          requiresPermission: { type: 'entity', name: 'lotes', action: 'read' }
+        },
+        {
+          id: 'metalurgica-qualidade',
+          title: 'Qualidade',
+          url: '/metalurgica/qualidade',
+          icon: Shield,
+          description: 'Inspeções e certificados de qualidade',
+          requiresPermission: { type: 'entity', name: 'inspecoes', action: 'read' }
+        },
+        {
+          id: 'metalurgica-galvanizacao',
+          title: 'Galvanização',
+          url: '/metalurgica/galvanizacao',
+          icon: Truck,
+          description: 'Gestão de processos de galvanização externa',
+          requiresPermission: { type: 'entity', name: 'galvanizacoes', action: 'read' }
+        },
+        {
+          id: 'metalurgica-produtos',
+          title: 'Produtos',
+          url: '/metalurgica/produtos',
+          icon: Package,
+          description: 'Cadastro de produtos, semiacabados e matérias-primas',
+          requiresPermission: { type: 'entity', name: 'produtos', action: 'read' }
+        },
+        {
+          id: 'metalurgica-maquinas',
+          title: 'Máquinas',
+          url: '/metalurgica/maquinas',
+          icon: Settings,
+          description: 'Cadastro de máquinas e equipamentos',
+          requiresPermission: { type: 'entity', name: 'maquinas', action: 'read' }
+        },
+        {
+          id: 'metalurgica-pcp',
+          title: 'PCP',
+          url: '/metalurgica/pcp',
+          icon: BarChart3,
+          description: 'Planejamento e controle de produção',
+          requiresPermission: { type: 'entity', name: 'planejamento_producao', action: 'read' }
+        },
+        {
+          id: 'metalurgica-nao-conformidades',
+          title: 'Não Conformidades',
+          url: '/metalurgica/nao-conformidades',
+          icon: AlertTriangle,
+          description: 'Gestão de não conformidades e ações corretivas',
+          requiresPermission: { type: 'entity', name: 'nao_conformidades', action: 'read' }
+        },
+        {
+          id: 'metalurgica-relatorios',
+          title: 'Relatórios',
+          url: '/metalurgica/relatorios',
+          icon: BarChart3,
+          description: 'Relatórios e indicadores de produção',
+          requiresPermission: { type: 'module', name: 'metalurgica', action: 'read' }
+        }
+      ]
     },
     {
       id: 'comercial',

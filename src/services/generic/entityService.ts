@@ -4,6 +4,32 @@ import { supabase } from '@/integrations/supabase/client';
 // SERVIÇO GENÉRICO PARA ACESSO A QUALQUER ENTIDADE
 // =====================================================
 
+/**
+ * Chama uma função RPC de qualquer schema
+ */
+export async function callSchemaFunction<T = any>(
+  schemaName: string,
+  functionName: string,
+  params: Record<string, any> = {},
+): Promise<T | null> {
+  const { data, error } = await (supabase as any).rpc('call_schema_rpc', {
+    p_schema_name: schemaName,
+    p_function_name: functionName,
+    p_params: params,
+  });
+
+  if (error) {
+    console.error(`Erro ao chamar ${schemaName}.${functionName}:`, error);
+    throw error;
+  }
+
+  if (data?.error) {
+    throw new Error(data.message || `Erro ao chamar ${schemaName}.${functionName}`);
+  }
+
+  return (data?.result ?? data) as T | null;
+}
+
 export interface EntityFilters {
   search?: string;
   status?: string;

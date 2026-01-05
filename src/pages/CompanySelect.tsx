@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { useCompany } from "@/lib/company-context";
+import { useDefaultRoute } from "@/hooks/useDefaultRoute";
 import { Company } from "@/lib/supabase-types";
 import { toast } from "sonner";
 import { Building2, ChevronRight } from "lucide-react";
@@ -14,15 +15,39 @@ export default function CompanySelect() {
   const [loading, setLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
   const { user } = useAuth();
-  const { setSelectedCompany, setCompanies: setContextCompanies } = useCompany();
+  const { selectedCompany, setSelectedCompany, setCompanies: setContextCompanies, loading: companyLoading } = useCompany();
+  const { defaultRoute, loading: routeLoading } = useDefaultRoute();
   const navigate = useNavigate();
 
   // Memoizar a lista de empresas para evitar re-renderizações desnecessárias
   const memoizedCompanies = useMemo(() => companies, [companies]);
 
+  // Redirecionar automaticamente se já houver empresa selecionada (após reload)
+  useEffect(() => {
+    // Verificar localStorage diretamente para redirecionamento mais rápido
+    const storedCompany = localStorage.getItem("selectedCompany");
+    const hasStoredCompany = storedCompany !== null && storedCompany !== "null";
+    
+    // Se há empresa no localStorage, aguardar apenas o carregamento da rota
+    // para redirecionar imediatamente após o reload
+    if (hasStoredCompany && !routeLoading && defaultRoute) {
+      startTransition(() => {
+        navigate(defaultRoute, { replace: true });
+      });
+      return;
+    }
+    
+    // Fallback: usar o contexto se disponível
+    if (!companyLoading && !routeLoading && selectedCompany && defaultRoute) {
+      startTransition(() => {
+        navigate(defaultRoute, { replace: true });
+      });
+    }
+  }, [selectedCompany, companyLoading, routeLoading, defaultRoute, navigate]);
+
   useEffect(() => {
     if (!user) {
-      navigate("/login");
+      navigate("/login", { replace: true });
       return;
     }
 
@@ -112,6 +137,20 @@ export default function CompanySelect() {
     // Recarregar a página para atualizar todos os dados com a nova empresa
     window.location.reload();
   };
+
+  // Verificar se há empresa selecionada no localStorage (após reload)
+  const storedCompany = localStorage.getItem("selectedCompany");
+  const hasStoredCompany = storedCompany !== null && storedCompany !== "null";
+  
+  // Se há empresa selecionada mas ainda está carregando a rota, mostrar loading
+  // Isso evita mostrar a tela de seleção antes do redirecionamento
+  if (hasStoredCompany && routeLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   // Renderização única e estável - evitar múltiplas renderizações condicionais
   // Usar estrutura única de retorno para evitar problemas de insertBefore

@@ -36,7 +36,8 @@ import {
   Percent,
   Info,
   X,
-  CheckCircle2
+  CheckCircle2,
+  ExternalLink
 } from 'lucide-react';
 import { useContasReceber } from '@/hooks/financial/useContasReceber';
 import { ContaReceberFormData } from '@/integrations/supabase/financial-types';
@@ -53,12 +54,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { Label } from '@/components/ui/label';
 import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
 import { useTesouraria } from '@/hooks/financial/useTesouraria';
 import { EntityService } from '@/services/generic/entityService';
 import { useCompany } from '@/lib/company-context';
+import {
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 interface ContasReceberPageProps {
   className?: string;
@@ -93,8 +98,13 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
   const [showForm, setShowForm] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [selectedConta, setSelectedConta] = useState<any>(null);
   const [editingConta, setEditingConta] = useState<any>(null);
+  const [receivingConta, setReceivingConta] = useState<any>(null);
+  const [valorRecebido, setValorRecebido] = useState<string>('');
+  const [dataRecebimento, setDataRecebimento] = useState<string>('');
+  const [isReceiving, setIsReceiving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Estados para dados relacionados da conta selecionada
@@ -131,6 +141,10 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
   };
 
   const handleEdit = (conta: any) => {
+    if (conta.status === 'recebido') {
+      alert('Não é possível editar uma conta que já foi recebida.');
+      return;
+    }
     setEditingConta(conta);
     setShowForm(true);
   };
@@ -141,11 +155,17 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
   };
 
   const handleDelete = async (conta: any) => {
+    if (conta.status === 'recebido') {
+      alert('Não é possível excluir uma conta que já foi recebida.');
+      return;
+    }
     if (window.confirm(`Tem certeza que deseja excluir a conta "${conta.numero_titulo}"?`)) {
       try {
         await deleteContaReceber(conta.id);
       } catch (error) {
         console.error('Erro ao deletar conta:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao excluir conta.';
+        alert(errorMessage);
       }
     }
   };
@@ -158,22 +178,57 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
     }
   };
 
-  const handleReceive = async (conta: any) => {
-    const valorRecebido = prompt('Valor recebido:', conta.valor_atual.toString());
-    const dataRecebimento = prompt('Data do recebimento (YYYY-MM-DD):', format(new Date(), 'yyyy-MM-dd'));
-    
-    if (valorRecebido && dataRecebimento) {
-      try {
-        await receiveContaReceber(conta.id, dataRecebimento, parseFloat(valorRecebido));
-      } catch (error) {
-        console.error('Erro ao registrar recebimento:', error);
-      }
+  const handleReceive = (conta: any) => {
+    setReceivingConta(conta);
+    setValorRecebido(conta.valor_atual.toString());
+    setDataRecebimento(format(new Date(), 'yyyy-MM-dd'));
+    setShowReceiveModal(true);
+  };
+
+  const handleConfirmReceive = async () => {
+    if (!receivingConta || !valorRecebido || !dataRecebimento) {
+      return;
+    }
+
+    const valor = parseFloat(valorRecebido);
+    if (isNaN(valor) || valor <= 0) {
+      alert('Por favor, informe um valor válido maior que zero.');
+      return;
+    }
+
+    // Validar se nota fiscal está anexada e número informado
+    if (!receivingConta.numero_nota_fiscal || !receivingConta.anexo_nota_fiscal) {
+      alert('Não é possível marcar a conta como recebida sem anexar a nota fiscal e informar o número da nota fiscal. Por favor, edite a conta e adicione essas informações antes de recebê-la.');
+      setShowReceiveModal(false);
+      setReceivingConta(null);
+      setValorRecebido('');
+      setDataRecebimento('');
+      return;
+    }
+
+    setIsReceiving(true);
+    try {
+      await receiveContaReceber(receivingConta.id, dataRecebimento, valor);
+      setShowReceiveModal(false);
+      setReceivingConta(null);
+      setValorRecebido('');
+      setDataRecebimento('');
+    } catch (error) {
+      console.error('Erro ao registrar recebimento:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao registrar recebimento. Por favor, tente novamente.';
+      alert(errorMessage);
+    } finally {
+      setIsReceiving(false);
     }
   };
 
   const handleSave = async (data: ContaReceberFormData) => {
     try {
       if (editingConta) {
+        if (editingConta.status === 'recebido') {
+          alert('Não é possível editar uma conta que já foi recebida.');
+          return;
+        }
         await updateContaReceber(editingConta.id, data);
       } else {
         await createContaReceber(data);
@@ -182,6 +237,8 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
       setEditingConta(null);
     } catch (error) {
       console.error('Erro ao salvar conta:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao salvar conta.';
+      alert(errorMessage);
     }
   };
 
@@ -484,7 +541,7 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
                       <span className="mx-2">•</span>
                       <span>{conta.descricao}</span>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                       <span className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         Venc: {formatDate(conta.data_vencimento)}
@@ -493,6 +550,18 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
                         <DollarSign className="h-3 w-3" />
                         {formatCurrency(conta.valor_atual)}
                       </span>
+                      {conta.numero_nota_fiscal && (
+                        <span className="flex items-center gap-1">
+                          <FileText className="h-3 w-3" />
+                          NF: {conta.numero_nota_fiscal}
+                        </span>
+                      )}
+                      {conta.anexo_nota_fiscal && (
+                        <span className="flex items-center gap-1 text-green-600">
+                          <FileCheck className="h-3 w-3" />
+                          NF Anexada
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -503,7 +572,7 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    {canEdit && (
+                    {canEdit && conta.status !== 'recebido' && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -518,21 +587,29 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
                         size="sm"
                         onClick={() => handleConfirm(conta)}
                         className="text-green-600 hover:text-green-700"
+                        title="Confirmar conta"
                       >
                         <CheckCircle className="h-4 w-4" />
                       </Button>
                     )}
-                    {canEdit && conta.status === 'confirmado' && (
+                    {canEdit && conta.status !== 'recebido' && conta.status !== 'cancelado' && (
                       <Button
-                        variant="ghost"
+                        variant="default"
                         size="sm"
                         onClick={() => handleReceive(conta)}
-                        className="text-blue-600 hover:text-blue-700"
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        title={
+                          !conta.numero_nota_fiscal || !conta.anexo_nota_fiscal
+                            ? "É necessário anexar a nota fiscal e informar o número antes de receber"
+                            : "Marcar como recebida"
+                        }
+                        disabled={!conta.numero_nota_fiscal || !conta.anexo_nota_fiscal}
                       >
-                        <DollarSign className="h-4 w-4" />
+                        <CheckCircle2 className="h-4 w-4 mr-1" />
+                        Receber
                       </Button>
                     )}
-                    {canDelete && (
+                    {canDelete && conta.status !== 'recebido' && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -622,6 +699,39 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
                       </label>
                       <p className="text-sm">{selectedConta.departamento || '-'}</p>
                     </div>
+                    {selectedConta.numero_nota_fiscal && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">
+                          Número da Nota Fiscal
+                        </label>
+                        <p className="text-sm font-medium">{selectedConta.numero_nota_fiscal}</p>
+                      </div>
+                    )}
+                    {selectedConta.anexo_nota_fiscal && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">
+                          Nota Fiscal Anexada
+                        </label>
+                        <div className="mt-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="flex items-center gap-2"
+                          >
+                            <a
+                              href={selectedConta.anexo_nota_fiscal}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <FileText className="h-4 w-4" />
+                              Visualizar Nota Fiscal
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1006,7 +1116,7 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
               </div>
 
               <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
-                {canEdit && (
+                {canEdit && selectedConta.status !== 'recebido' && (
                   <Button
                     variant="outline"
                     onClick={() => {
@@ -1034,6 +1144,102 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
           onClose={() => setShowFilters(false)}
         />
       )}
+
+      {/* Modal de Recebimento */}
+      <Dialog open={showReceiveModal} onOpenChange={setShowReceiveModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Marcar Conta como Recebida</DialogTitle>
+            <DialogDescription>
+              Informe os dados do recebimento da conta {receivingConta?.numero_titulo}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {receivingConta && (
+              <>
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-sm font-medium">Cliente: {receivingConta.cliente_nome}</p>
+                  <p className="text-sm text-muted-foreground">Descrição: {receivingConta.descricao}</p>
+                  <p className="text-sm font-semibold text-green-600 mt-2">
+                    Valor Atual: {formatCurrency(receivingConta.valor_atual)}
+                  </p>
+                </div>
+                {(!receivingConta.numero_nota_fiscal || !receivingConta.anexo_nota_fiscal) && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>Atenção:</strong> Esta conta não pode ser recebida sem anexar a nota fiscal e informar o número da nota fiscal. 
+                      Por favor, edite a conta e adicione essas informações antes de recebê-la.
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {receivingConta.numero_nota_fiscal && receivingConta.anexo_nota_fiscal && (
+                  <Alert>
+                    <FileCheck className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>Nota Fiscal:</strong> {receivingConta.numero_nota_fiscal} - Anexada ✓
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="valor_recebido">Valor Recebido (R$) *</Label>
+              <Input
+                id="valor_recebido"
+                type="number"
+                step="0.01"
+                min="0"
+                value={valorRecebido}
+                onChange={(e) => setValorRecebido(e.target.value)}
+                placeholder="0.00"
+                disabled={isReceiving}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="data_recebimento">Data do Recebimento *</Label>
+              <Input
+                id="data_recebimento"
+                type="date"
+                value={dataRecebimento}
+                onChange={(e) => setDataRecebimento(e.target.value)}
+                disabled={isReceiving}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowReceiveModal(false);
+                setReceivingConta(null);
+                setValorRecebido('');
+                setDataRecebimento('');
+              }}
+              disabled={isReceiving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmReceive}
+              disabled={isReceiving || !valorRecebido || !dataRecebimento || !receivingConta?.numero_nota_fiscal || !receivingConta?.anexo_nota_fiscal}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isReceiving ? (
+                <>
+                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                  Processando...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Confirmar Recebimento
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

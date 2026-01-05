@@ -27,15 +27,17 @@ export class MapErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
-    // Verificar se é um erro de removeChild ou reutilização de container (geralmente inofensivo)
+    // Verificar se é um erro de DOM (geralmente inofensivo em navegadores antigos)
     const isRemoveChildError = error.message?.includes('removeChild') || 
                                error.message?.includes('not a child');
+    const isInsertBeforeError = error.message?.includes('insertBefore');
     const isReusedError = error.message?.includes('reused by another instance');
     
-    if (isRemoveChildError || isReusedError) {
-      // Para erros de removeChild ou reutilização, não mostrar erro ao usuário
+    if (isRemoveChildError || isInsertBeforeError || isReusedError) {
+      // Para erros de DOM, não mostrar erro ao usuário
       // apenas logar e continuar
-      const errorType = isReusedError ? 'reutilização de container' : 'removeChild';
+      const errorType = isReusedError ? 'reutilização de container' : 
+                       isInsertBeforeError ? 'insertBefore' : 'removeChild';
       console.warn(`[MapErrorBoundary] ⚠️ Erro de ${errorType} capturado (ignorado):`, error.message);
       return { hasError: false, error: null };
     }
@@ -44,14 +46,16 @@ export class MapErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Verificar se é um erro de removeChild ou reutilização de container
+    // Verificar se é um erro de DOM (geralmente inofensivo em navegadores antigos)
     const isRemoveChildError = error.message?.includes('removeChild') || 
                                error.message?.includes('not a child');
+    const isInsertBeforeError = error.message?.includes('insertBefore');
     const isReusedError = error.message?.includes('reused by another instance');
     
-    if (isRemoveChildError || isReusedError) {
-      // Ignorar erros de removeChild e reutilização - são geralmente inofensivos
-      const errorType = isReusedError ? 'reutilização de container' : 'removeChild';
+    if (isRemoveChildError || isInsertBeforeError || isReusedError) {
+      // Ignorar erros de DOM - são geralmente inofensivos em navegadores antigos
+      const errorType = isReusedError ? 'reutilização de container' : 
+                       isInsertBeforeError ? 'insertBefore' : 'removeChild';
       console.warn(`[MapErrorBoundary] ⚠️ Erro de ${errorType} em componentDidCatch (ignorado)`);
       if (this.props.onError) {
         this.props.onError(error, errorInfo);

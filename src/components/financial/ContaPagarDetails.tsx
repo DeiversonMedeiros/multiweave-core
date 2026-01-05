@@ -29,7 +29,9 @@ import {
   CreditCard,
   Target,
   FolderKanban,
-  Zap
+  Zap,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 import { ContaPagar } from '@/integrations/supabase/financial-types';
 import { format } from 'date-fns';
@@ -178,6 +180,18 @@ export function ContaPagarDetails({
   };
 
   const isVencida = new Date(conta.data_vencimento) < new Date() && conta.status !== 'pago';
+
+  // Função helper para verificar se há pagamento na conta
+  const temPagamento = (): boolean => {
+    // Se for conta parcelada, verificar se há alguma parcela paga
+    if (conta.is_parcelada && parcelas.length > 0) {
+      return parcelas.some(p => p.status === 'pago' || (p.valor_pago ?? 0) > 0);
+    }
+    // Se não for parcelada, verificar se há valor pago
+    return (conta.valor_pago ?? 0) > 0;
+  };
+
+  const hasPayment = temPagamento();
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -540,26 +554,161 @@ export function ContaPagarDetails({
           )}
 
           {/* Anexos */}
-          {conta.anexos && conta.anexos.length > 0 && (
+          {(conta.anexo_boleto || conta.anexo_nota_fiscal || (conta.anexos && conta.anexos.length > 0)) && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Anexos</CardTitle>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Anexos
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {conta.anexos.map((anexo, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      <a 
-                        href={anexo} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-sm text-blue-600 hover:underline"
-                      >
-                        Anexo {index + 1}
-                      </a>
+                <div className="space-y-4">
+                  {/* Anexo de Boleto */}
+                  {conta.anexo_boleto && (
+                    <div className="p-4 border rounded-lg bg-green-50 border-green-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-100 rounded-lg">
+                            <FileText className="h-5 w-5 text-green-700" />
+                          </div>
+                          <div>
+                            <Label className="text-sm font-semibold text-green-900">Boleto</Label>
+                            <p className="text-xs text-green-700">Documento de pagamento anexado</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="text-green-700 border-green-300 hover:bg-green-100"
+                          >
+                            <a 
+                              href={conta.anexo_boleto} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Visualizar
+                            </a>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="text-green-700 border-green-300 hover:bg-green-100"
+                          >
+                            <a 
+                              href={conta.anexo_boleto} 
+                              download
+                              className="flex items-center gap-2"
+                            >
+                              <Download className="h-4 w-4" />
+                              Download
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* Anexo de Nota Fiscal */}
+                  {conta.anexo_nota_fiscal && (
+                    <div className="p-4 border rounded-lg bg-blue-50 border-blue-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-100 rounded-lg">
+                            <FileText className="h-5 w-5 text-blue-700" />
+                          </div>
+                          <div>
+                            <Label className="text-sm font-semibold text-blue-900">Nota Fiscal</Label>
+                            <p className="text-xs text-blue-700">Documento fiscal anexado</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                          >
+                            <a 
+                              href={conta.anexo_nota_fiscal} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Visualizar
+                            </a>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                          >
+                            <a 
+                              href={conta.anexo_nota_fiscal} 
+                              download
+                              className="flex items-center gap-2"
+                            >
+                              <Download className="h-4 w-4" />
+                              Download
+                            </a>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Anexos antigos (mantido para compatibilidade) */}
+                  {conta.anexos && conta.anexos.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-muted-foreground">Outros Anexos</Label>
+                      {conta.anexos.map((anexo, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm">Anexo {index + 1}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              asChild
+                            >
+                              <a 
+                                href={anexo} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                Visualizar
+                              </a>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              asChild
+                            >
+                              <a 
+                                href={anexo} 
+                                download
+                                className="flex items-center gap-1"
+                              >
+                                <Download className="h-3 w-3" />
+                                Download
+                              </a>
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -568,13 +717,13 @@ export function ContaPagarDetails({
           {/* Ações */}
           <Separator />
           <div className="flex justify-end gap-2">
-            {canEdit && (
+            {canEdit && !hasPayment && (
               <Button variant="outline" onClick={() => onEdit(conta)}>
                 <Edit className="h-4 w-4 mr-2" />
                 Editar
               </Button>
             )}
-            {canApprove && onReprovar && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && (
+            {canApprove && onReprovar && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && !hasPayment && (
               <Button 
                 variant="outline" 
                 onClick={() => onReprovar(conta)}
@@ -584,7 +733,7 @@ export function ContaPagarDetails({
                 Reprovar
               </Button>
             )}
-            {canApprove && onSuspender && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && (
+            {canApprove && onSuspender && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && !hasPayment && (
               <Button 
                 variant="outline" 
                 onClick={() => onSuspender(conta)}
@@ -604,7 +753,7 @@ export function ContaPagarDetails({
                 Registrar Pagamento
               </Button>
             )}
-            {canDelete && (
+            {canDelete && !hasPayment && (
               <Button 
                 variant="outline" 
                 onClick={() => onDelete(conta)}

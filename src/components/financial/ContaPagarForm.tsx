@@ -58,6 +58,8 @@ const contaPagarSchema = z.object({
   conta_bancaria_id: z.string().optional(),
   observacoes: z.string().optional(),
   anexos: z.array(z.string()).optional(),
+  anexo_boleto: z.string().optional(),
+  anexo_nota_fiscal: z.string().optional(),
   numero_nota_fiscal: z.string().optional(),
   // Campos de parcelamento
   is_parcelada: z.boolean().optional(),
@@ -98,7 +100,9 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingTitulo, setLoadingTitulo] = useState(false);
   const [parcelas, setParcelas] = useState<ContaPagarParcelaFormData[]>([]);
+  const [uploadingBoleto, setUploadingBoleto] = useState(false);
   const [uploadingNotaFiscal, setUploadingNotaFiscal] = useState(false);
+  const [boletoUrl, setBoletoUrl] = useState<string | null>(null);
   const [notaFiscalUrl, setNotaFiscalUrl] = useState<string | null>(null);
 
   const form = useForm<ContaPagarFormValues>({
@@ -278,12 +282,17 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         is_urgente: conta.is_urgente || false,
         motivo_urgencia: conta.motivo_urgencia || '',
         anexos: conta.anexos || [],
+        anexo_boleto: conta.anexo_boleto || '',
+        anexo_nota_fiscal: conta.anexo_nota_fiscal || '',
         numero_nota_fiscal: conta.numero_nota_fiscal || '',
       });
       
-      // Se houver anexos, definir o primeiro como nota fiscal para exibição
-      if (conta.anexos && conta.anexos.length > 0) {
-        setNotaFiscalUrl(conta.anexos[0]);
+      // Preencher URLs dos anexos específicos
+      if (conta.anexo_boleto) {
+        setBoletoUrl(conta.anexo_boleto);
+      }
+      if (conta.anexo_nota_fiscal) {
+        setNotaFiscalUrl(conta.anexo_nota_fiscal);
       }
     }
   }, [conta, form]);
@@ -317,6 +326,9 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         intervalo_parcelas: data.intervalo_parcelas || 'mensal',
         data_primeira_parcela: data.data_primeira_parcela || data.data_vencimento,
         parcelas: parcelas.length > 0 ? parcelas : undefined,
+        // Campos de anexos
+        anexo_boleto: boletoUrl || undefined,
+        anexo_nota_fiscal: notaFiscalUrl || undefined,
         // Campos de urgência (M2)
         is_urgente: data.is_urgente || false,
         motivo_urgencia: data.is_urgente ? data.motivo_urgencia : undefined,
@@ -489,103 +501,197 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                     />
                   </div>
 
-                  {/* Upload de Nota Fiscal */}
-                  <div className="space-y-2">
-                    <Label>Anexar Nota Fiscal</Label>
-                    <div className="flex items-center gap-4">
-                      <Input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file || !selectedCompany?.id) return;
+                  {/* Upload de Anexos */}
+                  <div className="space-y-4">
+                    {/* Upload de Boleto */}
+                    <div className="space-y-2">
+                      <Label>Anexar Boleto</Label>
+                      <div className="flex items-center gap-4">
+                        <Input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file || !selectedCompany?.id) return;
 
-                          // Validar tamanho (10MB)
-                          if (file.size > 10 * 1024 * 1024) {
-                            alert('Arquivo muito grande. Tamanho máximo: 10MB');
-                            return;
-                          }
-
-                          setUploadingNotaFiscal(true);
-                          try {
-                            // Sanitizar nome do arquivo
-                            const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-                            const timestamp = Date.now();
-                            const fileName = `${timestamp}_${sanitizedName}`;
-                            const filePath = `${selectedCompany.id}/notas-fiscais/${fileName}`;
-
-                            // Upload do arquivo
-                            const { data, error: uploadError } = await supabase.storage
-                              .from('notas-fiscais')
-                              .upload(filePath, file, {
-                                cacheControl: '3600',
-                                upsert: false
-                              });
-
-                            if (uploadError) {
-                              throw uploadError;
+                            // Validar tamanho (10MB)
+                            if (file.size > 10 * 1024 * 1024) {
+                              alert('Arquivo muito grande. Tamanho máximo: 10MB');
+                              return;
                             }
 
-                            // Obter URL do arquivo (signed URL para bucket privado)
-                            const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-                              .from('notas-fiscais')
-                              .createSignedUrl(filePath, 3600);
-                            
-                            let fileUrl = '';
-                            if (signedUrlError || !signedUrlData) {
-                              const { data: publicUrlData } = supabase.storage
-                                .from('notas-fiscais')
-                                .getPublicUrl(filePath);
-                              fileUrl = publicUrlData.publicUrl;
-                            } else {
-                              fileUrl = signedUrlData.signedUrl;
-                            }
+                            setUploadingBoleto(true);
+                            try {
+                              // Sanitizar nome do arquivo
+                              const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                              const timestamp = Date.now();
+                              const fileName = `${timestamp}_${sanitizedName}`;
+                              const filePath = `${selectedCompany.id}/boletos/${fileName}`;
 
-                            setNotaFiscalUrl(fileUrl);
-                            
-                            // Adicionar ao array de anexos
-                            const currentAnexos = form.getValues('anexos') || [];
-                            form.setValue('anexos', [...currentAnexos, fileUrl]);
-                          } catch (error: any) {
-                            console.error('Erro no upload:', error);
-                            alert('Erro ao enviar nota fiscal: ' + (error.message || 'Não foi possível enviar o arquivo.'));
-                          } finally {
-                            setUploadingNotaFiscal(false);
-                            // Limpar input
-                            e.target.value = '';
-                          }
-                        }}
-                        disabled={uploadingNotaFiscal}
-                        className="max-w-sm"
-                      />
-                      {uploadingNotaFiscal && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                          Enviando...
+                              // Upload do arquivo
+                              const { data, error: uploadError } = await supabase.storage
+                                .from('boletos')
+                                .upload(filePath, file, {
+                                  cacheControl: '3600',
+                                  upsert: false
+                                });
+
+                              if (uploadError) {
+                                throw uploadError;
+                              }
+
+                              // Obter URL do arquivo (signed URL para bucket privado)
+                              const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                                .from('boletos')
+                                .createSignedUrl(filePath, 3600);
+                              
+                              let fileUrl = '';
+                              if (signedUrlError || !signedUrlData) {
+                                const { data: publicUrlData } = supabase.storage
+                                  .from('boletos')
+                                  .getPublicUrl(filePath);
+                                fileUrl = publicUrlData.publicUrl;
+                              } else {
+                                fileUrl = signedUrlData.signedUrl;
+                              }
+
+                              setBoletoUrl(fileUrl);
+                              form.setValue('anexo_boleto', fileUrl);
+                            } catch (error: any) {
+                              console.error('Erro no upload:', error);
+                              alert('Erro ao enviar boleto: ' + (error.message || 'Não foi possível enviar o arquivo.'));
+                            } finally {
+                              setUploadingBoleto(false);
+                              // Limpar input
+                              e.target.value = '';
+                            }
+                          }}
+                          disabled={uploadingBoleto}
+                          className="max-w-sm"
+                        />
+                        {uploadingBoleto && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                            Enviando...
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)
+                      </p>
+                      {boletoUrl && (
+                        <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+                          <File className="h-4 w-4" />
+                          <span className="text-sm">Boleto anexado</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setBoletoUrl(null);
+                              form.setValue('anexo_boleto', '');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)
-                    </p>
-                    {notaFiscalUrl && (
-                      <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
-                        <File className="h-4 w-4" />
-                        <span className="text-sm">Nota fiscal anexada</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setNotaFiscalUrl(null);
-                            const currentAnexos = form.getValues('anexos') || [];
-                            form.setValue('anexos', currentAnexos.filter(url => url !== notaFiscalUrl));
+
+                    {/* Upload de Nota Fiscal */}
+                    <div className="space-y-2">
+                      <Label>Anexar Nota Fiscal</Label>
+                      <div className="flex items-center gap-4">
+                        <Input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file || !selectedCompany?.id) return;
+
+                            // Validar tamanho (10MB)
+                            if (file.size > 10 * 1024 * 1024) {
+                              alert('Arquivo muito grande. Tamanho máximo: 10MB');
+                              return;
+                            }
+
+                            setUploadingNotaFiscal(true);
+                            try {
+                              // Sanitizar nome do arquivo
+                              const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+                              const timestamp = Date.now();
+                              const fileName = `${timestamp}_${sanitizedName}`;
+                              const filePath = `${selectedCompany.id}/notas-fiscais/${fileName}`;
+
+                              // Upload do arquivo
+                              const { data, error: uploadError } = await supabase.storage
+                                .from('notas-fiscais')
+                                .upload(filePath, file, {
+                                  cacheControl: '3600',
+                                  upsert: false
+                                });
+
+                              if (uploadError) {
+                                throw uploadError;
+                              }
+
+                              // Obter URL do arquivo (signed URL para bucket privado)
+                              const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+                                .from('notas-fiscais')
+                                .createSignedUrl(filePath, 3600);
+                              
+                              let fileUrl = '';
+                              if (signedUrlError || !signedUrlData) {
+                                const { data: publicUrlData } = supabase.storage
+                                  .from('notas-fiscais')
+                                  .getPublicUrl(filePath);
+                                fileUrl = publicUrlData.publicUrl;
+                              } else {
+                                fileUrl = signedUrlData.signedUrl;
+                              }
+
+                              setNotaFiscalUrl(fileUrl);
+                              form.setValue('anexo_nota_fiscal', fileUrl);
+                            } catch (error: any) {
+                              console.error('Erro no upload:', error);
+                              alert('Erro ao enviar nota fiscal: ' + (error.message || 'Não foi possível enviar o arquivo.'));
+                            } finally {
+                              setUploadingNotaFiscal(false);
+                              // Limpar input
+                              e.target.value = '';
+                            }
                           }}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
+                          disabled={uploadingNotaFiscal}
+                          className="max-w-sm"
+                        />
+                        {uploadingNotaFiscal && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                            Enviando...
+                          </div>
+                        )}
                       </div>
-                    )}
+                      <p className="text-sm text-muted-foreground">
+                        Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)
+                      </p>
+                      {notaFiscalUrl && (
+                        <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
+                          <File className="h-4 w-4" />
+                          <span className="text-sm">Nota fiscal anexada</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setNotaFiscalUrl(null);
+                              form.setValue('anexo_nota_fiscal', '');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <FormField

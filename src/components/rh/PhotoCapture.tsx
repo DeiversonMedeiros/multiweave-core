@@ -369,8 +369,52 @@ export function PhotoCapture({
   };
 
   const confirmPhoto = () => {
-    if (capturedPhoto) {
-      onCapture(capturedPhoto);
+    console.log('[PhotoCapture][CONFIRM] 🎯 confirmPhoto chamado', {
+      hasCapturedPhoto: !!capturedPhoto,
+      isMounted: isMountedRef.current,
+      hasOnCapture: !!onCapture,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (capturedPhoto && isMountedRef.current) {
+      console.log('[PhotoCapture][CONFIRM] ✅ Condições atendidas, agendando callback', {
+        fileName: capturedPhoto.name,
+        fileSize: capturedPhoto.size,
+        fileType: capturedPhoto.type
+      });
+      
+      // Usar setTimeout para garantir que o callback seja chamado de forma assíncrona
+      // Isso evita problemas de DOM quando o componente está sendo desmontado
+      setTimeout(() => {
+        console.log('[PhotoCapture][CONFIRM] ⏰ setTimeout executado', {
+          isMounted: isMountedRef.current,
+          hasOnCapture: !!onCapture,
+          elapsed: '0ms'
+        });
+        
+        if (isMountedRef.current && onCapture) {
+          try {
+            console.log('[PhotoCapture][CONFIRM] 📞 Chamando onCapture callback', {
+              fileName: capturedPhoto.name,
+              fileSize: capturedPhoto.size
+            });
+            onCapture(capturedPhoto);
+            console.log('[PhotoCapture][CONFIRM] ✅ onCapture chamado com sucesso');
+          } catch (err) {
+            console.error('[PhotoCapture][CONFIRM] ❌ Erro ao chamar onCapture:', err);
+          }
+        } else {
+          console.warn('[PhotoCapture][CONFIRM] ⚠️ Condições não atendidas no setTimeout', {
+            isMounted: isMountedRef.current,
+            hasOnCapture: !!onCapture
+          });
+        }
+      }, 0);
+    } else {
+      console.warn('[PhotoCapture][CONFIRM] ⚠️ Condições não atendidas', {
+        hasCapturedPhoto: !!capturedPhoto,
+        isMounted: isMountedRef.current
+      });
     }
   };
 

@@ -4,7 +4,7 @@
 // Descrição: Componente de mapa usando Leaflet para visualizar e configurar zonas de localização
 //            Mostra ponto central, raio permitido e posição atual do usuário
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo, useLayoutEffect, memo } from 'react';
 import { MapContainer, TileLayer, Circle, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -42,7 +42,7 @@ interface LocationZoneMapProps {
 }
 
 // Componente para invalidar tamanho do mapa quando necessário
-function MapSizeInvalidator({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
+const MapSizeInvalidator = memo(function MapSizeInvalidator({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> }) {
   const map = useMap();
 
   useEffect(() => {
@@ -66,6 +66,12 @@ function MapSizeInvalidator({ mapRef }: { mapRef: React.MutableRefObject<L.Map |
             return;
           }
           
+          // Verificação adicional: garantir que o container ainda está no DOM
+          if (!document.body.contains(container)) {
+            console.warn('[LocationZoneMap][DEBUG] ⚠️ Container não está mais no DOM');
+            return;
+          }
+          
           if (map && typeof map.invalidateSize === 'function') {
             console.log('[LocationZoneMap][DEBUG] 📏 Invalidando tamanho do mapa', {
               elapsed: `${elapsed.toFixed(2)}ms`
@@ -80,8 +86,10 @@ function MapSizeInvalidator({ mapRef }: { mapRef: React.MutableRefObject<L.Map |
         } catch (err) {
           // Ignorar erros de DOM que podem ocorrer em dispositivos antigos
           const errorMessage = err instanceof Error ? err.message : String(err);
-          if (errorMessage.includes('removeChild') || errorMessage.includes('not a child')) {
-            console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de removeChild ignorado (comum em dispositivos antigos)');
+          if (errorMessage.includes('removeChild') || 
+              errorMessage.includes('not a child') ||
+              errorMessage.includes('insertBefore')) {
+            console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de DOM ignorado (comum em dispositivos antigos):', errorMessage);
           } else {
             console.error('[LocationZoneMap][DEBUG] ❌ Erro ao invalidar tamanho do mapa', {
               error: err,
@@ -92,7 +100,7 @@ function MapSizeInvalidator({ mapRef }: { mapRef: React.MutableRefObject<L.Map |
       } else {
         console.warn('[LocationZoneMap][DEBUG] ⚠️ Componente desmontado antes de invalidar tamanho');
       }
-    }, 100);
+    }, 150); // Aumentado para 150ms para dar mais tempo ao DOM
     
     return () => {
       const cleanupTime = performance.now() - startTime;
@@ -105,10 +113,10 @@ function MapSizeInvalidator({ mapRef }: { mapRef: React.MutableRefObject<L.Map |
   }, [map, mapRef]);
 
   return null;
-}
+});
 
 // Componente para atualizar o mapa quando center/radius mudarem
-function MapUpdater({ centerLat, centerLon, radius }: { 
+const MapUpdater = memo(function MapUpdater({ centerLat, centerLon, radius }: { 
   centerLat?: number; 
   centerLon?: number; 
   radius?: number;
@@ -130,6 +138,12 @@ function MapUpdater({ centerLat, centerLon, radius }: {
             return;
           }
           
+          // Verificação adicional: garantir que o container ainda está no DOM
+          if (!document.body.contains(container)) {
+            console.warn('[LocationZoneMap][DEBUG] ⚠️ Container não está mais no DOM');
+            return;
+          }
+          
           if (map && typeof map.setView === 'function') {
             const zoom = radius && radius > 1000 ? 13 : 15;
             console.log('[LocationZoneMap][DEBUG] 🔄 Atualizando visualização do mapa', {
@@ -146,9 +160,13 @@ function MapUpdater({ centerLat, centerLon, radius }: {
             });
           }
         } catch (err) {
-          // Ignorar erros de removeChild
+          // Ignorar erros de DOM que podem ocorrer em dispositivos antigos
           const errorMsg = err instanceof Error ? err.message : String(err);
-          if (!errorMsg.includes('removeChild') && !errorMsg.includes('not a child')) {
+          if (errorMsg.includes('removeChild') || 
+              errorMsg.includes('not a child') ||
+              errorMsg.includes('insertBefore')) {
+            console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de DOM ignorado (comum em dispositivos antigos):', errorMsg);
+          } else {
             console.error('[LocationZoneMap][DEBUG] ❌ Erro ao atualizar visualização do mapa', {
               error: err,
               centerLat,
@@ -157,7 +175,7 @@ function MapUpdater({ centerLat, centerLon, radius }: {
             });
           }
         }
-      }, 50);
+      }, 100); // Aumentado para 100ms
       
       return () => {
         mounted = false;
@@ -170,7 +188,7 @@ function MapUpdater({ centerLat, centerLon, radius }: {
   }, [centerLat, centerLon, radius, map]);
 
   return null;
-}
+});
 
 // Componente para capturar cliques no mapa
 function LocationClickHandler({ onLocationSelect }: { 
@@ -228,100 +246,128 @@ export function LocationZoneMap({
       mounted = false;
       setIsMounted(false);
       
-      // UNMOUNT SEGURO DO LEAFLET - Previne erros de removeChild em dispositivos antigos
-      if (mapRef.current) {
-        try {
-          const map = mapRef.current;
-          
-          // Desabilitar todos os eventos antes de remover
+      // UNMOUNT SEGURO DO LEAFLET - Previne erros de removeChild/insertBefore em dispositivos antigos
+      // Adicionar delay para garantir que o React termine de processar antes de limpar
+      setTimeout(() => {
+        if (mapRef.current) {
           try {
-            map.off(); // Remove todos os event listeners
-          } catch (e) {
-            // Ignorar erros ao desabilitar eventos
-            console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao desabilitar eventos (ignorado):', e);
-          }
-          
-          // Remover layers explicitamente antes de remover o mapa
-          // Isso reduz a chance de Leaflet já ter removido nós internamente
-          try {
-            map.eachLayer((layer) => {
-              try {
-                map.removeLayer(layer);
-              } catch (e) {
-                // Ignorar erros ao remover layers individuais
+            const map = mapRef.current;
+            
+            // Verificar se o container ainda existe e está no DOM
+            try {
+              const container = map.getContainer();
+              if (!container) {
+                console.log('[LocationZoneMap][DEBUG] ⚠️ Container não encontrado, limpando referência');
+                mapRef.current = null;
+                return;
               }
-            });
-          } catch (e) {
-            // Ignorar erros ao iterar/remover layers
-            console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao remover layers (ignorado):', e);
-          }
-          
-          // Verificar se o mapa ainda é válido antes de tentar remover
-          try {
-            const container = map.getContainer();
-            if (!container) {
-              console.log('[LocationZoneMap][DEBUG] ⚠️ Container não encontrado, limpando referência');
+              
+              // Verificar se o container ainda está no DOM
+              if (!document.body.contains(container) && !container.parentNode) {
+                console.log('[LocationZoneMap][DEBUG] ⚠️ Container não está mais no DOM, limpando referência');
+                mapRef.current = null;
+                return;
+              }
+            } catch (e) {
+              // Se não conseguir acessar o container, já foi removido
+              console.log('[LocationZoneMap][DEBUG] ⚠️ Container já foi removido, limpando referência');
               mapRef.current = null;
               return;
             }
             
-            // Verificar se o container ainda está no DOM
-            if (container.parentNode) {
-              // Verificar se este mapa ainda está associado ao container
-              const containerMapId = (container as any)._leaflet_id;
-              const mapId = (map as any)._leaflet_id;
-              
-              // Só remover se o mapa ainda estiver associado ao container
-              if (containerMapId === mapId) {
-                console.log('[LocationZoneMap][DEBUG] 🗑️ Removendo mapa do Leaflet de forma segura');
+            // Desabilitar todos os eventos antes de remover
+            try {
+              map.off(); // Remove todos os event listeners
+            } catch (e) {
+              // Ignorar erros ao desabilitar eventos
+              console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao desabilitar eventos (ignorado):', e);
+            }
+            
+            // Remover layers explicitamente antes de remover o mapa
+            // Isso reduz a chance de Leaflet já ter removido nós internamente
+            try {
+              map.eachLayer((layer) => {
                 try {
-                  // Remover o mapa de forma segura
-                  map.remove();
-                  console.log('[LocationZoneMap][DEBUG] ✅ Mapa removido com sucesso');
-                } catch (err) {
-                  const errorMsg = err instanceof Error ? err.message : String(err);
-                  // Ignorar erros de removeChild que são comuns em dispositivos antigos
-                  if (errorMsg.includes('removeChild') || 
-                      errorMsg.includes('not a child') || 
-                      errorMsg.includes('reused')) {
-                    console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de removeChild ignorado (comum em dispositivos antigos)');
-                  } else {
-                    console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao remover mapa (ignorado):', err);
+                  map.removeLayer(layer);
+                } catch (e) {
+                  // Ignorar erros ao remover layers individuais
+                }
+              });
+            } catch (e) {
+              // Ignorar erros ao iterar/remover layers
+              console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao remover layers (ignorado):', e);
+            }
+            
+            // Verificar se o mapa ainda é válido antes de tentar remover
+            try {
+              const container = map.getContainer();
+              if (!container) {
+                console.log('[LocationZoneMap][DEBUG] ⚠️ Container não encontrado, limpando referência');
+                mapRef.current = null;
+                return;
+              }
+              
+              // Verificar se o container ainda está no DOM
+              if (container.parentNode && document.body.contains(container)) {
+                // Verificar se este mapa ainda está associado ao container
+                const containerMapId = (container as any)._leaflet_id;
+                const mapId = (map as any)._leaflet_id;
+                
+                // Só remover se o mapa ainda estiver associado ao container
+                if (containerMapId === mapId) {
+                  console.log('[LocationZoneMap][DEBUG] 🗑️ Removendo mapa do Leaflet de forma segura');
+                  try {
+                    // Remover o mapa de forma segura
+                    map.remove();
+                    console.log('[LocationZoneMap][DEBUG] ✅ Mapa removido com sucesso');
+                  } catch (err) {
+                    const errorMsg = err instanceof Error ? err.message : String(err);
+                    // Ignorar erros de DOM que são comuns em dispositivos antigos
+                    if (errorMsg.includes('removeChild') || 
+                        errorMsg.includes('not a child') || 
+                        errorMsg.includes('reused') ||
+                        errorMsg.includes('insertBefore')) {
+                      console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de DOM ignorado (comum em dispositivos antigos):', errorMsg);
+                    } else {
+                      console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao remover mapa (ignorado):', err);
+                    }
                   }
+                } else {
+                  console.warn('[LocationZoneMap][DEBUG] ⚠️ Mapa não está mais associado ao container, limpando referência');
                 }
               } else {
-                console.warn('[LocationZoneMap][DEBUG] ⚠️ Mapa não está mais associado ao container, limpando referência');
+                console.log('[LocationZoneMap][DEBUG] ⚠️ Container não está mais no DOM, limpando referência');
               }
-            } else {
-              console.log('[LocationZoneMap][DEBUG] ⚠️ Container não está mais no DOM, limpando referência');
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              // Ignorar erros de DOM que são comuns em dispositivos antigos
+              if (errorMsg.includes('removeChild') || 
+                  errorMsg.includes('not a child') || 
+                  errorMsg.includes('reused') ||
+                  errorMsg.includes('insertBefore')) {
+                console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de DOM ignorado (comum em dispositivos antigos):', errorMsg);
+              } else {
+                console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao acessar container (ignorado):', err);
+              }
             }
+            
+            // Sempre limpar a referência
+            mapRef.current = null;
           } catch (err) {
+            // Ignorar erros de DOM que podem ocorrer em dispositivos antigos
             const errorMsg = err instanceof Error ? err.message : String(err);
-            // Ignorar erros de removeChild que são comuns em dispositivos antigos
             if (errorMsg.includes('removeChild') || 
                 errorMsg.includes('not a child') || 
-                errorMsg.includes('reused')) {
-              console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de removeChild ignorado (comum em dispositivos antigos)');
+                errorMsg.includes('reused') ||
+                errorMsg.includes('insertBefore')) {
+              console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de DOM ignorado (comum em dispositivos antigos):', errorMsg);
             } else {
-              console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro ao acessar container (ignorado):', err);
+              console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro geral ao limpar mapa (ignorado):', err);
             }
+            mapRef.current = null;
           }
-          
-          // Sempre limpar a referência
-          mapRef.current = null;
-        } catch (err) {
-          // Ignorar erros de removeChild e reutilização que podem ocorrer em dispositivos antigos
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          if (errorMsg.includes('removeChild') || 
-              errorMsg.includes('not a child') || 
-              errorMsg.includes('reused')) {
-            console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro de removeChild ignorado (comum em dispositivos antigos)');
-          } else {
-            console.warn('[LocationZoneMap][DEBUG] ⚠️ Erro geral ao limpar mapa (ignorado):', err);
-          }
-          mapRef.current = null;
         }
-      }
+      }, 100); // Delay de 100ms para garantir que o React termine de processar
     };
   }, []);
 
@@ -373,7 +419,14 @@ export function LocationZoneMap({
   // Não renderizar o mapa até o componente estar montado e ter um pequeno delay
   const [canRenderMap, setCanRenderMap] = useState(false);
 
-  useEffect(() => {
+  // CRÍTICO: Todos os hooks devem ser chamados ANTES de qualquer early return
+  // para seguir as regras dos hooks do React
+  const mapKey = useMemo(() => instanceKeyRef.current, []);
+  const mapCenterMemo = useMemo(() => [mapLat, mapLon] as [number, number], [mapLat, mapLon]);
+  const mapZoom = useMemo(() => centerLat && centerLon ? (radius > 1000 ? 13 : 15) : 13, [centerLat, centerLon, radius]);
+
+  // Usar useLayoutEffect para sincronização melhor com o DOM
+  useLayoutEffect(() => {
     if (isMounted) {
       // Pequeno delay adicional para garantir que o DOM esteja estável
       let mounted = true;
@@ -394,13 +447,13 @@ export function LocationZoneMap({
           willRender: mounted
         });
         
-        if (mounted) {
+        if (mounted && isMounted) {
           setCanRenderMap(true);
           console.log('[LocationZoneMap][DEBUG] ✅ Mapa pode ser renderizado');
         } else {
           console.warn('[LocationZoneMap][DEBUG] ⚠️ Componente desmontado antes de permitir renderização');
         }
-      }, 150);
+      }, 200); // Aumentado para 200ms para dar mais tempo ao DOM em navegadores antigos
       
       return () => {
         const cleanupTime = performance.now() - startTime;
@@ -435,9 +488,6 @@ export function LocationZoneMap({
       </Card>
     );
   }
-
-  // Usar key única da instância para evitar reutilização de container
-  const mapKey = instanceKeyRef.current;
   
   console.log('[LocationZoneMap][DEBUG] 🗺️ Renderizando MapContainer', {
     mapKey,
@@ -472,10 +522,14 @@ export function LocationZoneMap({
           <div style={{ height, position: 'relative' }} className="rounded-lg overflow-hidden">
             <MapContainer
               key={mapKey}
-              center={[mapLat, mapLon]}
-              zoom={centerLat && centerLon ? (radius > 1000 ? 13 : 15) : 13}
+              center={mapCenterMemo}
+              zoom={mapZoom}
               style={{ height: '100%', width: '100%', zIndex: 0 }}
               className="rounded-lg"
+              whenCreated={(map) => {
+                // Salvar referência do mapa quando criado
+                mapRef.current = map;
+              }}
             >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

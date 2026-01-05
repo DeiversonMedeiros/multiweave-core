@@ -5,7 +5,8 @@
 // Descrição: Página principal para gerenciar contas a pagar
 // Autor: Sistema MultiWeave Core
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,13 +34,20 @@ import {
   TrendingDown,
   RotateCcw,
   Ban,
-  Target
+  Target,
+  Paperclip,
+  FileText
 } from 'lucide-react';
 import { useContasPagar } from '@/hooks/financial/useContasPagar';
-import { ContaPagar, ContaPagarFormData } from '@/integrations/supabase/financial-types';
+import { useUpdateContaPagarParcela } from '@/hooks/financial/useContasPagarParcelas';
+import { ContaPagar, ContaPagarFormData, ContaPagarParcela } from '@/integrations/supabase/financial-types';
+import { EntityService } from '@/services/generic/entityService';
+import { useCompany } from '@/lib/company-context';
+import { supabase } from '@/integrations/supabase/client';
 import { ContaPagarForm } from './ContaPagarForm';
 import { ContaPagarDetails } from './ContaPagarDetails';
 import { ContaPagarFilters } from './ContaPagarFilters';
+import { ModalPagamentoContaPagar } from './ModalPagamentoContaPagar';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatDateOnly } from '@/lib/utils';
@@ -74,9 +82,90 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     canApprove,
   } = useContasPagar();
 
+  const updateParcela = useUpdateContaPagarParcela();
+  const { selectedCompany } = useCompany();
+
   // Buscar dados relacionados para exibir nomes
   const { data: costCentersData } = useCostCenters();
   const { data: projectsData } = useProjects();
+
+  // Estados do componente
+  const [showForm, setShowForm] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedConta, setSelectedConta] = useState<ContaPagar | null>(null);
+  const [editingConta, setEditingConta] = useState<ContaPagar | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedContasIds, setSelectedContasIds] = useState<Set<string>>(new Set());
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [contaParaPagar, setContaParaPagar] = useState<ContaPagar | null>(null);
+  const [uploadingBoleto, setUploadingBoleto] = useState<string | null>(null);
+  const [uploadingNotaFiscal, setUploadingNotaFiscal] = useState<string | null>(null);
+
+  // Filtrar contas por termo de busca
+  const filteredContas = contasPagar.filter(conta =>
+    conta.fornecedor_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    conta.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    conta.numero_titulo?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Buscar parcelas para todas as contas parceladas
+  const contasParceladas = filteredContas.filter(c => c.is_parcelada);
+  const parcelasQueries = useQueries({
+    queries: contasParceladas.map(conta => ({
+      queryKey: ['financeiro', 'contas_pagar_parcelas', conta.id, selectedCompany?.id],
+      queryFn: async () => {
+        if (!selectedCompany?.id || !conta.id) return { data: [], total: 0 };
+        const result = await EntityService.list<ContaPagarParcela>({
+          schema: 'financeiro',
+          table: 'contas_pagar_parcelas',
+          companyId: selectedCompany.id,
+          filters: { conta_pagar_id: conta.id },
+          page: 1,
+          pageSize: 1000
+        });
+        return result;
+      },
+      enabled: !!selectedCompany?.id && !!conta.id,
+    }))
+  });
+
+  // Criar mapa de parcelas por conta
+  const parcelasPorConta = useMemo(() => {
+    const mapa = new Map<string, ContaPagarParcela[]>();
+    contasParceladas.forEach((conta, index) => {
+      const parcelasData = parcelasQueries[index]?.data;
+      if (parcelasData?.data) {
+        mapa.set(conta.id, parcelasData.data);
+      }
+    });
+    return mapa;
+  }, [contasParceladas, parcelasQueries]);
+
+  // Calcular informações de parcelas pagas para cada conta
+  const infoParcelas = useMemo(() => {
+    const info = new Map<string, { pagas: number; total: number; temParcial: boolean; todasPagas: boolean }>();
+    parcelasPorConta.forEach((parcelas, contaId) => {
+      const total = parcelas.length;
+      const pagas = parcelas.filter(p => p.status === 'pago').length;
+      const todasPagas = pagas === total && total > 0;
+      const temParcial = pagas > 0 && pagas < total;
+      info.set(contaId, { pagas, total, temParcial, todasPagas });
+    });
+    return info;
+  }, [parcelasPorConta]);
+
+  // Função helper para verificar se há pagamento na conta
+  const temPagamento = (conta: ContaPagar): boolean => {
+    // Se for conta parcelada, verificar se há alguma parcela paga
+    if (conta.is_parcelada) {
+      const info = infoParcelas.get(conta.id);
+      return (info?.pagas ?? 0) > 0;
+    }
+    // Se não for parcelada, verificar se há valor pago
+    return (conta.valor_pago ?? 0) > 0;
+  };
 
   // Criar mapas para busca rápida
   const costCentersMap = new Map(
@@ -86,21 +175,15 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     projectsData?.data?.map(p => [p.id, p]) || []
   );
 
-  const [showForm, setShowForm] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [selectedConta, setSelectedConta] = useState<ContaPagar | null>(null);
-  const [editingConta, setEditingConta] = useState<ContaPagar | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedContasIds, setSelectedContasIds] = useState<Set<string>>(new Set());
-  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
-
-  // Filtrar contas por termo de busca
-  const filteredContas = contasPagar.filter(conta =>
-    conta.fornecedor_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    conta.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    conta.numero_titulo?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Atualizar selectedConta quando a lista for atualizada e o modal estiver aberto
+  useEffect(() => {
+    if (showDetails && selectedConta) {
+      const contaAtualizada = contasPagar.find(c => c.id === selectedConta.id);
+      if (contaAtualizada) {
+        setSelectedConta(contaAtualizada);
+      }
+    }
+  }, [contasPagar, showDetails, selectedConta?.id]);
 
   // Calcular estatísticas
   const stats = {
@@ -186,16 +269,41 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     }
   };
 
-  const handlePay = async (conta: ContaPagar) => {
-    const valorPago = prompt('Valor pago:', conta.valor_atual.toString());
-    const dataPagamento = prompt('Data do pagamento (YYYY-MM-DD):', format(new Date(), 'yyyy-MM-dd'));
-    
-    if (valorPago && dataPagamento) {
-      try {
-        await payContaPagar(conta.id, dataPagamento, parseFloat(valorPago));
-      } catch (error) {
-        console.error('Erro ao registrar pagamento:', error);
+  const handlePay = (conta: ContaPagar) => {
+    setContaParaPagar(conta);
+    setShowPaymentModal(true);
+  };
+
+  const handleConfirmPayment = async (data: {
+    valorPago: number;
+    dataPagamento: string;
+    parcelaId?: string;
+  }) => {
+    if (!contaParaPagar) return;
+
+    try {
+      // Se for pagamento de parcela específica
+      if (data.parcelaId) {
+        // Atualizar a parcela individual
+        await updateParcela.mutateAsync({
+          parcelaId: data.parcelaId,
+          contaPagarId: contaParaPagar.id,
+          data: {
+            status: 'pago',
+            data_pagamento: data.dataPagamento,
+            valor_pago: data.valorPago,
+            valor_atual: data.valorPago,
+          },
+        });
+      } else {
+        // Pagar a conta toda
+        await payContaPagar(contaParaPagar.id, data.dataPagamento, data.valorPago);
       }
+      setShowPaymentModal(false);
+      setContaParaPagar(null);
+    } catch (error) {
+      console.error('Erro ao registrar pagamento:', error);
+      throw error;
     }
   };
 
@@ -273,6 +381,148 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     }
   };
 
+  // Função para fazer upload de boleto
+  const handleUploadBoleto = async (conta: ContaPagar, file: File) => {
+    if (!selectedCompany?.id) {
+      alert('Empresa não selecionada');
+      return;
+    }
+
+    // Validar tamanho (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Arquivo muito grande. Tamanho máximo: 10MB');
+      return;
+    }
+
+    setUploadingBoleto(conta.id);
+    try {
+      // Sanitizar nome do arquivo
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const timestamp = Date.now();
+      const fileName = `${timestamp}_${sanitizedName}`;
+      const filePath = `${selectedCompany.id}/boletos/${fileName}`;
+
+      // Upload do arquivo
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('boletos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Obter URL do arquivo
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('boletos')
+        .createSignedUrl(filePath, 3600);
+      
+      let fileUrl = '';
+      if (signedUrlError || !signedUrlData) {
+        const { data: publicUrlData } = supabase.storage
+          .from('boletos')
+          .getPublicUrl(filePath);
+        fileUrl = publicUrlData.publicUrl;
+      } else {
+        fileUrl = signedUrlData.signedUrl;
+      }
+
+      // Atualizar a conta com o anexo
+      await updateContaPagar(conta.id, {
+        anexo_boleto: fileUrl,
+      });
+
+      // Atualizar selectedConta se o modal estiver aberto
+      if (showDetails && selectedConta && selectedConta.id === conta.id) {
+        setSelectedConta({
+          ...selectedConta,
+          anexo_boleto: fileUrl,
+        });
+      }
+
+      alert('Boleto anexado com sucesso!');
+      refresh();
+    } catch (error: any) {
+      console.error('Erro no upload:', error);
+      alert('Erro ao enviar boleto: ' + (error.message || 'Não foi possível enviar o arquivo.'));
+    } finally {
+      setUploadingBoleto(null);
+    }
+  };
+
+  // Função para fazer upload de nota fiscal
+  const handleUploadNotaFiscal = async (conta: ContaPagar, file: File) => {
+    if (!selectedCompany?.id) {
+      alert('Empresa não selecionada');
+      return;
+    }
+
+    // Validar tamanho (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Arquivo muito grande. Tamanho máximo: 10MB');
+      return;
+    }
+
+    setUploadingNotaFiscal(conta.id);
+    try {
+      // Sanitizar nome do arquivo
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const timestamp = Date.now();
+      const fileName = `${timestamp}_${sanitizedName}`;
+      const filePath = `${selectedCompany.id}/notas-fiscais/${fileName}`;
+
+      // Upload do arquivo
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('notas-fiscais')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Obter URL do arquivo
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from('notas-fiscais')
+        .createSignedUrl(filePath, 3600);
+      
+      let fileUrl = '';
+      if (signedUrlError || !signedUrlData) {
+        const { data: publicUrlData } = supabase.storage
+          .from('notas-fiscais')
+          .getPublicUrl(filePath);
+        fileUrl = publicUrlData.publicUrl;
+      } else {
+        fileUrl = signedUrlData.signedUrl;
+      }
+
+      // Atualizar a conta com o anexo
+      await updateContaPagar(conta.id, {
+        anexo_nota_fiscal: fileUrl,
+      });
+
+      // Atualizar selectedConta se o modal estiver aberto
+      if (showDetails && selectedConta && selectedConta.id === conta.id) {
+        setSelectedConta({
+          ...selectedConta,
+          anexo_nota_fiscal: fileUrl,
+        });
+      }
+
+      alert('Nota fiscal anexada com sucesso!');
+      refresh();
+    } catch (error: any) {
+      console.error('Erro no upload:', error);
+      alert('Erro ao enviar nota fiscal: ' + (error.message || 'Não foi possível enviar o arquivo.'));
+    } finally {
+      setUploadingNotaFiscal(null);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       pendente: { label: 'Pendente', variant: 'secondary' as const, icon: AlertTriangle },
@@ -293,9 +543,29 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     );
   };
 
-  const getApprovalStatusBadge = (approvalStatus?: string, totalAprovacoes?: number, aprovacoesPendentes?: number) => {
+  const getApprovalStatusBadge = (
+    approvalStatus?: string, 
+    totalAprovacoes?: number, 
+    aprovacoesPendentes?: number,
+    aprovacoesAprovadas?: number
+  ) => {
     if (!approvalStatus || approvalStatus === 'sem_aprovacao') {
       return null;
+    }
+
+    // Se todas as aprovações foram concluídas (aprovadas), mostrar "Aprovado"
+    const todasAprovadas = totalAprovacoes && totalAprovacoes > 0 && 
+      (aprovacoesAprovadas === totalAprovacoes || 
+       (aprovacoesPendentes === 0 && aprovacoesAprovadas && aprovacoesAprovadas > 0));
+
+    // Se o status é 'aprovado' ou todas foram aprovadas, mostrar badge de aprovado
+    if (approvalStatus === 'aprovado' || todasAprovadas) {
+      return (
+        <Badge variant="default" className="flex items-center gap-1">
+          <CheckCircle className="h-3 w-3" />
+          {totalAprovacoes ? `Aprovado (${totalAprovacoes}/${totalAprovacoes})` : 'Aprovado'}
+        </Badge>
+      );
     }
 
     const approvalConfig = {
@@ -305,7 +575,6 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
         variant: 'default' as const, 
         icon: AlertTriangle 
       },
-      aprovado: { label: 'Aprovado', variant: 'default' as const, icon: CheckCircle },
       rejeitado: { label: 'Rejeitado', variant: 'destructive' as const, icon: XCircle },
     };
 
@@ -558,17 +827,42 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                         {getApprovalStatusBadge(
                           conta.approval_status,
                           conta.total_aprovacoes,
-                          conta.aprovacoes_pendentes
+                          conta.aprovacoes_pendentes,
+                          conta.aprovacoes_aprovadas
                         )}
-                        {conta.tipo_alerta && conta.tipo_alerta !== 'sem_alerta' && (
-                          <Badge 
-                            variant={getAlertBadgeColor(conta.tipo_alerta) as any}
-                            className="flex items-center gap-1"
-                          >
-                            <AlertTriangle className="h-3 w-3" />
-                            {getAlertBadgeText(conta.tipo_alerta, conta.dias_ate_vencimento)}
-                          </Badge>
-                        )}
+                        {/* Badge de Pagamento Parcial - só mostrar se houver parcial e não estiver tudo pago */}
+                        {(() => {
+                          const info = infoParcelas.get(conta.id);
+                          // Não mostrar se todas as parcelas foram pagas ou se o valor total foi pago
+                          const valorTotalPago = conta.valor_pago >= (conta.valor_original || conta.valor_atual);
+                          if (info?.temParcial && !info.todasPagas && !valorTotalPago) {
+                            return (
+                              <Badge variant="default" className="flex items-center gap-1 bg-blue-600">
+                                <DollarSign className="h-3 w-3" />
+                                Pagamento Parcial
+                              </Badge>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {/* Alerta de vencimento - não mostrar se houver pagamento parcial */}
+                        {(() => {
+                          const info = infoParcelas.get(conta.id);
+                          const temParcial = info?.temParcial || false;
+                          // Não mostrar alerta de vencida se houver pagamento parcial
+                          if (temParcial && conta.tipo_alerta === 'vencida') {
+                            return null;
+                          }
+                          return conta.tipo_alerta && conta.tipo_alerta !== 'sem_alerta' ? (
+                            <Badge 
+                              variant={getAlertBadgeColor(conta.tipo_alerta) as any}
+                              className="flex items-center gap-1"
+                            >
+                              <AlertTriangle className="h-3 w-3" />
+                              {getAlertBadgeText(conta.tipo_alerta, conta.dias_ate_vencimento)}
+                            </Badge>
+                          ) : null;
+                        })()}
                       </div>
                       <div className="text-sm text-muted-foreground">
                         <span className="font-medium">{conta.fornecedor_nome}</span>
@@ -613,7 +907,71 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
-                    {canEdit && (
+                    {/* Botão para anexar boleto - só aparece se não houver boleto anexado */}
+                    {canEdit && !conta.anexo_boleto && (
+                      <div className="relative inline-block">
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleUploadBoleto(conta, file);
+                              e.target.value = ''; // Limpar input
+                            }
+                          }}
+                          disabled={uploadingBoleto === conta.id}
+                          id={`boleto-input-${conta.id}`}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-green-600 hover:text-green-700 relative"
+                          title="Anexar Boleto"
+                          disabled={uploadingBoleto === conta.id}
+                        >
+                          {uploadingBoleto === conta.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                          ) : (
+                            <Paperclip className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                    {/* Botão para anexar nota fiscal - só aparece se não houver nota fiscal anexada */}
+                    {canEdit && !conta.anexo_nota_fiscal && (
+                      <div className="relative inline-block">
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleUploadNotaFiscal(conta, file);
+                              e.target.value = ''; // Limpar input
+                            }
+                          }}
+                          disabled={uploadingNotaFiscal === conta.id}
+                          id={`nota-fiscal-input-${conta.id}`}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-blue-600 hover:text-blue-700 relative"
+                          title="Anexar Nota Fiscal"
+                          disabled={uploadingNotaFiscal === conta.id}
+                        >
+                          {uploadingNotaFiscal === conta.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                          ) : (
+                            <FileText className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                    {canEdit && !temPagamento(conta) && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -622,7 +980,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
-                    {canApprove && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && (
+                    {canApprove && (conta.status === 'aprovado' || conta.status === 'pendente' || conta.approval_status === 'em_aprovacao') && !temPagamento(conta) && (
                       <>
                         <Button
                           variant="ghost"
@@ -654,7 +1012,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                         <DollarSign className="h-4 w-4" />
                       </Button>
                     )}
-                    {canDelete && (
+                    {canDelete && !temPagamento(conta) && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -755,6 +1113,18 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
           onClose={() => setShowFilters(false)}
         />
       )}
+
+      {/* Modal de Pagamento */}
+      <ModalPagamentoContaPagar
+        isOpen={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setContaParaPagar(null);
+        }}
+        conta={contaParaPagar}
+        onConfirm={handleConfirmPayment}
+        isLoading={updateParcela.isPending}
+      />
     </div>
   );
 }

@@ -68,6 +68,7 @@ import HistoricoCompras from "./pages/Compras/HistoricoCompras";
 import FrotaRoutes from "./pages/frota/FrotaRoutes";
 import LogisticaRoutes from "./pages/logistica/LogisticaRoutes";
 import CombustivelRoutes from "./pages/combustivel/CombustivelRoutes";
+import { MetalurgicaRoutes } from "./pages/metalurgica/MetalurgicaRoutes";
 
 // Configuração otimizada do QueryClient
 const queryClient = new QueryClient({
@@ -104,28 +105,58 @@ function App() {
         userAgent: navigator.userAgent,
         url: window.location.href,
         isRemoveChildError: event.message?.includes('removeChild') || error?.message?.includes('removeChild'),
+        isInsertBeforeError: event.message?.includes('insertBefore') || error?.message?.includes('insertBefore'),
+        isDOMError: event.message?.includes('removeChild') || 
+                   event.message?.includes('insertBefore') ||
+                   event.message?.includes('not a child') ||
+                   error?.message?.includes('removeChild') ||
+                   error?.message?.includes('insertBefore') ||
+                   error?.message?.includes('not a child'),
         isReactError: error?.stack?.includes('react') || error?.stack?.includes('React')
       };
       
       console.error('[APP][GLOBAL_ERROR] ❌ Erro global capturado', errorInfo);
       
-      // Log especial para erros de removeChild (mas não interromper execução)
-      // Erros de removeChild são geralmente inofensivos e ocorrem quando o React tenta
-      // remover nós do DOM que já foram removidos pelo Leaflet ou outros componentes
-      // Isso é comum em dispositivos mais antigos com navegadores que têm problemas
-      // com a reconciliação do DOM do React
-      if (errorInfo.isRemoveChildError) {
-        // Log apenas em modo debug, não como erro crítico
-        // Suprimir completamente o erro em dispositivos antigos para melhor UX
-        console.warn('[APP][GLOBAL_ERROR] ⚠️ Erro de removeChild detectado (suprimido - inofensivo)', {
-          message: event.message,
-          userAgent: navigator.userAgent,
-          currentPath: window.location.pathname
-        });
-        // Prevenir que o erro seja propagado (não é crítico)
-        event.preventDefault();
-        event.stopPropagation();
-        return false;
+      // Log especial para erros de DOM (removeChild, insertBefore, etc)
+      // Esses erros podem ocorrer durante transições de rota ou com componentes externos
+      if (errorInfo.isDOMError) {
+        const errorType = errorInfo.isInsertBeforeError ? 'insertBefore' : 
+                         errorInfo.isRemoveChildError ? 'removeChild' : 'DOM';
+        
+        // Verificar se é durante uma transição crítica (login, mudança de rota)
+        const isCriticalTransition = window.location.pathname === '/login' || 
+                                     window.location.pathname === '/company-select' ||
+                                     errorInfo.url?.includes('/login') ||
+                                     errorInfo.url?.includes('/company-select');
+        
+        if (isCriticalTransition) {
+          // Durante transições críticas, logar como erro mas não quebrar a aplicação
+          console.error(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} durante transição crítica`, {
+            message: event.message,
+            userAgent: navigator.userAgent,
+            currentPath: window.location.pathname,
+            errorType,
+            stack: error?.stack
+          });
+          // Não suprimir completamente durante transições críticas - pode indicar problema real
+          // Mas também não quebrar a aplicação
+        } else {
+          // Em outros contextos, pode ser inofensivo (ex: mapas, componentes externos)
+          // CRÍTICO: Suprimir completamente o erro insertBefore em contextos não críticos
+          // Isso evita que o erro apareça no console e quebre a aplicação
+          console.warn(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} detectado e suprimido (contexto não crítico)`, {
+            message: event.message.substring(0, 100), // Log truncado para não poluir
+            userAgent: navigator.userAgent,
+            currentPath: window.location.pathname,
+            errorType,
+            suppressed: true
+          });
+          // Prevenir completamente a propagação do erro
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+          return false;
+        }
       }
     };
     
@@ -139,6 +170,13 @@ function App() {
         userAgent: navigator.userAgent,
         url: window.location.href,
         isRemoveChildError: event.reason?.message?.includes('removeChild') || String(event.reason).includes('removeChild'),
+        isInsertBeforeError: event.reason?.message?.includes('insertBefore') || String(event.reason).includes('insertBefore'),
+        isDOMError: event.reason?.message?.includes('removeChild') || 
+                   event.reason?.message?.includes('insertBefore') ||
+                   event.reason?.message?.includes('not a child') ||
+                   String(event.reason).includes('removeChild') ||
+                   String(event.reason).includes('insertBefore') ||
+                   String(event.reason).includes('not a child'),
         isAbortError: event.reason?.name === 'AbortError' || 
                      event.reason?.message?.includes('play() request was interrupted') ||
                      String(event.reason).includes('AbortError')
@@ -158,16 +196,35 @@ function App() {
       
       console.error('[APP][GLOBAL_ERROR] ❌ Promise rejeitada não tratada', errorInfo);
       
-      if (errorInfo.isRemoveChildError) {
-        // Log apenas em modo debug, não como erro crítico
-        // Suprimir completamente o erro em dispositivos antigos para melhor UX
-        console.warn('[APP][GLOBAL_ERROR] ⚠️ Erro de removeChild em promise (suprimido - inofensivo)', {
-          message: event.reason?.message || String(event.reason),
-          userAgent: navigator.userAgent
-        });
-        // Prevenir que o erro seja propagado (não é crítico)
-        event.preventDefault();
-        return;
+      // Tratar erros de DOM (removeChild, insertBefore, etc)
+      if (errorInfo.isDOMError) {
+        const errorType = errorInfo.isInsertBeforeError ? 'insertBefore' : 
+                         errorInfo.isRemoveChildError ? 'removeChild' : 'DOM';
+        
+        // Verificar se é durante uma transição crítica
+        const isCriticalTransition = window.location.pathname === '/login' || 
+                                     window.location.pathname === '/company-select' ||
+                                     errorInfo.url?.includes('/login') ||
+                                     errorInfo.url?.includes('/company-select');
+        
+        if (isCriticalTransition) {
+          console.error(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} em promise durante transição crítica`, {
+            message: event.reason?.message || String(event.reason),
+            userAgent: navigator.userAgent,
+            errorType,
+            stack: event.reason?.stack
+          });
+          // Não suprimir durante transições críticas
+        } else {
+          console.warn(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} em promise (contexto não crítico)`, {
+            message: event.reason?.message || String(event.reason),
+            userAgent: navigator.userAgent,
+            errorType
+          });
+          // Prevenir que o erro seja propagado apenas em contextos não críticos
+          event.preventDefault();
+          return;
+        }
       }
     };
     
@@ -259,7 +316,7 @@ function App() {
                 <Route path="/test-portal" element={<TestPortal />} />
                 <Route path="/debug-permissions" element={<DebugPermissions />} />
                 <Route path="/combustivel/*" element={<CombustivelRoutes />} />
-                <Route path="/metalurgica" element={<div className="text-2xl font-bold">Metalúrgica - Em desenvolvimento</div>} />
+                <Route path="/metalurgica/*" element={<MetalurgicaRoutes />} />
                 <Route path="/comercial" element={<div className="text-2xl font-bold">Comercial - Em desenvolvimento</div>} />
                 <Route path="/implantacao" element={<div className="text-2xl font-bold">Implantação - Em desenvolvimento</div>} />
                 <Route path="/configuracoes" element={<Permissions />} />

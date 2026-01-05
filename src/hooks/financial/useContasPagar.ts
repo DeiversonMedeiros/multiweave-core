@@ -305,6 +305,8 @@ export function useContasPagar(): UseContasPagarReturn {
         conta_bancaria_id: data.conta_bancaria_id || null,
         observacoes: data.observacoes || null,
         anexos: data.anexos || [],
+        anexo_boleto: data.anexo_boleto || null,
+        anexo_nota_fiscal: data.anexo_nota_fiscal || null,
         numero_nota_fiscal: data.numero_nota_fiscal || null,
         valor_desconto: data.valor_desconto || 0,
         valor_juros: data.valor_juros || 0,

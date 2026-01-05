@@ -14,13 +14,15 @@
 //            - Respeita configurações de ponto eletrônico
 //            - MODAL UNIFICADO: Localização, Foto e Confirmação em uma única tela
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, startTransition } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PhotoCapture } from './PhotoCapture';
 import { LocationZoneMap } from './LocationZoneMap';
+import { SimpleLocationMap } from './SimpleLocationMap';
+import { PhotoCaptureErrorBoundary } from './PhotoCaptureErrorBoundary';
 import { GeolocationService } from '@/services/geolocationService';
 import { useTimeRecordPhoto } from '@/hooks/rh/useTimeRecordPhoto';
 import { useLocationZones } from '@/hooks/rh/useLocationZones';
@@ -82,11 +84,17 @@ export function TimeRecordRegistrationModal({
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [locationAttempted, setLocationAttempted] = useState(false); // Controlar se já tentou buscar localização
   const [isWithinZone, setIsWithinZone] = useState<boolean | null>(null);
   const [locationType, setLocationType] = useState<'gps' | 'manual' | 'wifi'>('gps');
   const [showMap, setShowMap] = useState(false);
+  // Usar mapa simples por padrão para máxima compatibilidade com navegadores antigos
+  // O mapa simples usa apenas imagem estática, sem dependências pesadas como Leaflet
+  const [useSimpleMap] = useState(true); // Sempre usar mapa simples para evitar problemas de compatibilidade
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [lockedOpen, setLockedOpen] = useState(false);
+  const [showPhotoCapture, setShowPhotoCapture] = useState(true); // Controlar visibilidade do PhotoCapture sem desmontar
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false); // Estado intermediário para evitar conflitos de renderização
   
   // Refs para lifecycle e controle de operações
   const isMountedRef = useRef(true);
@@ -227,14 +235,9 @@ export function TimeRecordRegistrationModal({
       isMountedRef.current = true;
       setLockedOpen(true);
       
-      // Auto-iniciar busca de localização via fila
-      pushQueue(async () => {
-        if (!isMountedRef.current) return;
-        if (!location && !locationRequestedRef.current) {
-          locationRequestedRef.current = true;
-          await handleGetLocation();
-        }
-      });
+      // NOVA ABORDAGEM: Não iniciar localização automaticamente
+      // A localização será buscada DEPOIS que a foto for capturada
+      // Isso evita race conditions e melhora a UX
     } else {
       // Se o parent fechou mas estamos locked, ignorar até safeClose
       if (lockedOpen) {
@@ -264,6 +267,9 @@ export function TimeRecordRegistrationModal({
         setError(null);
         setIsWithinZone(null);
         setShowMap(false);
+        setShowPhotoCapture(true);
+        setIsProcessingPhoto(false);
+        setLocationAttempted(false);
         locationRequestedRef.current = false;
         isClosingRef.current = false;
         isMountedRef.current = true;
@@ -354,35 +360,159 @@ export function TimeRecordRegistrationModal({
   };
 
   // -----------------------------
-  // Captura de foto - esconde mapa imediatamente
+  // Captura de foto - NOVA ABORDAGEM: Foto primeiro, localização depois
   // -----------------------------
   const handlePhotoCapture = (file: File) => {
-    console.log('[MODAL][PHOTO] 📸 Foto capturada', { fileName: file.name, fileSize: file.size });
-    if (!isMountedRef.current || isClosingRef.current) return;
+    const startTime = performance.now();
+    console.log('[MODAL][PHOTO] 📸 handlePhotoCapture INÍCIO', { 
+      fileName: file.name, 
+      fileSize: file.size,
+      isMounted: isMountedRef.current,
+      isClosing: isClosingRef.current,
+      timestamp: new Date().toISOString()
+    });
     
-    // CRÍTICO: Esconder mapa via CSS imediatamente para evitar conflitos DOM
-    setShowMap(false);
-    
-    // Limpar preview anterior se existir
-    if (photoPreviewUrl) {
-      try {
-        URL.revokeObjectURL(photoPreviewUrl);
-      } catch {
-        // Ignorar
-      }
+    if (!isMountedRef.current || isClosingRef.current) {
+      console.warn('[MODAL][PHOTO] ⚠️ Retornando cedo - condições não atendidas', {
+        isMounted: isMountedRef.current,
+        isClosing: isClosingRef.current
+      });
+      return;
     }
     
-    // Criar preview e definir capturedPhoto
-    const previewUrl = URL.createObjectURL(file);
-    setPhotoPreviewUrl(previewUrl);
-    setCapturedPhoto(file);
+    // CRÍTICO: Marcar como processando para evitar renderização conflitante
+    console.log('[MODAL][PHOTO] 🔄 Marcando isProcessingPhoto = true');
+    setIsProcessingPhoto(true);
     
-    // Processar upload via fila (serializado)
-    pushQueue(async () => {
-      if (isMountedRef.current && !isClosingRef.current) {
-        await handleUploadPhoto(file);
+    console.log('[MODAL][PHOTO] ⏱️ Agendando processamento com setTimeout 200ms');
+    // CRÍTICO: NÃO esconder PhotoCapture ainda - primeiro atualizar os estados
+    // Isso evita o erro insertBefore porque o React não tenta renderizar uma transição inválida
+    setTimeout(() => {
+      const elapsed = performance.now() - startTime;
+      console.log('[MODAL][PHOTO] ⏰ setTimeout executado', {
+        elapsed: `${elapsed.toFixed(2)}ms`,
+        isMounted: isMountedRef.current,
+        isClosing: isClosingRef.current
+      });
+      
+      if (!isMountedRef.current || isClosingRef.current) {
+        console.warn('[MODAL][PHOTO] ⚠️ Retornando no setTimeout - condições não atendidas');
+        setIsProcessingPhoto(false);
+        return;
       }
-    });
+      
+      console.log('[MODAL][PHOTO] 🧹 Limpando preview anterior se existir');
+      // Limpar preview anterior se existir
+      if (photoPreviewUrl) {
+        try {
+          URL.revokeObjectURL(photoPreviewUrl);
+          console.log('[MODAL][PHOTO] ✅ Preview anterior revogado');
+        } catch (err) {
+          console.warn('[MODAL][PHOTO] ⚠️ Erro ao revogar preview anterior:', err);
+        }
+      }
+      
+      console.log('[MODAL][PHOTO] 🖼️ Criando novo preview URL');
+      // Criar preview e definir capturedPhoto
+      try {
+        const previewUrl = URL.createObjectURL(file);
+        console.log('[MODAL][PHOTO] ✅ Preview URL criado', { previewUrl: previewUrl.substring(0, 50) + '...' });
+        
+        console.log('[MODAL][PHOTO] 📝 Atualizando estados: setPhotoPreviewUrl e setCapturedPhoto');
+        console.log('[MODAL][PHOTO] 📝 ANTES setPhotoPreviewUrl - estado atual:', {
+          hasPhotoPreviewUrl: !!photoPreviewUrl,
+          hasCapturedPhoto: !!capturedPhoto,
+          showPhotoCapture,
+          isProcessingPhoto
+        });
+        
+        // CRÍTICO: Usar startTransition para marcar atualizações como não urgentes
+        // Isso permite que o React processe de forma mais suave e evita conflitos de DOM
+        console.log('[MODAL][PHOTO] 🎬 Atualizando estados usando startTransition');
+        startTransition(() => {
+          console.log('[MODAL][PHOTO] 🔄 startTransition executado - atualizando estados');
+          try {
+            setPhotoPreviewUrl(previewUrl);
+            setCapturedPhoto(file);
+            setIsProcessingPhoto(false);
+            console.log('[MODAL][PHOTO] ✅ Estados atualizados dentro de startTransition');
+          } catch (err) {
+            console.error('[MODAL][PHOTO] ❌ Erro ao atualizar estados:', err);
+            // Se der erro, tentar novamente de forma mais segura
+            setTimeout(() => {
+              if (isMountedRef.current && !isClosingRef.current) {
+                setPhotoPreviewUrl(previewUrl);
+                setCapturedPhoto(file);
+                setIsProcessingPhoto(false);
+              }
+            }, 50);
+          }
+        });
+        
+        // Esconder PhotoCapture em um requestAnimationFrame duplo DEPOIS do startTransition
+        // Isso garante que o React já processou a mudança de capturedPhoto
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            console.log('[MODAL][PHOTO] 🎬 Segundo requestAnimationFrame - escondendo PhotoCapture');
+            try {
+              setShowPhotoCapture(false);
+              console.log('[MODAL][PHOTO] ✅ PhotoCapture escondido');
+            } catch (err) {
+              console.warn('[MODAL][PHOTO] ⚠️ Erro ao esconder PhotoCapture (ignorado):', err);
+            }
+          });
+        });
+        
+        console.log('[MODAL][PHOTO] 📤 Adicionando upload à fila');
+        // Processar upload via fila (serializado)
+        pushQueue(async () => {
+          console.log('[MODAL][PHOTO] 📤 Upload iniciado na fila');
+          if (isMountedRef.current && !isClosingRef.current) {
+            await handleUploadPhoto(file);
+          } else {
+            console.warn('[MODAL][PHOTO] ⚠️ Upload cancelado - condições não atendidas');
+          }
+        });
+        
+        console.log('[MODAL][PHOTO] 📍 Verificando se precisa buscar localização');
+        // NOVA ABORDAGEM: Buscar localização DEPOIS que a foto foi capturada
+        // Isso evita race conditions e melhora a UX
+        if (!location && !locationRequestedRef.current) {
+          console.log('[MODAL][PHOTO] 📍 Iniciando busca de localização');
+          locationRequestedRef.current = true;
+          setLocationAttempted(false); // Resetar flag antes de tentar
+          setError(null); // Limpar erro anterior
+          pushQueue(async () => {
+            console.log('[MODAL][PHOTO] 📍 Busca de localização iniciada na fila');
+            if (isMountedRef.current && !isClosingRef.current) {
+              await handleGetLocation();
+            } else {
+              console.warn('[MODAL][PHOTO] ⚠️ Busca de localização cancelada - condições não atendidas');
+            }
+          });
+        } else {
+          console.log('[MODAL][PHOTO] ⏭️ Localização já existe ou já foi solicitada', {
+            hasLocation: !!location,
+            locationRequested: locationRequestedRef.current
+          });
+        }
+        
+        const totalElapsed = performance.now() - startTime;
+        console.log('[MODAL][PHOTO] ✅ handlePhotoCapture CONCLUÍDO', {
+          totalElapsed: `${totalElapsed.toFixed(2)}ms`
+        });
+      } catch (err) {
+        const elapsed = performance.now() - startTime;
+        console.error('[MODAL][PHOTO] ❌ Erro ao processar foto:', {
+          error: err,
+          elapsed: `${elapsed.toFixed(2)}ms`
+        });
+        setIsProcessingPhoto(false);
+        setError('Erro ao processar foto. Tente novamente.');
+      }
+    }, 200); // Delay aumentado para garantir estabilidade
+    
+    console.log('[MODAL][PHOTO] ⏸️ handlePhotoCapture pausado (aguardando setTimeout)');
   };
 
   // -----------------------------
@@ -460,10 +590,15 @@ export function TimeRecordRegistrationModal({
         }
       }
       
-      // Após upload, mostrar mapa novamente (com delay para estabilidade)
-      await wait(200);
+      // Após upload, mostrar mapa novamente (com delay maior para estabilidade em navegadores antigos)
+      await wait(300);
       if (isMountedRef.current && !isClosingRef.current && !controller.signal.aborted) {
-        setShowMap(true);
+        // Usar requestAnimationFrame para garantir sincronização com o DOM
+        requestAnimationFrame(() => {
+          if (isMountedRef.current && !isClosingRef.current) {
+            setShowMap(true);
+          }
+        });
       }
     } catch (err: any) {
       if (controller.signal.aborted || !isMountedRef.current || isClosingRef.current) return;
@@ -490,12 +625,14 @@ export function TimeRecordRegistrationModal({
     if (!isMountedRef.current || isClosingRef.current) return;
     if (!navigator.geolocation) {
       setError('Geolocalização não suportada pelo navegador');
+      setLocationAttempted(true);
       setIsLoadingLocation(false);
       return;
     }
 
     setIsLoadingLocation(true);
     setError(null);
+    setLocationAttempted(true); // Marcar que tentou buscar
     
     const controller = makeAbortControllerWithTimeout(20000);
 
@@ -531,10 +668,15 @@ export function TimeRecordRegistrationModal({
         setAddress(tempAddress);
       }
       
-      // Aguardar estabilidade antes de mostrar mapa
-      await wait(250);
+      // Aguardar estabilidade antes de mostrar mapa (delay maior para navegadores antigos)
+      await wait(350);
       if (isMountedRef.current && !isClosingRef.current && !controller.signal.aborted) {
-        setShowMap(true);
+        // Usar requestAnimationFrame para garantir sincronização com o DOM
+        requestAnimationFrame(() => {
+          if (isMountedRef.current && !isClosingRef.current) {
+            setShowMap(true);
+          }
+        });
       }
       
       // Chain reverse geocode via fila
@@ -618,8 +760,15 @@ export function TimeRecordRegistrationModal({
       await wait(350);
     }
     
-    // Esconder mapa antes de desmontar
-    setShowMap(false);
+    // Esconder mapa antes de desmontar (usar requestAnimationFrame para sincronização)
+    requestAnimationFrame(() => {
+      if (isMountedRef.current) {
+        setShowMap(false);
+      }
+    });
+    
+    // Aguardar um frame antes de continuar
+    await wait(100);
     
     // Limpar preview URL
     if (photoPreviewUrl) {
@@ -633,8 +782,8 @@ export function TimeRecordRegistrationModal({
     setLockedOpen(false);
     isClosingRef.current = true;
     
-    // Delay para estabilidade DOM antes de chamar onClose
-    await wait(260);
+    // Delay maior para estabilidade DOM antes de chamar onClose (navegadores antigos precisam mais tempo)
+    await wait(400);
     
     if (isMountedRef.current) {
       onClose();
@@ -645,7 +794,7 @@ export function TimeRecordRegistrationModal({
 
   const canConfirm = !!photoUrl && !!location && !!address && !isUploadingPhoto && !isLoadingLocation;
   
-  // Log para debug com versão
+  // Log para debug com versão - com logs mais detalhados
   useEffect(() => {
     if (lockedOpen) {
       console.log('[MODAL][DEBUG] Estado do modal', {
@@ -654,10 +803,14 @@ export function TimeRecordRegistrationModal({
         hasPhotoUrl: !!photoUrl,
         hasLocation: !!location,
         hasAddress: !!address,
+        hasCapturedPhoto: !!capturedPhoto,
+        showPhotoCapture,
         canConfirm,
         isUploadingPhoto,
         isLoadingLocation,
         isOnline,
+        isMounted: isMountedRef.current,
+        isClosing: isClosingRef.current,
         photoUrl: photoUrl ? photoUrl.substring(0, 50) + '...' : null,
         location: location ? { lat: location.lat, lon: location.lon } : null,
         address: address ? address.substring(0, 50) + '...' : null,
@@ -665,7 +818,33 @@ export function TimeRecordRegistrationModal({
         timestamp: new Date().toISOString()
       });
     }
-  }, [photoUrl, location, address, canConfirm, lockedOpen, isUploadingPhoto, isLoadingLocation, isOnline]);
+  }, [photoUrl, location, address, canConfirm, lockedOpen, isUploadingPhoto, isLoadingLocation, isOnline, capturedPhoto, showPhotoCapture]);
+  
+  // Log específico quando capturedPhoto muda
+  useEffect(() => {
+    if (capturedPhoto) {
+      console.log('[MODAL][PHOTO][STATE] 📝 capturedPhoto definido', {
+        fileName: capturedPhoto.name,
+        fileSize: capturedPhoto.size,
+        fileType: capturedPhoto.type,
+        hasPhotoPreviewUrl: !!photoPreviewUrl,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.log('[MODAL][PHOTO][STATE] 📝 capturedPhoto removido', {
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [capturedPhoto, photoPreviewUrl]);
+  
+  // Log específico quando showPhotoCapture muda
+  useEffect(() => {
+    console.log('[MODAL][PHOTO][STATE] 👁️ showPhotoCapture alterado', {
+      showPhotoCapture,
+      hasCapturedPhoto: !!capturedPhoto,
+      timestamp: new Date().toISOString()
+    });
+  }, [showPhotoCapture, capturedPhoto]);
   const canProceedFromLocation = !!location;
 
   if (!lockedOpen || isClosingRef.current) {
@@ -694,7 +873,113 @@ export function TimeRecordRegistrationModal({
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Seção 1: Localização GPS */}
+          {/* Seção 1: Captura de Foto (PRIMEIRO - mais rápido) */}
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Camera className="h-5 w-5 text-primary" />
+              <h3 className="text-lg font-semibold">Foto</h3>
+              {photoUrl && <CheckCircle className="h-4 w-4 text-green-500" />}
+            </div>
+
+            {!capturedPhoto && !isProcessingPhoto ? (
+              // CRÍTICO: Usar Error Boundary para capturar e ignorar erros insertBefore
+              // Este Error Boundary específico ignora erros de DOM durante transições
+              <PhotoCaptureErrorBoundary
+                fallback={
+                  <div className="flex items-center justify-center py-8">
+                    <Alert variant="default">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        Erro ao renderizar câmera. Tente novamente.
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                }
+                onError={(error, errorInfo) => {
+                  // Log detalhado para debug, mas não quebrar a aplicação
+                  console.warn('[MODAL][PHOTO][ERROR_BOUNDARY] Erro capturado:', {
+                    error: error.message,
+                    errorInfo,
+                    timestamp: new Date().toISOString()
+                  });
+                }}
+              >
+                {/* Wrapper adicional para garantir que o PhotoCapture seja renderizado de forma segura */}
+                <div 
+                  key={`photo-capture-wrapper-${photoCaptureKeyRef.current}`}
+                  style={{ 
+                    visibility: showPhotoCapture ? 'visible' : 'hidden',
+                    position: showPhotoCapture ? 'relative' : 'absolute',
+                    height: showPhotoCapture ? 'auto' : 0,
+                    overflow: showPhotoCapture ? 'visible' : 'hidden',
+                    pointerEvents: showPhotoCapture ? 'auto' : 'none',
+                    width: showPhotoCapture ? 'auto' : 0
+                  }}
+                >
+                  <PhotoCapture
+                    key={`photo-capture-${photoCaptureKeyRef.current}`}
+                    onCapture={(file) => {
+                      console.log('[MODAL][PHOTO][RENDER] 📞 onCapture recebido no PhotoCapture', {
+                        fileName: file.name,
+                        fileSize: file.size,
+                        timestamp: new Date().toISOString()
+                      });
+                      handlePhotoCapture(file);
+                    }}
+                    onCancel={safeClose}
+                    required={true}
+                  />
+                </div>
+              </PhotoCaptureErrorBoundary>
+            ) : isProcessingPhoto ? (
+              // Estado intermediário: mostrar loading enquanto processa
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="ml-2 text-sm text-muted-foreground">Processando foto...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {(photoUrl || photoPreviewUrl) && (
+                  <div className="relative w-full bg-black rounded-lg overflow-hidden aspect-video">
+                    <img
+                      src={photoPreviewUrl || photoUrl || ''}
+                      alt="Foto capturada"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                )}
+
+                {isUploadingPhoto || uploading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
+                    <span className="text-sm text-muted-foreground">
+                      {isOnline ? 'Enviando foto...' : 'Processando foto...'}
+                    </span>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setCapturedPhoto(null);
+                      setPhotoUrl(null);
+                      if (photoPreviewUrl) {
+                        URL.revokeObjectURL(photoPreviewUrl);
+                        setPhotoPreviewUrl(null);
+                      }
+                      setShowPhotoCapture(true); // Mostrar PhotoCapture novamente
+                      photoCaptureKeyRef.current += 1;
+                    }}
+                    className="w-full"
+                  >
+                    Tirar outra foto
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Seção 2: Localização GPS (DEPOIS - pode demorar) */}
           <div className="space-y-4">
             <div className="flex items-center space-x-2">
               <MapPin className="h-5 w-5 text-primary" />
@@ -711,19 +996,40 @@ export function TimeRecordRegistrationModal({
               </div>
             ) : location ? (
               <>
-                {/* Mapa: esconder via CSS antes de desmontar para evitar removeChild */}
-                <div style={{ height: 250, display: showMap ? 'block' : 'none' }}>
+                {/* Mapa: usar versão simplificada por padrão para máxima compatibilidade */}
+                <div 
+                  style={{ 
+                    height: 250, 
+                    visibility: showMap && location?.lat && location?.lon && !isClosingRef.current ? 'visible' : 'hidden',
+                    position: 'relative'
+                  }}
+                >
                   {showMap && location?.lat && location?.lon && !isClosingRef.current ? (
-                    <LocationZoneMap
-                      key={`map-${location.lat.toFixed(4)}-${location.lon.toFixed(4)}-${enforcedZone?.raio_metros || 100}`}
-                      centerLat={location.lat}
-                      centerLon={location.lon}
-                      radius={enforcedZone?.raio_metros || 100}
-                      showCurrentLocation={false}
-                      editable={false}
-                      height="250px"
-                    />
-                  ) : null}
+                    useSimpleMap ? (
+                      // Mapa simplificado - compatível com todos os navegadores
+                      <SimpleLocationMap
+                        centerLat={location.lat}
+                        centerLon={location.lon}
+                        radius={enforcedZone?.raio_metros || 100}
+                        height="250px"
+                        address={address || undefined}
+                      />
+                    ) : (
+                      // Mapa Leaflet - mais recursos mas pode ter problemas em navegadores antigos
+                      <LocationZoneMap
+                        key={`map-${location.lat.toFixed(4)}-${location.lon.toFixed(4)}-${enforcedZone?.raio_metros || 100}`}
+                        centerLat={location.lat}
+                        centerLon={location.lon}
+                        radius={enforcedZone?.raio_metros || 100}
+                        showCurrentLocation={false}
+                        editable={false}
+                        height="250px"
+                      />
+                    )
+                  ) : (
+                    // Placeholder para manter o espaço do DOM estável
+                    <div style={{ height: '100%', width: '100%' }} />
+                  )}
                 </div>
 
                 {address && (
@@ -775,7 +1081,8 @@ export function TimeRecordRegistrationModal({
                   Atualizar Localização
                 </Button>
               </>
-            ) : (
+            ) : locationAttempted ? (
+              // Só mostrar erro se já tentou buscar e falhou
               <>
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
@@ -789,6 +1096,8 @@ export function TimeRecordRegistrationModal({
                     variant="outline"
                     onClick={() => {
                       locationRequestedRef.current = false;
+                      setLocationAttempted(false);
+                      setError(null);
                       pushQueue(() => handleGetLocation());
                     }}
                     className="flex-1"
@@ -803,6 +1112,7 @@ export function TimeRecordRegistrationModal({
                       setAddress('Localização não disponível');
                       setLocationType('manual');
                       setError(null);
+                      setLocationAttempted(true);
                     }}
                     className="flex-1"
                   >
@@ -810,61 +1120,12 @@ export function TimeRecordRegistrationModal({
                   </Button>
                 </div>
               </>
-            )}
-          </div>
-
-          {/* Seção 2: Captura de Foto */}
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2">
-              <Camera className="h-5 w-5 text-primary" />
-              <h3 className="text-lg font-semibold">Foto</h3>
-              {photoUrl && <CheckCircle className="h-4 w-4 text-green-500" />}
-            </div>
-
-            {!capturedPhoto ? (
-              <PhotoCapture
-                key={`photo-capture-${photoCaptureKeyRef.current}`}
-                onCapture={handlePhotoCapture}
-                onCancel={safeClose}
-                required={true}
-              />
             ) : (
-              <div className="space-y-4">
-                {(photoUrl || photoPreviewUrl) && (
-                  <div className="relative w-full bg-black rounded-lg overflow-hidden aspect-video">
-                    <img
-                      src={photoPreviewUrl || photoUrl || ''}
-                      alt="Foto capturada"
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                )}
-
-                {isUploadingPhoto || uploading ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
-                    <span className="text-sm text-muted-foreground">
-                      {isOnline ? 'Enviando foto...' : 'Processando foto...'}
-                    </span>
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setCapturedPhoto(null);
-                      setPhotoUrl(null);
-                      if (photoPreviewUrl) {
-                        URL.revokeObjectURL(photoPreviewUrl);
-                        setPhotoPreviewUrl(null);
-                      }
-                      photoCaptureKeyRef.current += 1;
-                    }}
-                    className="w-full"
-                  >
-                    Tirar outra foto
-                  </Button>
-                )}
+              // Se ainda não tentou buscar, mostrar mensagem informativa
+              <div className="p-4 bg-muted rounded-lg text-center">
+                <p className="text-sm text-muted-foreground">
+                  A localização será obtida automaticamente após capturar a foto.
+                </p>
               </div>
             )}
           </div>

@@ -49,6 +49,7 @@ const contaReceberSchema = z.object({
   observacoes: z.string().optional(),
   anexos: z.array(z.string()).optional(),
   numero_nota_fiscal: z.string().optional(),
+  anexo_nota_fiscal: z.string().optional(),
   // Novos campos
   condicao_recebimento: z.number().refine((val) => !val || [30, 45, 60, 90].includes(val), {
     message: 'Condição de recebimento deve ser 30, 45, 60 ou 90 dias',
@@ -103,6 +104,7 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
       observacoes: '',
       anexos: [],
       numero_nota_fiscal: '',
+      anexo_nota_fiscal: '',
       condicao_recebimento: undefined,
       valor_pis: 0,
       valor_cofins: 0,
@@ -171,6 +173,7 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
         observacoes: conta.observacoes || '',
         anexos: conta.anexos || [],
         numero_nota_fiscal: conta.numero_nota_fiscal || '',
+        anexo_nota_fiscal: conta.anexo_nota_fiscal || '',
         condicao_recebimento: conta.condicao_recebimento,
         valor_pis: conta.valor_pis || 0,
         valor_cofins: conta.valor_cofins || 0,
@@ -180,8 +183,11 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
         valor_iss: conta.valor_iss || 0,
       });
       
-      // Se houver anexos, definir o primeiro como nota fiscal para exibição
-      if (conta.anexos && conta.anexos.length > 0) {
+      // Se houver anexo de nota fiscal, definir para exibição
+      if (conta.anexo_nota_fiscal) {
+        setNotaFiscalUrl(conta.anexo_nota_fiscal);
+      } else if (conta.anexos && conta.anexos.length > 0) {
+        // Fallback para anexos antigos
         setNotaFiscalUrl(conta.anexos[0]);
       }
     }
@@ -423,9 +429,8 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
 
                             setNotaFiscalUrl(fileUrl);
                             
-                            // Adicionar ao array de anexos
-                            const currentAnexos = form.getValues('anexos') || [];
-                            form.setValue('anexos', [...currentAnexos, fileUrl]);
+                            // Salvar no campo específico de anexo de nota fiscal
+                            form.setValue('anexo_nota_fiscal', fileUrl);
                           } catch (error: any) {
                             console.error('Erro no upload:', error);
                             alert('Erro ao enviar nota fiscal: ' + (error.message || 'Não foi possível enviar o arquivo.'));
@@ -458,8 +463,7 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                           size="sm"
                           onClick={() => {
                             setNotaFiscalUrl(null);
-                            const currentAnexos = form.getValues('anexos') || [];
-                            form.setValue('anexos', currentAnexos.filter(url => url !== notaFiscalUrl));
+                            form.setValue('anexo_nota_fiscal', '');
                           }}
                         >
                           <X className="h-4 w-4" />

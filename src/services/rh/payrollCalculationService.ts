@@ -9,7 +9,8 @@ import {
   Rubrica,
   InssBracket,
   IrrfBracket,
-  FgtsConfig
+  FgtsConfig,
+  TimeRecord
 } from '@/integrations/supabase/rh-types';
 
 // =====================================================
@@ -607,10 +608,43 @@ export async function calculatePayroll(
         }
         console.log(`  ✅ [calculatePayroll] ${eventos.length} eventos salvos para ${funcionario.nome}`);
 
+        // Calcular horas trabalhadas e horas extras totais a partir dos time_records
+        let totalHorasTrabalhadas = 0;
+        let totalHorasExtras = 0;
+        try {
+          const { data: timeRecords } = await supabase.rpc('get_time_records_simple', {
+            company_id_param: params.companyId
+          });
+          
+          if (timeRecords) {
+            const monthRecords = (timeRecords as TimeRecord[]).filter(record => {
+              const recordDate = new Date(record.data_registro);
+              return record.employee_id === funcionario.id &&
+                     recordDate.getMonth() + 1 === params.mesReferencia &&
+                     recordDate.getFullYear() === params.anoReferencia &&
+                     record.status === 'aprovado';
+            });
+            
+            totalHorasTrabalhadas = monthRecords.reduce((sum, record) => {
+              return sum + (record.horas_trabalhadas || 0);
+            }, 0);
+            
+            totalHorasExtras = monthRecords.reduce((sum, record) => {
+              return sum + (record.horas_extras_50 || 0) + (record.horas_extras_100 || 0);
+            }, 0);
+            
+            console.log(`  ⏰ [calculatePayroll] Horas calculadas: ${totalHorasTrabalhadas.toFixed(2)}h trabalhadas, ${totalHorasExtras.toFixed(2)}h extras`);
+          }
+        } catch (error) {
+          console.warn('⚠️ [calculatePayroll] Erro ao calcular horas trabalhadas:', error);
+        }
+        
         // Atualizar totais da folha
         const totais = calculatePayrollTotals(eventos);
         await updatePayroll(params.companyId, payroll.id, {
           ...totais,
+          horas_trabalhadas: totalHorasTrabalhadas,
+          horas_extras: totalHorasExtras,
           status: 'processado'
         });
 
@@ -740,6 +774,10 @@ async function getOrCreateDefaultRubricas(companyId: string): Promise<Record<str
   const defaultRubricas: Record<string, string> = {};
   const rubricasPadrao = [
     { codigo: 'SAL_BASE', nome: 'Salário Base', descricao: 'Salário base do funcionário', tipo: 'provento' },
+    { codigo: 'HORA_EXTRA_50', nome: 'Horas Extras 50%', descricao: 'Horas extras com adicional de 50%', tipo: 'provento' },
+    { codigo: 'HORA_EXTRA_100', nome: 'Horas Extras 100%', descricao: 'Horas extras com adicional de 100%', tipo: 'provento' },
+    { codigo: 'ADIC_NOTURNO', nome: 'Adicional Noturno', descricao: 'Adicional noturno (20%)', tipo: 'provento' },
+    { codigo: 'DESC_VALE_TRANSP', nome: 'Desconto VT', descricao: 'Desconto Vale Transporte até 6%', tipo: 'desconto' },
     { codigo: 'INSS', nome: 'INSS', descricao: 'Contribuição INSS', tipo: 'desconto' },
     { codigo: 'IRRF', nome: 'IRRF', descricao: 'Imposto de Renda Retido na Fonte', tipo: 'desconto' },
     { codigo: 'FGTS', nome: 'FGTS', descricao: 'FGTS', tipo: 'desconto' }
@@ -871,8 +909,197 @@ async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<P
     origem_evento: 'sistema'
   });
 
-  // 2. Calcular outras rubricas ativas
+  // 2. Buscar registros de ponto do mês para calcular horas extras e adicional noturno
+  let monthTimeRecords: TimeRecord[] = [];
+  try {
+    console.log(`🔍 [calculateEmployeeEvents] Buscando registros de ponto para ${employee.nome} (${employee.id}) - ${data.mesReferencia}/${data.anoReferencia}`);
+    
+    const { data: timeRecords, error: timeRecordsError } = await supabase.rpc('get_time_records_simple', {
+      company_id_param: companyId
+    });
+    
+    if (timeRecordsError) {
+      console.warn('⚠️ [calculateEmployeeEvents] Erro ao buscar registros de ponto:', timeRecordsError);
+    } else if (timeRecords) {
+      monthTimeRecords = (timeRecords as TimeRecord[]).filter(record => {
+        const recordDate = new Date(record.data_registro);
+        return record.employee_id === employee.id &&
+               recordDate.getMonth() + 1 === data.mesReferencia &&
+               recordDate.getFullYear() === data.anoReferencia &&
+               record.status === 'aprovado'; // Apenas registros aprovados
+      });
+      
+      console.log(`📊 [calculateEmployeeEvents] Encontrados ${monthTimeRecords.length} registros de ponto aprovados para o mês`);
+    }
+  } catch (error) {
+    console.warn('⚠️ [calculateEmployeeEvents] Erro ao buscar registros de ponto:', error);
+    // Continua sem os registros de ponto
+  }
+
+  // Calcular horas extras 50%, 100% e adicional noturno a partir dos time_records
+  const baseSalary = employee.salario_base || 0;
+  const hourlyRate = baseSalary / 160; // 160h = 1 mês
+  
+  console.log(`💰 [calculateEmployeeEvents] Salário base: R$ ${baseSalary.toFixed(2)}, Valor hora: R$ ${hourlyRate.toFixed(2)}`);
+  
+  // Somar horas extras 50% (com adicional de 50%)
+  const totalHorasExtras50 = monthTimeRecords.reduce((sum, record) => {
+    return sum + (record.horas_extras_50 || 0);
+  }, 0);
+  
+  // Somar horas extras 100% (com adicional de 100%)
+  const totalHorasExtras100 = monthTimeRecords.reduce((sum, record) => {
+    return sum + (record.horas_extras_100 || 0);
+  }, 0);
+  
+  // Somar horas noturnas (adicional noturno de 20%)
+  const totalHorasNoturnas = monthTimeRecords.reduce((sum, record) => {
+    return sum + (record.horas_noturnas || 0);
+  }, 0);
+  
+  console.log(`⏰ [calculateEmployeeEvents] Horas calculadas:`, {
+    horas_extras_50: totalHorasExtras50,
+    horas_extras_100: totalHorasExtras100,
+    horas_noturnas: totalHorasNoturnas,
+    total_registros: monthTimeRecords.length
+  });
+
+  // Verificar se funcionário tem banco de horas ativo
+  let hasActiveBankHours = false;
+  try {
+    const bankHoursResult = await EntityService.list({
+      schema: 'rh',
+      table: 'bank_hours_config',
+      companyId: companyId,
+      filters: {
+        employee_id: employee.id
+      },
+      pageSize: 1
+    });
+    
+    const bankHoursConfig = bankHoursResult.data[0];
+    hasActiveBankHours = bankHoursConfig?.has_bank_hours && bankHoursConfig?.is_active;
+  } catch (error) {
+    console.warn('⚠️ [calculateEmployeeEvents] Erro ao buscar configuração de banco de horas:', error);
+  }
+
+  // Criar eventos de horas extras 50% (se não tiver banco de horas ativo)
+  if (totalHorasExtras50 > 0 && !hasActiveBankHours) {
+    const horasExtras50RubricaId = defaultRubricas['HORA_EXTRA_50'] || rubricas.find(r => r.codigo === 'HORA_EXTRA_50')?.id;
+    if (horasExtras50RubricaId) {
+      // Valor = horas * valor_hora * 1.5 (50% de adicional)
+      const valorHorasExtras50 = totalHorasExtras50 * hourlyRate * 1.5;
+      
+      console.log(`💰 [calculateEmployeeEvents] Criando evento HORA_EXTRA_50:`, {
+        horas: totalHorasExtras50,
+        valor_hora: hourlyRate,
+        valor_total: valorHorasExtras50,
+        percentual: 0.50
+      });
+      
+      eventos.push({
+        payroll_id: payroll.id,
+        employee_id: employee.id,
+        rubrica_id: horasExtras50RubricaId,
+        codigo_rubrica: 'HORA_EXTRA_50',
+        descricao_rubrica: 'Horas extras com adicional de 50%',
+        tipo_rubrica: 'provento',
+        quantidade: totalHorasExtras50,
+        valor_unitario: hourlyRate * 1.5,
+        valor_total: valorHorasExtras50,
+        percentual: 0.50, // 50% em formato decimal (DECIMAL(5,4) no banco)
+        mes_referencia: data.mesReferencia,
+        ano_referencia: data.anoReferencia,
+        calculado_automaticamente: true,
+        origem_evento: 'sistema'
+      });
+    } else {
+      console.warn(`⚠️ [calculateEmployeeEvents] Rubrica HORA_EXTRA_50 não encontrada`);
+    }
+  } else if (totalHorasExtras50 > 0 && hasActiveBankHours) {
+    console.log(`ℹ️ [calculateEmployeeEvents] Funcionário tem banco de horas ativo, horas extras 50% vão para o banco (não pagas)`);
+  }
+
+  // Criar eventos de horas extras 100% (sempre pagas, mesmo com banco de horas)
+  if (totalHorasExtras100 > 0) {
+    const horasExtras100RubricaId = defaultRubricas['HORA_EXTRA_100'] || rubricas.find(r => r.codigo === 'HORA_EXTRA_100')?.id;
+    if (horasExtras100RubricaId) {
+      // Valor = horas * valor_hora * 2.0 (100% de adicional)
+      const valorHorasExtras100 = totalHorasExtras100 * hourlyRate * 2.0;
+      
+      console.log(`💰 [calculateEmployeeEvents] Criando evento HORA_EXTRA_100:`, {
+        horas: totalHorasExtras100,
+        valor_hora: hourlyRate,
+        valor_total: valorHorasExtras100,
+        percentual: 1.00
+      });
+      
+      eventos.push({
+        payroll_id: payroll.id,
+        employee_id: employee.id,
+        rubrica_id: horasExtras100RubricaId,
+        codigo_rubrica: 'HORA_EXTRA_100',
+        descricao_rubrica: 'Horas extras com adicional de 100%',
+        tipo_rubrica: 'provento',
+        quantidade: totalHorasExtras100,
+        valor_unitario: hourlyRate * 2.0,
+        valor_total: valorHorasExtras100,
+        percentual: 1.00, // 100% em formato decimal (DECIMAL(5,4) no banco)
+        mes_referencia: data.mesReferencia,
+        ano_referencia: data.anoReferencia,
+        calculado_automaticamente: true,
+        origem_evento: 'sistema'
+      });
+    } else {
+      console.warn(`⚠️ [calculateEmployeeEvents] Rubrica HORA_EXTRA_100 não encontrada`);
+    }
+  }
+
+  // Criar eventos de adicional noturno (20% sobre horas noturnas)
+  if (totalHorasNoturnas > 0 && config.aplicar_adicional_noturno) {
+    const adicionalNoturnoRubricaId = defaultRubricas['ADIC_NOTURNO'] || rubricas.find(r => r.codigo === 'ADIC_NOTURNO')?.id;
+    if (adicionalNoturnoRubricaId) {
+      // Valor = horas_noturnas * valor_hora * 0.2 (20% de adicional noturno)
+      const percentualAdicional = config.percentual_adicional_noturno || 0.20;
+      const valorAdicionalNoturno = totalHorasNoturnas * hourlyRate * percentualAdicional;
+      
+      console.log(`💰 [calculateEmployeeEvents] Criando evento ADIC_NOTURNO:`, {
+        horas_noturnas: totalHorasNoturnas,
+        valor_hora: hourlyRate,
+        percentual: percentualAdicional,
+        valor_total: valorAdicionalNoturno
+      });
+      
+      eventos.push({
+        payroll_id: payroll.id,
+        employee_id: employee.id,
+        rubrica_id: adicionalNoturnoRubricaId,
+        codigo_rubrica: 'ADIC_NOTURNO',
+        descricao_rubrica: `Adicional noturno (${(percentualAdicional * 100).toFixed(0)}%)`,
+        tipo_rubrica: 'provento',
+        quantidade: totalHorasNoturnas,
+        valor_unitario: hourlyRate * percentualAdicional,
+        valor_total: valorAdicionalNoturno,
+        percentual: percentualAdicional, // Já está em formato decimal (0.20 para 20%)
+        mes_referencia: data.mesReferencia,
+        ano_referencia: data.anoReferencia,
+        calculado_automaticamente: true,
+        origem_evento: 'sistema'
+      });
+    } else {
+      console.warn(`⚠️ [calculateEmployeeEvents] Rubrica ADIC_NOTURNO não encontrada`);
+    }
+  } else if (totalHorasNoturnas > 0 && !config.aplicar_adicional_noturno) {
+    console.log(`ℹ️ [calculateEmployeeEvents] Funcionário tem ${totalHorasNoturnas}h noturnas mas adicional noturno está desabilitado na configuração`);
+  }
+
+  // 3. Calcular outras rubricas ativas (exceto horas extras, adicional noturno e desconto VT que são calculados separadamente)
   for (const rubrica of rubricas) {
+    // Pular rubricas que já foram calculadas separadamente
+    if (['HORA_EXTRA_50', 'HORA_EXTRA_100', 'ADIC_NOTURNO', 'DESC_VALE_TRANSP'].includes(rubrica.codigo)) {
+      continue;
+    }
+    
     if (rubrica.tipo === 'provento' || rubrica.tipo === 'desconto') {
       const valor = calculateRubricaValue(rubrica, employee, config);
       
@@ -887,7 +1114,7 @@ async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<P
           quantidade: rubrica.quantidade || 1,
           valor_unitario: valor,
           valor_total: valor * (rubrica.quantidade || 1),
-          percentual: rubrica.percentual || 0,
+          percentual: rubrica.percentual || 0, // Já está em formato decimal no banco
           mes_referencia: data.mesReferencia,
           ano_referencia: data.anoReferencia,
           calculado_automaticamente: true,
@@ -897,7 +1124,128 @@ async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<P
     }
   }
 
-  // 3. Calcular impostos
+  // 3. Calcular desconto de vale transporte (apenas se funcionário tiver benefício ativo)
+  if (config.aplicar_vale_transporte && config.percentual_vale_transporte) {
+    try {
+      console.log(`🔍 [calculateEmployeeEvents] Verificando benefício de transporte para ${employee.nome} (${employee.id})`);
+      
+      // Calcular período do mês
+      const startDate = new Date(data.anoReferencia, data.mesReferencia - 1, 1);
+      const endDate = new Date(data.anoReferencia, data.mesReferencia, 0);
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+      
+      console.log(`📅 [calculateEmployeeEvents] Período: ${startDateStr} a ${endDateStr}`);
+      
+      // Buscar benefícios de transporte do funcionário diretamente via EntityService
+      // (evitar RPC que está dando erro 400)
+      let hasTransportBenefit = false;
+      
+      try {
+        console.log(`🔍 [calculateEmployeeEvents] Buscando assignments de benefícios para ${employee.nome}...`);
+        
+        // Buscar assignments de benefícios do funcionário
+        const assignmentsResult = await EntityService.list({
+          schema: 'rh',
+          table: 'employee_benefit_assignments',
+          companyId: companyId,
+          filters: {
+            employee_id: employee.id,
+            is_active: true
+          }
+        });
+        
+        console.log(`📊 [calculateEmployeeEvents] Encontrados ${assignmentsResult.data?.length || 0} assignments ativos`);
+        
+        // Para cada assignment, verificar se é transporte e está ativo no período
+        for (const assignment of assignmentsResult.data || []) {
+          // Verificar se está no período
+          const assignmentStart = new Date(assignment.start_date);
+          const assignmentEnd = assignment.end_date ? new Date(assignment.end_date) : null;
+          
+          const isInPeriod = assignmentStart <= endDate && (!assignmentEnd || assignmentEnd >= startDate);
+          
+          if (isInPeriod) {
+            console.log(`🔍 [calculateEmployeeEvents] Verificando assignment ${assignment.id}, benefit_config_id: ${assignment.benefit_config_id}, período: ${assignment.start_date} a ${assignment.end_date || 'sem fim'}`);
+            
+            // Buscar configuração do benefício
+            try {
+              const benefitConfig = await EntityService.getById({
+                schema: 'rh',
+                table: 'benefit_configurations',
+                companyId: companyId,
+                id: assignment.benefit_config_id
+              });
+              
+              console.log(`📋 [calculateEmployeeEvents] Config do benefício:`, {
+                id: benefitConfig?.id,
+                benefit_type: benefitConfig?.benefit_type,
+                is_active: benefitConfig?.is_active,
+                entra_no_calculo_folha: benefitConfig?.entra_no_calculo_folha,
+                name: benefitConfig?.name
+              });
+              
+              // Verificar se é transporte, está ativo E entra no cálculo da folha
+              if (benefitConfig && 
+                  benefitConfig.benefit_type === 'transporte' && 
+                  benefitConfig.is_active &&
+                  benefitConfig.entra_no_calculo_folha === true) {
+                hasTransportBenefit = true;
+                console.log(`✅ [calculateEmployeeEvents] Funcionário ${employee.nome} TEM benefício de transporte ativo que ENTRA no cálculo da folha`);
+                break;
+              } else if (benefitConfig && benefitConfig.benefit_type === 'transporte') {
+                console.log(`ℹ️ [calculateEmployeeEvents] Funcionário ${employee.nome} tem benefício de transporte mas NÃO entra no cálculo (entra_no_calculo_folha=${benefitConfig.entra_no_calculo_folha}, is_active=${benefitConfig.is_active})`);
+              }
+            } catch (configError) {
+              // Ignorar erro ao buscar configuração
+              console.warn('⚠️ [calculateEmployeeEvents] Erro ao buscar configuração de benefício:', configError);
+            }
+          } else {
+            console.log(`⏭️ [calculateEmployeeEvents] Assignment ${assignment.id} fora do período (${assignment.start_date} a ${assignment.end_date || 'sem fim'})`);
+          }
+        }
+        
+        if (!hasTransportBenefit) {
+          console.log(`ℹ️ [calculateEmployeeEvents] Funcionário ${employee.nome} NÃO tem benefício de transporte ativo no período`);
+        }
+      } catch (directError) {
+        console.warn('⚠️ [calculateEmployeeEvents] Erro ao buscar benefícios diretamente:', directError);
+      }
+      
+      if (hasTransportBenefit) {
+        // Calcular desconto VT (até 6% do salário base)
+        const descontoVTRubricaId = defaultRubricas['DESC_VALE_TRANSP'] || rubricas.find(r => r.codigo === 'DESC_VALE_TRANSP')?.id;
+        if (descontoVTRubricaId) {
+          const percentualVT = config.percentual_vale_transporte || 0.06;
+          const valorDescontoVT = baseSalary * percentualVT;
+          
+          if (valorDescontoVT > 0) {
+            eventos.push({
+              payroll_id: payroll.id,
+              employee_id: employee.id,
+              rubrica_id: descontoVTRubricaId,
+              codigo_rubrica: 'DESC_VALE_TRANSP',
+              descricao_rubrica: `Desconto VT até ${(percentualVT * 100).toFixed(0)}%`,
+              tipo_rubrica: 'desconto',
+              quantidade: 1,
+              valor_unitario: valorDescontoVT,
+              valor_total: valorDescontoVT,
+              percentual: percentualVT, // Já está em formato decimal (0.06 para 6%)
+              mes_referencia: data.mesReferencia,
+              ano_referencia: data.anoReferencia,
+              calculado_automaticamente: true,
+              origem_evento: 'sistema'
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ [calculateEmployeeEvents] Erro ao verificar benefício de transporte:', error);
+      // Não falha o cálculo se houver erro ao verificar benefício
+    }
+  }
+
+  // 4. Calcular impostos
   if (config.aplicar_inss && data.inssBrackets.length > 0) {
     const inssRubricaId = defaultRubricas['INSS'];
     if (inssRubricaId) {
@@ -1001,7 +1349,7 @@ async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<P
         quantidade: 1,
         valor_unitario: fgtsResult.fgts,
         valor_total: fgtsResult.fgts,
-        percentual: fgtsResult.aliquot * 100, // Converter para percentual
+        percentual: fgtsResult.aliquot, // Já está em formato decimal (0.08 para 8%)
         mes_referencia: data.mesReferencia,
         ano_referencia: data.anoReferencia,
         calculado_automaticamente: true,
@@ -1012,7 +1360,7 @@ async function calculateEmployeeEvents(data: EmployeeCalculationData): Promise<P
     }
   }
 
-  // 4. Buscar e aplicar deduções pendentes (coparticipação, empréstimos, multas, etc.)
+  // 5. Buscar e aplicar deduções pendentes (coparticipação, empréstimos, multas, etc.)
   try {
     const { DeductionsService } = await import('./deductionsService');
     const deducoes = await DeductionsService.getPendingForPayroll(

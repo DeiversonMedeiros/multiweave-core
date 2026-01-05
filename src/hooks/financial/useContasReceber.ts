@@ -104,12 +104,38 @@ export function useContasReceber(): UseContasReceberReturn {
   // Atualizar conta a receber
   const updateContaReceber = async (id: string, data: Partial<ContaReceberFormData>) => {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+    
+    // Verificar se a conta está recebida antes de atualizar
+    const conta = await EntityService.getById<ContaReceber>({
+      schema: 'financeiro',
+      table: 'contas_receber',
+      id: id,
+      companyId: selectedCompany.id
+    });
+    
+    if (conta?.status === 'recebido') {
+      throw new Error('Não é possível editar uma conta que já foi recebida.');
+    }
+    
     await updateMutation.mutateAsync({ id, data });
   };
 
   // Deletar conta a receber
   const deleteContaReceber = async (id: string) => {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+    
+    // Verificar se a conta está recebida antes de deletar
+    const conta = await EntityService.getById<ContaReceber>({
+      schema: 'financeiro',
+      table: 'contas_receber',
+      id: id,
+      companyId: selectedCompany.id
+    });
+    
+    if (conta?.status === 'recebido') {
+      throw new Error('Não é possível excluir uma conta que já foi recebida.');
+    }
+    
     await deleteMutation.mutateAsync(id);
   };
 
@@ -134,6 +160,22 @@ export function useContasReceber(): UseContasReceberReturn {
   const receiveContaReceber = async (id: string, dataRecebimento: string, valorRecebido: number) => {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
     
+    // Verificar se a conta tem nota fiscal anexada e número informado
+    const conta = await EntityService.getById<ContaReceber>({
+      schema: 'financeiro',
+      table: 'contas_receber',
+      id: id,
+      companyId: selectedCompany.id
+    });
+    
+    if (!conta) {
+      throw new Error('Conta a receber não encontrada.');
+    }
+    
+    if (!conta.numero_nota_fiscal || !conta.anexo_nota_fiscal) {
+      throw new Error('Não é possível marcar a conta como recebida sem anexar a nota fiscal e informar o número da nota fiscal. Por favor, edite a conta e adicione essas informações antes de recebê-la.');
+    }
+    
     await EntityService.update({
       schema: 'financeiro',
       table: 'contas_receber',
@@ -142,6 +184,7 @@ export function useContasReceber(): UseContasReceberReturn {
       data: {
         status: 'recebido',
         data_recebimento: dataRecebimento,
+        valor_recebido: valorRecebido,
         valor_atual: valorRecebido,
         updated_at: new Date().toISOString()
       }
