@@ -514,15 +514,15 @@ export function CotacoesRealizadas() {
       {/* Modal de Cotação - Usa mesmo componente para gerar/editar/visualizar */}
       {selectedCotacao && (
         <ModalGerarCotacao
-          isOpen={isViewModalOpen || isEditModalOpen}
-          onClose={() => {
-            setIsViewModalOpen(false);
-            setIsEditModalOpen(false);
-            setSelectedCotacao(null);
-          }}
+        isOpen={isViewModalOpen || isEditModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false);
+          setIsEditModalOpen(false);
+          setSelectedCotacao(null);
+        }}
           cotacaoId={selectedCotacao.id}
           readOnly={isViewModalOpen && !isEditModalOpen}
-        />
+      />
       )}
 
       {/* Modal de Confirmação de Exclusão */}

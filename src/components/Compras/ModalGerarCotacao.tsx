@@ -79,6 +79,7 @@ import { useUsers } from '@/hooks/useUsers';
 import { useCreateApprovalsForProcess } from '@/hooks/approvals/useApprovals';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { HistoricoComprasItemModal } from './HistoricoComprasItemModal';
 
 interface ModalGerarCotacaoProps {
   isOpen: boolean;
@@ -312,6 +313,12 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
   // Modal de Visualização de Imagem do Item
   const [imagemModalAberto, setImagemModalAberto] = useState(false);
   const [imagemSelecionada, setImagemSelecionada] = useState<{ url: string; nome: string } | null>(null);
+  const [historicoModalAberto, setHistoricoModalAberto] = useState(false);
+  const [itemHistoricoSelecionado, setItemHistoricoSelecionado] = useState<{
+    material_id: string;
+    material_nome: string;
+    unidade_medida: string;
+  } | null>(null);
 
   // Criar string estável a partir de requisicoesIds e itemIds para usar como dependência
   const requisicoesIdsKey = useMemo(() => {
@@ -1554,7 +1561,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       const fornecedoresCriados = cicloResponse?.fornecedores || [];
       const cicloId = cicloResponse?.ciclo?.id || cicloResponse?.id;
 
-      // Atualizar workflow_state do ciclo para 'rascunho'
+      // Atualizar workflow_state do ciclo para 'rascunho' e observações
       if (cicloId) {
         try {
           await EntityService.update({
@@ -1564,6 +1571,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             id: cicloId,
             data: {
               workflow_state: 'rascunho',
+              observacoes: formData.observacoes_internas?.trim() || null,
             },
           });
         } catch (error) {
@@ -2197,38 +2205,147 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       let temAprovacoes = false;
       if (cicloId && selectedCompany?.id) {
         try {
-          // Calcular valor total da cotação para verificar se precisa de aprovação
-          // Usar o menor valor de cada item (melhor proposta)
-          const valorTotalCotacao = itensAgrupados
-            .filter((item) => itensSelecionados.has(getItemKey(item)))
-            .reduce((total, item) => {
-              // Buscar o menor valor entre os fornecedores para cada item
-              let menorValor = 0;
-              fornecedores.forEach((fornecedor) => {
-                const itemKey = getItemKey(item);
-                const valorMapa = mapaFornecedorItens[fornecedor.id]?.[itemKey];
-                if (valorMapa && valorMapa.quantidade_ofertada && valorMapa.valor_unitario) {
-                  const valorTotal = valorMapa.quantidade_ofertada * valorMapa.valor_unitario;
-                  const descontoValor = (valorMapa.desconto_valor || 0) + (valorTotal * (valorMapa.desconto_percentual || 0) / 100);
-                  const valorFinal = valorTotal - descontoValor;
-                  if (menorValor === 0 || valorFinal < menorValor) {
-                    menorValor = valorFinal;
-                  }
+          // Aguardar um pouco para garantir que todos os inserts foram commitados
+          await new Promise(resolve => setTimeout(resolve, 800));
+          
+          // Verificar se há configuração de aprovação antes de tentar criar
+          try {
+            const configsResult = await EntityService.list({
+              schema: 'public',
+              table: 'configuracoes_aprovacao_unificada',
+              companyId: selectedCompany.id,
+              filters: {
+                processo_tipo: 'cotacao_compra',
+                ativo: true,
+              },
+              page: 1,
+              pageSize: 10,
+            });
+            
+            const temConfiguracao = configsResult.data && configsResult.data.length > 0;
+            console.log('🔍 [handleEnviarAprovacao] Configurações encontradas:', {
+              count: configsResult.data?.length || 0,
+              configs: configsResult.data?.map((c: any) => ({
+                id: c.id,
+                nivel: c.nivel_aprovacao,
+                valor_limite: c.valor_limite,
+                aprovadores_count: Array.isArray(c.aprovadores) ? c.aprovadores.length : 0
+              }))
+            });
+            
+            if (!temConfiguracao) {
+              console.log('⚠️ [handleEnviarAprovacao] Nenhuma configuração de aprovação encontrada para cotacao_compra');
+            } else {
+              // Verificar quantos itens vencedores foram salvos
+              try {
+                const itensVencedoresCheck = await EntityService.list({
+                  schema: 'compras',
+                  table: 'cotacao_item_fornecedor',
+                  companyId: selectedCompany.id,
+                  filters: {
+                    is_vencedor: true,
+                  },
+                  page: 1,
+                  pageSize: 100,
+                });
+                
+                // Filtrar apenas os itens desta cotação através dos fornecedores
+                const fornecedoresCotacaoIds = fornecedoresCriados.map((f: any) => f.id);
+                const itensVencedoresDestaCotacao = (itensVencedoresCheck.data || []).filter((item: any) => {
+                  return fornecedoresCotacaoIds.includes(item.cotacao_fornecedor_id);
+                });
+                
+                console.log('🔍 [handleEnviarAprovacao] Itens vencedores salvos:', {
+                  total_encontrados: itensVencedoresCheck.data?.length || 0,
+                  desta_cotacao: itensVencedoresDestaCotacao.length,
+                  fornecedores_cotacao: fornecedoresCotacaoIds.length,
+                  itens_ids: itensVencedoresDestaCotacao.map((i: any) => ({
+                    id: i.id,
+                    cotacao_fornecedor_id: i.cotacao_fornecedor_id,
+                    is_vencedor: i.is_vencedor,
+                    valor: i.valor_unitario,
+                    quantidade: i.quantidade_ofertada
+                  }))
+                });
+                
+                if (itensVencedoresDestaCotacao.length === 0) {
+                  console.warn('⚠️ [handleEnviarAprovacao] Nenhum item vencedor encontrado para esta cotação. A função SQL pode calcular valor 0.');
                 }
+              } catch (checkError) {
+                console.warn('⚠️ [handleEnviarAprovacao] Erro ao verificar itens vencedores:', checkError);
+              }
+              
+              console.log('✅ [handleEnviarAprovacao] Configuração de aprovação encontrada, criando aprovações...');
+              
+              // Calcular valor total da cotação (apenas para log)
+              const valorTotalCotacao = itensAgrupados
+                .filter((item) => itensSelecionados.has(getItemKey(item)))
+                .reduce((total, item) => {
+                  // Buscar o fornecedor vencedor
+                  const fornecedorVencedor = fornecedores.find((f) => {
+                    const itemKey = getItemKey(item);
+                    const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                    return cell && cell.is_vencedor === true;
+                  });
+                  
+                  if (fornecedorVencedor) {
+                    const itemKey = getItemKey(item);
+                    const valorMapa = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
+                    if (valorMapa && valorMapa.quantidade_ofertada && valorMapa.valor_unitario) {
+                      const valorTotal = valorMapa.quantidade_ofertada * valorMapa.valor_unitario;
+                      const descontoValor = (valorMapa.desconto_valor || 0) + (valorTotal * (valorMapa.desconto_percentual || 0) / 100);
+                      const valorFinal = valorTotal - descontoValor;
+                      return total + valorFinal;
+                    }
+                  }
+                  return total;
+                }, 0);
+              
+              console.log('💰 [handleEnviarAprovacao] Valor total calculado (frontend):', valorTotalCotacao);
+              
+              // Tentar criar aprovações (a função verifica internamente se há configuração)
+              temAprovacoes = await createApprovalsMutation.mutateAsync({
+                processo_tipo: 'cotacao_compra',
+                processo_id: cicloId,
               });
-              return total + menorValor;
-            }, 0);
-
-          // Tentar criar aprovações (a função verifica internamente se há configuração)
-          temAprovacoes = await createApprovalsMutation.mutateAsync({
-            processo_tipo: 'cotacao_compra',
-            processo_id: cicloId,
-          });
-
-          console.log('✅ [handleEnviarAprovacao] Aprovações criadas:', temAprovacoes);
+              
+              console.log('✅ [handleEnviarAprovacao] Resultado createApprovalsMutation:', temAprovacoes);
+              
+              // Verificar manualmente se aprovações foram criadas (pode retornar false mas ter criado)
+              if (!temAprovacoes) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                const aprovacoesCheck = await EntityService.list({
+                  schema: 'public',
+                  table: 'aprovacoes_unificada',
+                  companyId: selectedCompany.id,
+                  filters: {
+                    processo_tipo: 'cotacao_compra',
+                    processo_id: cicloId,
+                  },
+                  page: 1,
+                  pageSize: 10,
+                });
+                
+                temAprovacoes = aprovacoesCheck.data && aprovacoesCheck.data.length > 0;
+                console.log('🔍 [handleEnviarAprovacao] Verificação manual de aprovações:', {
+                  encontradas: temAprovacoes,
+                  count: aprovacoesCheck.data?.length || 0,
+                  aprovações: aprovacoesCheck.data?.map((a: any) => ({
+                    id: a.id,
+                    nivel: a.nivel_aprovacao,
+                    aprovador_id: a.aprovador_id,
+                    status: a.status
+                  }))
+                });
+              }
+            }
+          } catch (configError: any) {
+            console.error('❌ [handleEnviarAprovacao] Erro ao verificar configuração:', configError);
+          }
         } catch (error: any) {
           // Se não houver configuração de aprovação, não é um erro crítico
-          console.warn('⚠️ [handleEnviarAprovacao] Não foi possível criar aprovações:', error.message || error);
+          console.error('❌ [handleEnviarAprovacao] Erro ao criar aprovações:', error);
+          console.error('❌ [handleEnviarAprovacao] Stack:', error.stack);
         }
       }
 
@@ -2243,6 +2360,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             data: {
               workflow_state: temAprovacoes ? 'em_aprovacao' : 'aberta',
               status: temAprovacoes ? 'em_aprovacao' : 'aberta',
+              observacoes: formData.observacoes_internas?.trim() || null,
             },
           });
 
@@ -2622,56 +2740,82 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                     </div>
                                   </TableCell>
                                   <TableCell className="text-center">
-                                    {(() => {
-                                      const imagemUrl = item.imagem_url;
-                                      const temImagem = imagemUrl && typeof imagemUrl === 'string' && imagemUrl.trim() !== '';
-                                      
-                                      // Debug: log do item antes de renderizar botão
-                                      console.log('🖼️ Renderizando botão de imagem:', {
-                                        material_nome: item.material_nome,
-                                        material_codigo: item.material_codigo,
-                                        imagem_url: item.imagem_url,
-                                        imagemUrl,
-                                        imagemUrl_tipo: typeof imagemUrl,
-                                        imagemUrl_length: imagemUrl?.length,
-                                        temImagem
-                                      });
-                                      
-                                      if (temImagem) {
+                                    <div className="flex items-center justify-center gap-1">
+                                      {/* Botão Histórico de Compras */}
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-8 w-8 p-0 hover:bg-primary/10 cursor-pointer"
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setItemHistoricoSelecionado({
+                                                  material_id: item.material_id,
+                                                  material_nome: item.material_nome,
+                                                  unidade_medida: item.unidade_medida,
+                                                });
+                                                setHistoricoModalAberto(true);
+                                              }}
+                                              title="Ver histórico de compras"
+                                            >
+                                              <DollarSign className="h-4 w-4 text-primary" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>
+                                            <p>Ver histórico de compras</p>
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+
+                                      {/* Botão Visualizar Imagem */}
+                                      {(() => {
+                                        const imagemUrl = item.imagem_url;
+                                        const temImagem = imagemUrl && typeof imagemUrl === 'string' && imagemUrl.trim() !== '';
+                                        
+                                        if (temImagem) {
+                                          return (
+                                            <TooltipProvider>
+                                              <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                  <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-8 w-8 p-0 hover:bg-primary/10 cursor-pointer"
+                                                    onClick={(e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      setImagemSelecionada({
+                                                        url: imagemUrl,
+                                                        nome: item.material_nome
+                                                      });
+                                                      setImagemModalAberto(true);
+                                                    }}
+                                                    title={`Visualizar foto: ${item.material_nome}`}
+                                                  >
+                                                    <Eye className="h-4 w-4 text-primary" />
+                                                  </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                  <p>Visualizar foto</p>
+                                                </TooltipContent>
+                                              </Tooltip>
+                                            </TooltipProvider>
+                                          );
+                                        }
+                                        
                                         return (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0 hover:bg-primary/10 cursor-pointer"
-                                            onClick={(e) => {
-                                              e.preventDefault();
-                                              e.stopPropagation();
-                                              console.log('🖱️ Clicou no botão de imagem:', {
-                                                url: imagemUrl,
-                                                nome: item.material_nome
-                                              });
-                                              setImagemSelecionada({
-                                                url: imagemUrl,
-                                                nome: item.material_nome
-                                              });
-                                              setImagemModalAberto(true);
-                                            }}
-                                            title={`Visualizar foto: ${item.material_nome}`}
+                                          <div 
+                                            className="h-8 w-8 flex items-center justify-center text-muted-foreground opacity-30"
+                                            title="Item sem foto cadastrada"
                                           >
-                                            <Eye className="h-4 w-4 text-primary" />
-                                          </Button>
+                                            <ImageIcon className="h-4 w-4" />
+                                          </div>
                                         );
-                                      }
-                                      
-                                      return (
-                                        <div 
-                                          className="h-8 w-8 flex items-center justify-center text-muted-foreground opacity-30"
-                                          title="Item sem foto cadastrada"
-                                        >
-                                          <ImageIcon className="h-4 w-4" />
-                                        </div>
-                                      );
-                                    })()}
+                                      })()}
+                                    </div>
                                   </TableCell>
                                 </TableRow>
                               );
@@ -4037,6 +4181,17 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       )
                     : null;
 
+                  // Calcular valores para o resumo detalhado
+                  const subtotalItens = fornecedoresVencedores.reduce((sum, f) => sum + f.subtotalParcial, 0);
+                  const freteTotal = fornecedoresVencedores.reduce((sum, f) => sum + (f.fornecedor.valor_frete || 0), 0);
+                  const impostoTotal = fornecedoresVencedores.reduce((sum, f) => sum + (f.fornecedor.valor_imposto || 0), 0);
+                  const descontoTotal = fornecedoresVencedores.reduce((sum, f) => {
+                    const descontoPct = f.fornecedor.desconto_percentual || 0;
+                    const descontoValor = f.fornecedor.desconto_valor || 0;
+                    const descontoCalculado = f.subtotalParcial * (descontoPct / 100) + descontoValor;
+                    return sum + descontoCalculado;
+                  }, 0);
+                  
                   // Calcular valor total da cotação
                   const valorTotalCotacao = fornecedoresVencedores.reduce((sum, f) => sum + f.totalSelecionado, 0);
                   
@@ -4475,33 +4630,80 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                           <CardTitle>Resumo Final da Cotação</CardTitle>
                         </CardHeader>
                         <CardContent>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Tipo de Cotação</Label>
-                              <p className="font-medium">{formData.tipo_cotacao}</p>
-                  </div>
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Data Limite</Label>
-                              <p className="font-medium">
-                                {formData.data_limite 
-                                  ? new Date(formData.data_limite).toLocaleDateString('pt-BR')
-                                  : '—'
-                                }
-                              </p>
-                </div>
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Total Selecionado</Label>
-                              <p className="font-bold text-lg text-primary">
-                                R$ {valorTotalCotacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                              </p>
+                          <div className="space-y-4">
+                            {/* Informações gerais */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              <div>
+                                <Label className="text-muted-foreground text-xs">Tipo de Cotação</Label>
+                                <p className="font-medium">{formData.tipo_cotacao}</p>
+                              </div>
+                              <div>
+                                <Label className="text-muted-foreground text-xs">Data Limite</Label>
+                                <p className="font-medium">
+                                  {formData.data_limite 
+                                    ? new Date(formData.data_limite).toLocaleDateString('pt-BR')
+                                    : '—'
+                                  }
+                                </p>
+                              </div>
+                              <div>
+                                <Label className="text-muted-foreground text-xs">Fornecedores Ganhadores</Label>
+                                <p className="font-medium">{fornecedoresVencedores.length}</p>
+                              </div>
                             </div>
-                            <div>
-                              <Label className="text-muted-foreground text-xs">Fornecedores Ganhadores</Label>
-                              <p className="font-medium">{fornecedoresVencedores.length}</p>
+
+                            {/* Detalhamento de valores */}
+                            <div className="border-t pt-4">
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <Label className="text-muted-foreground text-sm">Subtotal dos Itens</Label>
+                                  <p className="font-medium text-sm">
+                                    R$ {subtotalItens.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                
+                                {freteTotal > 0 && (
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm">Frete</Label>
+                                    <p className="font-medium text-sm text-blue-600">
+                                      + R$ {freteTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {impostoTotal > 0 && (
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm">Impostos</Label>
+                                    <p className="font-medium text-sm text-blue-600">
+                                      + R$ {impostoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {descontoTotal > 0 && (
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm">Desconto</Label>
+                                    <p className="font-medium text-sm text-green-600">
+                                      - R$ {descontoTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                <div className="border-t pt-2 mt-2">
+                                  <div className="flex justify-between items-center">
+                                    <Label className="text-muted-foreground text-sm font-semibold">Total Final</Label>
+                                    <p className="font-bold text-lg text-primary">
+                                      R$ {valorTotalCotacao.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="md:col-span-2">
+
+                            {/* Economia Estimada */}
+                            <div className="border-t pt-4">
                               <Label className="text-muted-foreground text-xs">Economia Estimada</Label>
-                              <p className={`font-bold text-lg ${economiaEstimada >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              <p className={`font-bold text-lg mt-1 ${economiaEstimada >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                                 {economiaEstimada >= 0 ? '+' : ''}R$ {economiaEstimada.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                               </p>
                               <p className="text-xs text-muted-foreground mt-1">
@@ -4531,6 +4733,19 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
         )}
 
         {/* Modal de Visualização de Imagem do Item */}
+        {/* Modal de Histórico de Compras */}
+        {itemHistoricoSelecionado && (
+          <HistoricoComprasItemModal
+            isOpen={historicoModalAberto}
+            onClose={() => {
+              setHistoricoModalAberto(false);
+              setItemHistoricoSelecionado(null);
+            }}
+            item={itemHistoricoSelecionado}
+          />
+        )}
+
+        {/* Modal de Imagem */}
         <Dialog open={imagemModalAberto} onOpenChange={setImagemModalAberto}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             {imagemSelecionada && (

@@ -754,6 +754,12 @@ export class ApprovalService {
     companyId: string
   ): Promise<boolean> {
     try {
+      console.log('🔍 [ApprovalService.createApprovalsForProcess] Chamando RPC:', {
+        processo_tipo,
+        processo_id,
+        companyId
+      });
+      
       const { data, error } = await supabase.rpc('create_approvals_for_process', {
         p_processo_tipo: processo_tipo,
         p_processo_id: processo_id,
@@ -761,12 +767,37 @@ export class ApprovalService {
       });
 
       if (error) {
-        console.error('Erro ao criar aprovações:', error);
+        console.error('❌ [ApprovalService.createApprovalsForProcess] Erro ao criar aprovações');
+        console.error('❌ Error completo (JSON):', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+        console.error('❌ Error object keys:', Object.keys(error));
+        console.error('❌ Error code:', error.code);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error details:', error.details);
+        console.error('❌ Error hint:', error.hint);
+        console.error('❌ Parâmetros passados:', {
+          processo_tipo,
+          processo_id,
+          companyId
+        });
         throw error;
       }
+      
+      console.log('✅ [ApprovalService.createApprovalsForProcess] Resultado:', data);
       return data;
-    } catch (error) {
-      console.error('Erro na função createApprovalsForProcess:', error);
+    } catch (error: any) {
+      console.error('❌ [ApprovalService.createApprovalsForProcess] Exceção capturada');
+      console.error('❌ Exception type:', typeof error);
+      console.error('❌ Exception completo (JSON):', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      console.error('❌ Exception message:', error?.message);
+      console.error('❌ Exception code:', error?.code);
+      console.error('❌ Exception details:', error?.details);
+      console.error('❌ Exception hint:', error?.hint);
+      console.error('❌ Exception stack:', error?.stack);
+      console.error('❌ Parâmetros passados:', {
+        processo_tipo,
+        processo_id,
+        companyId
+      });
       throw error;
     }
   }

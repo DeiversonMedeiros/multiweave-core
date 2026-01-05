@@ -75,3 +75,4 @@ As migrations usam `CREATE OR REPLACE FUNCTION`, então são seguras para execut
 
 
 
+

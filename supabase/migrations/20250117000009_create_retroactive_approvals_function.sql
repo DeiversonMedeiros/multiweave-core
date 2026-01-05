@@ -215,3 +215,4 @@ COMMENT ON FUNCTION public.create_retroactive_approvals IS
 
 Retorna relatório detalhado do processo com status de cada processo processado.
 Recomendado executar em lotes pequenos (50-100 processos por vez) para evitar sobrecarga.';
+

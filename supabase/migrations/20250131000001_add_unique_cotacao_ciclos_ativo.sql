@@ -20,3 +20,4 @@ WHERE workflow_state IN ('rascunho', 'em_aprovacao', 'aberta', 'em_cotacao')
 COMMENT ON INDEX compras.idx_cotacao_ciclos_requisicao_ativa IS 
 'Garante que apenas uma cotação ativa existe por requisição, prevenindo conflitos quando múltiplos compradores trabalham simultaneamente. Permite múltiplas cotações apenas se todas estiverem finalizadas, canceladas ou reprovadas.';
 
+

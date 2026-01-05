@@ -87,6 +87,8 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     somente_pendentes: true,
     buscar_item: '',
     grupo_item: 'all',
+    ordenar_por: 'none' as 'none' | 'nome' | 'origem',
+    ordenar_origem_direcao: 'crescente' as 'crescente' | 'decrescente',
   });
 
   // Mapear IDs para nomes
@@ -495,6 +497,32 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
           item.material_nome?.toLowerCase().includes(filters.buscar_item.toLowerCase()) ||
           item.material_codigo?.toLowerCase().includes(filters.buscar_item.toLowerCase())
         );
+      }
+
+      // Aplicar ordenação
+      if (filters.ordenar_por === 'nome') {
+        result = [...result].sort((a, b) => {
+          const nomeA = (a.material_nome || '').toLowerCase();
+          const nomeB = (b.material_nome || '').toLowerCase();
+          return nomeA.localeCompare(nomeB, 'pt-BR');
+        });
+      } else if (filters.ordenar_por === 'origem') {
+        result = [...result].sort((a, b) => {
+          // Extrair número da requisição (ex: REQ-000018 -> 18)
+          const extrairNumero = (numeroReq: string): number => {
+            const match = numeroReq?.match(/\d+$/);
+            return match ? parseInt(match[0], 10) : 0;
+          };
+          
+          const numA = extrairNumero(a.requisicao_numero || '');
+          const numB = extrairNumero(b.requisicao_numero || '');
+          
+          if (filters.ordenar_origem_direcao === 'crescente') {
+            return numA - numB;
+          } else {
+            return numB - numA;
+          }
+        });
       }
 
       return result;
@@ -941,25 +969,62 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
               </div>
 
               {modoExplodido && (
-                <div className="space-y-2">
-                  <Label>Grupo de Item</Label>
-                  <Select
-                    value={filters.grupo_item}
-                    onValueChange={(value) => setFilters({ ...filters, grupo_item: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      {gruposMateriais.map((grupo) => (
-                        <SelectItem key={grupo} value={grupo}>
-                          {grupo}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <Label>Grupo de Item</Label>
+                    <Select
+                      value={filters.grupo_item}
+                      onValueChange={(value) => setFilters({ ...filters, grupo_item: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        {gruposMateriais.map((grupo) => (
+                          <SelectItem key={grupo} value={grupo}>
+                            {grupo}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Ordenar por</Label>
+                    <Select
+                      value={filters.ordenar_por}
+                      onValueChange={(value) => setFilters({ ...filters, ordenar_por: value as 'none' | 'nome' | 'origem' })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhuma ordenação</SelectItem>
+                        <SelectItem value="nome">Nome do Item (A-Z)</SelectItem>
+                        <SelectItem value="origem">Origem (Requisição)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {filters.ordenar_por === 'origem' && (
+                    <div className="space-y-2">
+                      <Label>Direção da Ordenação</Label>
+                      <Select
+                        value={filters.ordenar_origem_direcao}
+                        onValueChange={(value) => setFilters({ ...filters, ordenar_origem_direcao: value as 'crescente' | 'decrescente' })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="crescente">Menor para Maior (REQ-000001 → REQ-000999)</SelectItem>
+                          <SelectItem value="decrescente">Maior para Menor (REQ-000999 → REQ-000001)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </>
               )}
 
               {!modoExplodido && (
@@ -1074,6 +1139,8 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                     somente_pendentes: true,
                     buscar_item: '',
                     grupo_item: 'all',
+                    ordenar_por: 'none',
+                    ordenar_origem_direcao: 'crescente',
                   });
                 }}
               >

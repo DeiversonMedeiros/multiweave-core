@@ -29,3 +29,4 @@ LEFT JOIN compras.requisicoes_compra rc ON rc.id = cc.requisicao_id;
 COMMENT ON VIEW compras.cotacoes_with_requisicao IS 
 'View que une cotacao_ciclos com requisicoes_compra, incluindo numero_requisicao e created_by para facilitar consultas na interface';
 
+
