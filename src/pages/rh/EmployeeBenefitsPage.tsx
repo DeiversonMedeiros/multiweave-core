@@ -46,7 +46,8 @@ export default function EmployeeBenefitsPage() {
   // Hooks para dados
   // Usando pageSize grande para buscar todos os registros (10000 deve ser suficiente para a maioria dos casos)
   const { data: assignmentsData, isLoading, error } = useRHData<EmployeeBenefitAssignment>('employee_benefit_assignments', selectedCompany?.id || '', undefined, 10000);
-  const { data: employees = [] } = useEmployees();
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.data || [];
   const { data: benefitsData } = useRHData<BenefitConfiguration>('benefit_configurations', selectedCompany?.id || '', undefined, 10000);
 
   // Função para buscar dados relacionados
