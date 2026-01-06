@@ -27,7 +27,8 @@ interface BankHoursConfigProps {
 
 export function BankHoursConfig({ companyId }: BankHoursConfigProps) {
   const { configs, loading, error, createConfig, updateConfig, deleteConfig } = useBankHoursConfig(companyId);
-  const { data: employees = [], isLoading: employeesLoading } = useEmployees();
+  const { data: employeesData, isLoading: employeesLoading } = useEmployees();
+  const employees = employeesData?.data || [];
   const [showForm, setShowForm] = useState(false);
   const [editingConfig, setEditingConfig] = useState<string | null>(null);
   const [formData, setFormData] = useState<BankHoursConfigForm>({

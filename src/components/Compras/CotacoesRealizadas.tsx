@@ -16,6 +16,7 @@ import {
   Clock,
   AlertCircle,
   FileText,
+  Package,
   X
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -125,6 +126,8 @@ export function CotacoesRealizadas() {
       case 'aberta':
       case 'em_cotacao':
         return <Badge variant="outline" className="text-blue-600"><Clock className="h-3 w-3 mr-1" />Aberta</Badge>;
+      case 'em_pedido':
+        return <Badge variant="outline" className="text-purple-600"><Package className="h-3 w-3 mr-1" />Em Pedido</Badge>;
       case 'vencida':
         return <Badge variant="outline" className="text-red-600"><AlertCircle className="h-3 w-3 mr-1" />Vencida</Badge>;
       default:

@@ -33,7 +33,8 @@ import {
   ArrowUpDown,
   ChevronDown,
   ChevronUp,
-  Users
+  Users,
+  Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -48,6 +49,8 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { formatDateOnly } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 // =====================================================
 // COMPONENTE PRINCIPAL
@@ -72,7 +75,8 @@ export default function TimeRecordsPage() {
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
 
   // Hooks
-  const { data: employees = [] } = useEmployees();
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.data || [];
   
   // Usar paginação infinita otimizada
   const {
@@ -188,6 +192,13 @@ export default function TimeRecordsPage() {
 
       const summary = grouped.get(employeeId)!;
       summary.records.push(record);
+      
+      // Considerar apenas registros aprovados para o resumo
+      // Registros pendentes não devem aparecer nos totais
+      if (record.status !== 'aprovado') {
+        return; // Pular registros não aprovados
+      }
+      
       summary.totalHorasTrabalhadas += record.horas_trabalhadas || 0;
       summary.totalHorasNegativas += record.horas_negativas || 0;
       summary.totalHorasExtras50 += record.horas_extras_50 || 0;
@@ -992,7 +1003,16 @@ export default function TimeRecordsPage() {
                             </Button>
                           </div>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-4">
+                          {/* Saldo do Banco de Horas */}
+                          <EmployeeBankHoursBalance 
+                            employeeId={summary.employeeId}
+                            companyId={selectedCompany?.id}
+                            startDate={dateRange.start}
+                            endDate={dateRange.end}
+                          />
+                          
+                          {/* Métricas de Horas */}
                           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Trabalhadas</p>
@@ -1298,5 +1318,95 @@ export default function TimeRecordsPage() {
       </FormModal>
     </div>
     </RequireEntity>
+  );
+}
+
+// Componente para exibir saldo mensal do banco de horas
+interface EmployeeBankHoursBalanceProps {
+  employeeId: string;
+  companyId?: string;
+  startDate: string;
+  endDate: string;
+}
+
+function EmployeeBankHoursBalance({ 
+  employeeId, 
+  companyId, 
+  startDate, 
+  endDate 
+}: EmployeeBankHoursBalanceProps) {
+  // Sempre renderizar o componente, mesmo se os dados não estiverem disponíveis
+
+  const monthlyBankHoursBalance = useQuery({
+    queryKey: ['employee-bank-hours-balance', employeeId, companyId, startDate, endDate],
+    queryFn: async () => {
+      try {
+        console.log('[EmployeeBankHoursBalance] 🔍 Calculando saldo usando função SQL:', { employeeId, companyId, startDate, endDate });
+        
+        // Extrair ano e mês do endDate (último dia do período)
+        const endDateObj = new Date(endDate);
+        const year = endDateObj.getFullYear();
+        const month = endDateObj.getMonth() + 1;
+        
+        // Usar função SQL para calcular saldo mensal
+        const { data, error } = await (supabase as any).rpc('get_monthly_bank_hours_balance', {
+          p_employee_id: employeeId,
+          p_company_id: companyId,
+          p_year: year,
+          p_month: month
+        });
+
+        if (error) {
+          console.error('[EmployeeBankHoursBalance] ❌ Erro ao calcular saldo:', error);
+          return 0;
+        }
+
+        const finalBalance = Number(data) || 0;
+        console.log('[EmployeeBankHoursBalance] 💰 Saldo calculado:', finalBalance, { year, month });
+        return finalBalance;
+      } catch (error) {
+        console.error('[EmployeeBankHoursBalance] ❌ Erro ao calcular saldo:', error);
+        return 0;
+      }
+    },
+    enabled: !!employeeId && !!companyId,
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    refetchOnWindowFocus: false
+  });
+
+  // Sempre renderizar o componente, mesmo se não houver dados
+  const balance = monthlyBankHoursBalance.data ?? 0;
+  const isLoading = monthlyBankHoursBalance.isLoading;
+  const hasError = monthlyBankHoursBalance.isError;
+
+  console.log('[EmployeeBankHoursBalance] 🎨 Renderizando componente:', { balance, isLoading, hasError, employeeId, companyId });
+
+  return (
+    <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950 rounded-lg border-2 border-blue-200 dark:border-blue-800 shadow-md">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-foreground">Saldo Banco de Horas (Período)</p>
+          {hasError && (
+            <span className="text-xs text-red-500 bg-red-50 dark:bg-red-950 px-2 py-1 rounded">Erro ao carregar</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {isLoading ? (
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Carregando...</span>
+            </span>
+          ) : (
+            <p className={`text-2xl font-bold ${
+              balance > 0 ? 'text-green-600 dark:text-green-400' :
+              balance < 0 ? 'text-red-600 dark:text-red-400' :
+              'text-gray-500 dark:text-gray-400'
+            }`}>
+              {balance >= 0 ? '+' : ''}{balance.toFixed(2)}h
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

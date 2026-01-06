@@ -61,7 +61,8 @@ const MedicalServiceForm = React.forwardRef<HTMLFormElement, {
   onCancel: () => void;
 }>(({ service, onSubmit, onCancel }, ref) => {
   const { selectedCompany } = useCompany();
-  const { data: employees = [] } = useEmployees();
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.data || [];
   const { data: employeePlans = [] } = useEmployeeMedicalPlans({});
   
   const [formData, setFormData] = useState({

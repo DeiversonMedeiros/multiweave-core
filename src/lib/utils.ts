@@ -53,3 +53,14 @@ export function formatCurrency(value: number | null | undefined): string {
     currency: 'BRL'
   }).format(value);
 }
+
+/**
+ * Formata uma data no formato YYYY-MM-DD sem problemas de timezone
+ * Usa os métodos locais (getFullYear, getMonth, getDate) para evitar conversão UTC
+ */
+export function formatDateToISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

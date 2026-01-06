@@ -830,6 +830,13 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                           conta.aprovacoes_pendentes,
                           conta.aprovacoes_aprovadas
                         )}
+                        {/* Badge "Sem nota" quando não houver número de nota fiscal */}
+                        {!conta.numero_nota_fiscal && (
+                          <Badge variant="outline" className="text-orange-600 flex items-center gap-1">
+                            <FileText className="h-3 w-3" />
+                            Sem nota
+                          </Badge>
+                        )}
                         {/* Badge de Pagamento Parcial - só mostrar se houver parcial e não estiver tudo pago */}
                         {(() => {
                           const info = infoParcelas.get(conta.id);

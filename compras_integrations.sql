@@ -79,6 +79,8 @@ DECLARE
     v_pedido compras.pedidos_compra%ROWTYPE;
     v_fornecedor compras.fornecedores_dados%ROWTYPE;
     v_partner public.partners%ROWTYPE;
+    v_classe_financeira_nome VARCHAR(255);
+    v_classe_financeira_id UUID;
 BEGIN
     -- Buscar dados do pedido
     SELECT * INTO v_pedido
@@ -99,15 +101,31 @@ BEGIN
     FROM public.partners
     WHERE id = v_fornecedor.partner_id;
     
+    -- Buscar classe financeira dos materiais do pedido
+    -- Se todos os materiais tiverem a mesma classe, usar essa
+    -- Se houver classes diferentes, usar a classe do primeiro material encontrado
+    SELECT DISTINCT ON (me.classe_financeira_id)
+        cf.nome,
+        me.classe_financeira_id
+    INTO v_classe_financeira_nome, v_classe_financeira_id
+    FROM compras.pedido_itens pi
+    JOIN almoxarifado.materiais_equipamentos me ON me.id = pi.material_id
+    LEFT JOIN financeiro.classes_financeiras cf ON cf.id = me.classe_financeira_id
+    WHERE pi.pedido_id = p_pedido_id
+    AND me.classe_financeira_id IS NOT NULL
+    ORDER BY me.classe_financeira_id, pi.id
+    LIMIT 1;
+    
     -- Criar conta a pagar
     INSERT INTO financeiro.contas_pagar (
         id, company_id, fornecedor_id, descricao, valor_original,
-        valor_atual, data_vencimento, status, observacoes, created_by
+        valor_atual, data_vencimento, status, classe_financeira, observacoes, created_by
     ) VALUES (
         gen_random_uuid(), p_company_id, v_partner.id,
         'Pedido de Compra ' || v_pedido.numero_pedido,
         v_pedido.valor_final, v_pedido.valor_final,
         CURRENT_DATE + INTERVAL '30 days', 'pendente',
+        v_classe_financeira_nome,
         'Conta gerada automaticamente do pedido ' || v_pedido.numero_pedido,
         p_created_by
     ) RETURNING id INTO v_conta_id;

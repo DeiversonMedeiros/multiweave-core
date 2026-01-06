@@ -199,6 +199,16 @@ BEGIN
             END;
         END LOOP;
         
+        -- Atualizar status da cotação para 'em_pedido' após criar os pedidos
+        UPDATE compras.cotacao_ciclos
+        SET 
+            status = 'em_pedido',
+            workflow_state = 'em_pedido',
+            updated_at = NOW()
+        WHERE id = NEW.id;
+        
+        RAISE NOTICE '[criar_pedido_apos_aprovacao_cotacao_ciclos] ✅ Status da cotação atualizado para em_pedido: cotacao_ciclo_id=%', NEW.id;
+        
         -- Atualizar status da requisição para 'em_pedido' se todas as cotações foram processadas
         UPDATE compras.requisicoes_compra
         SET 
@@ -211,6 +221,7 @@ BEGIN
             WHERE cc.requisicao_id = v_cotacao_ciclo.requisicao_id
             AND cc.status != 'aprovada'
             AND cc.status != 'reprovada'
+            AND cc.status != 'em_pedido'
         );
         
         RAISE NOTICE '[criar_pedido_apos_aprovacao_cotacao_ciclos] ✅ Processamento concluído para cotacao_ciclo_id=%', NEW.id;

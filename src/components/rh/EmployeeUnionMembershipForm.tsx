@@ -46,7 +46,8 @@ const EmployeeUnionMembershipForm: React.FC<EmployeeUnionMembershipFormProps> = 
   isLoading = false,
 }) => {
   const membershipStatuses = useMembershipStatuses();
-  const { data: employees } = useEmployees();
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.data || [];
   const { data: unions } = useUnions({ ativo: true });
 
   const {

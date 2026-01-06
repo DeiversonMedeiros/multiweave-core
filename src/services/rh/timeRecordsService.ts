@@ -207,12 +207,16 @@ export const TimeRecordsService = {
       })),
     });
 
-    // Gerar signed URLs para todas as fotos em all_photos (OTIMIZADO: em paralelo)
+    // NOTA: Processamento de signed URLs para all_photos DESABILITADO para evitar ERR_INSUFFICIENT_RESOURCES
+    // quando há muitos registros (ex: 478 registros = centenas/milhares de fotos).
+    // As fotos em all_photos serão processadas sob demanda no frontend quando realmente
+    // forem visualizadas (lazy loading). Isso evita gerar centenas/milhares de signed URLs simultaneamente.
+    // 
+    // Apenas processar fotos que já têm signed URLs ou que são signed URLs diretamente
     const signedUrlsStartTime = performance.now();
     let totalPhotos = 0;
-    const photoPromises: Array<{ rec: any; index: number; promise: Promise<void> }> = [];
     
-    // Coletar todas as fotos que precisam de signed URL
+    // Apenas processar fotos que já têm signed URLs ou que são signed URLs diretamente
     for (const rec of processedData) {
       if (rec.all_photos && Array.isArray(rec.all_photos) && rec.all_photos.length > 0) {
         for (let i = 0; i < rec.all_photos.length; i++) {
@@ -221,7 +225,7 @@ export const TimeRecordsService = {
             continue;
           }
           
-          // Se já tem signed URL, usar diretamente e pular
+          // Se já tem signed URL, manter
           if (photo.signed_thumb_url || photo.signed_full_url) {
             continue;
           }
@@ -237,151 +241,28 @@ export const TimeRecordsService = {
           }
           
           totalPhotos++;
-          
-          // Extrair path relativo do photo_url
-          const rawUrl: string = photo.photo_url;
-          let cleanPath = '';
-          
-          // Se já é um path relativo (formato: uuid/filename ou /uuid/filename)
-          if (!/^https?:\/\//i.test(rawUrl)) {
-            // É um path relativo, usar diretamente
-            cleanPath = rawUrl.replace(/^\//, '').split('?')[0].trim();
-          } else {
-            // É uma URL completa, tentar extrair o path
-            const objectPublicMatch = rawUrl.match(/\/storage\/v1\/object\/public\/time-record-photos\/(.+?)(?:\?|$)/);
-            if (objectPublicMatch) {
-              cleanPath = objectPublicMatch[1];
-            } else {
-              const objectSignMatch = rawUrl.match(/\/storage\/v1\/object\/sign\/time-record-photos\/(.+?)(?:\?|$)/);
-              if (objectSignMatch) {
-                cleanPath = objectSignMatch[1];
-              } else {
-                // Tentar extrair de URL completa do Supabase
-                const supabaseMatch = rawUrl.match(/time-record-photos[\/](.+?)(?:\?|$)/);
-                if (supabaseMatch) {
-                  cleanPath = supabaseMatch[1];
-                } else {
-                  // Última tentativa: extrair UUID e nome do arquivo do final da URL
-                  try {
-                    const urlObj = new URL(rawUrl);
-                    const pathParts = urlObj.pathname.split('/');
-                    const bucketIndex = pathParts.findIndex(p => p === 'time-record-photos');
-                    if (bucketIndex >= 0 && bucketIndex < pathParts.length - 1) {
-                      cleanPath = pathParts.slice(bucketIndex + 1).join('/');
-                    } else {
-                      // Tentar extrair UUID e filename do final
-                      const fileMatch = rawUrl.match(/([a-f0-9-]{36})\/([^\/\?]+)$/i);
-                      if (fileMatch) {
-                        cleanPath = `${fileMatch[1]}/${fileMatch[2]}`;
-                      } else {
-                        continue;
-                      }
-                    }
-                  } catch {
-                    continue;
-                  }
-                }
-              }
-            }
-          }
-          
-          if (!cleanPath) continue;
-          
-          // Criar promise para gerar signed URL em paralelo com retry para erros 502
-          const promise = (async () => {
-            let retries = 2; // Tentar até 2 vezes em caso de erro 502
-            while (retries >= 0) {
-              try {
-                const { data: signedFull, error: signFullErr } = await supabase
-                  .storage
-                  .from('time-record-photos')
-                  .createSignedUrl(cleanPath, 3600);
-                
-                if (!signFullErr && signedFull) {
-                  rec.all_photos[i] = {
-                    ...rec.all_photos[i],
-                    signed_full_url: signedFull.signedUrl,
-                    signed_thumb_url: signedFull.signedUrl
-                  };
-                  return; // Sucesso, sair do loop
-                } else if (signFullErr) {
-                  // Verificar se é erro 502 (Bad Gateway) ou erro de rede/CORS
-                  const errorMessage = signFullErr.message || signFullErr.toString() || '';
-                  const isRetryableError = signFullErr.status === 502 || 
-                                         errorMessage.includes('502') || 
-                                         errorMessage.includes('Bad Gateway') ||
-                                         errorMessage.includes('network') ||
-                                         errorMessage.includes('CORS') ||
-                                         errorMessage.includes('ERR_FAILED');
-                  
-                  if (isRetryableError && retries > 0) {
-                    // Aguardar antes de tentar novamente (backoff exponencial)
-                    await new Promise(resolve => setTimeout(resolve, 500 * (3 - retries)));
-                    retries--;
-                    continue; // Tentar novamente
-                  } else {
-                    // Não é erro retryable ou sem tentativas, sair silenciosamente
-                    return;
-                  }
-                }
-              } catch (err: any) {
-                // Capturar erros de rede ou outros erros
-                const errorMessage = err?.message || err?.toString() || '';
-                const isRetryableError = err?.status === 502 || 
-                                       errorMessage.includes('502') || 
-                                       errorMessage.includes('Bad Gateway') ||
-                                       errorMessage.includes('network') ||
-                                       errorMessage.includes('CORS') ||
-                                       errorMessage.includes('ERR_FAILED') ||
-                                       errorMessage.includes('Failed to fetch');
-                
-                if (isRetryableError && retries > 0) {
-                  // Aguardar antes de tentar novamente (backoff exponencial)
-                  await new Promise(resolve => setTimeout(resolve, 500 * (3 - retries)));
-                  retries--;
-                  continue; // Tentar novamente
-                } else {
-                  // Outro erro ou sem tentativas, sair silenciosamente
-                  return;
-                }
-              }
-              retries--;
-            }
-          })();
-          
-          photoPromises.push({ rec, index: i, promise });
+          // NOTA: Não gerar signed URL aqui - será feito no frontend quando necessário
         }
       }
     }
     
-    // Executar todas as gerações de signed URL em paralelo (limitado para evitar sobrecarga e erros 502)
-    let signedUrlsGenerated = 0;
-    try {
-      // Processar em batches menores para evitar sobrecarga do servidor Supabase
-      const BATCH_SIZE = 10; // Reduzido de 20 para 10
-      const DELAY_BETWEEN_BATCHES = 200; // Aumentado de 50ms para 200ms
-      
-      for (let i = 0; i < photoPromises.length; i += BATCH_SIZE) {
-        const batch = photoPromises.slice(i, i + BATCH_SIZE);
-        const results = await Promise.allSettled(batch.map(p => p.promise));
-        signedUrlsGenerated += results.filter(r => r.status === 'fulfilled').length;
-        
-        // Delay entre batches para evitar rate limiting e erros 502
-        if (i + BATCH_SIZE < photoPromises.length) {
-          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
-        }
-      }
-    } catch (e) {
-      // Silenciosamente ignorar erros - não quebrar o fluxo se houver falhas
-      console.warn('[TimeRecordsService.listPaginated] Erro ao processar signed URLs:', e);
+    // Log apenas para debug
+    if (totalPhotos > 0) {
+      console.log(`[TimeRecordsService.listPaginated] ${totalPhotos} fotos em all_photos serão processadas sob demanda no frontend (lazy loading)`);
     }
+    
+    const photoPromises: Array<{ rec: any; index: number; promise: Promise<void> }> = [];
+    
+    // NOTA: Processamento de signed URLs desabilitado - será feito no frontend sob demanda
+    // Não processar batches vazios
+    const signedUrlsGenerated = 0;
     const signedUrlsEndTime = performance.now();
     const signedUrlsDuration = signedUrlsEndTime - signedUrlsStartTime;
     
     const serviceEndTime = performance.now();
     const serviceDuration = serviceEndTime - serviceStartTime;
 
-    console.log(`[TimeRecordsService.listPaginated] ⏱️ RPC: ${rpcDuration.toFixed(2)}ms | Processamento: ${processDuration.toFixed(2)}ms | Signed URLs: ${signedUrlsDuration.toFixed(2)}ms (${signedUrlsGenerated}/${totalPhotos} fotos) | Total: ${serviceDuration.toFixed(2)}ms`);
+    console.log(`[TimeRecordsService.listPaginated] ⏱️ RPC: ${rpcDuration.toFixed(2)}ms | Processamento: ${processDuration.toFixed(2)}ms | Signed URLs: ${signedUrlsDuration.toFixed(2)}ms (${totalPhotos} fotos serão processadas sob demanda no frontend) | Total: ${serviceDuration.toFixed(2)}ms`);
 
     return {
       data: processedData,
@@ -641,77 +522,16 @@ export const TimeRecordsService = {
         await processPhoto('foto_url', 'foto_thumb_url');
         await processPhoto('first_event_photo_url', 'first_event_thumb_url');
         
-        // Processar TODAS as fotos em all_photos (vindas de time_record_event_photos via RPC)
+        // NOTA: Processamento de all_photos removido para evitar ERR_INSUFFICIENT_RESOURCES
+        // quando há muitos registros. As fotos em all_photos serão processadas sob demanda
+        // no frontend quando realmente forem visualizadas (lazy loading).
+        // Isso evita gerar centenas/milhares de signed URLs simultaneamente.
+        // 
+        // Se necessário processar all_photos, fazer isso apenas para a primeira foto
+        // ou implementar um sistema de cache/limite de requisições simultâneas.
         if (rec.all_photos && Array.isArray(rec.all_photos) && rec.all_photos.length > 0) {
-          console.log(`[TimeRecordsService.list] processando ${rec.all_photos.length} fotos de all_photos para registro ${rec.id}`);
-          
-          for (let i = 0; i < rec.all_photos.length; i++) {
-            const photo = rec.all_photos[i];
-            if (!photo || !photo.photo_url) {
-              console.warn(`[TimeRecordsService.list] foto ${i} sem photo_url`, { photo });
-              continue;
-            }
-            
-            // Extrair path relativo
-            const rawUrl: string = photo.photo_url;
-            let relativePath = rawUrl;
-            
-            const objectPublicMatch = rawUrl.match(/\/storage\/v1\/object\/public\/time-record-photos\/(.+)/);
-            if (objectPublicMatch) {
-              relativePath = objectPublicMatch[1];
-            } else {
-              const objectMatch = rawUrl.match(/\/storage\/v1\/object\/sign\/time-record-photos\/(.+)/);
-              if (objectMatch) {
-                relativePath = objectMatch[1];
-              } else if (/^https?:\/\//i.test(rawUrl)) {
-                const parts = rawUrl.split(/time-record-photos[\/]?/);
-                if (parts.length > 1) {
-                  relativePath = parts[1].replace(/^\//, '');
-                } else {
-                  console.warn(`[TimeRecordsService.list] não conseguiu extrair path da foto ${i}`, { rawUrl });
-                  continue;
-                }
-              }
-            }
-            
-            // Se ainda for URL completa, pular
-            if (/^https?:\/\//i.test(relativePath)) {
-              console.warn(`[TimeRecordsService.list] não conseguiu extrair path da foto ${i} (ainda é URL completa)`, { rawUrl, relativePath });
-              continue;
-            }
-            
-            try {
-              const cleanPath = relativePath.replace(/^\//, '').split('?')[0];
-              console.log(`[TimeRecordsService.list] gerando signed URL para foto ${i} em all_photos:`, { id: rec.id, cleanPath });
-              
-              // Removido transform do Supabase - usar apenas signed URL sem transformação
-              // As imagens já devem estar otimizadas no upload
-              const { data: signedFull, error: signFullErr } = await supabase
-                .storage
-                .from('time-record-photos')
-                .createSignedUrl(cleanPath, 3600);
-              
-              if (!signFullErr && signedFull) {
-                rec.all_photos[i] = {
-                  ...photo,
-                  // Usar a mesma URL para thumb e full - thumbnail será gerado no frontend quando necessário
-                  signed_thumb_url: signedFull.signedUrl,
-                  signed_full_url: signedFull.signedUrl
-                };
-              }
-              
-              if (signFullErr) {
-                console.warn(`[TimeRecordsService.list] erro ao gerar signed URL para foto ${i}:`, { 
-                  signFullErr: signFullErr?.message,
-                  photo 
-                });
-              } else {
-                console.log(`[TimeRecordsService.list] ✅ signed URL gerada para foto ${i} em all_photos`);
-              }
-            } catch (e: any) {
-              console.warn(`[TimeRecordsService.list] exceção ao gerar signed URL para foto ${i} em all_photos:`, { photo, e: e?.message });
-            }
-          }
+          // Apenas logar, sem processar - as URLs serão geradas no frontend quando necessário
+          console.log(`[TimeRecordsService.list] ${rec.all_photos.length} fotos em all_photos para registro ${rec.id} (lazy loading no frontend)`);
         }
       }
       console.groupEnd();

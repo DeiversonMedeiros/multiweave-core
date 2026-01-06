@@ -35,7 +35,8 @@ export function AutomaticScheduling({ companyId, onScheduled }: AutomaticSchedul
   const { toast } = useToast();
   
   // Usar hooks para buscar dados
-  const { data: employees = [], isLoading: employeesLoading } = useEmployees();
+  const { data: employeesData, isLoading: employeesLoading } = useEmployees();
+  const employees = employeesData?.data || [];
   const { data: existingExams = [] } = usePeriodicExams();
 
   const scheduleAutomaticExams = async () => {

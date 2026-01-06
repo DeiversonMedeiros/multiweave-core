@@ -58,7 +58,8 @@ const DeductionForm = React.forwardRef<HTMLFormElement, {
   onSubmit: (data: any) => Promise<void>;
   onCancel: () => void;
 }>(({ deduction, onSubmit, onCancel }, ref) => {
-  const { data: employees = [] } = useEmployees();
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.data || [];
   
   const [formData, setFormData] = useState({
     employee_id: deduction?.employee_id || '',
@@ -394,7 +395,8 @@ export default function EmployeeDeductionsPage() {
   });
 
   // Buscar funcionários para exibir nomes na tabela
-  const { data: employeesList = [] } = useEmployees();
+  const { data: employeesListData } = useEmployees();
+  const employeesList = employeesListData?.data || [];
 
   // Colunas da tabela
   const columns = [

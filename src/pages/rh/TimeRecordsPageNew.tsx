@@ -34,7 +34,8 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
-  Users
+  Users,
+  Loader2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -49,7 +50,9 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { useEmployees } from '@/hooks/rh/useEmployees';
-import { formatDateOnly } from '@/lib/utils';
+import { formatDateOnly, formatDateToISO } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { 
   generateTimeRecordReportHTML, 
   generateTimeRecordReportCSV, 
@@ -85,11 +88,110 @@ export default function TimeRecordsPageNew() {
   const [summaryYear, setSummaryYear] = useState<string>('');
   // Estado para controlar quais cards têm endereços expandidos
   const [expandedAddresses, setExpandedAddresses] = useState<Set<string>>(new Set());
+  // Cache de signed URLs geradas sob demanda
+  const [signedUrlCache, setSignedUrlCache] = useState<Map<string, string>>(new Map());
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
+
+  // Helper para extrair path relativo do photo_url
+  const extractPhotoPath = useCallback((photoUrl: string): string | null => {
+    if (!photoUrl) return null;
+    
+    // Se já é uma signed URL, extrair o path
+    const signMatch = photoUrl.match(/\/storage\/v1\/object\/sign\/time-record-photos\/(.+?)(?:\?|$)/);
+    if (signMatch) return signMatch[1];
+    
+    // Se é URL pública, extrair o path
+    const publicMatch = photoUrl.match(/\/storage\/v1\/object\/public\/time-record-photos\/(.+?)(?:\?|$)/);
+    if (publicMatch) return publicMatch[1];
+    
+    // Se contém time-record-photos, extrair o path
+    const bucketMatch = photoUrl.match(/time-record-photos[\/](.+?)(?:\?|$)/);
+    if (bucketMatch) return bucketMatch[1];
+    
+    // Se não é URL completa, pode ser path relativo
+    if (!/^https?:\/\//i.test(photoUrl)) {
+      return photoUrl.replace(/^\//, '').split('?')[0];
+    }
+    
+    return null;
+  }, []);
+
+  // Função para gerar signed URL sob demanda
+  const generateSignedUrl = useCallback(async (photo: any): Promise<string | null> => {
+    if (!photo || !photo.photo_url) return null;
+    
+    // Verificar cache primeiro
+    const cacheKey = photo.photo_url;
+    if (signedUrlCache.has(cacheKey)) {
+      return signedUrlCache.get(cacheKey) || null;
+    }
+    
+    // Extrair path relativo
+    const photoPath = extractPhotoPath(photo.photo_url);
+    if (!photoPath) return null;
+    
+    try {
+      const { data, error } = await supabase
+        .storage
+        .from('time-record-photos')
+        .createSignedUrl(photoPath, 3600); // Válida por 1 hora
+      
+      if (error || !data) {
+        console.warn('[TimeRecordsPageNew] Erro ao gerar signed URL:', error);
+        return null;
+      }
+      
+      // Adicionar ao cache
+      setSignedUrlCache(prev => new Map(prev).set(cacheKey, data.signedUrl));
+      return data.signedUrl;
+    } catch (e) {
+      console.error('[TimeRecordsPageNew] Exceção ao gerar signed URL:', e);
+      return null;
+    }
+  }, [signedUrlCache, extractPhotoPath]);
+
+  // Helper para obter URL da foto
+  // NOTA: Signed URLs não são geradas automaticamente no serviço para evitar ERR_INSUFFICIENT_RESOURCES
+  // quando há muitos registros. Esta função tenta usar URLs públicas primeiro.
+  // Se o bucket for privado, as fotos serão carregadas sob demanda via onError.
+  const getPhotoUrl = useCallback((photo: any) => {
+    if (!photo || !photo.photo_url) return '';
+    
+    // Priorizar signed URLs se já foram geradas
+    if (photo.signed_thumb_url) return photo.signed_thumb_url;
+    if (photo.signed_full_url) return photo.signed_full_url;
+    
+    // Verificar cache
+    const cacheKey = photo.photo_url;
+    if (signedUrlCache.has(cacheKey)) {
+      return signedUrlCache.get(cacheKey) || '';
+    }
+    
+    // Se já é uma URL completa HTTP/HTTPS (incluindo signed URLs), retornar como está
+    if (photo.photo_url.includes('http://') || photo.photo_url.includes('https://')) {
+      return photo.photo_url;
+    }
+    
+    // Construir URL do Supabase Storage (bucket pode ser público ou privado)
+    const supabaseUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL || '';
+    if (!supabaseUrl) return photo.photo_url;
+    
+    // Remover barras iniciais e query params para construir o caminho
+    const cleanPath = photo.photo_url.replace(/^\//, '').split('?')[0];
+    
+    // Se já contém /storage/v1/, retornar como está
+    if (photo.photo_url.includes('/storage/v1/')) {
+      return photo.photo_url;
+    }
+    
+    // Construir URL pública do bucket time-record-photos
+    // Se o bucket for privado, esta URL não funcionará, mas será tratado no onError
+    return `${supabaseUrl}/storage/v1/object/public/time-record-photos/${cleanPath}`;
+  }, [signedUrlCache]);
   
   // Carregar lista de funcionários para o filtro
   const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
-  const employees = Array.isArray(employeesData) ? employeesData : [];
+  const employees = employeesData?.data || [];
 
   // Log para verificar se os funcionários estão sendo carregados
   useEffect(() => {
@@ -133,8 +235,8 @@ export default function TimeRecordsPageNew() {
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0); // Último dia do mês
       return {
-        start: startDate.toISOString().split('T')[0],
-        end: endDate.toISOString().split('T')[0]
+        start: formatDateToISO(startDate),
+        end: formatDateToISO(endDate)
       };
     }
     return null;
@@ -150,8 +252,8 @@ export default function TimeRecordsPageNew() {
       // Último dia do mês: usar new Date(year, month, 0) que retorna o último dia do mês anterior
       const endDate = new Date(year, month, 0);
       return {
-        start: startDate.toISOString().split('T')[0],
-        end: endDate.toISOString().split('T')[0]
+        start: formatDateToISO(startDate),
+        end: formatDateToISO(endDate)
       };
     }
     // Se estiver na aba resumo sem mês/ano, não buscar dados (retornar null para desabilitar query)
@@ -183,7 +285,7 @@ export default function TimeRecordsPageNew() {
       startDate: dateRangeForQuery.start,
       endDate: dateRangeForQuery.end,
       status: filters.status !== 'all' ? filters.status : undefined,
-      pageSize: activeTab === 'resumo' && summaryMonth && summaryYear ? 100 : 10, // Na aba resumo com mês/ano, usar pageSize maior
+      pageSize: activeTab === 'resumo' && summaryMonth && summaryYear ? 1000 : 10, // Na aba resumo com mês/ano, usar pageSize muito maior para garantir todos os registros
     };
     
     // Adicionar employeeId apenas se estiver definido
@@ -714,6 +816,12 @@ export default function TimeRecordsPageNew() {
 
       const summary = grouped.get(employeeId)!;
       summary.records.push(record);
+      
+      // Considerar apenas registros aprovados para o resumo
+      // Registros pendentes não devem aparecer nos totais
+      if (record.status !== 'aprovado') {
+        return; // Pular registros não aprovados
+      }
       
       // Converter para número e garantir que não seja NaN
       const horasTrabalhadas = Number(record.horas_trabalhadas) || 0;
@@ -1381,35 +1489,6 @@ export default function TimeRecordsPageNew() {
                 const firstPhoto = photos.length > 0 ? photos[0] : null;
                 const hasMultiplePhotos = photos.length > 1;
 
-                // Helper para obter URL da foto
-                const getPhotoUrl = (photo: any) => {
-                  if (!photo || !photo.photo_url) return '';
-                  
-                  // Priorizar signed URLs se disponível
-                  if (photo.signed_thumb_url) return photo.signed_thumb_url;
-                  if (photo.signed_full_url) return photo.signed_full_url;
-                  
-                  // Se já é uma URL completa HTTP/HTTPS, retornar como está
-                  if (photo.photo_url.includes('http://') || photo.photo_url.includes('https://')) {
-                    return photo.photo_url;
-                  }
-                  
-                  // Construir URL do Supabase Storage (bucket pode ser público ou privado)
-                  const supabaseUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL || '';
-                  if (!supabaseUrl) return photo.photo_url;
-                  
-                  // Remover barras iniciais e query params para construir o caminho
-                  const cleanPath = photo.photo_url.replace(/^\//, '').split('?')[0];
-                  
-                  // Se já contém /storage/v1/, retornar como está
-                  if (photo.photo_url.includes('/storage/v1/')) {
-                    return photo.photo_url;
-                  }
-                  
-                  // Construir URL pública do bucket time-record-photos
-                  return `${supabaseUrl}/storage/v1/object/public/time-record-photos/${cleanPath}`;
-                };
-
                 return (
                   <div
                     key={record.id}
@@ -1785,12 +1864,23 @@ export default function TimeRecordsPageNew() {
                                   setSelectedPhotoUrl(fullUrl);
                                   setPhotoModalOpen(true);
                                 }}
-                                onError={(e) => {
-                                  console.error('[TimeRecordsPageNew] Erro ao carregar foto na galeria:', {
-                                    photoUrl,
-                                    photo
-                                  });
-                                  (e.target as HTMLImageElement).style.display = 'none';
+                                onError={async (e) => {
+                                  const img = e.target as HTMLImageElement;
+                                  
+                                  // Tentar gerar signed URL sob demanda
+                                  const signedUrl = await generateSignedUrl(photo);
+                                  
+                                  if (signedUrl) {
+                                    // Tentar carregar com signed URL
+                                    img.src = signedUrl;
+                                  } else {
+                                    // Se não conseguir gerar signed URL, ocultar a imagem
+                                    console.warn('[TimeRecordsPageNew] Não foi possível gerar signed URL para foto:', {
+                                      photoUrl,
+                                      photoPath: extractPhotoPath(photo.photo_url)
+                                    });
+                                    img.style.display = 'none';
+                                  }
                                 }}
                               />
                             );
@@ -1985,7 +2075,7 @@ export default function TimeRecordsPageNew() {
                           </div>
                         </CardHeader>
                         <CardContent>
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Trabalhadas</p>
                               <p className="text-2xl font-bold text-blue-600">
@@ -2016,6 +2106,14 @@ export default function TimeRecordsPageNew() {
                                 {summary.totalHorasNoturnas.toFixed(2)}h
                               </p>
                             </div>
+                            <EmployeeBankHoursBalanceInline 
+                              employeeId={summary.employeeId}
+                              companyId={selectedCompany?.id}
+                              year={summaryYear ? parseInt(summaryYear) : undefined}
+                              month={summaryMonth ? parseInt(summaryMonth) : undefined}
+                              startDate={summaryDateRange?.start || filters.startDate}
+                              endDate={summaryDateRange?.end || filters.endDate}
+                            />
                           </div>
 
                           {/* Tabela de detalhes quando expandido */}
@@ -2219,5 +2317,128 @@ export default function TimeRecordsPageNew() {
       </Dialog>
     </div>
     </RequireEntity>
+  );
+}
+
+// Componente para exibir saldo mensal do banco de horas
+interface EmployeeBankHoursBalanceProps {
+  employeeId: string;
+  companyId?: string;
+  year?: number;
+  month?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+function EmployeeBankHoursBalanceInline({ 
+  employeeId, 
+  companyId, 
+  year,
+  month,
+  startDate, 
+  endDate 
+}: EmployeeBankHoursBalanceProps) {
+  // Determinar ano e mês: priorizar props diretas, depois extrair de endDate
+  const finalYear = year || (endDate ? new Date(endDate).getFullYear() : new Date().getFullYear());
+  const finalMonth = month || (endDate ? new Date(endDate).getMonth() + 1 : new Date().getMonth() + 1);
+
+  console.log('[EmployeeBankHoursBalanceInline] 🎯 Componente renderizado:', { 
+    employeeId, 
+    companyId, 
+    year: finalYear, 
+    month: finalMonth,
+    startDate, 
+    endDate 
+  });
+
+  const monthlyBankHoursBalance = useQuery({
+    queryKey: ['employee-bank-hours-balance', employeeId, companyId, finalYear, finalMonth],
+    queryFn: async () => {
+      if (!employeeId || !companyId) {
+        console.log('[EmployeeBankHoursBalanceInline] ⚠️ Dados faltando:', { employeeId, companyId });
+        return 0;
+      }
+
+      try {
+        console.log('[EmployeeBankHoursBalanceInline] 🔍 Calculando saldo usando função SQL:', { 
+          employeeId, 
+          companyId, 
+          year: finalYear, 
+          month: finalMonth 
+        });
+        
+        // Usar função SQL para calcular saldo mensal
+        const { data, error } = await (supabase as any).rpc('get_monthly_bank_hours_balance', {
+          p_employee_id: employeeId,
+          p_company_id: companyId,
+          p_year: finalYear,
+          p_month: finalMonth
+        });
+
+        if (error) {
+          console.error('[EmployeeBankHoursBalanceInline] ❌ Erro ao calcular saldo:', error);
+          return 0;
+        }
+
+        // A função retorna um DECIMAL diretamente, não um array
+        // Mas pode estar vindo como string ou número
+        let finalBalance = 0;
+        if (typeof data === 'number') {
+          finalBalance = data;
+        } else if (typeof data === 'string') {
+          finalBalance = parseFloat(data) || 0;
+        } else if (Array.isArray(data) && data.length > 0) {
+          // Se vier como array (caso raro), pegar o primeiro valor
+          finalBalance = Number(data[0]) || 0;
+        }
+
+        console.log('[EmployeeBankHoursBalanceInline] 💰 Saldo calculado:', {
+          finalBalance,
+          rawData: data,
+          dataType: typeof data,
+          isArray: Array.isArray(data),
+          year: finalYear,
+          month: finalMonth,
+          employeeId
+        });
+        
+        return Math.round(finalBalance * 100) / 100;
+      } catch (error) {
+        console.error('[EmployeeBankHoursBalanceInline] ❌ Erro ao calcular saldo:', error);
+        return 0;
+      }
+    },
+    enabled: !!employeeId && !!companyId && !!finalYear && !!finalMonth,
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    refetchOnWindowFocus: false
+  });
+
+  // Sempre renderizar o componente, mesmo se não houver dados
+  const balance = monthlyBankHoursBalance.data ?? 0;
+  const isLoading = monthlyBankHoursBalance.isLoading;
+  const hasError = monthlyBankHoursBalance.isError;
+
+  console.log('[EmployeeBankHoursBalanceInline] 🎨 Renderizando componente:', { balance, isLoading, hasError, employeeId, companyId });
+
+  return (
+    <div className="space-y-1">
+      <p className="text-sm text-muted-foreground">Saldo Banco de Horas</p>
+      {isLoading ? (
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Carregando...</span>
+        </div>
+      ) : hasError ? (
+        <p className="text-2xl font-bold text-red-600">Erro</p>
+      ) : (
+        <p className={`text-2xl font-bold ${
+          balance > 0 ? 'text-green-600' :
+          balance < 0 ? 'text-red-600' :
+          'text-gray-500'
+        }`}>
+          {balance >= 0 ? '+' : ''}{balance.toFixed(2)}h
+        </p>
+      )}
+    </div>
   );
 }

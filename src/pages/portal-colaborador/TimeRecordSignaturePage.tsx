@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { useEmployeeByUserId } from '@/hooks/rh/useEmployeeByUserId';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useMonthlyTimeRecords, TimeRecord } from '@/hooks/rh/useMonthlyTimeRecords';
+import { EntityService } from '@/services/generic/entityService';
 
 // Removido interface duplicada - usando a do service
 
@@ -335,6 +336,7 @@ export default function TimeRecordSignaturePage() {
               key={signature.id} 
               signature={signature}
               employeeId={employee?.id}
+              companyId={currentCompany?.id}
               onSign={handleSign}
               formatMonthYear={formatMonthYear}
               formatDate={formatDate}
@@ -362,6 +364,7 @@ export default function TimeRecordSignaturePage() {
 interface SignatureCardWithRecordsProps {
   signature: TimeRecordSignature;
   employeeId?: string;
+  companyId?: string;
   onSign: (signatureId: string) => void;
   formatMonthYear: (monthYear: string) => string;
   formatDate: (dateString: string) => string;
@@ -374,6 +377,7 @@ interface SignatureCardWithRecordsProps {
 function SignatureCardWithRecords({
   signature,
   employeeId,
+  companyId,
   onSign,
   formatMonthYear,
   formatDate,
@@ -386,6 +390,46 @@ function SignatureCardWithRecords({
   const [year, month] = signature.month_year.split('-').map(Number);
   
   const { data: monthlyRecords, isLoading: recordsLoading } = useMonthlyTimeRecords(year, month);
+
+  // Calcular saldo mensal do banco de horas usando função SQL
+  // O cálculo é feito no banco de dados para garantir consistência
+  const monthlyBankHoursBalance = useQuery({
+    queryKey: ['monthly-bank-hours-balance', employeeId, companyId, year, month],
+    queryFn: async () => {
+      if (!employeeId || !companyId) return 0;
+
+      try {
+        // Usar função SQL para calcular saldo mensal
+        const { data, error } = await (supabase as any).rpc('get_monthly_bank_hours_balance', {
+          p_employee_id: employeeId,
+          p_company_id: companyId,
+          p_year: year,
+          p_month: month
+        });
+
+        if (error) {
+          console.error('Erro ao calcular saldo mensal do banco de horas:', error);
+          return 0;
+        }
+
+        const balance = Number(data) || 0;
+        console.log('[Saldo Banco de Horas]', {
+          balance,
+          mes: `${year}-${month}`,
+          employeeId,
+          companyId
+        });
+
+        return balance;
+      } catch (error) {
+        console.error('Erro ao calcular saldo mensal do banco de horas:', error);
+        return 0;
+      }
+    },
+    enabled: !!employeeId && !!companyId,
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    refetchOnWindowFocus: false
+  });
 
   const formatTime = (time?: string) => {
     if (!time) return '-';
@@ -468,6 +512,43 @@ function SignatureCardWithRecords({
         .sort((a, b) => a.data_registro.localeCompare(b.data_registro))
     : [];
 
+  // Calcular métricas consolidadas (igual à página time-records)
+  const summaryMetrics = useMemo(() => {
+    if (!recordsArray || recordsArray.length === 0) {
+      return {
+        totalHorasTrabalhadas: 0,
+        totalHorasNegativas: 0,
+        totalHorasExtras50: 0,
+        totalHorasExtras100: 0,
+        totalHorasNoturnas: 0,
+      };
+    }
+
+    return recordsArray.reduce(
+      (acc, record) => {
+        // Considerar apenas registros aprovados para o resumo
+        // Registros pendentes não devem aparecer nos totais
+        if (record.status !== 'aprovado') {
+          return acc;
+        }
+        
+        acc.totalHorasTrabalhadas += record.horas_trabalhadas || 0;
+        acc.totalHorasNegativas += record.horas_negativas || 0;
+        acc.totalHorasExtras50 += record.horas_extras_50 || 0;
+        acc.totalHorasExtras100 += record.horas_extras_100 || 0;
+        acc.totalHorasNoturnas += record.horas_noturnas || 0;
+        return acc;
+      },
+      {
+        totalHorasTrabalhadas: 0,
+        totalHorasNegativas: 0,
+        totalHorasExtras50: 0,
+        totalHorasExtras100: 0,
+        totalHorasNoturnas: 0,
+      }
+    );
+  }, [recordsArray]);
+
   return (
     <Card>
       <CardHeader>
@@ -506,24 +587,55 @@ function SignatureCardWithRecords({
           )}
         </div>
 
-        {/* Resumo do mês */}
+        {/* Resumo do mês - igual à página time-records */}
         {monthlyRecords && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted rounded-lg">
-            <div>
-              <div className="text-xs text-muted-foreground">Dias Trabalhados</div>
-              <div className="text-lg font-semibold">{monthlyRecords.workedDays}</div>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 p-4 bg-muted rounded-lg">
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Horas Trabalhadas</p>
+              <p className="text-2xl font-bold text-blue-600">
+                {summaryMetrics.totalHorasTrabalhadas.toFixed(2)}h
+              </p>
             </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Total de Horas</div>
-              <div className="text-lg font-semibold">{monthlyRecords.totalHours.toFixed(2)}h</div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Horas Negativas</p>
+              <p className="text-2xl font-bold text-red-600">
+                {summaryMetrics.totalHorasNegativas > 0 ? '-' : ''}{summaryMetrics.totalHorasNegativas.toFixed(2)}h
+              </p>
             </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Horas Extras</div>
-              <div className="text-lg font-semibold text-green-600">{monthlyRecords.extraHours.toFixed(2)}h</div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Extras 50%</p>
+              <p className="text-2xl font-bold text-orange-600">
+                {summaryMetrics.totalHorasExtras50.toFixed(2)}h
+              </p>
             </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Horas Faltantes</div>
-              <div className="text-lg font-semibold text-red-600">{monthlyRecords.missingHours.toFixed(2)}h</div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Extras 100%</p>
+              <p className="text-2xl font-bold text-purple-600">
+                {summaryMetrics.totalHorasExtras100.toFixed(2)}h
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Horas Noturnas</p>
+              <p className="text-2xl font-bold text-indigo-600">
+                {summaryMetrics.totalHorasNoturnas.toFixed(2)}h
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Saldo Banco de Horas</p>
+              {monthlyBankHoursBalance.isLoading ? (
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Carregando...</span>
+                </div>
+              ) : (
+                <p className={`text-2xl font-bold ${
+                  (monthlyBankHoursBalance.data || 0) > 0 ? 'text-green-600' :
+                  (monthlyBankHoursBalance.data || 0) < 0 ? 'text-red-600' :
+                  'text-gray-500'
+                }`}>
+                  {(monthlyBankHoursBalance.data || 0) >= 0 ? '+' : ''}{(monthlyBankHoursBalance.data || 0).toFixed(2)}h
+                </p>
+              )}
             </div>
           </div>
         )}

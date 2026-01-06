@@ -15,6 +15,10 @@ export interface TimeRecord {
   saida_extra1?: string;
   horas_trabalhadas?: number;
   horas_extras?: number;
+  horas_extras_50?: number;
+  horas_extras_100?: number;
+  horas_negativas?: number;
+  horas_noturnas?: number;
   horas_faltas?: number;
   status: 'pendente' | 'aprovado' | 'rejeitado' | 'corrigido';
   observacoes?: string;

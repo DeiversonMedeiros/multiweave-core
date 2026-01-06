@@ -24,6 +24,7 @@ export interface MaterialEquipamento {
   cfop?: string;
   cst?: string;
   observacoes?: string;
+  classe_financeira_id?: string;
   created_at: string;
   updated_at: string;
   localizacao?: {
@@ -60,6 +61,7 @@ export interface CreateMaterialData {
   cfop?: string;
   cst?: string;
   observacoes?: string;
+  classe_financeira_id?: string;
 }
 
 export const useMateriaisEquipamentos = () => {

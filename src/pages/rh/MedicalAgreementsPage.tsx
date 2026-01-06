@@ -94,7 +94,8 @@ const MedicalAgreementsPage: React.FC = () => {
   const { data: stats } = useMedicalAgreementsStats();
   const { data: dependentsStats, isLoading: loadingDependentsStats, error: dependentsStatsError } = useMedicalPlanDependentsStats();
   const { data: testDependents, isLoading: loadingTest, error: testError } = useTestDependentsQuery();
-  const { data: employees } = useEmployees();
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.data || [];
   
   // Hooks utilitários
   const agreementTypes = useAgreementTypes();

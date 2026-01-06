@@ -25,7 +25,8 @@ export default function WorkShiftsPage() {
   const deleteEmployeeShiftMutation = useDeleteEmployeeShift();
   
   // Hook para buscar funcionários reais
-  const { data: employees = [], isLoading: isLoadingEmployees } = useEmployees();
+  const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
+  const employees = employeesData?.data || [];
 
   // Handlers
   const handleWorkShiftCreate = async (data: any) => {

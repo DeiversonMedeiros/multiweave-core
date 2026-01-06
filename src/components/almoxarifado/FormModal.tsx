@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Package, MapPin, Settings, Image as ImageIcon, Loader2, X, Upload } from 'lucide-react';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useLocalizacoesFisicas } from '@/hooks/almoxarifado/useLocalizacoesFisicas';
+import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
 import { STORAGE_BUCKETS } from '@/config/storage';
 import { useCompany } from '@/lib/company-context';
 import { toast } from 'sonner';
@@ -44,6 +45,7 @@ const FormModal: React.FC<FormModalProps> = ({
   const [selectedAlmoxarifado, setSelectedAlmoxarifado] = useState<string>('');
   const { localizacoes, getLocalizacaoString } = useLocalizacoesFisicas(selectedAlmoxarifado);
   const { selectedCompany } = useCompany();
+  const { data: classesFinanceirasData } = useActiveClassesFinanceiras();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   
@@ -174,7 +176,8 @@ const FormModal: React.FC<FormModalProps> = ({
     imagem_url: initialData?.imagem_url || '',
     ncm: initialData?.ncm || '',
     cfop: initialData?.cfop || '',
-    cst: initialData?.cst || ''
+    cst: initialData?.cst || '',
+    classe_financeira_id: initialData?.classe_financeira_id || ''
   });
 
   // Resetar formulário e gerar código interno quando abrir para novo material
@@ -201,7 +204,8 @@ const FormModal: React.FC<FormModalProps> = ({
             imagem_url: '',
             ncm: '',
             cfop: '',
-            cst: ''
+            cst: '',
+            classe_financeira_id: ''
           });
           setSelectedAlmoxarifado('');
           if (fileInputRef.current) {
@@ -228,7 +232,8 @@ const FormModal: React.FC<FormModalProps> = ({
           imagem_url: initialData.imagem_url || '',
           ncm: initialData.ncm || '',
           cfop: initialData.cfop || '',
-          cst: initialData.cst || ''
+          cst: initialData.cst || '',
+          classe_financeira_id: initialData.classe_financeira_id || ''
         });
         // Encontrar o almoxarifado da localização se houver
         if (initialData.localizacao_id && localizacoes.length > 0) {
@@ -280,7 +285,7 @@ const FormModal: React.FC<FormModalProps> = ({
     
     // Converter strings vazias para null/undefined para campos opcionais
     const cleanedData = Object.entries(formData).reduce((acc, [key, value]) => {
-      if (value === '' && (key === 'localizacao_id' || key === 'imagem_url' || key === 'ncm' || key === 'cfop' || key === 'cst' || key === 'classe' || key === 'nome' || key === 'observacoes')) {
+      if (value === '' && (key === 'localizacao_id' || key === 'imagem_url' || key === 'ncm' || key === 'cfop' || key === 'cst' || key === 'classe' || key === 'nome' || key === 'observacoes' || key === 'classe_financeira_id')) {
         acc[key] = null;
       } else {
         acc[key] = value;
@@ -425,6 +430,36 @@ const FormModal: React.FC<FormModalProps> = ({
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="classe_financeira_id">Classe Financeira</Label>
+                    <Select
+                      value={formData.classe_financeira_id}
+                      onValueChange={(value) => handleInputChange('classe_financeira_id', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a classe financeira" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {classesFinanceirasData?.data
+                          ?.sort((a, b) => {
+                            // Ordenar por código primeiro, depois por nome
+                            if (a.codigo !== b.codigo) {
+                              return a.codigo.localeCompare(b.codigo);
+                            }
+                            return a.nome.localeCompare(b.nome);
+                          })
+                          .map(classe => (
+                            <SelectItem key={classe.id} value={classe.id}>
+                              {classe.codigo} - {classe.nome}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Classe financeira gerencial para classificação contábil
+                    </p>
                   </div>
 
                   {/* Campos Fiscais */}

@@ -106,7 +106,8 @@ export function DependentForm({
   const [cpfError, setCpfError] = useState<string>('');
   const [isValidatingCpf, setIsValidatingCpf] = useState(false);
   
-  const { data: employees } = useEmployees();
+  const { data: employeesData } = useEmployees();
+  const employees = employeesData?.data || [];
   const validateCpfMutation = useValidateCpf();
 
   const form = useForm<DependentFormData>({
