@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,9 +12,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Package, MapPin, Settings, Image as ImageIcon, Loader2, X, Upload } from 'lucide-react';
+import { Package, MapPin, Settings, Image as ImageIcon, Loader2, X, Upload, Check, ChevronsUpDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useLocalizacoesFisicas } from '@/hooks/almoxarifado/useLocalizacoesFisicas';
 import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
@@ -48,6 +62,7 @@ const FormModal: React.FC<FormModalProps> = ({
   const { data: classesFinanceirasData } = useActiveClassesFinanceiras();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [classeFinanceiraOpen, setClasseFinanceiraOpen] = useState(false);
   
   // Função para obter o próximo código interno do backend
   const getNextCodigoInterno = async () => {
@@ -179,6 +194,16 @@ const FormModal: React.FC<FormModalProps> = ({
     cst: initialData?.cst || '',
     classe_financeira_id: initialData?.classe_financeira_id || ''
   });
+
+  // Encontrar a classe financeira selecionada
+  const selectedClasseFinanceira = useMemo(() => {
+    if (!formData.classe_financeira_id || !classesFinanceirasData?.data) {
+      return undefined;
+    }
+    return classesFinanceirasData.data.find(
+      (classe) => classe.id === formData.classe_financeira_id
+    );
+  }, [formData.classe_financeira_id, classesFinanceirasData?.data]);
 
   // Resetar formulário e gerar código interno quando abrir para novo material
   useEffect(() => {
@@ -434,29 +459,68 @@ const FormModal: React.FC<FormModalProps> = ({
 
                   <div>
                     <Label htmlFor="classe_financeira_id">Classe Financeira</Label>
-                    <Select
-                      value={formData.classe_financeira_id}
-                      onValueChange={(value) => handleInputChange('classe_financeira_id', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione a classe financeira" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {classesFinanceirasData?.data
-                          ?.sort((a, b) => {
-                            // Ordenar por código primeiro, depois por nome
-                            if (a.codigo !== b.codigo) {
-                              return a.codigo.localeCompare(b.codigo);
-                            }
-                            return a.nome.localeCompare(b.nome);
-                          })
-                          .map(classe => (
-                            <SelectItem key={classe.id} value={classe.id}>
-                              {classe.codigo} - {classe.nome}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={classeFinanceiraOpen} onOpenChange={setClasseFinanceiraOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={classeFinanceiraOpen}
+                          className="w-full justify-between"
+                        >
+                          {selectedClasseFinanceira
+                            ? `${selectedClasseFinanceira.codigo} - ${selectedClasseFinanceira.nome}`
+                            : "Selecione a classe financeira"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Buscar classe financeira..." />
+                          <CommandList className="max-h-[300px] overflow-y-auto">
+                            <CommandEmpty>Nenhuma classe financeira encontrada.</CommandEmpty>
+                            <CommandGroup>
+                              {classesFinanceirasData?.data
+                                ?.sort((a, b) => {
+                                  // Ordenar por código primeiro, depois por nome
+                                  if (a.codigo !== b.codigo) {
+                                    return a.codigo.localeCompare(b.codigo);
+                                  }
+                                  return a.nome.localeCompare(b.nome);
+                                })
+                                .map((classe) => (
+                                  <CommandItem
+                                    key={classe.id}
+                                    value={`${classe.codigo} ${classe.nome}`}
+                                    onSelect={() => {
+                                      handleInputChange('classe_financeira_id', classe.id);
+                                      setClasseFinanceiraOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        formData.classe_financeira_id === classe.id
+                                          ? "opacity-100"
+                                          : "opacity-0"
+                                      )}
+                                    />
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">
+                                        {classe.codigo} - {classe.nome}
+                                      </span>
+                                      {classe.descricao && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {classe.descricao}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                     <p className="text-xs text-gray-500 mt-1">
                       Classe financeira gerencial para classificação contábil
                     </p>

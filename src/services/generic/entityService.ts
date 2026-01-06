@@ -425,7 +425,20 @@ export const EntityService = {
       delete (dataWithoutCompany as any).company_id;
       
       // Filtrar campos que não existem na tabela (campos conhecidos que causam problemas)
-      // Nota: observacoes agora existe na tabela materiais_equipamentos, não precisa filtrar
+      // Remover campos que não existem em compras.requisicoes_compra
+      if (schema === 'compras' && table === 'requisicoes_compra') {
+        // Log para debug se o campo departamento estiver presente
+        if ((dataWithoutCompany as any).departamento !== undefined) {
+          console.warn('⚠️ Campo "departamento" encontrado no payload de requisição, removendo:', {
+            schema,
+            table,
+            hasDepartamento: (dataWithoutCompany as any).departamento !== undefined,
+            allKeys: Object.keys(dataWithoutCompany)
+          });
+        }
+        delete (dataWithoutCompany as any).departamento;
+        // service_id pode existir, então não vamos removê-lo sem verificar
+      }
 
       // Converter strings vazias para null em campos opcionais (UUID, TEXT, etc)
       // Isso evita erros ao tentar inserir strings vazias em campos que esperam null
@@ -558,7 +571,15 @@ export const EntityService = {
         id_param: id,
         data_keys: Object.keys(dataClean),
         data_count: Object.keys(dataClean).length,
-        data_sample: Object.entries(dataClean).slice(0, 5).map(([k, v]) => ({ key: k, value: v, type: typeof v }))
+        data_sample: Object.entries(dataClean).slice(0, 10).map(([k, v]) => ({ 
+          key: k, 
+          value: v, 
+          type: typeof v,
+          isNull: v === null,
+          isString: typeof v === 'string',
+          stringLength: typeof v === 'string' ? v.length : null
+        })),
+        full_data: dataClean
       });
 
       const { data: result, error } = await (supabase as any).rpc('update_entity_data', {
@@ -570,7 +591,18 @@ export const EntityService = {
       });
 
       if (error) {
-        console.error(`❌ Erro ao atualizar item em ${schema}.${table}:`, error);
+        console.error(`❌ Erro ao atualizar item em ${schema}.${table}:`, {
+          error,
+          error_message: error.message,
+          error_details: error.details,
+          error_hint: error.hint,
+          error_code: error.code,
+          data_sent: dataClean,
+          schema,
+          table,
+          id,
+          companyId
+        });
         throw error;
       }
 
