@@ -65,6 +65,8 @@ const OrdensServicoPage: React.FC = () => {
   const os = osData?.data || [];
   const produtos = produtosData?.data || [];
   const ops = opsData?.data || [];
+  const costCentersList = costCenters?.data || [];
+  const projectsList = projects?.data || [];
 
   // Formulário
   const [formData, setFormData] = useState<OrdemServicoInput>({
@@ -358,14 +360,14 @@ const OrdensServicoPage: React.FC = () => {
                 <div>
                   <label className="text-sm font-medium">OP Vinculada (Opcional)</label>
                   <Select
-                    value={formData.op_vinculada_id || ''}
-                    onValueChange={(value) => setFormData({ ...formData, op_vinculada_id: value || undefined })}
+                    value={formData.op_vinculada_id || '__none__'}
+                    onValueChange={(value) => setFormData({ ...formData, op_vinculada_id: value === '__none__' ? undefined : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Nenhuma" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nenhuma</SelectItem>
+                      <SelectItem value="__none__">Nenhuma</SelectItem>
                       {ops.filter(op => op.status !== 'cancelada').map((op) => (
                         <SelectItem key={op.id} value={op.id}>
                           {op.numero_op}
@@ -387,7 +389,7 @@ const OrdensServicoPage: React.FC = () => {
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      {costCenters?.map((cc) => (
+                      {costCentersList?.filter(cc => cc.id).map((cc) => (
                         <SelectItem key={cc.id} value={cc.id}>
                           {cc.codigo} - {cc.nome}
                         </SelectItem>
@@ -406,7 +408,7 @@ const OrdensServicoPage: React.FC = () => {
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      {projects?.map((proj) => (
+                      {projectsList?.filter(proj => proj.id).map((proj) => (
                         <SelectItem key={proj.id} value={proj.id}>
                           {proj.codigo} - {proj.nome}
                         </SelectItem>

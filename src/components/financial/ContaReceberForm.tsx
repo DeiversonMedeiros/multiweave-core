@@ -23,7 +23,6 @@ import { format } from 'date-fns';
 import { ContaReceber, ContaReceberFormData } from '@/integrations/supabase/financial-types';
 import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
-import { useUnits } from '@/hooks/rh/useUnits';
 import { usePartners } from '@/hooks/usePartners';
 import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
 import { useCompany } from '@/lib/company-context';
@@ -41,7 +40,6 @@ const contaReceberSchema = z.object({
   data_vencimento: z.string().min(1, 'Data de vencimento é obrigatória'),
   centro_custo_id: z.string().optional(),
   projeto_id: z.string().optional(),
-  departamento: z.string().optional(),
   classe_financeira: z.string().optional(),
   categoria: z.string().optional(),
   forma_recebimento: z.string().optional(),
@@ -75,7 +73,6 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
   const { selectedCompany } = useCompany();
   const { data: costCentersData, isLoading: loadingCostCenters } = useCostCenters();
   const { data: projectsData, isLoading: loadingProjects } = useProjects();
-  const { data: unitsData, isLoading: loadingUnits } = useUnits();
   const { data: partnersData, isLoading: loadingPartners } = usePartners();
   const { data: classesFinanceirasData, isLoading: loadingClassesFinanceiras } = useActiveClassesFinanceiras();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -96,7 +93,6 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
       data_vencimento: format(new Date(), 'yyyy-MM-dd'),
       centro_custo_id: '',
       projeto_id: '',
-      departamento: '',
       classe_financeira: '',
       categoria: '',
       forma_recebimento: '',
@@ -165,7 +161,6 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
         data_vencimento: conta.data_vencimento,
         centro_custo_id: conta.centro_custo_id || '',
         projeto_id: conta.projeto_id || '',
-        departamento: conta.departamento || '',
         classe_financeira: conta.classe_financeira || '',
         categoria: conta.categoria || '',
         forma_recebimento: conta.forma_recebimento || '',
@@ -382,9 +377,18 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                       <Input
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
+                        disabled={uploadingNotaFiscal || !form.watch('numero_nota_fiscal')}
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (!file || !selectedCompany?.id) return;
+
+                          // Validar se o número da nota fiscal foi preenchido
+                          const numeroNotaFiscal = form.watch('numero_nota_fiscal');
+                          if (!numeroNotaFiscal || numeroNotaFiscal.trim() === '') {
+                            alert('Por favor, preencha o número da nota fiscal antes de anexar o arquivo.');
+                            e.target.value = ''; // Limpar input
+                            return;
+                          }
 
                           // Validar tamanho (10MB)
                           if (file.size > 10 * 1024 * 1024) {
@@ -440,7 +444,7 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                             e.target.value = '';
                           }
                         }}
-                        disabled={uploadingNotaFiscal}
+                        disabled={uploadingNotaFiscal || !form.watch('numero_nota_fiscal')}
                         className="max-w-sm"
                       />
                       {uploadingNotaFiscal && (
@@ -451,7 +455,9 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)
+                      {form.watch('numero_nota_fiscal') 
+                        ? 'Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)'
+                        : 'Preencha o número da nota fiscal acima para poder anexar o arquivo'}
                     </p>
                     {notaFiscalUrl && (
                       <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
@@ -752,42 +758,6 @@ export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: C
                                 (costCentersData?.data || []).map((centro) => (
                                   <SelectItem key={centro.id} value={centro.id}>
                                     {centro.nome}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="departamento"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Departamento</FormLabel>
-                          <Select 
-                            onValueChange={(value) => {
-                              const selectedUnit = (unitsData || []).find((u: any) => u.id === value);
-                              field.onChange(selectedUnit?.nome || value);
-                            }} 
-                            defaultValue={field.value ? (unitsData || []).find((u: any) => u.nome === field.value)?.id : undefined}
-                            value={field.value ? (unitsData || []).find((u: any) => u.nome === field.value)?.id : undefined}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione o departamento" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {loadingUnits ? (
-                                <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                              ) : (
-                                (unitsData || []).map((unit) => (
-                                  <SelectItem key={unit.id} value={unit.id}>
-                                    {unit.nome}
                                   </SelectItem>
                                 ))
                               )}

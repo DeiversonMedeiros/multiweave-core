@@ -672,6 +672,42 @@ export const metalurgicaService = {
     });
   },
 
+  async getPlanejamentoById(
+    companyId: string,
+    planejamentoId: string
+  ): Promise<{ planejamento: PlanejamentoProducao; itens: PlanejamentoItem[] } | null> {
+    const planejamento = await EntityService.getById<PlanejamentoProducao>({
+      schema: 'metalurgica',
+      table: 'planejamento_producao',
+      companyId,
+      id: planejamentoId,
+    });
+
+    if (!planejamento) {
+      return null;
+    }
+
+    // Buscar itens do planejamento
+    // Nota: planejamento_itens não tem company_id diretamente, então usamos skipCompanyFilter
+    // A segurança é garantida pelo filtro planejamento_id que referencia um planejamento com company_id
+    const itensResult = await EntityService.list<PlanejamentoItem>({
+      schema: 'metalurgica',
+      table: 'planejamento_itens',
+      companyId,
+      filters: {
+        planejamento_id: planejamentoId,
+      },
+      orderBy: 'data_prevista',
+      orderDirection: 'ASC',
+      skipCompanyFilter: true,
+    });
+
+    return {
+      planejamento,
+      itens: itensResult.data || [],
+    };
+  },
+
   async createPlanejamento(
     companyId: string,
     userId: string,

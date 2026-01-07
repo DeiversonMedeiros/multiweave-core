@@ -168,17 +168,6 @@ export function ContaReceberFilters({ filters, onFiltersChange, onClose }: Conta
               </Select>
             </div>
 
-            {/* Departamento */}
-            <div>
-              <Label htmlFor="departamento">Departamento</Label>
-              <Input
-                id="departamento"
-                placeholder="Nome do departamento"
-                value={filters.departamento || ''}
-                onChange={(e) => handleFilterChange('departamento', e.target.value || undefined)}
-              />
-            </div>
-
             {/* Classe Financeira */}
             <div>
               <Label htmlFor="classe_financeira">Classe Financeira</Label>

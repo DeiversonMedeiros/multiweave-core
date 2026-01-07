@@ -47,7 +47,6 @@ export function useContasReceber(): UseContasReceberReturn {
   if (filters.status) entityFilters.status = filters.status;
   if (filters.cliente_nome) entityFilters.cliente_nome = filters.cliente_nome;
   if (filters.centro_custo_id) entityFilters.centro_custo_id = filters.centro_custo_id;
-  if (filters.departamento) entityFilters.departamento = filters.departamento;
   if (filters.classe_financeira) entityFilters.classe_financeira = filters.classe_financeira;
   if (filters.valor_minimo !== undefined) entityFilters.valor_minimo = filters.valor_minimo;
   if (filters.valor_maximo !== undefined) entityFilters.valor_maximo = filters.valor_maximo;

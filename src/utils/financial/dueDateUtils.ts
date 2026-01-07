@@ -38,17 +38,34 @@ export function calculateDueDateStatus(
     };
   }
 
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  // Função auxiliar para normalizar data (apenas ano, mês, dia - sem hora/timezone)
+  const normalizeDate = (date: Date): Date => {
+    const normalized = new Date(date);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  };
+
+  // Criar datas normalizadas
+  const hoje = normalizeDate(new Date());
   
-  const vencimento = new Date(dataVencimento);
-  vencimento.setHours(0, 0, 0, 0);
+  // Se a data vier como string no formato YYYY-MM-DD, parsear como data local
+  let vencimento: Date;
+  if (typeof dataVencimento === 'string' && dataVencimento.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [year, month, day] = dataVencimento.split('-').map(Number);
+    vencimento = new Date(year, month - 1, day);
+  } else {
+    vencimento = new Date(dataVencimento);
+  }
+  vencimento = normalizeDate(vencimento);
   
-  // Calcular dias até vencimento
+  // Calcular diferença em milissegundos
   const diffTime = vencimento.getTime() - hoje.getTime();
-  const diasAteVencimento = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   
-  // Determinar se está vencida
+  // Calcular dias até vencimento usando Math.floor para obter diferença de dias inteiros
+  // Math.floor garante que diferenças negativas pequenas não sejam arredondadas para 0
+  const diasAteVencimento = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  
+  // Determinar se está vencida (apenas se a diferença for estritamente negativa)
   const estaVencida = diasAteVencimento < 0;
   
   // Determinar se está próxima a vencer (dentro dos dias de alerta)

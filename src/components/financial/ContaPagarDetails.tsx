@@ -351,12 +351,6 @@ export function ContaPagarDetails({
                     <p className="text-sm">{contaBancaria.nome} - {contaBancaria.banco}</p>
                   </div>
                 )}
-                {conta.departamento && (
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground">Departamento</Label>
-                    <p className="text-sm">{conta.departamento}</p>
-                  </div>
-                )}
                 {classeFinanceiraNome && (
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">Classe Financeira</Label>

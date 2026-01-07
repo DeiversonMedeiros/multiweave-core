@@ -140,13 +140,6 @@ export function useContasPagar(): UseContasPagarReturn {
         filteredData = filteredData.filter(conta => conta.centro_custo_id === filters.centro_custo_id);
       }
       
-      // Filtrar por departamento
-      if (filters.departamento) {
-        filteredData = filteredData.filter(conta => 
-          conta.departamento?.toLowerCase().includes(filters.departamento!.toLowerCase())
-        );
-      }
-      
       // Filtrar por classe financeira
       if (filters.classe_financeira) {
         filteredData = filteredData.filter(conta => 
@@ -297,7 +290,6 @@ export function useContasPagar(): UseContasPagarReturn {
         data_vencimento: data.data_vencimento,
         centro_custo_id: data.centro_custo_id || null,
         projeto_id: data.projeto_id || null,
-        departamento: data.departamento || null,
         classe_financeira: data.classe_financeira || null,
         categoria: data.categoria || null,
         status: 'pendente',

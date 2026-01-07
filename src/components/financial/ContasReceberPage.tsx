@@ -693,12 +693,6 @@ export function ContasReceberPage({ className }: ContasReceberPageProps) {
                       </label>
                       <p className="text-sm">{selectedConta.categoria || '-'}</p>
                     </div>
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">
-                        Departamento
-                      </label>
-                      <p className="text-sm">{selectedConta.departamento || '-'}</p>
-                    </div>
                     {selectedConta.numero_nota_fiscal && (
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">

@@ -2,46 +2,12 @@
 -- FUNÇÕES RPC PARA MOTOR DE CÁLCULO
 -- =====================================================
 
--- Função para criar dados em qualquer schema
-CREATE OR REPLACE FUNCTION create_entity_data(
-  schema_name TEXT,
-  table_name TEXT,
-  company_id_param UUID,
-  data_param JSONB
-) RETURNS JSONB AS $$
-DECLARE
-  result JSONB;
-  sql_query TEXT;
-  keys_list TEXT;
-  values_list TEXT;
-  values_array JSONB[];
-BEGIN
-  -- Extrair chaves e valores de forma mais segura
-  SELECT 
-    string_agg(quote_ident(k.key), ', '),
-    string_agg('$' || (k.ordinality + 1)::text, ', '),
-    array_agg(v.value ORDER BY k.ordinality)
-  INTO keys_list, values_list, values_array
-  FROM jsonb_each(data_param) WITH ORDINALITY AS k(key, ordinality)
-  JOIN jsonb_each(data_param) WITH ORDINALITY AS v(value, ordinality) ON k.ordinality = v.ordinality;
-  
-  -- Construir query dinâmica
-  sql_query := format('INSERT INTO %I.%I (company_id, %s) VALUES ($1, %s) RETURNING to_jsonb(*)',
-    schema_name,
-    table_name,
-    keys_list,
-    values_list
-  );
-  
-  -- Executar query
-  EXECUTE sql_query INTO result USING company_id_param, values_array;
-  
-  RETURN result;
-EXCEPTION
-  WHEN OTHERS THEN
-    RAISE EXCEPTION 'Erro ao criar dados: %', SQLERRM;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- NOTA: A função create_entity_data foi movida para as migrações
+-- A versão mais recente está em: 20260106000004_fix_create_entity_data_validate_columns.sql
+-- Esta versão inclui validação de colunas para evitar erros de colunas inexistentes
+-- (ex: usuario_id em contas_pagar)
+--
+-- Se precisar recriar a função manualmente, use a versão da migração mencionada acima.
 
 -- Função para atualizar dados em qualquer schema
 CREATE OR REPLACE FUNCTION update_entity_data(

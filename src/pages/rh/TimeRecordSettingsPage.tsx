@@ -128,6 +128,8 @@ export default function TimeRecordSettingsPage() {
                   <SelectValue placeholder="Selecione a janela de tempo" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="12">12 horas</SelectItem>
+                  <SelectItem value="15">15 horas</SelectItem>
                   <SelectItem value="20">20 horas</SelectItem>
                   <SelectItem value="22">22 horas</SelectItem>
                   <SelectItem value="24">24 horas (padrão)</SelectItem>

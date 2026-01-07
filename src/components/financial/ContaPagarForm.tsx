@@ -29,7 +29,6 @@ import { cn } from '@/lib/utils';
 import { ContaPagar, ContaPagarFormData, ContaPagarParcelaFormData } from '@/integrations/supabase/financial-types';
 import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
-import { useUnits } from '@/hooks/rh/useUnits';
 import { usePartners } from '@/hooks/usePartners';
 import { usePlanoContas } from '@/hooks/financial/usePlanoContas';
 import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
@@ -51,7 +50,6 @@ const contaPagarSchema = z.object({
   data_vencimento: z.string().min(1, 'Data de vencimento é obrigatória'),
   centro_custo_id: z.string().optional(),
   projeto_id: z.string().optional(),
-  departamento: z.string().optional(),
   classe_financeira: z.string().optional(),
   categoria: z.string().optional(),
   forma_pagamento: z.string().optional(),
@@ -93,7 +91,6 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
   const { selectedCompany } = useCompany();
   const { data: costCentersData, isLoading: loadingCostCenters } = useCostCenters();
   const { data: projectsData, isLoading: loadingProjects } = useProjects();
-  const { data: unitsData, isLoading: loadingUnits } = useUnits();
   const { data: partnersData, isLoading: loadingPartners } = usePartners();
   const { data: planoContasData, isLoading: loadingPlanoContas } = usePlanoContas();
   const { data: classesFinanceirasData, isLoading: loadingClassesFinanceiras } = useActiveClassesFinanceiras();
@@ -121,7 +118,6 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
       data_vencimento: format(new Date(), 'yyyy-MM-dd'),
       centro_custo_id: '',
       projeto_id: '',
-      departamento: '',
       classe_financeira: '',
       categoria: '',
       forma_pagamento: '',
@@ -273,7 +269,6 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         data_vencimento: conta.data_vencimento,
         centro_custo_id: conta.centro_custo_id || '',
         projeto_id: conta.projeto_id || '',
-        departamento: conta.departamento || '',
         classe_financeira: conta.classe_financeira || '',
         categoria: conta.categoria || '',
         forma_pagamento: conta.forma_pagamento || '',
@@ -301,15 +296,6 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
     try {
       setIsSubmitting(true);
       
-      // Converter ID de departamento para nome se necessário
-      let departamentoNome = data.departamento;
-      if (data.departamento) {
-        const unit = (unitsData || []).find((u) => u.id === data.departamento);
-        if (unit) {
-          departamentoNome = unit.nome;
-        }
-      }
-      
       // Clean up special values before saving
       const cleanedData: ContaPagarFormData = {
         descricao: data.descricao,
@@ -318,7 +304,6 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         data_vencimento: data.data_vencimento,
         fornecedor_nome: data.fornecedor_nome,
         ...data,
-        departamento: departamentoNome,
         centro_custo_id: data.centro_custo_id === 'none' || data.centro_custo_id === 'loading' ? '' : data.centro_custo_id,
         conta_bancaria_id: data.conta_bancaria_id === 'none' || data.conta_bancaria_id === 'loading' ? '' : data.conta_bancaria_id,
         is_parcelada: data.is_parcelada || false,
@@ -605,9 +590,18 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                         <Input
                           type="file"
                           accept=".pdf,.jpg,.jpeg,.png"
+                          disabled={uploadingNotaFiscal || !form.watch('numero_nota_fiscal')}
                           onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (!file || !selectedCompany?.id) return;
+
+                            // Validar se o número da nota fiscal foi preenchido
+                            const numeroNotaFiscal = form.watch('numero_nota_fiscal');
+                            if (!numeroNotaFiscal || numeroNotaFiscal.trim() === '') {
+                              alert('Por favor, preencha o número da nota fiscal antes de anexar o arquivo.');
+                              e.target.value = ''; // Limpar input
+                              return;
+                            }
 
                             // Validar tamanho (10MB)
                             if (file.size > 10 * 1024 * 1024) {
@@ -661,7 +655,7 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                               e.target.value = '';
                             }
                           }}
-                          disabled={uploadingNotaFiscal}
+                          disabled={uploadingNotaFiscal || !form.watch('numero_nota_fiscal')}
                           className="max-w-sm"
                         />
                         {uploadingNotaFiscal && (
@@ -672,7 +666,9 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)
+                        {form.watch('numero_nota_fiscal') 
+                          ? 'Formatos aceitos: PDF, JPG, JPEG, PNG (máximo 10MB)'
+                          : 'Preencha o número da nota fiscal acima para poder anexar o arquivo'}
                       </p>
                       {notaFiscalUrl && (
                         <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
@@ -1046,53 +1042,6 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                                 (costCentersData?.data || []).map((centro) => (
                                   <SelectItem key={centro.id} value={centro.id}>
                                     {centro.nome}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="departamento"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Departamento</FormLabel>
-                          <Select 
-                            onValueChange={(value) => {
-                              // Converter ID para nome ao salvar
-                              const selectedUnit = (unitsData || []).find((u) => u.id === value);
-                              field.onChange(selectedUnit?.nome || value);
-                            }} 
-                            defaultValue={(() => {
-                              // Converter nome para ID ao carregar
-                              if (!field.value) return undefined;
-                              const unit = (unitsData || []).find((u) => u.nome === field.value);
-                              return unit?.id || field.value;
-                            })()}
-                            value={(() => {
-                              // Converter nome para ID para exibição
-                              if (!field.value) return undefined;
-                              const unit = (unitsData || []).find((u) => u.nome === field.value);
-                              return unit?.id || field.value;
-                            })()}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione o departamento" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {loadingUnits ? (
-                                <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                              ) : (
-                                (unitsData || []).map((unit) => (
-                                  <SelectItem key={unit.id} value={unit.id}>
-                                    {unit.nome}
                                   </SelectItem>
                                 ))
                               )}

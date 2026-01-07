@@ -118,3 +118,6 @@ Esta função foi atualizada para considerar turnos de trabalho, feriados e hora
 
 
 
+
+
+

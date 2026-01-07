@@ -459,6 +459,12 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
       return;
     }
 
+    // Validar se o número da nota fiscal foi preenchido
+    if (!conta.numero_nota_fiscal || conta.numero_nota_fiscal.trim() === '') {
+      alert('Por favor, preencha o número da nota fiscal antes de anexar o arquivo.');
+      return;
+    }
+
     // Validar tamanho (10MB)
     if (file.size > 10 * 1024 * 1024) {
       alert('Arquivo muito grande. Tamanho máximo: 10MB');
@@ -830,8 +836,8 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                           conta.aprovacoes_pendentes,
                           conta.aprovacoes_aprovadas
                         )}
-                        {/* Badge "Sem nota" quando não houver número de nota fiscal */}
-                        {!conta.numero_nota_fiscal && (
+                        {/* Badge "Sem nota" quando não houver número de nota fiscal nem anexo */}
+                        {!conta.numero_nota_fiscal && !conta.anexo_nota_fiscal && (
                           <Badge variant="outline" className="text-orange-600 flex items-center gap-1">
                             <FileText className="h-3 w-3" />
                             Sem nota
@@ -960,15 +966,15 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                               e.target.value = ''; // Limpar input
                             }
                           }}
-                          disabled={uploadingNotaFiscal === conta.id}
+                          disabled={uploadingNotaFiscal === conta.id || !conta.numero_nota_fiscal}
                           id={`nota-fiscal-input-${conta.id}`}
                         />
                         <Button
                           variant="ghost"
                           size="sm"
                           className="text-blue-600 hover:text-blue-700 relative"
-                          title="Anexar Nota Fiscal"
-                          disabled={uploadingNotaFiscal === conta.id}
+                          title={conta.numero_nota_fiscal ? "Anexar Nota Fiscal" : "Preencha o número da nota fiscal primeiro"}
+                          disabled={uploadingNotaFiscal === conta.id || !conta.numero_nota_fiscal}
                         >
                           {uploadingNotaFiscal === conta.id ? (
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>

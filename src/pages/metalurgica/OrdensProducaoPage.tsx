@@ -67,6 +67,8 @@ const OrdensProducaoPage: React.FC = () => {
 
   const ops = opsData?.data || [];
   const produtos = produtosData?.data || [];
+  const costCentersList = costCenters?.data || [];
+  const projectsList = projects?.data || [];
 
   // Formulário
   const [formData, setFormData] = useState<OrdemProducaoInput>({
@@ -362,7 +364,7 @@ const OrdensProducaoPage: React.FC = () => {
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      {costCenters?.map((cc) => (
+                      {costCentersList?.filter(cc => cc.id).map((cc) => (
                         <SelectItem key={cc.id} value={cc.id}>
                           {cc.codigo} - {cc.nome}
                         </SelectItem>

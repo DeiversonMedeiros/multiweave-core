@@ -66,7 +66,8 @@ const GalvanizacaoPage: React.FC = () => {
 
   const galvanizacoes = galvanizacoesData?.data || [];
   const lotes = lotesData?.data || [];
-  const fornecedores = partners?.filter(p => p.tipo === 'fornecedor') || [];
+  const partnersList = partners?.data || [];
+  const fornecedores = partnersList.filter(p => p.tipo === 'fornecedor');
 
   // Formulário
   const [formData, setFormData] = useState<GalvanizacaoInput>({

@@ -1551,11 +1551,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
         condicoes_comerciais: '',
       }));
 
+      // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
+      const requisicaoItemIds = Array.from(requisicaoItemIdsParaVerificar);
+
       const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
         requisicao_id: requisicoesIds[0],
         fornecedores: fornecedoresData,
         prazo_resposta: formData.data_limite?.trim() || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 dias padrão se não informado
         observacoes: formData.observacoes_internas?.trim() || null,
+        requisicao_item_ids: requisicaoItemIds.length > 0 ? requisicaoItemIds : undefined,
       });
 
       const fornecedoresCriados = cicloResponse?.fornecedores || [];
@@ -1988,11 +1992,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
         condicoes_comerciais: '',
       }));
 
+      // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
+      const requisicaoItemIds = Array.from(requisicaoItemIdsParaVerificar);
+
       const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
         requisicao_id: requisicoesIds[0], // Por enquanto, usar primeira requisição
         fornecedores: fornecedoresData,
         prazo_resposta: formData.data_limite.trim(),
         observacoes: formData.observacoes_internas?.trim() || null,
+        requisicao_item_ids: requisicaoItemIds.length > 0 ? requisicaoItemIds : undefined,
       });
 
       const fornecedoresCriados = cicloResponse?.fornecedores || [];

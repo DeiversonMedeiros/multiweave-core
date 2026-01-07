@@ -375,15 +375,15 @@ const ProdutosPage: React.FC = () => {
                 <div>
                   <Label>Material/Equipamento (Almoxarifado)</Label>
                   <Select
-                    value={formData.material_equipamento_id || ''}
-                    onValueChange={(value) => setFormData({ ...formData, material_equipamento_id: value || undefined })}
+                    value={formData.material_equipamento_id || '__none__'}
+                    onValueChange={(value) => setFormData({ ...formData, material_equipamento_id: value === '__none__' ? undefined : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Nenhum" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nenhum</SelectItem>
-                      {materiais.map((mat) => (
+                      <SelectItem value="__none__">Nenhum</SelectItem>
+                      {materiais.filter(mat => mat.id).map((mat) => (
                         <SelectItem key={mat.id} value={mat.id}>
                           {mat.codigo} - {mat.nome}
                         </SelectItem>

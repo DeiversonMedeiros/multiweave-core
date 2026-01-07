@@ -27,7 +27,6 @@ interface ContaPagarDetail {
   data_aprovacao?: string;
   centro_custo_nome?: string;
   projeto_nome?: string;
-  departamento?: string;
   classe_financeira?: string;
   classe_financeira_nome?: string;
   categoria?: string;
@@ -269,7 +268,6 @@ export function ContaPagarDetails({ contaPagarId }: ContaPagarDetailsProps) {
           data_aprovacao: contaResult.data_aprovacao,
           centro_custo_nome: centroCustoNome,
           projeto_nome: projetoNome,
-          departamento: contaResult.departamento,
           classe_financeira: contaResult.classe_financeira,
           classe_financeira_nome: classeFinanceiraNome,
           categoria: contaResult.categoria,
@@ -375,12 +373,6 @@ export function ContaPagarDetails({ contaPagarId }: ContaPagarDetailsProps) {
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Categoria:</span>
               <span className="font-medium capitalize">{contaDetail.categoria}</span>
-            </div>
-          )}
-          {contaDetail.departamento && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Departamento:</span>
-              <span className="font-medium">{contaDetail.departamento}</span>
             </div>
           )}
           {contaDetail.classe_financeira_nome && (

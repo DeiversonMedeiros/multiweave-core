@@ -119,13 +119,13 @@ const RelatoriosMetalurgicaPage: React.FC = () => {
               </div>
               <div>
                 <label className="text-sm font-medium mb-2 block">Máquina</label>
-                <Select value={maquinaSelecionada} onValueChange={setMaquinaSelecionada}>
+                <Select value={maquinaSelecionada || '__none__'} onValueChange={(value) => setMaquinaSelecionada(value === '__none__' ? '' : value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Todas as máquinas" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Todas as máquinas</SelectItem>
-                    {maquinas.map((maq) => (
+                    <SelectItem value="__none__">Todas as máquinas</SelectItem>
+                    {maquinas.filter(maq => maq.id).map((maq) => (
                       <SelectItem key={maq.id} value={maq.id}>
                         {maq.nome}
                       </SelectItem>

@@ -67,6 +67,7 @@ export interface QuoteCycleInput {
   }[];
   prazo_resposta?: string;
   observacoes?: string;
+  requisicao_item_ids?: string[]; // IDs específicos dos itens no modo explodido
 }
 
 export interface QuoteSupplierResponseInput {
@@ -881,38 +882,173 @@ export const purchaseService = {
     userId: string;
     input: QuoteCycleInput;
   }) {
-    // ✅ VERIFICAÇÃO DE CONCORRÊNCIA: Verificar se já existe cotação ativa para esta requisição
+    // ✅ VERIFICAÇÃO DE CONCORRÊNCIA: Verificar se já existe cotação ativa
+    // No modo explodido, verifica itens específicos; no modo normal, verifica a requisição inteira
     try {
-      const cotacoesExistentes = await EntityService.list({
-        schema: 'compras',
-        table: 'cotacao_ciclos',
-        companyId: params.companyId,
-        filters: {
-          requisicao_id: params.input.requisicao_id,
-        },
-        page: 1,
-        pageSize: 100,
-        skipCompanyFilter: true,
-      });
-
-      if (cotacoesExistentes.data && cotacoesExistentes.data.length > 0) {
-        // Verificar se há cotação ativa (rascunho, em aprovação ou aberta)
-        const cotacaoAtiva = cotacoesExistentes.data.find((c: any) => {
-          const state = c.workflow_state || c.status;
-          return state === 'rascunho' || state === 'em_aprovacao' || state === 'aberta' || state === 'em_cotacao';
+      // Se estiver no modo explodido (requisicao_item_ids fornecido), verificar itens específicos
+      if (params.input.requisicao_item_ids && params.input.requisicao_item_ids.length > 0) {
+        // Buscar cotações ativas para a requisição
+        const cotacoesExistentes = await EntityService.list({
+          schema: 'compras',
+          table: 'cotacao_ciclos',
+          companyId: params.companyId,
+          filters: {
+            requisicao_id: params.input.requisicao_id,
+          },
+          page: 1,
+          pageSize: 100,
+          skipCompanyFilter: true,
         });
 
-        if (cotacaoAtiva) {
-          const numeroCotacao = cotacaoAtiva.numero_cotacao || cotacaoAtiva.id.substring(0, 8);
-          throw new Error(
-            `Já existe uma cotação em andamento (${numeroCotacao}) para esta requisição. ` +
-            `Por favor, verifique as "Cotações Realizadas" antes de criar uma nova cotação.`
-          );
+        if (cotacoesExistentes.data && cotacoesExistentes.data.length > 0) {
+          // Filtrar apenas cotações ativas
+          const cotacoesAtivas = cotacoesExistentes.data.filter((c: any) => {
+            const state = c.workflow_state || c.status;
+            return state === 'rascunho' || state === 'em_aprovacao' || state === 'aberta' || state === 'em_cotacao';
+          });
+
+          if (cotacoesAtivas.length > 0) {
+            // Buscar os IDs dos fornecedores das cotações ativas
+            const cotacoesAtivasIds = cotacoesAtivas.map((c: any) => c.id);
+            
+            // Buscar cotacao_fornecedores dessas cotações
+            const cotacaoFornecedoresResult = await EntityService.list({
+              schema: 'compras',
+              table: 'cotacao_fornecedores',
+              companyId: params.companyId,
+              filters: {},
+              page: 1,
+              pageSize: 1000,
+              skipCompanyFilter: true,
+            });
+
+            const cotacaoFornecedoresIds = (cotacaoFornecedoresResult.data || [])
+              .filter((cf: any) => cotacoesAtivasIds.includes(cf.cotacao_id))
+              .map((cf: any) => cf.id);
+
+            if (cotacaoFornecedoresIds.length > 0) {
+              // Buscar itens cotados (cotacao_item_fornecedor) que correspondem aos itens selecionados
+              const cotacaoItensResult = await EntityService.list({
+                schema: 'compras',
+                table: 'cotacao_item_fornecedor',
+                companyId: params.companyId,
+                filters: {},
+                page: 1,
+                pageSize: 1000,
+                skipCompanyFilter: true,
+              });
+
+              const itensJaCotados = (cotacaoItensResult.data || []).filter((item: any) => {
+                return cotacaoFornecedoresIds.includes(item.cotacao_fornecedor_id) &&
+                       params.input.requisicao_item_ids!.includes(item.requisicao_item_id);
+              });
+
+              if (itensJaCotados.length > 0) {
+                // Encontrar quais itens específicos já foram cotados
+                const itensCotadosIds = [...new Set(itensJaCotados.map((item: any) => item.requisicao_item_id))];
+                const numeroCotacao = cotacoesAtivas[0].numero_cotacao || cotacoesAtivas[0].id.substring(0, 8);
+                
+                throw new Error(
+                  `Os seguintes itens já possuem cotação em andamento (${numeroCotacao}): ` +
+                  `${itensCotadosIds.slice(0, 3).map((id: string) => id.substring(0, 8)).join(', ')}` +
+                  `${itensCotadosIds.length > 3 ? ` e mais ${itensCotadosIds.length - 3}` : ''}. ` +
+                  `Por favor, verifique as "Cotações Realizadas" antes de criar uma nova cotação.`
+                );
+              }
+            }
+          }
+        }
+      } else {
+        // ✅ OPÇÃO 3: Modo normal - permitir múltiplas cotações para a mesma requisição
+        // A validação agora é feita apenas para verificar se TODOS os itens já foram cotados
+        // Se houver itens não cotados, permitir criar nova cotação
+        const cotacoesExistentes = await EntityService.list({
+          schema: 'compras',
+          table: 'cotacao_ciclos',
+          companyId: params.companyId,
+          filters: {
+            requisicao_id: params.input.requisicao_id,
+          },
+          page: 1,
+          pageSize: 100,
+          skipCompanyFilter: true,
+        });
+
+        if (cotacoesExistentes.data && cotacoesExistentes.data.length > 0) {
+          // Verificar se há cotação ativa (rascunho, em aprovação ou aberta)
+          const cotacoesAtivas = cotacoesExistentes.data.filter((c: any) => {
+            const state = c.workflow_state || c.status;
+            return state === 'rascunho' || state === 'em_aprovacao' || state === 'aberta' || state === 'em_cotacao';
+          });
+
+          // ✅ OPÇÃO 3: Verificar se TODOS os itens da requisição já foram cotados
+          if (cotacoesAtivas.length > 0) {
+            // Buscar todos os itens da requisição
+            const itensRequisicao = await EntityService.list({
+              schema: 'compras',
+              table: 'requisicao_itens',
+              companyId: params.companyId,
+              filters: {
+                requisicao_id: params.input.requisicao_id,
+              },
+              page: 1,
+              pageSize: 1000,
+              skipCompanyFilter: true,
+            });
+
+            // Buscar itens já cotados em cotações ativas
+            const cotacoesAtivasIds = cotacoesAtivas.map((c: any) => c.id);
+            const cotacaoFornecedoresResult = await EntityService.list({
+              schema: 'compras',
+              table: 'cotacao_fornecedores',
+              companyId: params.companyId,
+              filters: {},
+              page: 1,
+              pageSize: 1000,
+              skipCompanyFilter: true,
+            });
+
+            const cotacaoFornecedoresIds = (cotacaoFornecedoresResult.data || [])
+              .filter((cf: any) => cotacoesAtivasIds.includes(cf.cotacao_id))
+              .map((cf: any) => cf.id);
+
+            if (cotacaoFornecedoresIds.length > 0) {
+              const cotacaoItensResult = await EntityService.list({
+                schema: 'compras',
+                table: 'cotacao_item_fornecedor',
+                companyId: params.companyId,
+                filters: {},
+                page: 1,
+                pageSize: 1000,
+                skipCompanyFilter: true,
+              });
+
+              const itensCotadosIds = new Set(
+                (cotacaoItensResult.data || [])
+                  .filter((item: any) => cotacaoFornecedoresIds.includes(item.cotacao_fornecedor_id))
+                  .map((item: any) => item.requisicao_item_id)
+              );
+
+              // Verificar se todos os itens foram cotados
+              const todosItensCotados = (itensRequisicao.data || []).every((item: any) => 
+                itensCotadosIds.has(item.id) || item.status === 'cotado'
+              );
+
+              if (todosItensCotados) {
+                const numeroCotacao = cotacoesAtivas[0].numero_cotacao || cotacoesAtivas[0].id.substring(0, 8);
+                throw new Error(
+                  `Todos os itens desta requisição já possuem cotação em andamento (${numeroCotacao}). ` +
+                  `Por favor, verifique as "Cotações Realizadas" antes de criar uma nova cotação.`
+                );
+              }
+              // Se nem todos os itens foram cotados, permitir criar nova cotação
+            }
+          }
         }
       }
     } catch (error: any) {
       // Se já é nosso erro customizado, relançar
-      if (error.message?.includes('Já existe uma cotação')) {
+      if (error.message?.includes('já possui cotação') || error.message?.includes('Já existe uma cotação')) {
         throw error;
       }
       // Se for outro erro, logar mas continuar (pode ser problema de conexão)
@@ -969,12 +1105,19 @@ export const purchaseService = {
       } catch (error: any) {
         tentativas++;
         
-        // Se for erro de duplicação e ainda temos tentativas, tentar novamente
-        if (
+        // Verificar se é erro de constraint única (cotação ativa já existe)
+        const isConstraintError = 
           error?.message?.includes('duplicate key') ||
           error?.message?.includes('unique constraint') ||
-          error?.code === '23505'
-        ) {
+          error?.message?.includes('idx_cotacao_ciclos_requisicao_ativa') ||
+          error?.code === '23505' ||
+          error?.code === 'P0001';
+        
+        // ✅ OPÇÃO 3: Sempre criar novo ciclo quando itens específicos são fornecidos
+        // A constraint única foi removida, então não precisamos mais tratar esse erro
+        // Se for outro erro de duplicação (ex: numero_cotacao), tentar novamente
+        if (isConstraintError && !error?.message?.includes('idx_cotacao_ciclos_requisicao_ativa')) {
+          // Se for outro erro de duplicação e ainda temos tentativas, tentar novamente
           if (tentativas < maxTentativas) {
             // Aguardar um pouco antes de tentar novamente (evitar race condition)
             await new Promise(resolve => setTimeout(resolve, 100 * tentativas));
@@ -991,8 +1134,29 @@ export const purchaseService = {
       throw new Error('Não foi possível criar o ciclo de cotação após múltiplas tentativas');
     }
 
-    const fornecedoresCriados = await Promise.all(
-      params.input.fornecedores.map((fornecedor) =>
+    // Buscar fornecedores existentes do ciclo (se estiver usando ciclo existente)
+    const fornecedoresExistentesResult = await EntityService.list({
+      schema: 'compras',
+      table: 'cotacao_fornecedores',
+      companyId: params.companyId,
+      filters: {
+        cotacao_id: (ciclo as any)?.id,
+      },
+      page: 1,
+      pageSize: 1000,
+      skipCompanyFilter: true,
+    });
+
+    const fornecedoresExistentes = (fornecedoresExistentesResult.data || []) as any[];
+    const fornecedoresExistentesIds = new Set(fornecedoresExistentes.map((f: any) => f.fornecedor_id));
+
+    // Criar apenas fornecedores que ainda não existem
+    const fornecedoresParaCriar = params.input.fornecedores.filter(
+      (f) => !fornecedoresExistentesIds.has(f.fornecedor_id)
+    );
+
+    const fornecedoresNovos = await Promise.all(
+      fornecedoresParaCriar.map((fornecedor) =>
         EntityService.create({
           schema: 'compras',
           table: 'cotacao_fornecedores',
@@ -1006,6 +1170,12 @@ export const purchaseService = {
         }),
       ),
     );
+
+    // Combinar fornecedores existentes com os novos criados
+    const fornecedoresCriados = [
+      ...fornecedoresExistentes,
+      ...fornecedoresNovos,
+    ];
 
     // Buscar o estado atual da requisição para fazer a transição correta
     const requisicao = await EntityService.getById({

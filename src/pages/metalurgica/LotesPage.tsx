@@ -337,15 +337,15 @@ const LotesPage: React.FC = () => {
                 <div>
                   <Label>OP Vinculada</Label>
                   <Select
-                    value={formData.op_id || ''}
-                    onValueChange={(value) => setFormData({ ...formData, op_id: value || undefined })}
+                    value={formData.op_id || '__none__'}
+                    onValueChange={(value) => setFormData({ ...formData, op_id: value === '__none__' ? undefined : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Nenhuma" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nenhuma</SelectItem>
-                      {ops.filter(op => op.status !== 'cancelada').map((op) => (
+                      <SelectItem value="__none__">Nenhuma</SelectItem>
+                      {ops.filter(op => op.status !== 'cancelada' && op.id).map((op) => (
                         <SelectItem key={op.id} value={op.id}>
                           {op.numero_op}
                         </SelectItem>
@@ -356,15 +356,15 @@ const LotesPage: React.FC = () => {
                 <div>
                   <Label>OS Vinculada</Label>
                   <Select
-                    value={formData.os_id || ''}
-                    onValueChange={(value) => setFormData({ ...formData, os_id: value || undefined })}
+                    value={formData.os_id || '__none__'}
+                    onValueChange={(value) => setFormData({ ...formData, os_id: value === '__none__' ? undefined : value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Nenhuma" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nenhuma</SelectItem>
-                      {os.filter(osItem => osItem.status !== 'cancelada').map((osItem) => (
+                      <SelectItem value="__none__">Nenhuma</SelectItem>
+                      {os.filter(osItem => osItem.status !== 'cancelada' && osItem.id).map((osItem) => (
                         <SelectItem key={osItem.id} value={osItem.id}>
                           {osItem.numero_os}
                         </SelectItem>

@@ -29,6 +29,7 @@ import { useCompany } from '@/lib/company-context';
 import { RequireEntity } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useEmployees } from '@/hooks/rh/useEmployees';
+import { formatDateString } from '@/utils/dateUtils';
 
 // =====================================================
 // PÁGINA DE VÍNCULOS FUNCIONÁRIO-BENEFÍCIO
@@ -177,7 +178,7 @@ export default function EmployeeBenefitsPage() {
       header: 'Data Início',
       render: (assignment: EmployeeBenefitAssignment) => (
         <div className="text-sm">
-          {assignment.start_date ? new Date(assignment.start_date).toLocaleDateString('pt-BR') : '-'}
+          {formatDateString(assignment.start_date)}
         </div>
       )
     },
@@ -186,7 +187,7 @@ export default function EmployeeBenefitsPage() {
       header: 'Data Fim',
       render: (assignment: EmployeeBenefitAssignment) => (
         <div className="text-sm">
-          {assignment.end_date ? new Date(assignment.end_date).toLocaleDateString('pt-BR') : '-'}
+          {formatDateString(assignment.end_date)}
         </div>
       )
     },

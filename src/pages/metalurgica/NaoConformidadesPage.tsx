@@ -372,15 +372,15 @@ const NaoConformidadesPage: React.FC = () => {
               <div>
                 <Label>Lote (Opcional)</Label>
                 <Select
-                  value={formData.lote_id || ''}
-                  onValueChange={(value) => setFormData({ ...formData, lote_id: value || undefined })}
+                  value={formData.lote_id || '__none__'}
+                  onValueChange={(value) => setFormData({ ...formData, lote_id: value === '__none__' ? undefined : value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o lote" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Nenhum</SelectItem>
-                    {lotes.map((lote) => (
+                    <SelectItem value="__none__">Nenhum</SelectItem>
+                    {lotes.filter(lote => lote.id).map((lote) => (
                       <SelectItem key={lote.id} value={lote.id}>
                         {lote.numero_lote}
                       </SelectItem>
