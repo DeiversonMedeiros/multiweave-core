@@ -65,6 +65,22 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
   const { data: requisicoes = [], isLoading } = usePurchaseRequisitions();
+  
+  // DEBUG: Log para verificar quais requisições estão vindo
+  useEffect(() => {
+    console.log('🔍 [RequisicoesDisponiveis] Requisições recebidas:', {
+      total: requisicoes.length,
+      aprovadas: requisicoes.filter((r: any) => r.status === 'aprovada').length,
+      aprovadasDetalhes: requisicoes
+        .filter((r: any) => r.status === 'aprovada')
+        .map((r: any) => ({
+          id: r.id,
+          numero: r.numero_requisicao,
+          status: r.status,
+          workflow_state: r.workflow_state
+        }))
+    });
+  }, [requisicoes]);
   const { data: costCentersData } = useActiveCostCenters();
   const { data: projectsData } = useActiveProjects();
   const { users } = useUsers();
@@ -317,20 +333,43 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     carregarDadosItens();
   }, [selectedCompany?.id, requisicoes, cotacoes]);
 
-  // Verificar quais requisições têm cotações em rascunho ou aguardando aprovação
-  const requisicoesComCotacaoAtiva = useMemo(() => {
+  // Verificar quais requisições têm TODOS os itens em cotação ativa
+  // Uma requisição só deve ser bloqueada se TODOS os itens estão em cotação ativa
+  // Se ainda há itens disponíveis, a requisição deve aparecer para permitir novas cotações
+  const requisicoesComTodosItensEmCotacao = useMemo(() => {
     const map = new Set<string>();
-    cotacoes.forEach((cotacao: any) => {
-      const state = cotacao.workflow_state || cotacao.status;
-      // Considerar rascunho e em_aprovacao como "cotação ativa" que bloqueia a requisição
-      if (state === 'rascunho' || state === 'em_aprovacao') {
-        if (cotacao.requisicao_id) {
-          map.add(cotacao.requisicao_id);
+    
+    // Para cada requisição, verificar se TODOS os itens estão em cotação ativa
+    requisicoes.forEach((req: any) => {
+      const itens = itensPorRequisicao.get(req.id) || [];
+      
+      // Se não tem itens, não considerar bloqueada
+      if (itens.length === 0) {
+        return;
+      }
+      
+      // Contar quantos itens estão em cotação ativa
+      const itensEmCotacaoCount = itens.filter((item: any) => {
+        return itensEmCotacao.get(item.id) === true;
+      }).length;
+      
+      // Se TODOS os itens estão em cotação ativa, marcar a requisição como bloqueada
+      if (itensEmCotacaoCount === itens.length && itens.length > 0) {
+        // Verificar se pelo menos uma cotação está em rascunho ou aguardando aprovação
+        const temCotacaoAtiva = cotacoes.some((cotacao: any) => {
+          const state = cotacao.workflow_state || cotacao.status;
+          return cotacao.requisicao_id === req.id && 
+                 (state === 'rascunho' || state === 'em_aprovacao');
+        });
+        
+        if (temCotacaoAtiva) {
+          map.add(req.id);
         }
       }
     });
+    
     return map;
-  }, [cotacoes]);
+  }, [requisicoes, cotacoes, itensPorRequisicao, itensEmCotacao]);
 
   // Filtrar requisições disponíveis - apenas as que têm pelo menos um item disponível
   // E que NÃO têm cotação em rascunho ou aguardando aprovação
@@ -342,13 +381,38 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       const isApproved = status === 'aprovada';
       const isNotCancelled = status !== 'cancelada' && status !== 'reprovada' && workflowState !== 'cancelada' && workflowState !== 'reprovada';
       
+      // DEBUG: Log para entender o que está acontecendo
+      if (isApproved) {
+        console.log('🔍 [RequisicoesDisponiveis] Requisição aprovada encontrada:', {
+          id: req.id,
+          numero: req.numero_requisicao,
+          status,
+          workflowState,
+          hasEmCotacaoState,
+          isApproved,
+          isNotCancelled,
+          todosItensEmCotacao: requisicoesComTodosItensEmCotacao.has(req.id),
+          loadingItensCotacao,
+          itensCount: itensPorRequisicao.get(req.id)?.length || 0
+        });
+      }
+      
       // Verificar se a requisição está elegível (status correto)
+      // IMPORTANTE: Requisições aprovadas (status = 'aprovada') devem aparecer
+      // mesmo sem workflow_state = 'em_cotacao', pois isso só muda quando gerar cotação
       if (!((hasEmCotacaoState || isApproved) && isNotCancelled)) {
+        if (isApproved) {
+          console.log('❌ [RequisicoesDisponiveis] Requisição aprovada rejeitada no filtro de status');
+        }
         return false;
       }
 
-      // NÃO mostrar se tem cotação em rascunho ou aguardando aprovação
-      if (requisicoesComCotacaoAtiva.has(req.id)) {
+      // NÃO mostrar apenas se TODOS os itens estão em cotação ativa
+      // Se ainda há itens disponíveis, a requisição deve aparecer para permitir novas cotações
+      if (requisicoesComTodosItensEmCotacao.has(req.id)) {
+        if (isApproved) {
+          console.log('❌ [RequisicoesDisponiveis] Requisição rejeitada: TODOS os itens estão em cotação ativa');
+        }
         return false;
       }
 
@@ -359,15 +423,43 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
 
       // Verificar se tem pelo menos um item disponível
       const itens = itensPorRequisicao.get(req.id) || [];
+      
+      // Se não tem itens cadastrados, ainda assim mostrar a requisição se estiver aprovada
+      // (permitir que seja possível identificar requisições sem itens)
+      if (itens.length === 0) {
+        if (isApproved) {
+          console.log('✅ [RequisicoesDisponiveis] Requisição aprovada sem itens - mostrando mesmo assim');
+        }
+        // Se a requisição está aprovada mas não tem itens, mostrar
+        // para que o comprador possa identificar e resolver
+        return isApproved;
+      }
+      
+      // Verificar se tem pelo menos um item que não está em cotação ativa
       const temItemDisponivel = itens.some((item: any) => {
         return !itensEmCotacao.get(item.id);
       });
 
-      return temItemDisponivel;
+      // ✅ IMPORTANTE: Apenas mostrar se há pelo menos 1 item disponível
+      // Se todos os itens estão em cotação/pedido, a requisição não deve aparecer
+      if (!temItemDisponivel) {
+        if (isApproved) {
+          console.log('❌ [RequisicoesDisponiveis] Requisição aprovada rejeitada: TODOS os itens estão em cotação (0 disponíveis)');
+        }
+        return false;
+      }
+
+      // Se tem pelo menos 1 item disponível, mostrar a requisição
+      if (isApproved) {
+        console.log('✅ [RequisicoesDisponiveis] Requisição aprovada com itens disponíveis - mostrando (disponíveis:', temItemDisponivel, 'total:', itens.length, ')');
+      }
+      
+      return true;
     });
 
+    console.log('📊 [RequisicoesDisponiveis] Total de requisições disponíveis:', filtered.length);
     return filtered;
-  }, [requisicoes, itensEmCotacao, itensPorRequisicao, loadingItensCotacao, requisicoesComCotacaoAtiva]);
+  }, [requisicoes, itensEmCotacao, itensPorRequisicao, loadingItensCotacao, requisicoesComTodosItensEmCotacao]);
 
   // Carregar itens quando mudar para modo explodido
   useEffect(() => {
