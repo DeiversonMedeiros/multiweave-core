@@ -7,6 +7,7 @@ import { TrainingForm } from '@/components/rh/TrainingForm';
 import { TrainingAnalytics } from '@/components/rh/TrainingAnalytics';
 import { TrainingNotificationManager } from '@/components/rh/TrainingNotificationManager';
 import { TrainingSettings } from '@/components/rh/TrainingSettings';
+import { BrowserNotificationSettings } from '@/components/rh/BrowserNotificationSettings';
 import { useCompany } from '@/lib/company-context';
 import { useTraining } from '@/hooks/rh/useTraining';
 import { RequireModule } from '@/components/RequireAuth';
@@ -193,6 +194,7 @@ const TrainingManagement: React.FC = () => {
 
         <TabsContent value="settings" className="space-y-6">
           <TrainingSettings />
+          <BrowserNotificationSettings />
         </TabsContent>
       </Tabs>
     </div>

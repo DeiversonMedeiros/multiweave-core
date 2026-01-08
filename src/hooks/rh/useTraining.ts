@@ -32,6 +32,12 @@ export interface Training {
   observacoes?: string;
   anexos?: string[];
   is_active: boolean;
+  permite_avaliacao_reacao?: boolean;
+  permite_avaliacao_aplicacao?: boolean;
+  tempo_limite_dias?: number;
+  permite_pausar?: boolean;
+  exige_prova_final?: boolean;
+  nota_minima_certificado?: number;
   created_at: string;
   updated_at: string;
 }

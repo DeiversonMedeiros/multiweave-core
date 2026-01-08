@@ -27,7 +27,7 @@ import { EntityService } from '@/services/generic/entityService';
 import { useOfflineStorage } from '@/hooks/useOfflineStorage';
 import { offlineSyncService } from '@/services/offlineSyncService';
 import { useOfflineAuth } from '@/hooks/useOfflineAuth';
-import { TimeRecordRegistrationModal } from '@/components/rh/TimeRecordRegistrationModal';
+import { TimeRecordRegistrationModalV2 } from '@/components/rh/TimeRecordRegistrationModalV2';
 import { useTimeRecordSettings, calculateTimeRemaining } from '@/hooks/rh/useTimeRecordSettings';
 import { formatDateOnly } from '@/lib/utils';
 
@@ -526,7 +526,10 @@ export default function RegistroPontoPage() {
         console.log('[PONTO] 🔎 loading offline records...');
         const records = await getOfflineRecords('time_record');
         console.log('[PONTO] 📦 offline records loaded:', records);
-        setOfflineRecords(records);
+        // Filtrar apenas registros não sincronizados para exibição
+        const unsyncedRecords = records.filter(r => !r.synced);
+        console.log('[PONTO] 📦 unsynced offline records:', unsyncedRecords);
+        setOfflineRecords(unsyncedRecords);
       } catch (error) {
         console.error('[PONTO] ❌ erro ao carregar registros offline:', error);
       }
@@ -600,9 +603,15 @@ export default function RegistroPontoPage() {
         
         // Aguardar um pouco antes de recarregar para dar tempo da sincronização iniciar
         setTimeout(async () => {
-          const updatedRecords = await getOfflineRecords('time_record');
-          console.log('[PONTO] 🔄 refreshed offline records after enqueue:', updatedRecords);
-          setOfflineRecords(updatedRecords);
+          const allRecords = await getOfflineRecords('time_record');
+          // Filtrar apenas registros não sincronizados
+          const unsyncedRecords = allRecords.filter(r => !r.synced);
+          console.log('[PONTO] 🔄 refreshed offline records after enqueue:', {
+            total: allRecords.length,
+            unsynced: unsyncedRecords.length,
+            records: unsyncedRecords
+          });
+          setOfflineRecords(unsyncedRecords);
         }, 1000);
         
       } catch (error) {
@@ -1143,12 +1152,14 @@ export default function RegistroPontoPage() {
         });
         
         // Recarregar registros offline para atualizar interface
-        const updatedRecords = await getOfflineRecords('time_record');
+        const allRecords = await getOfflineRecords('time_record');
+        const unsyncedRecords = allRecords.filter(r => !r.synced);
         console.log('[PONTO][MUTATION][SUCCESS] 🔄 Registros offline atualizados', {
-          count: updatedRecords.length,
-          records: updatedRecords
+          total: allRecords.length,
+          unsynced: unsyncedRecords.length,
+          records: unsyncedRecords
         });
-        setOfflineRecords(updatedRecords);
+        setOfflineRecords(unsyncedRecords);
         return;
       }
 
@@ -1340,9 +1351,14 @@ export default function RegistroPontoPage() {
 
       // Atualiza lista local para banner de pendências
       try {
-        const updatedRecords = await getOfflineRecords('time_record');
-        setOfflineRecords(updatedRecords);
-        console.log('[PONTO] 📦 offline records after quick save:', updatedRecords);
+        const allRecords = await getOfflineRecords('time_record');
+        const unsyncedRecords = allRecords.filter(r => !r.synced);
+        setOfflineRecords(unsyncedRecords);
+        console.log('[PONTO] 📦 offline records after quick save:', {
+          total: allRecords.length,
+          unsynced: unsyncedRecords.length,
+          records: unsyncedRecords
+        });
       } catch {}
 
       toast({ title: 'Ponto registrado offline!', description: 'Será sincronizado quando voltar a conexão.' });
@@ -1445,23 +1461,32 @@ export default function RegistroPontoPage() {
       </div>
 
       {/* Indicador de registros pendentes */}
-      {offlineRecords.length > 0 && (
-        <Card className="bg-yellow-50 border-yellow-200">
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
-              <div>
-                <p className="font-medium text-yellow-800">
-                  {offlineRecords.length} registro(s) offline pendente(s)
-                </p>
-                <p className="text-sm text-yellow-700">
-                  Serão sincronizados automaticamente quando voltar online
-                </p>
+      {(() => {
+        // Filtrar apenas registros não sincronizados
+        const unsyncedRecords = offlineRecords.filter(r => !r.synced);
+        
+        if (unsyncedRecords.length === 0) return null;
+        
+        return (
+          <Card className={isOnline ? "bg-blue-50 border-blue-200" : "bg-yellow-50 border-yellow-200"}>
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className={`h-5 w-5 ${isOnline ? 'text-blue-600' : 'text-yellow-600'}`} />
+                <div>
+                  <p className={`font-medium ${isOnline ? 'text-blue-800' : 'text-yellow-800'}`}>
+                    {unsyncedRecords.length} registro(s) offline pendente(s)
+                  </p>
+                  <p className={`text-sm ${isOnline ? 'text-blue-700' : 'text-yellow-700'}`}>
+                    {isOnline 
+                      ? 'Sincronizando automaticamente...' 
+                      : 'Serão sincronizados automaticamente quando voltar online'}
+                  </p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Aviso de janela de tempo próxima do limite */}
       {displayTodayRecord?.entrada && timeRemaining.isNearLimit && (
@@ -1690,24 +1715,62 @@ export default function RegistroPontoPage() {
         </Alert>
       )}
 
-      {hasEmployee && (
-        <TimeRecordRegistrationModal
-          isOpen={registrationModalOpen && !!pendingRegistrationType}
+      {hasEmployee && pendingRegistrationType && selectedCompany && (
+        <TimeRecordRegistrationModalV2
+          isOpen={registrationModalOpen}
           onClose={() => {
-            console.log('[PONTO][MODAL] onClose recebido do modal, fechando e limpando estado');
-            // Usar setTimeout para garantir que o estado seja atualizado após a desmontagem do modal
-            setTimeout(() => {
-              setRegistrationModalOpen(false);
-              setPendingRegistrationType(null);
-            }, 100);
+            setRegistrationModalOpen(false);
+            setPendingRegistrationType(null);
           }}
-          onConfirm={(data) => {
-            if (pendingRegistrationType) {
-              handleRegistrationConfirm(pendingRegistrationType, data);
+          onSuccess={async () => {
+            // Fechar modal primeiro
+            setRegistrationModalOpen(false);
+            setPendingRegistrationType(null);
+            
+            // Invalidar e refetch a query correta para atualizar os dados
+            // Usar a mesma estrutura da query key definida na linha 137
+            const employeeId = currentEmployee?.id || employee?.id;
+            if (employeeId && selectedCompany?.id) {
+              const queryKey = ['today-time-record', employeeId, selectedCompany.id, windowHours];
+              
+              console.log('[RegistroPontoPage] 🔄 Invalidando query após registro:', {
+                queryKey,
+                employeeId,
+                companyId: selectedCompany.id,
+                windowHours,
+                timestamp: new Date().toISOString()
+              });
+              
+              // Invalidar apenas a query específica (não todas as queries relacionadas)
+              // para evitar refetches desnecessários que causam "piscar" nas fotos
+              await queryClient.invalidateQueries({ 
+                queryKey,
+                exact: true
+              });
+              
+              console.log('[RegistroPontoPage] ✅ Query invalidada, aguardando 300ms para refetch');
+              
+              // Refetch apenas a query específica após um pequeno delay
+              // para dar tempo do banco processar o registro
+              setTimeout(async () => {
+                console.log('[RegistroPontoPage] 🔄 Fazendo refetch da query:', { queryKey });
+                await queryClient.refetchQueries({ 
+                  queryKey,
+                  type: 'active'
+                });
+                console.log('[RegistroPontoPage] ✅ Refetch concluído');
+              }, 300);
             }
+            
+            toast({
+              title: 'Ponto registrado',
+              description: 'Seu ponto foi registrado com sucesso.',
+            });
           }}
-          typeLabel={nextRecordType && getRecordTypeInfo(nextRecordType).label || 'Ponto'}
+          type={pendingRegistrationType}
+          typeLabel={getRecordTypeInfo(pendingRegistrationType).label}
           employeeId={currentEmployee.id}
+          companyId={selectedCompany.id}
         />
       )}
     </div>

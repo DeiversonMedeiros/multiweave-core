@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { MedicalPlansPayrollService } from '@/services/rh/medicalPlansPayrollService';
 import { PayrollService } from '@/services/rh/payrollService';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/lib/auth-context';
 import { Loader2, Heart, Shield, DollarSign, Calculator } from 'lucide-react';
 
 interface TestResult {

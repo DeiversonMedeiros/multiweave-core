@@ -96,6 +96,11 @@ import EmployeeBenefitsPage from './EmployeeBenefitsPage';
 // Importar página de Configuração de Integração Financeira
 import FinancialIntegrationConfigPage from './FinancialIntegrationConfigPage';
 
+// Importar páginas de Treinamentos Online
+import OnlineTrainingPage from './OnlineTrainingPage';
+import OnlineTrainingManagementPage from './OnlineTrainingManagementPage';
+import OnlineTrainingsListPage from './OnlineTrainingsListPage';
+
 // =====================================================
 // ROTAS DO MÓDULO RH - NOVA ABORDAGEM
 // =====================================================
@@ -265,6 +270,11 @@ export function RHRoutesNew() {
       <Route path="/training/new" element={<TrainingPage />} />
       <Route path="/training/:id" element={<TrainingPage />} />
       <Route path="/training/:id/edit" element={<TrainingPage />} />
+      
+      {/* Treinamentos Online */}
+      <Route path="/treinamentos" element={<OnlineTrainingsListPage />} />
+      <Route path="/treinamentos-online/:trainingId" element={<OnlineTrainingPage />} />
+      <Route path="/treinamentos-online/:trainingId/gestao" element={<OnlineTrainingManagementPage />} />
       
       {/* FASE 5: GESTÃO OPERACIONAL */}
       

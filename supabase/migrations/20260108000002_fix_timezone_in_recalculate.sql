@@ -1,16 +1,11 @@
 -- =====================================================
--- CORREÇÃO: STATUS BASEADO EM HORAS EXTRAS 50% E 100%
+-- CORREÇÃO: TIMEZONE NA FUNÇÃO recalculate_time_record_hours
 -- =====================================================
--- Problema: A função recalculate_time_record_hours verifica apenas
--- v_horas_extras (calculado a partir de eventos), mas não verifica
--- horas_extras_50 e horas_extras_100 que podem já existir no registro.
--- 
--- Isso faz com que registros com apenas horas negativas fiquem como
--- "pendente" quando deveriam ser "aprovado" automaticamente.
---
--- Solução: Verificar também horas_extras_50 e horas_extras_100 do registro
--- para determinar se precisa de aprovação. Apenas registros com horas extras
--- (50% ou 100%) devem ficar pendentes.
+-- Data: 2026-01-08
+-- Descrição: A função recalculate_time_record_hours estava usando
+--            AT TIME ZONE 'UTC' que extrai o horário UTC em vez do local.
+--            Agora usa 'America/Sao_Paulo' como padrão para converter
+--            o event_at UTC para o horário local.
 -- =====================================================
 
 CREATE OR REPLACE FUNCTION rh.recalculate_time_record_hours(p_time_record_id uuid)
@@ -21,40 +16,37 @@ DECLARE
   v_employee_id uuid;
   v_company_id uuid;
   v_date date;
+  v_horas_faltas numeric;
   v_entrada time;
   v_saida time;
   v_entrada_almoco time;
   v_saida_almoco time;
   v_entrada_extra1 time;
   v_saida_extra1 time;
-  v_horas_trabalhadas numeric(4,2) := 0;
-  v_horas_extras numeric(4,2) := 0;
-  v_horas_faltas numeric(4,2) := 0;
-  v_horas_negativas numeric(4,2) := 0;
-  v_horas_noturnas numeric(4,2) := 0;
-  v_last_event_at timestamptz;
-  v_work_shift_id uuid;
-  v_horas_diarias numeric(4,2);
-  v_horas_extra_window numeric(4,2) := 0;
-  v_diferenca_horas numeric(4,2);
-  v_requer_registro_ponto boolean := true;
-  v_day_of_week INTEGER;
-  v_day_hours JSONB;
-  v_ultimo_evento_time time;
-  v_ultimo_evento_type varchar;
-  -- Variáveis para dados existentes na tabela
   v_entrada_existente time;
   v_saida_existente time;
   v_entrada_almoco_existente time;
   v_saida_almoco_existente time;
   v_entrada_extra1_existente time;
   v_saida_extra1_existente time;
-  -- Variáveis para status e horas extras existentes
-  v_current_status varchar(20);
-  v_new_status varchar(20);
-  v_horas_extras_50_existente DECIMAL(4,2);
-  v_horas_extras_100_existente DECIMAL(4,2);
+  v_current_status text;
+  v_horas_extras_50_existente numeric;
+  v_horas_extras_100_existente numeric;
+  v_requer_registro_ponto boolean;
+  v_day_of_week integer;
+  v_shift_id uuid;
+  v_horas_diarias numeric;
+  v_horas_trabalhadas numeric := 0;
+  v_horas_extras numeric := 0;
+  v_horas_negativas numeric := 0;
+  v_horas_noturnas numeric := 0;
+  v_horas_extra_window numeric := 0;
+  v_ultimo_evento_time time;
+  v_ultimo_evento_type text;
+  v_last_event_at timestamptz;
+  v_new_status text;
   v_has_overtime boolean := false;
+  v_timezone text := 'America/Sao_Paulo'; -- Timezone padrão
 BEGIN
   -- CORREÇÃO CRÍTICA: Buscar dados EXISTENTES na tabela time_records PRIMEIRO
   -- Isso garante que nunca zeremos dados que já existem
@@ -112,47 +104,27 @@ BEGIN
   END;
 
   -- Buscar turno primeiro via employee_shifts (permite histórico)
-  SELECT es.turno_id, ws.horas_diarias
-  INTO v_work_shift_id, v_horas_diarias
+  SELECT es.turno_id, s.horas_diarias
+  INTO v_shift_id, v_horas_diarias
   FROM rh.employee_shifts es
-  INNER JOIN rh.work_shifts ws ON ws.id = es.turno_id
+  INNER JOIN rh.work_shifts s ON s.id = es.turno_id
   WHERE es.funcionario_id = v_employee_id
     AND es.company_id = v_company_id
-    AND es.ativo = true
-    AND es.data_inicio <= v_date
+    AND (es.data_inicio IS NULL OR es.data_inicio <= v_date)
     AND (es.data_fim IS NULL OR es.data_fim >= v_date)
-  ORDER BY es.data_inicio DESC
+    AND es.ativo = true
+  ORDER BY es.data_inicio DESC NULLS LAST
   LIMIT 1;
 
-  -- Se não encontrou via employee_shifts, buscar via employees.work_shift_id
-  IF v_work_shift_id IS NULL OR v_horas_diarias IS NULL THEN
-    SELECT e.work_shift_id, ws.horas_diarias
-    INTO v_work_shift_id, v_horas_diarias
+  -- Se não encontrou via employee_shifts, buscar direto do employee
+  IF v_shift_id IS NULL THEN
+    SELECT e.work_shift_id, s.horas_diarias
+    INTO v_shift_id, v_horas_diarias
     FROM rh.employees e
-    LEFT JOIN rh.work_shifts ws ON ws.id = e.work_shift_id
-    WHERE e.id = v_employee_id
-      AND e.company_id = v_company_id;
+    LEFT JOIN rh.work_shifts s ON s.id = e.work_shift_id
+    WHERE e.id = v_employee_id;
   END IF;
 
-  -- Se encontrou turno, verificar se tem horarios_por_dia para o dia específico
-  IF v_work_shift_id IS NOT NULL THEN
-    v_day_hours := rh.get_work_shift_hours_for_day(v_work_shift_id, v_day_of_week);
-    
-    -- Se tem horário específico para o dia, usar horas_diarias do JSONB
-    IF v_day_hours IS NOT NULL AND v_day_hours ? 'horas_diarias' THEN
-      v_horas_diarias := COALESCE((v_day_hours->>'horas_diarias')::NUMERIC, v_horas_diarias);
-    END IF;
-  END IF;
-
-  -- Se ainda não encontrou horas_diarias, tentar buscar do turno diretamente
-  IF v_horas_diarias IS NULL AND v_work_shift_id IS NOT NULL THEN
-    SELECT horas_diarias
-    INTO v_horas_diarias
-    FROM rh.work_shifts
-    WHERE id = v_work_shift_id;
-  END IF;
-
-  -- Se não encontrar turno, usar 8.0 como padrão
   IF v_horas_diarias IS NULL THEN
     v_horas_diarias := 8.0;
   END IF;
@@ -160,9 +132,9 @@ BEGIN
   -- CORREÇÃO CRÍTICA: Buscar eventos APENAS para complementar dados existentes
   -- Se não houver dados existentes, tentar buscar dos eventos
   -- Mas NUNCA sobrescrever dados existentes com NULL
-  -- CORREÇÃO TIMEZONE: Converter event_at UTC para timezone local (America/Sao_Paulo)
+  -- CORREÇÃO: Usar timezone local (America/Sao_Paulo) em vez de UTC
   IF v_entrada IS NULL THEN
-    SELECT (event_at AT TIME ZONE 'America/Sao_Paulo')::time
+    SELECT (event_at AT TIME ZONE v_timezone)::time
     INTO v_entrada
     FROM rh.time_record_events
     WHERE time_record_id = p_time_record_id AND event_type = 'entrada'
@@ -171,7 +143,7 @@ BEGIN
   END IF;
 
   IF v_saida IS NULL THEN
-    SELECT (event_at AT TIME ZONE 'America/Sao_Paulo')::time
+    SELECT (event_at AT TIME ZONE v_timezone)::time
     INTO v_saida
     FROM rh.time_record_events
     WHERE time_record_id = p_time_record_id AND event_type = 'saida'
@@ -180,7 +152,7 @@ BEGIN
   END IF;
 
   IF v_entrada_almoco IS NULL THEN
-    SELECT (event_at AT TIME ZONE 'America/Sao_Paulo')::time
+    SELECT (event_at AT TIME ZONE v_timezone)::time
     INTO v_entrada_almoco
     FROM rh.time_record_events
     WHERE time_record_id = p_time_record_id AND event_type = 'entrada_almoco'
@@ -189,7 +161,7 @@ BEGIN
   END IF;
 
   IF v_saida_almoco IS NULL THEN
-    SELECT (event_at AT TIME ZONE 'America/Sao_Paulo')::time
+    SELECT (event_at AT TIME ZONE v_timezone)::time
     INTO v_saida_almoco
     FROM rh.time_record_events
     WHERE time_record_id = p_time_record_id AND event_type = 'saida_almoco'
@@ -198,7 +170,7 @@ BEGIN
   END IF;
 
   IF v_entrada_extra1 IS NULL THEN
-    SELECT (event_at AT TIME ZONE 'America/Sao_Paulo')::time
+    SELECT (event_at AT TIME ZONE v_timezone)::time
     INTO v_entrada_extra1
     FROM rh.time_record_events
     WHERE time_record_id = p_time_record_id AND event_type = 'extra_inicio'
@@ -207,7 +179,7 @@ BEGIN
   END IF;
 
   IF v_saida_extra1 IS NULL THEN
-    SELECT (event_at AT TIME ZONE 'America/Sao_Paulo')::time
+    SELECT (event_at AT TIME ZONE v_timezone)::time
     INTO v_saida_extra1
     FROM rh.time_record_events
     WHERE time_record_id = p_time_record_id AND event_type = 'extra_fim'
@@ -216,13 +188,17 @@ BEGIN
   END IF;
 
   -- Buscar último evento do dia para calcular horas parciais (se necessário)
-  -- CORREÇÃO TIMEZONE: Converter para timezone local
-  SELECT (event_at AT TIME ZONE 'America/Sao_Paulo')::time, event_type
+  SELECT (event_at AT TIME ZONE v_timezone)::time, event_type
   INTO v_ultimo_evento_time, v_ultimo_evento_type
   FROM rh.time_record_events
   WHERE time_record_id = p_time_record_id
   ORDER BY event_at DESC
   LIMIT 1;
+
+  -- Buscar último event_at para updated_at
+  SELECT MAX(event_at) INTO v_last_event_at
+  FROM rh.time_record_events
+  WHERE time_record_id = p_time_record_id;
 
   -- CORREÇÃO CRÍTICA: Calcular horas trabalhadas usando dados existentes ou eventos
   -- Se não houver entrada ou saída, manter horas_trabalhadas existente se houver
@@ -290,110 +266,89 @@ BEGIN
   END IF;
 
   -- Calcular horas noturnas (só se tiver entrada e saída)
-  IF v_entrada IS NOT NULL AND (v_saida IS NOT NULL OR v_ultimo_evento_time IS NOT NULL) THEN
-    v_horas_noturnas := rh.calculate_night_hours(
-      v_entrada, 
-      COALESCE(v_saida, v_ultimo_evento_time), 
-      v_date
+  IF v_entrada IS NOT NULL AND v_saida IS NOT NULL THEN
+    -- Horário noturno: 22h às 5h
+    v_horas_noturnas := round(
+      EXTRACT(EPOCH FROM (
+        CASE 
+          WHEN v_entrada >= '22:00'::time OR v_entrada < '05:00'::time THEN
+            -- Entrada no período noturno
+            CASE 
+              WHEN v_saida >= '22:00'::time OR v_saida < '05:00'::time THEN
+                -- Saída também no período noturno
+                CASE 
+                  WHEN v_entrada <= v_saida THEN
+                    -- Mesmo dia: v_saida - v_entrada
+                    (v_date + v_saida) - (v_date + v_entrada)
+                  ELSE
+                    -- Passou da meia-noite: (24h - v_entrada) + v_saida
+                    (v_date + INTERVAL '1 day' + v_saida) - (v_date + v_entrada)
+                END
+              WHEN v_saida >= '05:00'::time AND v_saida < '22:00'::time THEN
+                -- Saída no período diurno
+                CASE 
+                  WHEN v_entrada >= '22:00'::time THEN
+                    -- Entrada antes da meia-noite, saída depois
+                    (v_date + INTERVAL '1 day' + '05:00'::time) - (v_date + v_entrada)
+                  ELSE
+                    -- Entrada depois da meia-noite
+                    (v_date + '05:00'::time) - (v_date + v_entrada)
+                END
+              ELSE INTERVAL '0'
+            END
+          WHEN v_saida >= '22:00'::time OR v_saida < '05:00'::time THEN
+            -- Apenas saída no período noturno
+            CASE 
+              WHEN v_entrada >= '05:00'::time AND v_entrada < '22:00'::time THEN
+                -- Entrada no período diurno
+                CASE 
+                  WHEN v_saida >= '22:00'::time THEN
+                    -- Saída antes da meia-noite
+                    (v_date + v_saida) - (v_date + '22:00'::time)
+                  ELSE
+                    -- Saída depois da meia-noite
+                    (v_date + INTERVAL '1 day' + v_saida) - (v_date + '22:00'::time)
+                END
+              ELSE INTERVAL '0'
+            END
+          ELSE INTERVAL '0'
+        END
+      )) / 3600, 2
     );
-  ELSE
-    -- CORREÇÃO CRÍTICA: Preservar horas_noturnas existente se não houver entrada/saída
-    SELECT horas_noturnas INTO v_horas_noturnas
-    FROM rh.time_records
-    WHERE id = p_time_record_id;
-    
-    IF v_horas_noturnas IS NULL THEN
-      v_horas_noturnas := 0;
-    END IF;
   END IF;
 
-  -- Calcular diferença entre horas trabalhadas e horas_diarias do turno
-  v_diferenca_horas := v_horas_trabalhadas - v_horas_diarias;
-
-  -- IMPORTANTE: Se funcionário não precisa registrar ponto (Artigo 62),
-  -- não deve calcular horas negativas por ausência de registro
-  IF v_requer_registro_ponto THEN
-    -- Funcionário precisa registrar ponto: calcular normalmente
-    IF v_diferenca_horas > 0 THEN
-      -- Horas extras do trabalho além do turno + horas extras da janela extra
-      v_horas_extras := round(v_diferenca_horas + v_horas_extra_window, 2);
-      v_horas_negativas := 0;
-    ELSIF v_diferenca_horas < 0 THEN
-      -- Horas negativas (trabalhou menos que o turno)
-      -- Mas só se houver registro (entrada e saída ou entrada e último evento)
-      IF v_entrada IS NOT NULL AND (v_saida IS NOT NULL OR v_ultimo_evento_time IS NOT NULL) THEN
-        -- Tem marcações e trabalhou menos: calcular horas negativas
-        v_horas_negativas := round(ABS(v_diferenca_horas), 2);
-        v_horas_extras := round(v_horas_extra_window, 2);
-      ELSE
-        -- Sem registro de ponto: considerar como falta (horas_faltas)
-        v_horas_negativas := 0;
-        v_horas_extras := 0;
-        -- CORREÇÃO CRÍTICA: Não alterar horas_faltas se já existir valor
-        IF v_horas_faltas IS NULL OR v_horas_faltas = 0 THEN
-          v_horas_faltas := v_horas_diarias;
-        END IF;
-      END IF;
-    ELSE
-      -- Exatamente igual ao turno
-      v_horas_extras := round(v_horas_extra_window, 2);
-      v_horas_negativas := 0;
-    END IF;
-  ELSE
-    -- Funcionário NÃO precisa registrar ponto (Artigo 62): não calcular horas negativas
-    IF v_entrada IS NOT NULL AND (v_saida IS NOT NULL OR v_ultimo_evento_time IS NOT NULL) THEN
-      IF v_diferenca_horas > 0 THEN
-        v_horas_extras := round(v_diferenca_horas + v_horas_extra_window, 2);
-      ELSE
-        v_horas_extras := round(v_horas_extra_window, 2);
-      END IF;
-      v_horas_negativas := 0;
-    ELSE
-      -- Sem registro: não calcular nada (funcionário não precisa registrar)
-      v_horas_extras := 0;
-      v_horas_negativas := 0;
-    END IF;
+  -- Calcular horas extras e negativas
+  IF v_horas_trabalhadas > v_horas_diarias THEN
+    v_horas_extras := round(v_horas_trabalhadas - v_horas_diarias, 2);
+  ELSIF v_horas_trabalhadas < v_horas_diarias AND v_entrada IS NOT NULL AND v_saida IS NOT NULL THEN
+    -- Só calcular horas negativas se tiver entrada E saída
+    v_horas_negativas := round(v_horas_diarias - v_horas_trabalhadas, 2);
   END IF;
 
-  -- Keep faltas as-is if previously set; if NULL, default to 0
-  v_horas_faltas := COALESCE(v_horas_faltas, 0);
+  -- Adicionar horas da janela extra
+  IF v_horas_extra_window > 0 THEN
+    v_horas_extras := COALESCE(v_horas_extras, 0) + v_horas_extra_window;
+  END IF;
 
-  -- Usar o event_at mais recente como referência para updated_at
-  SELECT MAX(event_at) INTO v_last_event_at
-  FROM rh.time_record_events
-  WHERE time_record_id = p_time_record_id;
+  -- Calcular horas de falta (só se não tiver entrada e não for funcionário que não precisa registrar ponto)
+  IF v_entrada IS NULL AND v_requer_registro_ponto THEN
+    v_horas_faltas := v_horas_diarias;
+  END IF;
+
+  -- Determinar status baseado em horas extras
+  v_new_status := v_current_status;
   
-  -- Se não houver eventos, usar NOW() como fallback
-  IF v_last_event_at IS NULL THEN
-    v_last_event_at := now();
+  -- Se tem horas extras (50% ou 100%) ou horas negativas, precisa aprovação
+  IF (v_horas_extras_50_existente IS NOT NULL AND v_horas_extras_50_existente > 0) OR
+     (v_horas_extras_100_existente IS NOT NULL AND v_horas_extras_100_existente > 0) OR
+     (v_horas_extras > 0) OR
+     (v_horas_negativas > 0) THEN
+    v_has_overtime := true;
   END IF;
 
-  -- =====================================================
-  -- NOVA LÓGICA: Definir status baseado em horas extras
-  -- =====================================================
-  -- Verificar se há horas extras (50%, 100% ou campo genérico)
-  -- Considerar tanto valores calculados (v_horas_extras) quanto existentes no registro
-  v_has_overtime := (
-    v_horas_extras > 0 
-    OR COALESCE(v_horas_extras_50_existente, 0) > 0 
-    OR COALESCE(v_horas_extras_100_existente, 0) > 0
-  );
-
-  -- Definir status automaticamente baseado em hora extra
-  -- Se já foi aprovado ou rejeitado manualmente, manter o status
-  IF v_current_status IN ('aprovado', 'rejeitado') THEN
-    v_new_status := v_current_status;
-  -- Se NÃO houver hora extra (nenhuma), aprovar automaticamente
-  ELSIF NOT v_has_overtime THEN
-    v_new_status := 'aprovado';
-  -- Se houver hora extra, manter ou definir como pendente
-  ELSE
-    -- Se estiver pendente, manter pendente. Se for novo registro, definir como pendente
-    v_new_status := COALESCE(v_current_status, 'pendente');
-    -- Garantir que está pendente se for null ou outro status inválido
-    IF v_new_status NOT IN ('pendente', 'aprovado', 'rejeitado', 'corrigido') THEN
-      v_new_status := 'pendente';
-    END IF;
+  -- Se tem horas extras ou negativas e status não é aprovado/rejeitado, marcar como pendente
+  IF v_has_overtime AND v_current_status NOT IN ('aprovado', 'rejeitado') THEN
+    v_new_status := 'pendente';
   END IF;
 
   -- CORREÇÃO CRÍTICA: Atualizar APENAS campos calculados, preservando dados existentes
@@ -438,19 +393,5 @@ Considera Artigo 62 da CLT: funcionários que não precisam registrar ponto não
 Só calcula horas negativas quando trabalhou menos que o esperado E tem todas as marcações. 
 Calcula horas noturnas (22h às 5h).
 Calcula horas parciais quando há entrada mas não saída explícita, usando o último evento do dia como referência.
-NOVA: Define status baseado em horas_extras_50, horas_extras_100 e horas_extras. Apenas registros com horas extras ficam pendentes.';
-
--- =====================================================
--- CORRIGIR REGISTROS PENDENTES SEM HORAS EXTRAS
--- =====================================================
--- Aprovar automaticamente todos os registros que não têm hora extra
--- e estão pendentes (erro de configuração anterior)
-UPDATE rh.time_records
-SET 
-  status = 'aprovado',
-  updated_at = COALESCE(updated_at, created_at, NOW())
-WHERE status = 'pendente'
-  AND (horas_extras IS NULL OR horas_extras <= 0)
-  AND (horas_extras_50 IS NULL OR horas_extras_50 <= 0)
-  AND (horas_extras_100 IS NULL OR horas_extras_100 <= 0);
+CORREÇÃO TIMEZONE: Agora converte event_at UTC para timezone local (America/Sao_Paulo) antes de extrair o horário.';
 

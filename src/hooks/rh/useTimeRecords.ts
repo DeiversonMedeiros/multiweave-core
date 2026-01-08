@@ -101,6 +101,12 @@ export function useTimeRecordsPaginated(
       hasMore: boolean;
       totalCount: number;
     }> => {
+      console.log(`[useTimeRecordsPaginated] 🔄 Query executando:`, {
+        queryKey: queryKey.slice(0, 3), // Log apenas parte da key
+        pageParam,
+        timestamp: new Date().toISOString()
+      });
+      
       const queryStartTime = performance.now();
 
       if (!selectedCompany?.id) {

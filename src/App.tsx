@@ -129,6 +129,10 @@ function App() {
                                      errorInfo.url?.includes('/login') ||
                                      errorInfo.url?.includes('/company-select');
         
+        // Detectar navegadores móveis antigos que são mais propensos a este erro
+        const isOldMobileBrowser = /Android [1-4]|iPhone OS [1-9]_|Mobile Safari\/[1-9][0-9][0-9]/.test(navigator.userAgent);
+        const isWebView = /wv|WebView/.test(navigator.userAgent);
+        
         if (isCriticalTransition) {
           // Durante transições críticas, logar como erro mas não quebrar a aplicação
           console.error(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} durante transição crítica`, {
@@ -136,20 +140,30 @@ function App() {
             userAgent: navigator.userAgent,
             currentPath: window.location.pathname,
             errorType,
-            stack: error?.stack
+            stack: error?.stack,
+            isOldMobileBrowser,
+            isWebView
           });
-          // Não suprimir completamente durante transições críticas - pode indicar problema real
-          // Mas também não quebrar a aplicação
+          
+          // Em navegadores móveis antigos, suprimir o erro mesmo em transições críticas
+          // para evitar tela branca
+          if (isOldMobileBrowser || isWebView) {
+            console.warn(`[APP][GLOBAL_ERROR] ⚠️ Suprimindo erro de ${errorType} em navegador móvel antigo para evitar tela branca`);
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+          }
         } else {
-          // Em outros contextos, pode ser inofensivo (ex: mapas, componentes externos)
-          // CRÍTICO: Suprimir completamente o erro insertBefore em contextos não críticos
+          // Em outros contextos, suprimir completamente o erro insertBefore
           // Isso evita que o erro apareça no console e quebre a aplicação
           console.warn(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} detectado e suprimido (contexto não crítico)`, {
             message: event.message.substring(0, 100), // Log truncado para não poluir
             userAgent: navigator.userAgent,
             currentPath: window.location.pathname,
             errorType,
-            suppressed: true
+            suppressed: true,
+            isOldMobileBrowser,
+            isWebView
           });
           // Prevenir completamente a propagação do erro
           event.preventDefault();
@@ -207,19 +221,33 @@ function App() {
                                      errorInfo.url?.includes('/login') ||
                                      errorInfo.url?.includes('/company-select');
         
+        // Detectar navegadores móveis antigos
+        const isOldMobileBrowser = /Android [1-4]|iPhone OS [1-9]_|Mobile Safari\/[1-9][0-9][0-9]/.test(navigator.userAgent);
+        const isWebView = /wv|WebView/.test(navigator.userAgent);
+        
         if (isCriticalTransition) {
           console.error(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} em promise durante transição crítica`, {
             message: event.reason?.message || String(event.reason),
             userAgent: navigator.userAgent,
             errorType,
-            stack: event.reason?.stack
+            stack: event.reason?.stack,
+            isOldMobileBrowser,
+            isWebView
           });
-          // Não suprimir durante transições críticas
+          
+          // Em navegadores móveis antigos, suprimir o erro mesmo em transições críticas
+          if (isOldMobileBrowser || isWebView) {
+            console.warn(`[APP][GLOBAL_ERROR] ⚠️ Suprimindo erro de ${errorType} em promise em navegador móvel antigo`);
+            event.preventDefault();
+            return;
+          }
         } else {
           console.warn(`[APP][GLOBAL_ERROR] ⚠️ Erro de ${errorType} em promise (contexto não crítico)`, {
             message: event.reason?.message || String(event.reason),
             userAgent: navigator.userAgent,
-            errorType
+            errorType,
+            isOldMobileBrowser,
+            isWebView
           });
           // Prevenir que o erro seja propagado apenas em contextos não críticos
           event.preventDefault();

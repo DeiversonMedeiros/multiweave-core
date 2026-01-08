@@ -8,6 +8,8 @@ import { LogOut, User, Building2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useCompany } from "@/lib/company-context";
 import { UserPermissionsCompact } from "./UserPermissions";
+import { TrainingNotificationsBadge } from "./rh/TrainingNotificationsBadge";
+import { TrainingNotificationScheduler } from "./rh/TrainingNotificationScheduler";
 
 export const Layout = () => {
   const { user, signOut } = useAuth();
@@ -31,6 +33,7 @@ export const Layout = () => {
                 <Building2 className="h-3 w-3" />
                 <span className="truncate max-w-20">{selectedCompany?.nome_fantasia}</span>
               </div>
+              <TrainingNotificationsBadge />
               <UserPermissionsCompact />
               <div className="hidden sm:flex items-center gap-2 text-sm">
                 <User className="h-4 w-4" />
@@ -42,6 +45,7 @@ export const Layout = () => {
               </Button>
             </div>
           </header>
+          <TrainingNotificationScheduler />
           <main className="flex-1 p-3 sm:p-6">
             {selectedCompany ? (
               <Outlet />

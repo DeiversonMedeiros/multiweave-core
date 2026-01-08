@@ -56,7 +56,8 @@ import {
   Target,
   Route,
   Bell,
-  Car
+  Car,
+  BookOpen
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -1271,10 +1272,28 @@ export const useMenu = () => {
             {
               id: 'rh-treinamentos',
               title: 'Treinamentos',
-              url: '/rh/training',
+              url: '#',
               icon: GraduationCap,
               description: 'Gestão de treinamentos',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' },
+              children: [
+                {
+                  id: 'rh-treinamentos-geral',
+                  title: 'Treinamentos Gerais',
+                  url: '/rh/training',
+                  icon: GraduationCap,
+                  description: 'Gestão de treinamentos presenciais e híbridos',
+                  requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+                },
+                {
+                  id: 'rh-treinamentos-online',
+                  title: 'Treinamentos Online',
+                  url: '/rh/treinamentos',
+                  icon: BookOpen,
+                  description: 'Treinamentos online com conteúdo interativo',
+                  requiresPermission: { type: 'entity', name: 'trainings', action: 'read' }
+                }
+              ]
             }
           ]
         },

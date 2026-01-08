@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import "./utils/cacheUtils"; // Importar utilitários de cache
+import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
+import { initSyncListeners } from "./services/offline/syncOfflineRecords";
 
 // Service Worker handling com limpeza de cache e forçar atualização
 if ("serviceWorker" in navigator) {
@@ -52,7 +54,13 @@ if ("serviceWorker" in navigator) {
     clearAllCaches();
   } else {
     // Em produção, limpar caches antigos e registrar novo
+    // IMPORTANTE: Aguardar um delay para não interferir na renderização inicial do React
+    // Isso evita problemas de insertBefore em navegadores móveis antigos
     window.addEventListener("load", async () => {
+      // Aguardar um pouco antes de registrar o Service Worker
+      // para garantir que o React já tenha iniciado a renderização
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       try {
         // Limpar caches antigos primeiro
         await clearAllCaches();
@@ -135,4 +143,105 @@ const updateFavicon = () => {
 updateFavicon();
 setTimeout(updateFavicon, 100);
 
-createRoot(document.getElementById("root")!).render(<App />);
+// Função para verificar se o navegador é compatível
+const isBrowserCompatible = (): boolean => {
+  // Verificar se APIs essenciais estão disponíveis
+  const hasRequiredAPIs = 
+    typeof Promise !== 'undefined' &&
+    typeof Map !== 'undefined' &&
+    typeof Set !== 'undefined' &&
+    typeof Object.assign !== 'undefined' &&
+    typeof Array.from !== 'undefined';
+  
+  // Verificar se o DOM está pronto
+  const isDOMReady = 
+    document.readyState === 'complete' || 
+    document.readyState === 'interactive';
+  
+  return hasRequiredAPIs && isDOMReady;
+};
+
+// Função para inicializar a aplicação de forma segura
+const initializeApp = () => {
+  const rootElement = document.getElementById("root");
+  
+  if (!rootElement) {
+    console.error("[MAIN] ❌ Elemento root não encontrado!");
+    return;
+  }
+
+  // Verificar compatibilidade do navegador
+  if (!isBrowserCompatible()) {
+    console.warn("[MAIN] ⚠️ Navegador pode não ser totalmente compatível");
+    // Continuar mesmo assim, o Error Boundary vai capturar problemas
+  }
+
+  try {
+    // Criar root do React
+    const root = createRoot(rootElement);
+    
+    // Renderizar aplicação envolvida pelo Error Boundary global
+    root.render(
+      <GlobalErrorBoundary
+        onError={(error, errorInfo) => {
+          console.error("[MAIN] Erro capturado pelo GlobalErrorBoundary:", {
+            error: error.message,
+            componentStack: errorInfo.componentStack,
+            userAgent: navigator.userAgent
+          });
+        }}
+      >
+        <App />
+      </GlobalErrorBoundary>
+    );
+    
+    console.log("[MAIN] ✅ Aplicação inicializada com sucesso");
+  } catch (error: any) {
+    console.error("[MAIN] ❌ Erro ao inicializar aplicação:", error);
+    
+    // Fallback: tentar renderizar mensagem de erro
+    rootElement.innerHTML = `
+      <div style="padding: 20px; text-align: center; font-family: Arial, sans-serif;">
+        <h2>Erro ao carregar a aplicação</h2>
+        <p>Ocorreu um erro ao inicializar a aplicação. Por favor, recarregue a página.</p>
+        <button onclick="window.location.reload()" style="padding: 10px 20px; margin-top: 10px; cursor: pointer;">
+          Recarregar página
+        </button>
+        ${process.env.NODE_ENV === 'development' ? `
+          <details style="margin-top: 20px; text-align: left;">
+            <summary>Detalhes do erro (modo desenvolvimento)</summary>
+            <pre style="background: #f5f5f5; padding: 10px; overflow: auto;">${error?.stack || error?.message || String(error)}</pre>
+          </details>
+        ` : ''}
+      </div>
+    `;
+  }
+};
+
+// Aguardar DOM estar completamente pronto antes de inicializar
+// Isso evita problemas de timing com Service Worker e manipulação do DOM
+const waitForReady = () => {
+  // Se já estiver pronto, inicializar imediatamente
+  if (document.readyState === 'complete') {
+    // Adicionar pequeno delay para garantir que Service Worker não interfira
+    setTimeout(initializeApp, 50);
+    return;
+  }
+  
+  // Se estiver em loading, aguardar
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      // Aguardar um pouco mais para garantir que tudo está estável
+      setTimeout(initializeApp, 100);
+    });
+    return;
+  }
+  
+  // Se estiver em interactive, aguardar load
+  window.addEventListener('load', () => {
+    setTimeout(initializeApp, 100);
+  });
+};
+
+// Inicializar quando estiver pronto
+waitForReady();

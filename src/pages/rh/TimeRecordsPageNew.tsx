@@ -64,6 +64,214 @@ import {
 import { toast } from 'sonner';
 
 // =====================================================
+// COMPONENTE DE IMAGEM DO MODAL COM TRATAMENTO DE ERRO
+// =====================================================
+interface PhotoModalImageProps {
+  photoUrl: string;
+  extractPhotoPath: (url: string) => string | null;
+  generateSignedUrl: (photo: any) => Promise<string | null>;
+}
+
+function PhotoModalImage({ photoUrl, extractPhotoPath, generateSignedUrl }: PhotoModalImageProps) {
+  const [currentUrl, setCurrentUrl] = useState(photoUrl);
+  const [hasError, setHasError] = useState(false);
+  const hasTriedSignedUrlRef = useRef(false);
+  
+  const handleError = useCallback(async (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    
+    // Se já tentou signed URL, mostrar mensagem de erro
+    if (hasTriedSignedUrlRef.current) {
+      console.error('[PhotoModalImage] ⚠️ Erro ao carregar foto no modal após tentar signed URL', { 
+        originalUrl: photoUrl?.substring(0, 50),
+        currentUrl: currentUrl?.substring(0, 50)
+      });
+      setHasError(true);
+      return;
+    }
+    
+    // Primeira tentativa: gerar signed URL
+    hasTriedSignedUrlRef.current = true;
+    console.log('[PhotoModalImage] 🔄 Tentando gerar signed URL para modal:', {
+      originalUrl: photoUrl?.substring(0, 50)
+    });
+    
+    try {
+      const photoPath = extractPhotoPath(photoUrl);
+      if (!photoPath) {
+        console.warn('[PhotoModalImage] ⚠️ Não foi possível extrair path da foto');
+        setHasError(true);
+        return;
+      }
+      
+      const photo = { photo_url: photoUrl };
+      const signedUrl = await generateSignedUrl(photo);
+      
+      if (signedUrl && signedUrl !== currentUrl) {
+        setCurrentUrl(signedUrl);
+        img.src = signedUrl;
+      } else {
+        console.warn('[PhotoModalImage] ⚠️ Não foi possível gerar signed URL para modal');
+        setHasError(true);
+      }
+    } catch (err) {
+      console.error('[PhotoModalImage] ❌ Erro ao gerar signed URL para modal:', err);
+      setHasError(true);
+    }
+  }, [photoUrl, currentUrl, extractPhotoPath, generateSignedUrl]);
+  
+  // Resetar quando photoUrl mudar
+  useEffect(() => {
+    setCurrentUrl(photoUrl);
+    setHasError(false);
+    hasTriedSignedUrlRef.current = false;
+  }, [photoUrl]);
+  
+  if (hasError) {
+    return (
+      <div className="relative w-full h-full flex flex-col items-center justify-center bg-black/90 rounded-lg overflow-hidden p-8">
+        <AlertCircle className="h-16 w-16 text-red-500 mb-4" />
+        <p className="text-white text-lg font-medium mb-2">Erro ao carregar foto</p>
+        <p className="text-gray-400 text-sm text-center">
+          Não foi possível carregar a foto. A URL pode estar inválida ou o arquivo pode não existir mais.
+        </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => window.open(photoUrl, '_blank')}
+        >
+          Tentar abrir em nova aba
+        </Button>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="relative w-full h-full flex items-center justify-center bg-black/90 rounded-lg overflow-hidden">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={currentUrl}
+        alt="Foto do registro de ponto"
+        className="max-w-full max-h-[90vh] object-contain"
+        referrerPolicy="no-referrer"
+        onError={handleError}
+        onLoad={(e) => {
+          // Resetar flag quando carregar com sucesso
+          hasTriedSignedUrlRef.current = false;
+          (e.target as HTMLImageElement).style.opacity = '1';
+        }}
+      />
+    </div>
+  );
+}
+
+// =====================================================
+// COMPONENTE DE IMAGEM COM PROTEÇÃO CONTRA LOOP
+// =====================================================
+interface PhotoImageWithErrorHandlingProps {
+  photo: any;
+  photoUrl: string;
+  recordId: string;
+  photoKey: string;
+  idx: number;
+  employeeName: string;
+  onPhotoClick: (url: string) => void;
+  generateSignedUrl: (photo: any) => Promise<string | null>;
+  extractPhotoPath: (url: string) => string | null;
+}
+
+function PhotoImageWithErrorHandling({ 
+  photo, 
+  photoUrl, 
+  recordId, 
+  photoKey, 
+  idx, 
+  employeeName,
+  onPhotoClick,
+  generateSignedUrl,
+  extractPhotoPath
+}: PhotoImageWithErrorHandlingProps) {
+  const errorAttemptsRef = useRef(0);
+  const hasTriedSignedUrlRef = useRef(false);
+  
+  const handleError = useCallback(async (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    
+    // Limitar tentativas para evitar loop infinito
+    errorAttemptsRef.current += 1;
+    
+    // Se já tentou signed URL, não tentar novamente - ocultar imediatamente
+    if (hasTriedSignedUrlRef.current) {
+      console.warn(`[PhotoImage] ⚠️ Signed URL já foi tentada, ocultando imagem:`, {
+        recordId,
+        photoKey,
+        attempts: errorAttemptsRef.current
+      });
+      img.style.display = 'none';
+      return;
+    }
+    
+    // Se já tentou mais de uma vez, ocultar a imagem
+    if (errorAttemptsRef.current > 1) {
+      console.warn(`[PhotoImage] ⚠️ Múltiplas tentativas falharam, ocultando imagem:`, {
+        recordId,
+        photoKey,
+        attempts: errorAttemptsRef.current
+      });
+      img.style.display = 'none';
+      return;
+    }
+    
+    // Primeira tentativa: gerar signed URL
+    hasTriedSignedUrlRef.current = true;
+    console.log(`[PhotoImage] 🔄 Tentando gerar signed URL:`, {
+      recordId,
+      photoKey,
+      originalUrl: photoUrl?.substring(0, 50)
+    });
+    
+    try {
+      const signedUrl = await generateSignedUrl(photo);
+      
+      if (signedUrl && signedUrl !== img.src) {
+        // Resetar contador antes de tentar carregar signed URL
+        errorAttemptsRef.current = 0;
+        img.src = signedUrl;
+      } else {
+        console.warn(`[PhotoImage] ⚠️ Não foi possível gerar signed URL:`, {
+          recordId,
+          photoKey,
+          photoPath: extractPhotoPath(photo.photo_url)
+        });
+        img.style.display = 'none';
+      }
+    } catch (err) {
+      console.error(`[PhotoImage] ❌ Erro ao gerar signed URL:`, err);
+      img.style.display = 'none';
+    }
+  }, [recordId, photoKey, photo, photoUrl, generateSignedUrl, extractPhotoPath]);
+  
+  return (
+    <img
+      src={photoUrl}
+      alt={`Foto ${idx + 1} de ${employeeName}`}
+      className="h-20 w-auto rounded border object-cover cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0"
+      onClick={() => {
+        const fullUrl = photo.signed_full_url || photo.photo_url || photoUrl;
+        onPhotoClick(fullUrl);
+      }}
+      onLoad={(e) => {
+        // Resetar contador de erros quando carregar com sucesso
+        errorAttemptsRef.current = 0;
+        hasTriedSignedUrlRef.current = false;
+        (e.target as HTMLImageElement).style.opacity = '1';
+      }}
+      onError={handleError}
+    />
+  );
+}
+
+// =====================================================
 // COMPONENTE PRINCIPAL - NOVA ABORDAGEM
 // =====================================================
 
@@ -318,11 +526,34 @@ export default function TimeRecordsPageNew() {
     isFetchingNextPage,
     isLoading,
     refetch,
-    error
+    error,
+    isRefetching,
+    dataUpdatedAt
   } = queryResult;
+
+  // Log quando dados são atualizados
+  useEffect(() => {
+    if (dataUpdatedAt) {
+      console.log(`[TimeRecordsPageNew] 📊 Dados atualizados:`, {
+        dataUpdatedAt: new Date(dataUpdatedAt).toISOString(),
+        totalPages: data?.pages?.length || 0,
+        totalRecords: data?.pages?.flatMap(p => p.data).length || 0,
+        isRefetching,
+        isLoading,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [dataUpdatedAt, data, isRefetching, isLoading]);
 
   // Combinar todas as páginas em um único array
   const records = useMemo(() => {
+    console.log(`[TimeRecordsPageNew] 🔄 Combinando páginas:`, {
+      totalPages: data?.pages?.length || 0,
+      totalRecords: data?.pages?.flatMap(p => p.data).length || 0,
+      isLoading,
+      isFetchingNextPage,
+      timestamp: new Date().toISOString()
+    });
     const allRecords = data?.pages.flatMap(page => page.data) || [];
     
     // Log detalhado da combinação
@@ -1450,6 +1681,12 @@ export default function TimeRecordsPageNew() {
           ) : filteredRecords && filteredRecords.length > 0 ? (
             <div className="space-y-4">
               {filteredRecords.map((record) => {
+                console.log(`[TimeRecordsPageNew] 🎨 Renderizando card do registro:`, {
+                  recordId: record.id,
+                  dataRegistro: record.data_registro,
+                  timestamp: new Date().toISOString()
+                });
+                
                 const location = getLocationForRecord(record);
                 const mapHref = location.hasCoords
                   ? `https://www.google.com/maps?q=${location.latitude},${location.longitude}`
@@ -1474,6 +1711,13 @@ export default function TimeRecordsPageNew() {
                 // Prioridade 1: Usar all_photos se disponível (vem de time_record_event_photos)
                 if (allPhotos && Array.isArray(allPhotos) && allPhotos.length > 0) {
                   photos = allPhotos;
+                  console.log(`[TimeRecordsPageNew] 📸 Fotos processadas para registro ${record.id}:`, {
+                    recordId: record.id,
+                    dataRegistro: record.data_registro,
+                    totalPhotos: photos.length,
+                    photoIds: photos.map((p: any) => p.id || p.event_id || 'no-id'),
+                    photoUrls: photos.map((p: any) => p.photo_url?.substring(0, 50) || 'no-url')
+                  });
                 } else {
                   // Prioridade 2: Fallback para first_event_photo_url (primeira foto do primeiro evento)
                   const fallbackPhotoUrl = record.first_event_photo_url || (record as any).foto_url || record.foto_url;
@@ -1853,35 +2097,25 @@ export default function TimeRecordsPageNew() {
                           {photos.map((photo: any, idx: number) => {
                             const photoUrl = getPhotoUrl(photo);
                             if (!photoUrl) return null;
+                            
+                            // Criar key estável para evitar recriação da imagem
+                            const photoKey = `photo-${record.id}-${photo.id || photo.event_id || `idx-${idx}`}-${photo.photo_url?.substring(0, 30) || 'no-url'}`;
+                            
                             return (
-                              <img
-                                key={photo.id || photo.event_id || idx}
-                                src={photoUrl}
-                                alt={`Foto ${idx + 1} de ${record.employee_nome}`}
-                                className="h-20 w-auto rounded border object-cover cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0"
-                                onClick={() => {
-                                  const fullUrl = photo.signed_full_url || photo.photo_url || photoUrl;
+                              <PhotoImageWithErrorHandling
+                                key={photoKey}
+                                photo={photo}
+                                photoUrl={photoUrl}
+                                recordId={record.id}
+                                photoKey={photoKey}
+                                idx={idx}
+                                employeeName={record.employee_nome}
+                                onPhotoClick={(fullUrl) => {
                                   setSelectedPhotoUrl(fullUrl);
                                   setPhotoModalOpen(true);
                                 }}
-                                onError={async (e) => {
-                                  const img = e.target as HTMLImageElement;
-                                  
-                                  // Tentar gerar signed URL sob demanda
-                                  const signedUrl = await generateSignedUrl(photo);
-                                  
-                                  if (signedUrl) {
-                                    // Tentar carregar com signed URL
-                                    img.src = signedUrl;
-                                  } else {
-                                    // Se não conseguir gerar signed URL, ocultar a imagem
-                                    console.warn('[TimeRecordsPageNew] Não foi possível gerar signed URL para foto:', {
-                                      photoUrl,
-                                      photoPath: extractPhotoPath(photo.photo_url)
-                                    });
-                                    img.style.display = 'none';
-                                  }
-                                }}
+                                generateSignedUrl={generateSignedUrl}
+                                extractPhotoPath={extractPhotoPath}
                               />
                             );
                           })}
@@ -2258,7 +2492,12 @@ export default function TimeRecordsPageNew() {
                             {ev.event_type}
                           </span>
                           <span className="text-sm font-mono">
-                            {new Date(ev.event_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(ev.event_at).toLocaleTimeString('pt-BR', { 
+                              hour: '2-digit', 
+                              minute: '2-digit',
+                              second: '2-digit',
+                              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                            })}
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
@@ -2299,19 +2538,11 @@ export default function TimeRecordsPageNew() {
           <DialogTitle className="sr-only">Foto do Registro de Ponto</DialogTitle>
           <DialogDescription className="sr-only">Visualização ampliada da foto capturada durante o registro de ponto</DialogDescription>
           {selectedPhotoUrl && (
-            <div className="relative w-full h-full flex items-center justify-center bg-black/90 rounded-lg overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={selectedPhotoUrl}
-                alt="Foto do registro de ponto"
-                className="max-w-full max-h-[90vh] object-contain"
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  console.error('[TimeRecordsPageNew] Erro ao carregar foto no modal', { selectedPhotoUrl });
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            </div>
+            <PhotoModalImage
+              photoUrl={selectedPhotoUrl}
+              extractPhotoPath={extractPhotoPath}
+              generateSignedUrl={generateSignedUrl}
+            />
           )}
         </DialogContent>
       </Dialog>

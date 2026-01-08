@@ -348,7 +348,38 @@ export default function TimeRecordsPage() {
 
   const formatTime = (time?: string) => {
     if (!time) return '--:--';
-    return time;
+    
+    try {
+      // Se for formato TIME do PostgreSQL (HH:MM:SS ou HH:MM:SS.microseconds)
+      if (time.match(/^\d{1,2}:\d{2}(:\d{2})?(\.\d+)?$/)) {
+        // Extrair apenas HH:MM
+        const parts = time.split(':');
+        if (parts.length >= 2) {
+          const hours = parts[0].padStart(2, '0');
+          const minutes = parts[1].padStart(2, '0');
+          return `${hours}:${minutes}`;
+        }
+        return time;
+      }
+      
+      // Se for timestamp completo (ISO string ou formato com timezone)
+      // Exemplo: "2026-01-07 23:05:09.220196+00" ou "2026-01-07T23:05:09.635Z"
+      if (time.includes('T') || time.includes(' ') || time.includes('+') || time.includes('-', 10)) {
+        const date = new Date(time);
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleTimeString('pt-BR', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false
+          });
+        }
+      }
+      
+      // Se não conseguir converter, retornar como está
+      return time;
+    } catch {
+      return time || '--:--';
+    }
   };
 
   const calculateTotalHours = (record: TimeRecord) => {
@@ -701,6 +732,7 @@ export default function TimeRecordsPage() {
                       <div className="mb-3">
                         <div className="relative inline-block">
                           <img
+                            key={`photo-${record.id}-${firstPhoto.id || firstPhoto.photo_url}`}
                             src={firstPhoto.photo_url}
                             alt={`Foto de ${record.employee_nome} em ${formatDateOnly(record.data_registro)}`}
                             className="h-32 w-auto rounded-lg border object-cover cursor-pointer hover:opacity-90 transition-opacity"
@@ -708,6 +740,10 @@ export default function TimeRecordsPage() {
                             onClick={() => window.open(firstPhoto.photo_url, '_blank')}
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                            onLoad={(e) => {
+                              // Garantir que a imagem não seja recarregada
+                              (e.target as HTMLImageElement).style.opacity = '1';
                             }}
                           />
                           {hasMultiplePhotos && (
@@ -899,7 +935,7 @@ export default function TimeRecordsPage() {
                         <div className="flex gap-2 overflow-x-auto pb-2">
                           {photos.map((photo: any, idx: number) => (
                             <img
-                              key={photo.id || idx}
+                              key={`photo-${record.id}-${photo.id || photo.event_id || idx}-${photo.photo_url}`}
                               src={photo.photo_url}
                               alt={`Foto ${idx + 1} de ${record.employee_nome}`}
                               className="h-20 w-auto rounded border object-cover cursor-pointer hover:opacity-90 transition-opacity flex-shrink-0"
@@ -907,6 +943,10 @@ export default function TimeRecordsPage() {
                               onClick={() => window.open(photo.photo_url, '_blank')}
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                              onLoad={(e) => {
+                                // Garantir que a imagem não seja recarregada
+                                (e.target as HTMLImageElement).style.opacity = '1';
                               }}
                             />
                           ))}
@@ -1238,7 +1278,12 @@ export default function TimeRecordsPage() {
                               {ev.event_type}
                             </span>
                             <span className="text-sm font-mono">
-                              {new Date(ev.event_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(ev.event_at).toLocaleTimeString('pt-BR', { 
+                                hour: '2-digit', 
+                                minute: '2-digit',
+                                second: '2-digit',
+                                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                              })}
                             </span>
                           </div>
                           <div className="flex items-center gap-3">

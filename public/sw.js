@@ -59,7 +59,14 @@ self.addEventListener('activate', (event) => {
         })
         .then(() => {
           console.log('[SW][DEV] Cache limpo, reivindicando clientes');
-          return self.clients.claim();
+          // Atrasar clients.claim() para não interferir na renderização inicial
+          return new Promise((resolve) => {
+            setTimeout(() => {
+              self.clients.claim().then(resolve).catch(() => {
+                resolve();
+              });
+            }, 500);
+          });
         })
     );
     return;
@@ -80,7 +87,16 @@ self.addEventListener('activate', (event) => {
       );
     }).then(() => {
       console.log('[SW] Cache limpo, reivindicando clientes');
-      return self.clients.claim();
+      // Atrasar clients.claim() para não interferir na renderização inicial do React
+      // Isso evita problemas de insertBefore em navegadores móveis antigos
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          self.clients.claim().then(resolve).catch(() => {
+            // Ignorar erros de claim - não é crítico
+            resolve();
+          });
+        }, 500);
+      });
     })
   );
 });
