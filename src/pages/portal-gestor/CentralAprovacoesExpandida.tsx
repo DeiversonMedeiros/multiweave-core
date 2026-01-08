@@ -133,19 +133,20 @@ const CentralAprovacoesExpandida: React.FC = () => {
       // Fechar modal e limpar seleção imediatamente
       setIsApprovalModalOpen(false);
       
-      // Remover a aprovação processada do cache localmente antes do refetch
+      // Remover a aprovação processada do cache localmente ANTES do refetch
       // Isso garante que ela desapareça imediatamente da UI
       const approvalId = selectedApproval?.id;
       const processoId = selectedApproval?.processo_id;
       const processoTipo = selectedApproval?.processo_tipo;
       
-      // Atualizar cache removendo a aprovação processada
+      // Atualizar cache removendo a aprovação processada IMEDIATAMENTE
+      // Isso faz com que a UI atualize instantaneamente
       queryClient.setQueryData<Approval[]>(
         ['pending-approvals', selectedCompany?.id, user?.id],
         (oldData) => {
           if (!oldData) return oldData;
           const filtered = oldData.filter(a => a.id !== approvalId);
-          console.log('🗑️ [CentralAprovacoesExpandida] Removendo aprovação do cache local', {
+          console.log('🗑️ [CentralAprovacoesExpandida] Removendo aprovação do cache local IMEDIATAMENTE', {
             approvalId,
             processoId,
             processoTipo,
@@ -159,20 +160,30 @@ const CentralAprovacoesExpandida: React.FC = () => {
       
       setSelectedApproval(null);
       
-      // Aguardar um delay maior para garantir que a transação foi commitada no banco
+      // IMPORTANTE: Invalidar queries IMEDIATAMENTE antes de aguardar
+      // Isso garante que quando o refetch acontecer, não usará cache antigo
+      queryClient.invalidateQueries({ 
+        queryKey: ['pending-approvals'],
+        exact: false // Invalidar todas as queries que começam com 'pending-approvals'
+      });
+      
+      // Aguardar um delay para garantir que a transação foi commitada no banco
       // Isso evita race conditions onde o refetch acontece antes do commit
-      // Aumentado para 800ms para dar mais tempo para replicação/commit
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 600));
       
-      // Invalidar e refetch forçado com retry
-      queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
-      
-      // Fazer refetch com retry até confirmar que a aprovação não está mais na lista
+      // Refetch forçado com retry para confirmar que a aprovação foi removida
       let retries = 0;
       let refetchResult;
-      const maxRetries = 4; // Aumentado para 4 tentativas
+      const maxRetries = 3;
       do {
-        refetchResult = await refetch();
+        refetchResult = await Promise.all([
+          refetch(),
+          queryClient.refetchQueries({ 
+            queryKey: ['pending-approvals', selectedCompany?.id, user?.id],
+            exact: true
+          })
+        ]).then(results => results[0]); // Usar resultado do refetch do hook
+        
         const stillPending = refetchResult.data?.some(a => a.id === approvalId) || false;
         
         console.log(`🔄 [CentralAprovacoesExpandida.handleProcessApproval] Refetch ${retries + 1}/${maxRetries}`, {
@@ -194,8 +205,8 @@ const CentralAprovacoesExpandida: React.FC = () => {
         }
         
         // Se ainda está pendente, aguardar mais um pouco e tentar novamente
-        // Delay progressivo: 500ms, 700ms, 1000ms
-        const delay = 500 + (retries * 200);
+        // Delay progressivo: 400ms, 600ms
+        const delay = 400 + (retries * 200);
         await new Promise(resolve => setTimeout(resolve, delay));
         retries++;
       } while (retries < maxRetries);

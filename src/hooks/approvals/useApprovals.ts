@@ -150,6 +150,11 @@ export function useProcessApproval() {
       queryClient.invalidateQueries({ queryKey: ['pending-approvals'] });
       queryClient.invalidateQueries({ queryKey: ['approvals-by-process'] });
       
+      // IMPORTANTE: Refetch imediato das queries de aprovações para atualizar a UI
+      // Isso garante que a aprovação desapareça imediatamente da lista pendente
+      await queryClient.refetchQueries({ queryKey: ['pending-approvals'] });
+      console.log('✅ [useProcessApproval.onSuccess] Queries de aprovações refetchadas imediatamente');
+      
       // Se for requisição de compra, invalidar queries específicas
       if (processoTipo === 'requisicao_compra' && processoId) {
         console.log('🛒 [useProcessApproval.onSuccess] Invalidando queries específicas de requisição:', processoId);
@@ -194,22 +199,31 @@ export function useProcessApproval() {
       
       console.log('🔄 [useProcessApproval] Queries de compras e requisições invalidadas');
       
-      // Aguardar um pequeno delay para garantir que a transação foi commitada no banco
-      // Isso evita race conditions onde o refetch acontece antes do commit
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // IMPORTANTE: Refetch imediato com pequeno delay para garantir commit da transação
+      // O refetch deve ser feito após invalidar para garantir dados atualizados
+      await new Promise(resolve => setTimeout(resolve, 500)); // Aumentado para 500ms para garantir commit
       
       // Forçar refetch aguardando a conclusão para garantir atualização
-      const refetchResults = await Promise.all([
-        queryClient.refetchQueries({ queryKey: ['pending-approvals'] }),
-        queryClient.refetchQueries({ queryKey: ['approvals-by-process'] }),
-        queryClient.refetchQueries({ queryKey: ['compras', 'requisicoes'] })
-      ]);
-      
-      console.log('🔄 [useProcessApproval] Queries invalidadas e refetch forçado com sucesso', {
-        pendingApprovals: refetchResults[0]?.length || 0,
-        approvalsByProcess: refetchResults[1]?.length || 0,
-        requisicoes: refetchResults[2]?.length || 0
-      });
+      // Isso garante que a aprovação desapareça imediatamente da lista pendente
+      try {
+        const refetchResults = await Promise.all([
+          queryClient.refetchQueries({ 
+            queryKey: ['pending-approvals'],
+            exact: false // Refetch todas as queries que começam com 'pending-approvals'
+          }),
+          queryClient.refetchQueries({ 
+            queryKey: ['approvals-by-process'],
+            exact: false
+          })
+        ]);
+        
+        console.log('✅ [useProcessApproval] Queries refetchadas com sucesso', {
+          pendingApprovalsRefetched: refetchResults[0]?.length || 0,
+          approvalsByProcessRefetched: refetchResults[1]?.length || 0
+        });
+      } catch (refetchError) {
+        console.error('❌ [useProcessApproval] Erro ao refetch queries:', refetchError);
+      }
       
       toast.success('Aprovação processada com sucesso!');
     },

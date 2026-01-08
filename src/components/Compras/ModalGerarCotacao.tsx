@@ -720,6 +720,103 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             console.log('🔍 [ModalGerarCotacao] Modo explodido: filtrando itens. Total recebido:', itensResult.data?.length || 0, 'Filtrados:', itensRaw.length);
           }
 
+          // ✅ IMPORTANTE: Filtrar itens que já estão em cotação ativa
+          // Só aplicar esse filtro quando NÃO há cotacaoId (nova cotação)
+          // Quando há cotacaoId (visualizando cotação existente), mostrar todos os itens da cotação
+          if (!cotacaoId && itensRaw.length > 0) {
+            try {
+              // Buscar ciclos de cotação ativos para esta requisição
+              const ciclosResult = await EntityService.list({
+                schema: 'compras',
+                table: 'cotacao_ciclos',
+                companyId: selectedCompany.id,
+                filters: { requisicao_id: reqId },
+                page: 1,
+                pageSize: 1000,
+                skipCompanyFilter: true,
+              });
+
+              const ciclosAtivos = (ciclosResult.data || []).filter((ciclo: any) => {
+                const state = ciclo.workflow_state || ciclo.status;
+                return state === 'rascunho' || 
+                       state === 'em_aprovacao' || 
+                       state === 'aprovada' ||
+                       state === 'aberta' ||
+                       state === 'em_cotacao';
+              });
+
+              if (ciclosAtivos.length > 0) {
+                const cicloIds = ciclosAtivos.map((ciclo: any) => ciclo.id);
+                
+                // Buscar fornecedores desses ciclos
+                const fornecedoresResult = await EntityService.list({
+                  schema: 'compras',
+                  table: 'cotacao_fornecedores',
+                  companyId: selectedCompany.id,
+                  filters: {},
+                  page: 1,
+                  pageSize: 5000,
+                  skipCompanyFilter: true,
+                });
+
+                const fornecedoresAtivos = (fornecedoresResult.data || []).filter((f: any) =>
+                  cicloIds.includes(f.cotacao_ciclo_id || f.cotacao_id)
+                );
+                const fornecedorIds = fornecedoresAtivos.map((f: any) => f.id);
+
+                if (fornecedorIds.length > 0) {
+                  // Buscar itens cotados
+                  const cotacaoItensResult = await EntityService.list({
+                    schema: 'compras',
+                    table: 'cotacao_item_fornecedor',
+                    companyId: selectedCompany.id,
+                    filters: {},
+                    page: 1,
+                    pageSize: 5000,
+                    skipCompanyFilter: true,
+                  });
+
+                  const itensEmCotacao = (cotacaoItensResult.data || []).filter((item: any) =>
+                    fornecedorIds.includes(item.cotacao_fornecedor_id)
+                  );
+
+                  const itemIdsEmCotacao = new Set(
+                    itensEmCotacao
+                      .map((item: any) => item.requisicao_item_id)
+                      .filter(Boolean)
+                  );
+
+                  // Filtrar itens que NÃO estão em cotação ativa
+                  const itensAntes = itensRaw.length;
+                  itensRaw = itensRaw.filter((item: any) => !itemIdsEmCotacao.has(item.id));
+                  const itensDepois = itensRaw.length;
+
+                  console.log('🔍 [ModalGerarCotacao] Filtro de itens em cotação ativa:', {
+                    requisicao_id: reqId,
+                    ciclosAtivos: ciclosAtivos.length,
+                    fornecedoresAtivos: fornecedorIds.length,
+                    itensEmCotacao: itemIdsEmCotacao.size,
+                    itensAntes,
+                    itensDepois,
+                    itensFiltrados: itensAntes - itensDepois,
+                    itemIdsEmCotacao: Array.from(itemIdsEmCotacao)
+                  });
+
+                  if (itensAntes > itensDepois) {
+                    toast({
+                      title: "Aviso",
+                      description: `${itensAntes - itensDepois} item(ns) já estão em cotação ativa e foram removidos da lista.`,
+                      variant: "default",
+                    });
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('⚠️ [ModalGerarCotacao] Erro ao verificar itens em cotação ativa:', error);
+              // Não bloquear o fluxo se houver erro na verificação
+            }
+          }
+
           // Coletar todos os IDs de materiais únicos
           const materialIds = [...new Set(itensRaw.map((item: any) => item.material_id).filter(Boolean))];
           
@@ -2319,33 +2416,43 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
               
               console.log('✅ [handleEnviarAprovacao] Resultado createApprovalsMutation:', temAprovacoes);
               
-              // Verificar manualmente se aprovações foram criadas (pode retornar false mas ter criado)
-              if (!temAprovacoes) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                const aprovacoesCheck = await EntityService.list({
-                  schema: 'public',
-                  table: 'aprovacoes_unificada',
-                  companyId: selectedCompany.id,
-                  filters: {
-                    processo_tipo: 'cotacao_compra',
-                    processo_id: cicloId,
-                  },
-                  page: 1,
-                  pageSize: 10,
-                });
-                
-                temAprovacoes = aprovacoesCheck.data && aprovacoesCheck.data.length > 0;
-                console.log('🔍 [handleEnviarAprovacao] Verificação manual de aprovações:', {
-                  encontradas: temAprovacoes,
-                  count: aprovacoesCheck.data?.length || 0,
-                  aprovações: aprovacoesCheck.data?.map((a: any) => ({
-                    id: a.id,
-                    nivel: a.nivel_aprovacao,
-                    aprovador_id: a.aprovador_id,
-                    status: a.status
-                  }))
-                });
-              }
+              // ✅ SEMPRE verificar manualmente se aprovações foram criadas (garantir consistência)
+              // Aguardar um pouco para garantir que as aprovações foram commitadas no banco
+              await new Promise(resolve => setTimeout(resolve, 800));
+              
+              const aprovacoesCheck = await EntityService.list({
+                schema: 'public',
+                table: 'aprovacoes_unificada',
+                companyId: selectedCompany.id,
+                filters: {
+                  processo_tipo: 'cotacao_compra',
+                  processo_id: cicloId,
+                },
+                page: 1,
+                pageSize: 100, // Buscar todas as aprovações
+              });
+              
+              // Verificar se há aprovações PENDENTES (não apenas criadas)
+              const aprovacoesPendentes = aprovacoesCheck.data?.filter((a: any) => a.status === 'pendente') || [];
+              temAprovacoes = aprovacoesPendentes.length > 0;
+              
+              console.log('🔍 [handleEnviarAprovacao] Verificação final de aprovações:', {
+                encontradas: temAprovacoes,
+                total_aprovacoes: aprovacoesCheck.data?.length || 0,
+                pendentes: aprovacoesPendentes.length,
+                aprovações_pendentes: aprovacoesPendentes.map((a: any) => ({
+                  id: a.id,
+                  nivel: a.nivel_aprovacao,
+                  aprovador_id: a.aprovador_id,
+                  status: a.status
+                })),
+                todas_aprovacoes: aprovacoesCheck.data?.map((a: any) => ({
+                  id: a.id,
+                  nivel: a.nivel_aprovacao,
+                  aprovador_id: a.aprovador_id,
+                  status: a.status
+                }))
+              });
             }
           } catch (configError: any) {
             console.error('❌ [handleEnviarAprovacao] Erro ao verificar configuração:', configError);
@@ -2360,36 +2467,66 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       // ✅ Atualizar status do ciclo para 'em_aprovacao' se houver aprovações, senão 'aberta'
       if (cicloId) {
         try {
-          await EntityService.update({
+          const novoStatus = temAprovacoes ? 'em_aprovacao' : 'aberta';
+          console.log('🔄 [handleEnviarAprovacao] Atualizando status do ciclo:', {
+            cicloId,
+            temAprovacoes,
+            novoStatus,
+            status: novoStatus,
+            workflow_state: novoStatus,
+          });
+
+          const updateResult = await EntityService.update({
             schema: 'compras',
             table: 'cotacao_ciclos',
             companyId: selectedCompany!.id,
             id: cicloId,
             data: {
-              workflow_state: temAprovacoes ? 'em_aprovacao' : 'aberta',
-              status: temAprovacoes ? 'em_aprovacao' : 'aberta',
+              workflow_state: novoStatus,
+              status: novoStatus,
               observacoes: formData.observacoes_internas?.trim() || null,
             },
           });
 
+          console.log('✅ [handleEnviarAprovacao] Status do ciclo atualizado com sucesso:', updateResult);
+
           // Registrar no log de workflow
           if (user?.id) {
-            await EntityService.create({
-              schema: 'compras',
-              table: 'workflow_logs',
-              companyId: selectedCompany!.id,
-              data: {
-                entity_type: 'cotacao_compra',
-                entity_id: cicloId,
-                from_state: 'aberta',
-                to_state: temAprovacoes ? 'em_aprovacao' : 'aberta',
-                actor_id: user.id,
-                payload: { motivo: 'cotacao_enviada_aprovacao', tem_aprovacoes: temAprovacoes },
-              },
-            });
+            try {
+              await EntityService.create({
+                schema: 'compras',
+                table: 'workflow_logs',
+                companyId: selectedCompany!.id,
+                data: {
+                  entity_type: 'cotacao_compra',
+                  entity_id: cicloId,
+                  from_state: 'aberta',
+                  to_state: novoStatus,
+                  actor_id: user.id,
+                  payload: { motivo: 'cotacao_enviada_aprovacao', tem_aprovacoes: temAprovacoes },
+                },
+              });
+            } catch (logError) {
+              console.warn('⚠️ [handleEnviarAprovacao] Erro ao criar log de workflow (não crítico):', logError);
+            }
           }
-        } catch (error) {
-          console.error('Erro ao atualizar status do ciclo para em_aprovacao:', error);
+        } catch (error: any) {
+          console.error('❌ [handleEnviarAprovacao] Erro ao atualizar status do ciclo para em_aprovacao:', error);
+          console.error('❌ [handleEnviarAprovacao] Detalhes do erro:', {
+            message: error?.message,
+            code: error?.code,
+            details: error?.details,
+            hint: error?.hint,
+            stack: error?.stack,
+            cicloId,
+            temAprovacoes,
+          });
+          // Não bloquear o fluxo, mas avisar o usuário
+          toast({
+            title: "Aviso",
+            description: "Cotação criada, mas houve um problema ao atualizar o status. Por favor, verifique manualmente.",
+            variant: "default",
+          });
         }
       }
 
