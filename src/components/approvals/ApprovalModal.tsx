@@ -17,6 +17,7 @@ import {
 import { Approval } from '@/services/approvals/approvalService';
 import { RequisicaoCompraDetails } from './RequisicaoCompraDetails';
 import { ContaPagarDetails } from './ContaPagarDetails';
+import { CotacaoDetails } from './CotacaoDetails';
 
 interface ApprovalModalProps {
   approval: Approval | null;
@@ -129,6 +130,13 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
           {approval.processo_tipo === 'conta_pagar' && (
             <div className="border-t pt-6">
               <ContaPagarDetails contaPagarId={approval.processo_id} />
+            </div>
+          )}
+
+          {/* Detalhes da Cotação */}
+          {approval.processo_tipo === 'cotacao_compra' && (
+            <div className="border-t pt-6">
+              <CotacaoDetails cotacaoId={approval.processo_id} />
             </div>
           )}
 

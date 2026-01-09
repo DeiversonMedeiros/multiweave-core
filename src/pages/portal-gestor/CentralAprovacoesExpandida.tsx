@@ -32,6 +32,7 @@ import { ApprovalModal } from '@/components/approvals/ApprovalModal';
 import { TransferApprovalModal } from '@/components/approvals/TransferApprovalModal';
 import { ContaPagarApprovalCard } from '@/components/approvals/ContaPagarApprovalCard';
 import { CombustivelApprovalCard } from '@/components/approvals/CombustivelApprovalCard';
+import { CotacaoApprovalCard } from '@/components/approvals/CotacaoApprovalCard';
 import { Approval } from '@/services/approvals/approvalService';
 
 const CentralAprovacoesExpandida: React.FC = () => {
@@ -477,6 +478,20 @@ const CentralAprovacoesExpandida: React.FC = () => {
                     key={approval.id}
                     approval={approval}
                     onViewDetails={openApprovalModal}
+                  />
+                );
+              }
+
+              // Usar card específico para cotações
+              if (approval.processo_tipo === 'cotacao_compra') {
+                return (
+                  <CotacaoApprovalCard
+                    key={approval.id}
+                    approval={approval}
+                    onProcess={openApprovalModal}
+                    onTransfer={openTransferModal}
+                    getStatusColor={getStatusColor}
+                    getPriorityColor={getPriorityColor}
                   />
                 );
               }
