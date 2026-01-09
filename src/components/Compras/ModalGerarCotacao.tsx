@@ -76,10 +76,12 @@ import { useActivePartners } from '@/hooks/usePartners';
 import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useActiveProjects } from '@/hooks/useProjects';
 import { useUsers } from '@/hooks/useUsers';
-import { useCreateApprovalsForProcess } from '@/hooks/approvals/useApprovals';
+import { useCreateApprovalsForProcess, useApprovalsByProcess } from '@/hooks/approvals/useApprovals';
+import { useApprovalConfigs } from '@/hooks/approvals/useApprovalConfigs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { HistoricoComprasItemModal } from './HistoricoComprasItemModal';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ModalGerarCotacaoProps {
   isOpen: boolean;
@@ -152,8 +154,12 @@ interface RateioItem {
   projeto_id?: string;
   projeto_nome?: string;
   quantidade: number;
-  valor_unitario: number;
-  valor_total: number;
+  valor_unitario: number; // Valor unitário SEM custos adicionais (preservado)
+  valor_total: number; // Valor total dos itens SEM custos adicionais
+  frete_proporcional?: number; // Frete rateado proporcionalmente
+  imposto_proporcional?: number; // Imposto rateado proporcionalmente
+  custos_adicionais?: number; // Frete + Imposto proporcionais
+  valor_total_com_custos?: number; // Valor total incluindo custos adicionais
 }
 
 type ItemFornecedorValor = {
@@ -179,12 +185,25 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
   const { selectedCompany } = useCompany();
   const { user } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const startQuoteCycleMutation = useStartQuoteCycle();
   const createApprovalsMutation = useCreateApprovalsForProcess();
   const { data: partnersData } = useActivePartners();
   const { data: costCentersData } = useActiveCostCenters();
   const { data: projectsData } = useActiveProjects();
   const { users } = useUsers();
+  
+  // Buscar informações de aprovação quando em modo visualização
+  const { data: approvalsData } = useApprovalsByProcess(
+    'cotacao_compra',
+    cotacaoId || '',
+  );
+  
+  // Buscar regras de aprovação para cotação
+  const { data: approvalConfigs } = useApprovalConfigs({
+    processo_tipo: 'cotacao_compra',
+    ativo: true,
+  });
  
   // loading: carregando dados iniciais do modal
   const [loading, setLoading] = useState(false);
@@ -571,8 +590,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           id: fc.id, // ID do cotacao_fornecedores
           fornecedor_id: fc.fornecedor_id,
           fornecedor_nome: partner?.nome_fantasia || partner?.razao_social || 'Fornecedor',
-          valor_frete: fc.valor_frete ? Number(fc.valor_frete) : 0,
-          valor_imposto: fc.valor_imposto ? Number(fc.valor_imposto) : 0,
+          valor_frete: fc.valor_frete != null && fc.valor_frete !== '' ? Number(fc.valor_frete) : 0,
+          valor_imposto: fc.valor_imposto != null && fc.valor_imposto !== '' ? Number(fc.valor_imposto) : 0,
           desconto_percentual: fc.desconto_percentual ? Number(fc.desconto_percentual) : 0,
           desconto_valor: fc.desconto_valor ? Number(fc.desconto_valor) : 0,
           prazo_entrega: fc.prazo_entrega,
@@ -1169,29 +1188,33 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       itensSelecionados.has(getItemKey(i))
     );
 
+    // Primeiro, calcular totais por fornecedor vencedor para rateio de custos adicionais
+    // Mapa: fornecedor_id -> { subtotal, frete, imposto, totalItens }
+    const totaisPorFornecedor = new Map<string, {
+      subtotal: number;
+      frete: number;
+      imposto: number;
+      totalItens: number;
+    }>();
+
     itensSelecionadosArray.forEach((itemAgrupado) => {
       const itemKey = getItemKey(itemAgrupado);
-
-      // SEMPRE usar o fornecedor vencedor selecionado pelo comprador
       const fornecedorVencedor = fornecedores.find((f) => {
-          const cell = mapaFornecedorItens[f.id]?.[itemKey];
+        const cell = mapaFornecedorItens[f.id]?.[itemKey];
         return cell && cell.is_vencedor === true;
       });
 
-      // Se não houver vencedor selecionado, pular este item (não deveria acontecer devido à validação)
-      if (!fornecedorVencedor) {
-        console.warn(`Item ${itemAgrupado.material_nome} não tem fornecedor vencedor selecionado`);
-            return;
-          }
+      if (!fornecedorVencedor) return;
 
-      const melhorFornecedorId = fornecedorVencedor.id;
-      const cellSelecionada = mapaFornecedorItens[melhorFornecedorId]?.[itemKey];
+      const cellSelecionada = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
       if (!cellSelecionada) return;
 
       const quantidadeUsada = Math.min(
         cellSelecionada.quantidade_ofertada || 0,
         itemAgrupado.quantidade_total
       );
+
+      // Calcular valor do item após descontos (sem custos adicionais)
       const descontoUnit =
         (cellSelecionada.desconto_percentual || 0) > 0
           ? (cellSelecionada.valor_unitario || 0) *
@@ -1203,11 +1226,94 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           : 0;
       const valorUnitarioEfetivo =
         (cellSelecionada.valor_unitario || 0) - descontoUnit - descontoUnitAbsoluto;
-      const valorTotal = quantidadeUsada * Math.max(0, valorUnitarioEfetivo);
+      const valorTotalItem = quantidadeUsada * Math.max(0, valorUnitarioEfetivo);
+
+      // Acumular subtotal por fornecedor
+      const fornecedorId = fornecedorVencedor.id;
+      if (!totaisPorFornecedor.has(fornecedorId)) {
+        // Garantir que os valores sejam numéricos
+        const frete = typeof fornecedorVencedor.valor_frete === 'number' 
+          ? fornecedorVencedor.valor_frete 
+          : (fornecedorVencedor.valor_frete != null && fornecedorVencedor.valor_frete !== '' ? Number(fornecedorVencedor.valor_frete) : 0);
+        const imposto = typeof fornecedorVencedor.valor_imposto === 'number' 
+          ? fornecedorVencedor.valor_imposto 
+          : (fornecedorVencedor.valor_imposto != null && fornecedorVencedor.valor_imposto !== '' ? Number(fornecedorVencedor.valor_imposto) : 0);
+        totaisPorFornecedor.set(fornecedorId, {
+          subtotal: 0,
+          frete,
+          imposto,
+          totalItens: 0,
+        });
+      }
+
+      const totalFornecedor = totaisPorFornecedor.get(fornecedorId)!;
+      totalFornecedor.subtotal += valorTotalItem;
+      totalFornecedor.totalItens += itemAgrupado.itens_origem.length;
+    });
+
+    // Agora calcular rateio com custos adicionais proporcionais
+    itensSelecionadosArray.forEach((itemAgrupado) => {
+      const itemKey = getItemKey(itemAgrupado);
+      const fornecedorVencedor = fornecedores.find((f) => {
+          const cell = mapaFornecedorItens[f.id]?.[itemKey];
+        return cell && cell.is_vencedor === true;
+      });
+
+      if (!fornecedorVencedor) {
+        console.warn(`Item ${itemAgrupado.material_nome} não tem fornecedor vencedor selecionado`);
+            return;
+          }
+
+      const cellSelecionada = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
+      if (!cellSelecionada) return;
+
+      const quantidadeUsada = Math.min(
+        cellSelecionada.quantidade_ofertada || 0,
+        itemAgrupado.quantidade_total
+      );
+
+      // Calcular valor do item após descontos (PRESERVAR valor unitário - sem custos adicionais)
+      const descontoUnit =
+        (cellSelecionada.desconto_percentual || 0) > 0
+          ? (cellSelecionada.valor_unitario || 0) *
+            ((cellSelecionada.desconto_percentual || 0) / 100)
+          : 0;
+      const descontoUnitAbsoluto =
+        quantidadeUsada > 0
+          ? (cellSelecionada.desconto_valor || 0) / quantidadeUsada
+          : 0;
+      // IMPORTANTE: valor_unitario preservado - não inclui custos adicionais
+      const valorUnitarioEfetivo =
+        (cellSelecionada.valor_unitario || 0) - descontoUnit - descontoUnitAbsoluto;
+      const valorTotalItem = quantidadeUsada * Math.max(0, valorUnitarioEfetivo);
+
+      // Obter totais do fornecedor para calcular proporção
+      const totalFornecedor = totaisPorFornecedor.get(fornecedorVencedor.id);
+      if (!totalFornecedor) return;
+
+      // Calcular proporção deste item no subtotal do fornecedor
+      const proporcaoItem = totalFornecedor.subtotal > 0 
+        ? valorTotalItem / totalFornecedor.subtotal 
+        : 0;
+
+      // Ratear custos adicionais proporcionalmente ao valor do item
+      const freteProporcional = totalFornecedor.frete * proporcaoItem;
+      const impostoProporcional = totalFornecedor.imposto * proporcaoItem;
+      const custosAdicionais = freteProporcional + impostoProporcional;
 
       itemAgrupado.itens_origem.forEach((item) => {
         const requisicao = requisicoes.find(r => r.id === item.requisicao_id);
         if (!requisicao) return;
+
+        // Para cada item da requisição, calcular sua proporção no item agrupado
+        const proporcaoItemRequisicao = quantidadeUsada > 0 
+          ? (item.quantidade || 0) / quantidadeUsada 
+          : 0;
+
+        const valorTotalItemRequisicao = (item.quantidade || 0) * Math.max(0, valorUnitarioEfetivo);
+        const freteProporcionalItem = freteProporcional * proporcaoItemRequisicao;
+        const impostoProporcionalItem = impostoProporcional * proporcaoItemRequisicao;
+        const custosAdicionaisItem = custosAdicionais * proporcaoItemRequisicao;
 
         rateioItems.push({
           item_id: item.id,
@@ -1224,11 +1330,72 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             ? projectsMap.get(requisicao.projeto_id)
             : undefined,
           quantidade: item.quantidade, // rateio espelha requisição
+          // IMPORTANTE: valor_unitario preservado - NÃO inclui custos adicionais
           valor_unitario: Math.max(0, valorUnitarioEfetivo),
-          valor_total: (item.quantidade || 0) * Math.max(0, valorUnitarioEfetivo),
+          valor_total: valorTotalItemRequisicao, // Valor total SEM custos adicionais
+          frete_proporcional: freteProporcionalItem,
+          imposto_proporcional: impostoProporcionalItem,
+          custos_adicionais: custosAdicionaisItem,
+          valor_total_com_custos: valorTotalItemRequisicao + custosAdicionaisItem,
         });
       });
     });
+
+    // Validar que o total do rateio fecha com o valor total da cotação (incluindo custos adicionais)
+    const totalRateioItens = rateioItems.reduce((sum, item) => sum + (item.valor_total || 0), 0);
+    const totalRateioCustos = rateioItems.reduce((sum, item) => sum + (item.custos_adicionais || 0), 0);
+    const totalRateio = totalRateioItens + totalRateioCustos;
+    
+    // Calcular valor total esperado da cotação (subtotal + frete + imposto - descontos)
+    const valorTotalEsperado = fornecedores
+      .filter(f => f.fornecedor_id)
+      .reduce((sum, f) => {
+        const subtotalParcial = itensAgrupados
+          .filter((item) => itensSelecionados.has(getItemKey(item)))
+          .reduce((subSum, item) => {
+            const itemKey = getItemKey(item);
+            const cell = mapaFornecedorItens[f.id]?.[itemKey];
+            if (cell && cell.is_vencedor) {
+              const bruto = (cell.quantidade_ofertada || 0) * (cell.valor_unitario || 0);
+              const descPct = bruto * ((cell.desconto_percentual || 0) / 100);
+              const descAbs = cell.desconto_valor || 0;
+              const valorItem = Math.max(0, bruto - descPct - descAbs);
+              return subSum + valorItem;
+            }
+            return subSum;
+          }, 0);
+        
+        const frete = f.valor_frete || 0;
+        const imposto = f.valor_imposto || 0;
+        const descontoPct = f.desconto_percentual || 0;
+        const descontoValor = f.desconto_valor || 0;
+        const descontoCalculado = subtotalParcial * (descontoPct / 100) + descontoValor;
+        const totalFornecedor = subtotalParcial + frete + imposto - descontoCalculado;
+        
+        return sum + totalFornecedor;
+      }, 0);
+    
+    // Validar fechamento do rateio (permitir diferença de centavos por arredondamento)
+    const diferenca = Math.abs(totalRateio - valorTotalEsperado);
+    if (diferenca > 0.01 && rateioItems.length > 0) {
+      console.warn('⚠️ [Rateio] Diferença entre total do rateio e valor total da cotação:', {
+        totalRateio,
+        valorTotalEsperado,
+        diferenca,
+        totalRateioItens,
+        totalRateioCustos
+      });
+      
+      // Ajustar o último item para fechar exatamente (se houver diferença pequena por arredondamento)
+      if (diferenca < 1.00 && rateioItems.length > 0) {
+        const ultimoItem = rateioItems[rateioItems.length - 1];
+        const ajuste = valorTotalEsperado - totalRateio;
+        if (ultimoItem.custos_adicionais !== undefined) {
+          ultimoItem.custos_adicionais = (ultimoItem.custos_adicionais || 0) + ajuste;
+          ultimoItem.valor_total_com_custos = (ultimoItem.valor_total || 0) + (ultimoItem.custos_adicionais || 0);
+        }
+      }
+    }
 
     setRateio(rateioItems);
   }, [
@@ -1642,10 +1809,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       }
 
       // Preparar dados para envio (similar ao handleEnviarAprovacao, mas sem validações rigorosas)
+      // ✅ IMPORTANTE: Incluir valor_frete e valor_imposto para que sejam salvos no banco
       const fornecedoresData = fornecedores.map((f) => ({
         fornecedor_id: f.fornecedor_id,
-        prazo_entrega: 0,
-        condicoes_comerciais: '',
+        prazo_entrega: f.prazo_entrega || 0,
+        condicoes_comerciais: f.condicao_pagamento || '',
+        valor_frete: f.valor_frete || 0,
+        valor_imposto: f.valor_imposto || 0,
       }));
 
       // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
@@ -1662,21 +1832,24 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       const fornecedoresCriados = cicloResponse?.fornecedores || [];
       const cicloId = cicloResponse?.ciclo?.id || cicloResponse?.id;
 
-      // Atualizar workflow_state do ciclo para 'rascunho' e observações
+      // ✅ IMPORTANTE: Atualizar workflow_state E status do ciclo para 'rascunho'
+      // Isso garante que o status apareça corretamente na UI
       if (cicloId) {
         try {
-          await EntityService.update({
+          const updateResult = await EntityService.update({
             schema: 'compras',
             table: 'cotacao_ciclos',
             companyId: selectedCompany!.id,
             id: cicloId,
             data: {
               workflow_state: 'rascunho',
+              status: 'rascunho', // ✅ Atualizar também o status, não apenas workflow_state
               observacoes: formData.observacoes_internas?.trim() || null,
             },
           });
+          console.log('✅ [handleGerarCotacao] Status do ciclo atualizado para rascunho:', updateResult);
         } catch (error) {
-          console.error('Erro ao atualizar workflow_state do ciclo:', error);
+          console.error('❌ [handleGerarCotacao] Erro ao atualizar workflow_state do ciclo:', error);
         }
       }
 
@@ -1687,6 +1860,34 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           mapFornecedorParaCotacao.set(f.id, created.id);
         }
       });
+
+      // ✅ IMPORTANTE: Atualizar fornecedores com valor_frete e valor_imposto
+      // Esses valores foram inseridos pelo comprador no painel e precisam ser salvos
+      const updateFornecedoresPromises = fornecedores.map(async (f) => {
+        const cotacaoFornecedorId = mapFornecedorParaCotacao.get(f.id);
+        if (!cotacaoFornecedorId) return;
+
+        try {
+          await EntityService.update({
+            schema: 'compras',
+            table: 'cotacao_fornecedores',
+            companyId: selectedCompany!.id,
+            id: cotacaoFornecedorId,
+            data: {
+              valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
+              valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
+              prazo_entrega: f.prazo_entrega || 0,
+              condicoes_comerciais: f.condicao_pagamento || '',
+            },
+          });
+        } catch (error) {
+          console.error(`Erro ao atualizar fornecedor ${f.id} com frete/imposto:`, error);
+          // Não bloquear o fluxo se houver erro ao atualizar um fornecedor
+        }
+      });
+
+      // Aguardar atualizações dos fornecedores antes de continuar
+      await Promise.allSettled(updateFornecedoresPromises);
 
       // Montar inserts item x fornecedor (mesmo processo do handleEnviarAprovacao)
       const inserts: Promise<any>[] = [];
@@ -1879,19 +2080,39 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
 
       await Promise.all(updatePromises);
 
+      // ✅ IMPORTANTE: Invalidar queries para atualizar a UI e garantir que o status apareça corretamente
+      // Usar as mesmas query keys que os hooks usam para garantir que a lista seja atualizada
+      try {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['compras', 'requisicoes'] }),
+          queryClient.invalidateQueries({ queryKey: ['compras', 'cotacoes'] }),
+          queryClient.invalidateQueries({ queryKey: ['compras'] }), // Invalidar todas as queries de compras também
+        ]);
+        console.log('✅ [handleSalvarRascunho] Queries invalidadas com sucesso');
+      } catch (queryError) {
+        console.error('⚠️ [handleSalvarRascunho] Erro ao invalidar queries:', queryError);
+      }
+
       toast({
         title: "Sucesso",
         description: "Cotação salva como rascunho. Você pode continuar editando na aba 'Cotações Realizadas'.",
       });
       
+      // ✅ Resetar submitting ANTES de fechar para garantir que o botão não fique desabilitado
+      setSubmitting(false);
+      
+      // Aguardar um pouco para garantir que as queries foram atualizadas
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       onClose();
     } catch (error: any) {
+      console.error('❌ [handleSalvarRascunho] Erro ao salvar cotação como rascunho:', error);
       toast({
         title: "Erro",
         description: error.message || "Não foi possível salvar a cotação como rascunho.",
         variant: "destructive",
       });
-    } finally {
+      // ✅ Resetar submitting mesmo em caso de erro para não travar o botão
       setSubmitting(false);
     }
   };
@@ -2083,10 +2304,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       }
 
       // Preparar dados para envio
+      // ✅ IMPORTANTE: Incluir valor_frete e valor_imposto para que sejam salvos/atualizados no banco
       const fornecedoresData = fornecedores.map((f) => ({
         fornecedor_id: f.fornecedor_id,
-        prazo_entrega: 0,
-        condicoes_comerciais: '',
+        prazo_entrega: f.prazo_entrega || 0,
+        condicoes_comerciais: f.condicao_pagamento || '',
+        valor_frete: f.valor_frete || 0,
+        valor_imposto: f.valor_imposto || 0,
       }));
 
       // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
@@ -2110,6 +2334,34 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           mapFornecedorParaCotacao.set(f.id, created.id);
         }
       });
+
+      // ✅ IMPORTANTE: Atualizar fornecedores com valor_frete e valor_imposto
+      // Esses valores foram inseridos pelo comprador no painel e precisam ser salvos
+      const updateFornecedoresPromises = fornecedores.map(async (f) => {
+        const cotacaoFornecedorId = mapFornecedorParaCotacao.get(f.id);
+        if (!cotacaoFornecedorId) return;
+
+        try {
+          await EntityService.update({
+            schema: 'compras',
+            table: 'cotacao_fornecedores',
+            companyId: selectedCompany!.id,
+            id: cotacaoFornecedorId,
+            data: {
+              valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
+              valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
+              prazo_entrega: f.prazo_entrega || 0,
+              condicoes_comerciais: f.condicao_pagamento || '',
+            },
+          });
+        } catch (error) {
+          console.error(`Erro ao atualizar fornecedor ${f.id} com frete/imposto:`, error);
+          // Não bloquear o fluxo se houver erro ao atualizar um fornecedor
+        }
+      });
+
+      // Aguardar atualizações dos fornecedores antes de continuar
+      await Promise.allSettled(updateFornecedoresPromises);
 
       // Montar inserts item x fornecedor
       const inserts: Promise<any>[] = [];
@@ -2306,165 +2558,48 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
 
       await Promise.all(updatePromises);
 
-      // ✅ Criar aprovações para a cotação se houver configuração
+      // ✅ Verificar se há configuração de aprovação ANTES de atualizar o status
+      // Se houver configuração, atualizar para 'em_aprovacao' - o trigger criará aprovações automaticamente
       let temAprovacoes = false;
       if (cicloId && selectedCompany?.id) {
         try {
           // Aguardar um pouco para garantir que todos os inserts foram commitados
-          await new Promise(resolve => setTimeout(resolve, 800));
+          await new Promise(resolve => setTimeout(resolve, 300));
           
-          // Verificar se há configuração de aprovação antes de tentar criar
-          try {
-            const configsResult = await EntityService.list({
-              schema: 'public',
-              table: 'configuracoes_aprovacao_unificada',
-              companyId: selectedCompany.id,
-              filters: {
-                processo_tipo: 'cotacao_compra',
-                ativo: true,
-              },
-              page: 1,
-              pageSize: 10,
-            });
-            
-            const temConfiguracao = configsResult.data && configsResult.data.length > 0;
-            console.log('🔍 [handleEnviarAprovacao] Configurações encontradas:', {
-              count: configsResult.data?.length || 0,
-              configs: configsResult.data?.map((c: any) => ({
-                id: c.id,
-                nivel: c.nivel_aprovacao,
-                valor_limite: c.valor_limite,
-                aprovadores_count: Array.isArray(c.aprovadores) ? c.aprovadores.length : 0
-              }))
-            });
-            
-            if (!temConfiguracao) {
-              console.log('⚠️ [handleEnviarAprovacao] Nenhuma configuração de aprovação encontrada para cotacao_compra');
-            } else {
-              // Verificar quantos itens vencedores foram salvos
-              try {
-                const itensVencedoresCheck = await EntityService.list({
-                  schema: 'compras',
-                  table: 'cotacao_item_fornecedor',
-                  companyId: selectedCompany.id,
-                  filters: {
-                    is_vencedor: true,
-                  },
-                  page: 1,
-                  pageSize: 100,
-                });
-                
-                // Filtrar apenas os itens desta cotação através dos fornecedores
-                const fornecedoresCotacaoIds = fornecedoresCriados.map((f: any) => f.id);
-                const itensVencedoresDestaCotacao = (itensVencedoresCheck.data || []).filter((item: any) => {
-                  return fornecedoresCotacaoIds.includes(item.cotacao_fornecedor_id);
-                });
-                
-                console.log('🔍 [handleEnviarAprovacao] Itens vencedores salvos:', {
-                  total_encontrados: itensVencedoresCheck.data?.length || 0,
-                  desta_cotacao: itensVencedoresDestaCotacao.length,
-                  fornecedores_cotacao: fornecedoresCotacaoIds.length,
-                  itens_ids: itensVencedoresDestaCotacao.map((i: any) => ({
-                    id: i.id,
-                    cotacao_fornecedor_id: i.cotacao_fornecedor_id,
-                    is_vencedor: i.is_vencedor,
-                    valor: i.valor_unitario,
-                    quantidade: i.quantidade_ofertada
-                  }))
-                });
-                
-                if (itensVencedoresDestaCotacao.length === 0) {
-                  console.warn('⚠️ [handleEnviarAprovacao] Nenhum item vencedor encontrado para esta cotação. A função SQL pode calcular valor 0.');
-                }
-              } catch (checkError) {
-                console.warn('⚠️ [handleEnviarAprovacao] Erro ao verificar itens vencedores:', checkError);
-              }
-              
-              console.log('✅ [handleEnviarAprovacao] Configuração de aprovação encontrada, criando aprovações...');
-              
-              // Calcular valor total da cotação (apenas para log)
-              const valorTotalCotacao = itensAgrupados
-                .filter((item) => itensSelecionados.has(getItemKey(item)))
-                .reduce((total, item) => {
-                  // Buscar o fornecedor vencedor
-                  const fornecedorVencedor = fornecedores.find((f) => {
-                    const itemKey = getItemKey(item);
-                    const cell = mapaFornecedorItens[f.id]?.[itemKey];
-                    return cell && cell.is_vencedor === true;
-                  });
-                  
-                  if (fornecedorVencedor) {
-                    const itemKey = getItemKey(item);
-                    const valorMapa = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
-                    if (valorMapa && valorMapa.quantidade_ofertada && valorMapa.valor_unitario) {
-                      const valorTotal = valorMapa.quantidade_ofertada * valorMapa.valor_unitario;
-                      const descontoValor = (valorMapa.desconto_valor || 0) + (valorTotal * (valorMapa.desconto_percentual || 0) / 100);
-                      const valorFinal = valorTotal - descontoValor;
-                      return total + valorFinal;
-                    }
-                  }
-                  return total;
-                }, 0);
-              
-              console.log('💰 [handleEnviarAprovacao] Valor total calculado (frontend):', valorTotalCotacao);
-              
-              // Tentar criar aprovações (a função verifica internamente se há configuração)
-              temAprovacoes = await createApprovalsMutation.mutateAsync({
-                processo_tipo: 'cotacao_compra',
-                processo_id: cicloId,
-              });
-              
-              console.log('✅ [handleEnviarAprovacao] Resultado createApprovalsMutation:', temAprovacoes);
-              
-              // ✅ SEMPRE verificar manualmente se aprovações foram criadas (garantir consistência)
-              // Aguardar um pouco para garantir que as aprovações foram commitadas no banco
-              await new Promise(resolve => setTimeout(resolve, 800));
-              
-              const aprovacoesCheck = await EntityService.list({
-                schema: 'public',
-                table: 'aprovacoes_unificada',
-                companyId: selectedCompany.id,
-                filters: {
-                  processo_tipo: 'cotacao_compra',
-                  processo_id: cicloId,
-                },
-                page: 1,
-                pageSize: 100, // Buscar todas as aprovações
-              });
-              
-              // Verificar se há aprovações PENDENTES (não apenas criadas)
-              const aprovacoesPendentes = aprovacoesCheck.data?.filter((a: any) => a.status === 'pendente') || [];
-              temAprovacoes = aprovacoesPendentes.length > 0;
-              
-              console.log('🔍 [handleEnviarAprovacao] Verificação final de aprovações:', {
-                encontradas: temAprovacoes,
-                total_aprovacoes: aprovacoesCheck.data?.length || 0,
-                pendentes: aprovacoesPendentes.length,
-                aprovações_pendentes: aprovacoesPendentes.map((a: any) => ({
-                  id: a.id,
-                  nivel: a.nivel_aprovacao,
-                  aprovador_id: a.aprovador_id,
-                  status: a.status
-                })),
-                todas_aprovacoes: aprovacoesCheck.data?.map((a: any) => ({
-                  id: a.id,
-                  nivel: a.nivel_aprovacao,
-                  aprovador_id: a.aprovador_id,
-                  status: a.status
-                }))
-              });
-            }
-          } catch (configError: any) {
-            console.error('❌ [handleEnviarAprovacao] Erro ao verificar configuração:', configError);
-          }
+          // Verificar se há configuração de aprovação
+          const configsResult = await EntityService.list({
+            schema: 'public',
+            table: 'configuracoes_aprovacao_unificada',
+            companyId: selectedCompany.id,
+            filters: {
+              processo_tipo: 'cotacao_compra',
+              ativo: true,
+            },
+            page: 1,
+            pageSize: 10,
+          });
+          
+          temAprovacoes = configsResult.data && configsResult.data.length > 0;
+          
+          console.log('🔍 [handleEnviarAprovacao] Verificação de configuração de aprovação:', {
+            temConfiguracao: temAprovacoes,
+            count: configsResult.data?.length || 0,
+            configs: configsResult.data?.map((c: any) => ({
+              id: c.id,
+              nivel: c.nivel_aprovacao,
+              valor_limite: c.valor_limite,
+              aprovadores_count: Array.isArray(c.aprovadores) ? c.aprovadores.length : 0
+            }))
+          });
         } catch (error: any) {
-          // Se não houver configuração de aprovação, não é um erro crítico
-          console.error('❌ [handleEnviarAprovacao] Erro ao criar aprovações:', error);
-          console.error('❌ [handleEnviarAprovacao] Stack:', error.stack);
+          console.error('❌ [handleEnviarAprovacao] Erro ao verificar configuração de aprovação:', error);
+          // Em caso de erro, assumir que não há aprovação para não bloquear o fluxo
+          temAprovacoes = false;
         }
       }
 
-      // ✅ Atualizar status do ciclo para 'em_aprovacao' se houver aprovações, senão 'aberta'
+      // ✅ Atualizar status do ciclo para 'em_aprovacao' se houver configuração, senão 'aberta'
+      // IMPORTANTE: O trigger vai criar as aprovações automaticamente quando status mudar para 'em_aprovacao'
       if (cicloId) {
         try {
           const novoStatus = temAprovacoes ? 'em_aprovacao' : 'aberta';
@@ -2489,29 +2624,79 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           });
 
           console.log('✅ [handleEnviarAprovacao] Status do ciclo atualizado com sucesso:', updateResult);
+          
+          // Aguardar um pouco para garantir que o trigger foi executado e aprovações foram criadas
+          if (temAprovacoes) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Verificar se aprovações foram criadas pelo trigger
+            try {
+              const aprovacoesCheck = await EntityService.list({
+                schema: 'public',
+                table: 'aprovacoes_unificada',
+                companyId: selectedCompany.id,
+                filters: {
+                  processo_tipo: 'cotacao_compra',
+                  processo_id: cicloId,
+                },
+                page: 1,
+                pageSize: 100,
+              });
+              
+              const aprovacoesPendentes = aprovacoesCheck.data?.filter((a: any) => a.status === 'pendente') || [];
+              
+              console.log('✅ [handleEnviarAprovacao] Verificação de aprovações criadas pelo trigger:', {
+                encontradas: aprovacoesPendentes.length > 0,
+                total_aprovacoes: aprovacoesCheck.data?.length || 0,
+                pendentes: aprovacoesPendentes.length,
+                aprovações: aprovacoesPendentes.map((a: any) => ({
+                  id: a.id,
+                  nivel: a.nivel_aprovacao,
+                  aprovador_id: a.aprovador_id,
+                  status: a.status
+                }))
+              });
+              
+              // Se não foram criadas, tentar criar manualmente como fallback
+              if (aprovacoesPendentes.length === 0) {
+                console.warn('⚠️ [handleEnviarAprovacao] Nenhuma aprovação foi criada pelo trigger. Tentando criar manualmente...');
+                try {
+                  await createApprovalsMutation.mutateAsync({
+                    processo_tipo: 'cotacao_compra',
+                    processo_id: cicloId,
+                  });
+                  console.log('✅ [handleEnviarAprovacao] Aprovações criadas manualmente com sucesso');
+                } catch (manualError: any) {
+                  console.error('❌ [handleEnviarAprovacao] Erro ao criar aprovações manualmente:', manualError);
+                }
+              }
+            } catch (checkError) {
+              console.warn('⚠️ [handleEnviarAprovacao] Erro ao verificar aprovações criadas:', checkError);
+            }
+          }
 
           // Registrar no log de workflow
           if (user?.id) {
             try {
-              await EntityService.create({
-                schema: 'compras',
-                table: 'workflow_logs',
-                companyId: selectedCompany!.id,
-                data: {
-                  entity_type: 'cotacao_compra',
-                  entity_id: cicloId,
-                  from_state: 'aberta',
+            await EntityService.create({
+              schema: 'compras',
+              table: 'workflow_logs',
+              companyId: selectedCompany!.id,
+              data: {
+                entity_type: 'cotacao_compra',
+                entity_id: cicloId,
+                from_state: 'rascunho',
                   to_state: novoStatus,
-                  actor_id: user.id,
-                  payload: { motivo: 'cotacao_enviada_aprovacao', tem_aprovacoes: temAprovacoes },
-                },
-              });
+                actor_id: user.id,
+                payload: { motivo: 'cotacao_enviada_aprovacao', tem_aprovacoes: temAprovacoes },
+              },
+            });
             } catch (logError) {
               console.warn('⚠️ [handleEnviarAprovacao] Erro ao criar log de workflow (não crítico):', logError);
             }
           }
         } catch (error: any) {
-          console.error('❌ [handleEnviarAprovacao] Erro ao atualizar status do ciclo para em_aprovacao:', error);
+          console.error('❌ [handleEnviarAprovacao] Erro ao atualizar status do ciclo:', error);
           console.error('❌ [handleEnviarAprovacao] Detalhes do erro:', {
             message: error?.message,
             code: error?.code,
@@ -2528,6 +2713,18 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             variant: "default",
           });
         }
+      }
+
+      // ✅ IMPORTANTE: Invalidar queries para atualizar a UI após enviar para aprovação
+      try {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['compras', 'requisicoes'] }),
+          queryClient.invalidateQueries({ queryKey: ['compras', 'cotacoes'] }),
+          queryClient.invalidateQueries({ queryKey: ['compras'] }),
+        ]);
+        console.log('✅ [handleEnviarAprovacao] Queries invalidadas com sucesso');
+      } catch (queryError) {
+        console.error('⚠️ [handleEnviarAprovacao] Erro ao invalidar queries:', queryError);
       }
 
       toast({
@@ -2727,6 +2924,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                           setFornecedores(fornecedores.slice(0, 1));
                         }
                       }}
+                      disabled={readOnly}
                     >
                       <SelectTrigger>
                         <SelectValue />
@@ -2755,6 +2953,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       type="date"
                       value={formData.data_cotacao}
                       onChange={(e) => setFormData({ ...formData, data_cotacao: e.target.value })}
+                      disabled={readOnly}
                     />
                   </div>
 
@@ -2765,6 +2964,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       value={formData.data_limite}
                       onChange={(e) => setFormData({ ...formData, data_limite: e.target.value })}
                       min={formData.data_cotacao}
+                      disabled={readOnly}
                     />
                   </div>
                 </div>
@@ -2776,8 +2976,156 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                     onChange={(e) => setFormData({ ...formData, observacoes_internas: e.target.value })}
                     placeholder="Observações internas sobre a cotação"
                     rows={4}
+                    disabled={readOnly}
                   />
                 </div>
+
+                {/* Informações de Aprovação - Apenas em modo visualização */}
+                {readOnly && cotacaoId && (
+                  <Card className="border-primary/20 bg-primary/5">
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5" />
+                        Detalhes da Alçada de Aprovação
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Regras de Aprovação */}
+                      {approvalConfigs && approvalConfigs.length > 0 && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold">Regras de Aprovação Configuradas:</Label>
+                          <div className="space-y-2">
+                            {approvalConfigs.map((config, index) => (
+                              <div key={config.id || index} className="p-3 bg-background border rounded-md">
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div>
+                                    <span className="font-medium">Nível:</span> {config.nivel_aprovacao}
+                                  </div>
+                                  {config.nome && (
+                                    <div>
+                                      <span className="font-medium">Nome:</span> {config.nome}
+                                    </div>
+                                  )}
+                                  {config.valor_limite && (
+                                    <div className="col-span-2">
+                                      <span className="font-medium">Valor Limite:</span> R$ {config.valor_limite.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </div>
+                                  )}
+                                  {config.usuario_id && (
+                                    <div>
+                                      <span className="font-medium">Aprovador:</span> {(() => {
+                                        const approverUser = users.find(u => u.id === config.usuario_id);
+                                        return approverUser?.nome || approverUser?.username || config.usuario_id;
+                                      })()}
+                                    </div>
+                                  )}
+                                  {config.centro_custo_id && (
+                                    <div>
+                                      <span className="font-medium">Centro de Custo:</span> {costCentersMap.get(config.centro_custo_id) || config.centro_custo_id}
+                                    </div>
+                                  )}
+                                  {config.aprovadores && config.aprovadores.length > 0 && (
+                                    <div className="col-span-2">
+                                      <span className="font-medium">Aprovadores:</span>
+                                      <ul className="list-disc list-inside ml-2 mt-1">
+                                        {config.aprovadores.map((aprovador, idx) => {
+                                          const approverUser = users.find(u => u.id === aprovador.user_id);
+                                          return (
+                                            <li key={idx} className="text-xs">
+                                              {approverUser?.nome || approverUser?.username || aprovador.user_id}
+                                              {aprovador.is_primary && ' (Principal)'}
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Status das Aprovações */}
+                      {approvalsData && approvalsData.length > 0 && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-semibold">Status das Aprovações:</Label>
+                          <div className="space-y-2">
+                            {approvalsData.map((approval: any) => {
+                              const approverUser = users.find(u => u.id === approval.aprovador_id);
+                              
+                              // Encontrar a regra de aprovação correspondente baseado em nível, centro_custo_id, etc.
+                              const regraCorrespondente = approvalConfigs?.find(config => {
+                                // Match por nível
+                                if (config.nivel_aprovacao !== approval.nivel_aprovacao) return false;
+                                
+                                // Se a aprovação tem centro_custo_id, tentar match
+                                // (assumindo que a aprovação pode ter informações sobre qual regra foi aplicada)
+                                // Como não temos um campo direto, vamos fazer match por nível e aprovador
+                                const configAprovador = config.aprovadores?.find(a => a.user_id === approval.aprovador_id);
+                                return !!configAprovador;
+                              });
+                              
+                              return (
+                                <div key={approval.id} className="p-3 bg-background border rounded-md">
+                                  <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                      <span className="font-medium">Nível:</span> {approval.nivel_aprovacao}
+                                    </div>
+                                    <div>
+                                      <span className="font-medium">Status:</span>{' '}
+                                      <Badge variant={
+                                        approval.status === 'aprovado' ? 'default' :
+                                        approval.status === 'rejeitado' ? 'destructive' :
+                                        'secondary'
+                                      }>
+                                        {approval.status === 'aprovado' ? 'Aprovado' :
+                                         approval.status === 'rejeitado' ? 'Rejeitado' :
+                                         'Pendente'}
+                                      </Badge>
+                                    </div>
+                                    {regraCorrespondente && (
+                                      <div className="col-span-2">
+                                        <span className="font-medium">Regra de Aprovação:</span>{' '}
+                                        <Badge variant="outline" className="text-xs">
+                                          {regraCorrespondente.nome || `Nível ${regraCorrespondente.nivel_aprovacao}`}
+                                          {regraCorrespondente.centro_custo_id && ` - ${costCentersMap.get(regraCorrespondente.centro_custo_id) || regraCorrespondente.centro_custo_id}`}
+                                        </Badge>
+                                      </div>
+                                    )}
+                                    {approverUser && (
+                                      <div>
+                                        <span className="font-medium">Aprovador:</span> {approverUser.nome || approverUser.username || '—'}
+                                      </div>
+                                    )}
+                                    {approval.data_aprovacao && (
+                                      <div>
+                                        <span className="font-medium">Data:</span> {new Date(approval.data_aprovacao).toLocaleDateString('pt-BR')}
+                                      </div>
+                                    )}
+                                    {approval.observacoes && (
+                                      <div className="col-span-2">
+                                        <span className="font-medium">Observações:</span> {approval.observacoes}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {(!approvalConfigs || approvalConfigs.length === 0) && (!approvalsData || approvalsData.length === 0) && (
+                        <div className="text-center py-4 text-muted-foreground">
+                          <Info className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">Nenhuma informação de aprovação disponível</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Campo destacado de Local de Entrega para Compra Direta */}
                 {contextoSelecao.locaisEntrega.length > 0 && (
@@ -3000,14 +3348,16 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                             </p>
                           )}
                         </div>
-                        <Button
-                          onClick={handleAddFornecedor}
-                          disabled={isEmergencial ? fornecedores.length >= 1 : fornecedores.length >= 6}
-                          size="sm"
-                        >
-                          <Users className="h-4 w-4 mr-2" />
-                          Adicionar Fornecedor
-                        </Button>
+                        {!readOnly && (
+                          <Button
+                            onClick={handleAddFornecedor}
+                            disabled={isEmergencial ? fornecedores.length >= 1 : fornecedores.length >= 6}
+                            size="sm"
+                          >
+                            <Users className="h-4 w-4 mr-2" />
+                            Adicionar Fornecedor
+                          </Button>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -3059,9 +3409,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                     <TableCell>
                                       <Checkbox
                                         checked={!!fornecedor.fornecedor_id}
-                                        disabled={isBlocked}
+                                        disabled={isBlocked || readOnly}
                                         onCheckedChange={(checked) => {
-                                          if (!checked) {
+                                          if (!checked && !readOnly) {
                                             handleRemoveFornecedor(fornecedor.id);
                                           }
                                         }}
@@ -3078,9 +3428,12 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                         ) : (
                                           <Select
                                             value={fornecedor.fornecedor_id}
-                                            onValueChange={(value) => 
-                                              handleUpdateFornecedor(fornecedor.id, 'fornecedor_id', value)
-                                            }
+                                            onValueChange={(value) => {
+                                              if (!readOnly) {
+                                                handleUpdateFornecedor(fornecedor.id, 'fornecedor_id', value);
+                                              }
+                                            }}
+                                            disabled={readOnly}
                                           >
                                             <SelectTrigger className="w-[300px]">
                                               <SelectValue placeholder="Selecione um fornecedor">
@@ -3223,14 +3576,16 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                             </SelectContent>
                                           </Select>
                                         )}
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleRemoveFornecedor(fornecedor.id)}
-                                          disabled={isEmergencial && fornecedores.length === 1}
-                                        >
-                                          <X className="h-4 w-4" />
-                                        </Button>
+                                        {!readOnly && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => handleRemoveFornecedor(fornecedor.id)}
+                                            disabled={isEmergencial && fornecedores.length === 1}
+                                          >
+                                            <X className="h-4 w-4" />
+                                          </Button>
+                                        )}
                                       </div>
                                     </TableCell>
                                     <TableCell className="font-mono text-xs text-muted-foreground">
@@ -3331,7 +3686,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                         <Label className="text-lg font-semibold">Mapa de Cotação - Comparativo de Valores</Label>
                         <Badge variant="secondary">{itensSelecionados.size} itens selecionados</Badge>
                       </div>
-                      {fornecedoresValidos > 0 && (
+                      {fornecedoresValidos > 0 && !readOnly && (
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
@@ -3383,6 +3738,12 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                           </DropdownMenu>
                         </div>
                       )}
+                      {readOnly && (
+                        <Badge variant="outline" className="text-sm">
+                          <Eye className="h-3 w-3 mr-1" />
+                          Modo Visualização - Edições Desabilitadas
+                        </Badge>
+                      )}
                     </div>
 
                     {/* Tabela Principal: Itens x Fornecedores com Scroll Horizontal */}
@@ -3425,7 +3786,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                           }`}
                                           title={temValoresPreenchidos ? `Clique para editar informações de ${displayName}` : displayName}
                                           onClick={() => {
-                                            if (temValoresPreenchidos) {
+                                            if (temValoresPreenchidos && !readOnly) {
                                               setFornecedorSelecionadoModal(f.id);
                                               setFornecedorModalAberto(true);
                                             }
@@ -3538,16 +3899,19 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                                 step="0.01"
                                                 min="0"
                                                       value={cell?.valor_unitario ?? ''}
-                                                onChange={(e) =>
-                                                  handleUpdateMapaValor(
-                                                    f.id,
-                                                    item,
-                                                    'valor_unitario',
-                                                    parseFloat(e.target.value) || 0
-                                                  )
-                                                }
+                                                onChange={(e) => {
+                                                  if (!readOnly) {
+                                                    handleUpdateMapaValor(
+                                                      f.id,
+                                                      item,
+                                                      'valor_unitario',
+                                                      parseFloat(e.target.value) || 0
+                                                    );
+                                                  }
+                                                }}
                                                 placeholder="0,00"
                                                 className="h-8 text-xs text-center"
+                                                disabled={readOnly}
                                               />
                                             </div>
                                             {/* Quantidade */}
@@ -3557,16 +3921,19 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                                 step="0.001"
                                                 min="0"
                                                 value={cell?.quantidade_ofertada ?? item.quantidade_total}
-                                                onChange={(e) =>
-                                                  handleUpdateMapaValor(
-                                                    f.id,
-                                                    item,
-                                                    'quantidade_ofertada',
-                                                    parseFloat(e.target.value) || 0
-                                                  )
-                                                }
+                                                onChange={(e) => {
+                                                  if (!readOnly) {
+                                                    handleUpdateMapaValor(
+                                                      f.id,
+                                                      item,
+                                                      'quantidade_ofertada',
+                                                      parseFloat(e.target.value) || 0
+                                                    );
+                                                  }
+                                                }}
                                                 placeholder="0"
                                                 className="h-8 text-xs text-center"
+                                                disabled={readOnly}
                                               />
                                             </div>
                                             {/* Valor Total (calculado) */}
@@ -3602,9 +3969,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                                         <Checkbox
                                                           id={`vencedor-${itemKey}-${f.id}`}
                                                           checked={isEsteVencedor}
-                                                          disabled={isOutroVencedor && !isEsteVencedor}
+                                                          disabled={(isOutroVencedor && !isEsteVencedor) || readOnly}
                                                           onCheckedChange={(checked) => {
-                                                            if (!isOutroVencedor || checked) {
+                                                            if (!readOnly && (!isOutroVencedor || checked)) {
                                                               handleSelectVencedor(f.id, item, checked as boolean);
                                                             }
                                                           }}
@@ -3612,7 +3979,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                                         <Label
                                                           htmlFor={`vencedor-${itemKey}-${f.id}`}
                                                           className={`text-xs ${
-                                                            isOutroVencedor && !isEsteVencedor
+                                                            (isOutroVencedor && !isEsteVencedor) || readOnly
                                                               ? 'cursor-not-allowed text-muted-foreground opacity-50'
                                                               : 'cursor-pointer'
                                                           }`}
@@ -3774,12 +4141,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       min="0"
                                       value={frete}
                                       onChange={(e) => {
-                                        const newValue = parseFloat(e.target.value) || 0;
-                                        setFornecedores(fornecedores.map(forn => 
-                                          forn.id === f.id ? { ...forn, valor_frete: newValue } : forn
-                                        ));
+                                        if (!readOnly) {
+                                          const newValue = parseFloat(e.target.value) || 0;
+                                          setFornecedores(fornecedores.map(forn => 
+                                            forn.id === f.id ? { ...forn, valor_frete: newValue } : forn
+                                          ));
+                                        }
                                       }}
                                       className="h-9 text-sm"
+                                      disabled={readOnly}
                                     />
                                   </div>
 
@@ -3792,12 +4162,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       min="0"
                                       value={imposto}
                                       onChange={(e) => {
-                                        const newValue = parseFloat(e.target.value) || 0;
-                                        setFornecedores(fornecedores.map(forn => 
-                                          forn.id === f.id ? { ...forn, valor_imposto: newValue } : forn
-                                        ));
+                                        if (!readOnly) {
+                                          const newValue = parseFloat(e.target.value) || 0;
+                                          setFornecedores(fornecedores.map(forn => 
+                                            forn.id === f.id ? { ...forn, valor_imposto: newValue } : forn
+                                          ));
+                                        }
                                       }}
                                       className="h-9 text-sm"
+                                      disabled={readOnly}
                                     />
                                   </div>
 
@@ -3811,12 +4184,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       max="100"
                                       value={descontoPct}
                                       onChange={(e) => {
-                                        const newValue = parseFloat(e.target.value) || 0;
-                                        setFornecedores(fornecedores.map(forn => 
-                                          forn.id === f.id ? { ...forn, desconto_percentual: newValue } : forn
-                                        ));
+                                        if (!readOnly) {
+                                          const newValue = parseFloat(e.target.value) || 0;
+                                          setFornecedores(fornecedores.map(forn => 
+                                            forn.id === f.id ? { ...forn, desconto_percentual: newValue } : forn
+                                          ));
+                                        }
                                       }}
                                       className="h-9 text-sm"
+                                      disabled={readOnly}
                                     />
                                   </div>
 
@@ -3829,12 +4205,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       min="0"
                                       value={descontoValor}
                                       onChange={(e) => {
-                                        const newValue = parseFloat(e.target.value) || 0;
-                                        setFornecedores(fornecedores.map(forn => 
-                                          forn.id === f.id ? { ...forn, desconto_valor: newValue } : forn
-                                        ));
+                                        if (!readOnly) {
+                                          const newValue = parseFloat(e.target.value) || 0;
+                                          setFornecedores(fornecedores.map(forn => 
+                                            forn.id === f.id ? { ...forn, desconto_valor: newValue } : forn
+                                          ));
+                                        }
                                       }}
                                       className="h-9 text-sm"
+                                      disabled={readOnly}
                                     />
                                   </div>
                                 </div>
@@ -3874,12 +4253,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       min="0"
                                       value={f.prazo_entrega || 0}
                                       onChange={(e) => {
-                                        const newValue = parseInt(e.target.value) || 0;
-                                        setFornecedores(fornecedores.map(forn => 
-                                          forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
-                                        ));
+                                        if (!readOnly) {
+                                          const newValue = parseInt(e.target.value) || 0;
+                                          setFornecedores(fornecedores.map(forn => 
+                                            forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
+                                          ));
+                                        }
                                       }}
                                       className="h-9 text-sm"
+                                      disabled={readOnly}
                                     />
                                   </div>
                                   <div>
@@ -3887,12 +4269,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                     <Input
                                       value={f.condicao_pagamento || ''}
                                       onChange={(e) => {
-                                        setFornecedores(fornecedores.map(forn => 
-                                          forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
-                                        ));
+                                        if (!readOnly) {
+                                          setFornecedores(fornecedores.map(forn => 
+                                            forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
+                                          ));
+                                        }
                                       }}
                                       placeholder="Ex: 30/60/90 dias"
                                       className="h-9 text-sm"
+                                      disabled={readOnly}
                                     />
                                   </div>
                                 </div>
@@ -3940,9 +4325,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                   <Textarea
                                     value={f.observacoes || ''}
                                     onChange={(e) => {
-                                      setFornecedores(fornecedores.map(forn => 
-                                        forn.id === f.id ? { ...forn, observacoes: e.target.value } : forn
-                                      ));
+                                      if (!readOnly) {
+                                        setFornecedores(fornecedores.map(forn => 
+                                          forn.id === f.id ? { ...forn, observacoes: e.target.value } : forn
+                                        ));
+                                      }
                                     }}
                                           placeholder={
                                             isObrigatorio 
@@ -3951,6 +4338,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                           }
                                           className={`text-sm min-h-[60px] ${isObrigatorio ? 'border-red-300 focus:border-red-500' : ''}`}
                                           required={isObrigatorio}
+                                          disabled={readOnly}
                                         />
                                       </>
                                     );
@@ -4174,14 +4562,22 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                               <TableRow>
                                 <TableHead>Requisição</TableHead>
                                 <TableHead>Quantidade</TableHead>
-                                <TableHead>Valor Total</TableHead>
+                                <TableHead>Valor Itens</TableHead>
+                                <TableHead>Frete</TableHead>
+                                <TableHead>Imposto</TableHead>
+                                <TableHead>Custos Adicionais</TableHead>
+                                <TableHead>Total</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {Array.from(new Set(rateio.map(r => r.requisicao_id))).map((reqId) => {
                                 const items = rateio.filter(r => r.requisicao_id === reqId);
                                 const totalQtd = items.reduce((sum, item) => sum + item.quantidade, 0);
-                                const totalValor = items.reduce((sum, item) => sum + item.valor_total, 0);
+                                const totalValor = items.reduce((sum, item) => sum + (item.valor_total || 0), 0);
+                                const totalFrete = items.reduce((sum, item) => sum + (item.frete_proporcional || 0), 0);
+                                const totalImposto = items.reduce((sum, item) => sum + (item.imposto_proporcional || 0), 0);
+                                const totalCustos = totalFrete + totalImposto; // Total = frete + imposto
+                                const totalGeral = totalValor + totalCustos; // Total geral = valor itens + custos
                                 return (
                                   <TableRow key={reqId}>
                                     <TableCell className="font-medium">
@@ -4190,6 +4586,36 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                     <TableCell>{totalQtd.toLocaleString('pt-BR')}</TableCell>
                                     <TableCell>
                                       R$ {totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalFrete > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalFrete.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalImposto > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalImposto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalCustos > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalCustos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="font-semibold">
+                                      R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </TableCell>
                                   </TableRow>
                                 );
@@ -4210,14 +4636,22 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                               <TableRow>
                                 <TableHead>Centro de Custo</TableHead>
                                 <TableHead>Quantidade</TableHead>
-                                <TableHead>Valor Total</TableHead>
+                                <TableHead>Valor Itens</TableHead>
+                                <TableHead>Frete</TableHead>
+                                <TableHead>Imposto</TableHead>
+                                <TableHead>Custos Adicionais</TableHead>
+                                <TableHead>Total</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {Array.from(new Set(rateio.map(r => r.centro_custo_id).filter(Boolean))).map((ccId) => {
                                 const items = rateio.filter(r => r.centro_custo_id === ccId);
                                 const totalQtd = items.reduce((sum, item) => sum + item.quantidade, 0);
-                                const totalValor = items.reduce((sum, item) => sum + item.valor_total, 0);
+                                const totalValor = items.reduce((sum, item) => sum + (item.valor_total || 0), 0);
+                                const totalFrete = items.reduce((sum, item) => sum + (item.frete_proporcional || 0), 0);
+                                const totalImposto = items.reduce((sum, item) => sum + (item.imposto_proporcional || 0), 0);
+                                const totalCustos = totalFrete + totalImposto; // Total = frete + imposto
+                                const totalGeral = totalValor + totalCustos; // Total geral = valor itens + custos
                                 return (
                                   <TableRow key={ccId}>
                                     <TableCell className="font-medium">
@@ -4226,6 +4660,36 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                     <TableCell>{totalQtd.toLocaleString('pt-BR')}</TableCell>
                                     <TableCell>
                                       R$ {totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalFrete > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalFrete.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalImposto > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalImposto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalCustos > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalCustos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="font-semibold">
+                                      R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </TableCell>
                                   </TableRow>
                                 );
@@ -4246,14 +4710,22 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                               <TableRow>
                                 <TableHead>Projeto</TableHead>
                                 <TableHead>Quantidade</TableHead>
-                                <TableHead>Valor Total</TableHead>
+                                <TableHead>Valor Itens</TableHead>
+                                <TableHead>Frete</TableHead>
+                                <TableHead>Imposto</TableHead>
+                                <TableHead>Custos Adicionais</TableHead>
+                                <TableHead>Total</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {Array.from(new Set(rateio.map(r => r.projeto_id).filter(Boolean))).map((projId) => {
                                 const items = rateio.filter(r => r.projeto_id === projId);
                                 const totalQtd = items.reduce((sum, item) => sum + item.quantidade, 0);
-                                const totalValor = items.reduce((sum, item) => sum + item.valor_total, 0);
+                                const totalValor = items.reduce((sum, item) => sum + (item.valor_total || 0), 0);
+                                const totalFrete = items.reduce((sum, item) => sum + (item.frete_proporcional || 0), 0);
+                                const totalImposto = items.reduce((sum, item) => sum + (item.imposto_proporcional || 0), 0);
+                                const totalCustos = totalFrete + totalImposto; // Total = frete + imposto
+                                const totalGeral = totalValor + totalCustos; // Total geral = valor itens + custos
                                 return (
                                   <TableRow key={projId}>
                                     <TableCell className="font-medium">
@@ -4262,6 +4734,36 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                     <TableCell>{totalQtd.toLocaleString('pt-BR')}</TableCell>
                                     <TableCell>
                                       R$ {totalValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalFrete > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalFrete.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalImposto > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalImposto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {totalCustos > 0 ? (
+                                        <span className="text-sm text-muted-foreground">
+                                          R$ {totalCustos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-sm text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="font-semibold">
+                                      R$ {totalGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </TableCell>
                                   </TableRow>
                                 );
@@ -4328,8 +4830,18 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
 
                   // Calcular valores para o resumo detalhado
                   const subtotalItens = fornecedoresVencedores.reduce((sum, f) => sum + f.subtotalParcial, 0);
-                  const freteTotal = fornecedoresVencedores.reduce((sum, f) => sum + (f.fornecedor.valor_frete || 0), 0);
-                  const impostoTotal = fornecedoresVencedores.reduce((sum, f) => sum + (f.fornecedor.valor_imposto || 0), 0);
+                  const freteTotal = fornecedoresVencedores.reduce((sum, f) => {
+                    const frete = typeof f.fornecedor.valor_frete === 'number' 
+                      ? f.fornecedor.valor_frete 
+                      : (f.fornecedor.valor_frete != null && f.fornecedor.valor_frete !== '' ? Number(f.fornecedor.valor_frete) : 0);
+                    return sum + frete;
+                  }, 0);
+                  const impostoTotal = fornecedoresVencedores.reduce((sum, f) => {
+                    const imposto = typeof f.fornecedor.valor_imposto === 'number' 
+                      ? f.fornecedor.valor_imposto 
+                      : (f.fornecedor.valor_imposto != null && f.fornecedor.valor_imposto !== '' ? Number(f.fornecedor.valor_imposto) : 0);
+                    return sum + imposto;
+                  }, 0);
                   const descontoTotal = fornecedoresVencedores.reduce((sum, f) => {
                     const descontoPct = f.fornecedor.desconto_percentual || 0;
                     const descontoValor = f.fornecedor.desconto_valor || 0;
@@ -4432,8 +4944,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                         ? valorItemAposDescontos / subtotalParcialFornecedor 
                         : 0;
                       
-                      const frete = fornecedorVencedor.valor_frete || 0;
-                      const imposto = fornecedorVencedor.valor_imposto || 0;
+                      // Garantir que os valores sejam numéricos
+                      const frete = typeof fornecedorVencedor.valor_frete === 'number' 
+                        ? fornecedorVencedor.valor_frete 
+                        : (fornecedorVencedor.valor_frete != null && fornecedorVencedor.valor_frete !== '' ? Number(fornecedorVencedor.valor_frete) : 0);
+                      const imposto = typeof fornecedorVencedor.valor_imposto === 'number' 
+                        ? fornecedorVencedor.valor_imposto 
+                        : (fornecedorVencedor.valor_imposto != null && fornecedorVencedor.valor_imposto !== '' ? Number(fornecedorVencedor.valor_imposto) : 0);
                       const freteProporcional = frete * proporcaoItem;
                       const impostoProporcional = imposto * proporcaoItem;
                       
@@ -4441,24 +4958,56 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       // Nota: descontos já estão aplicados no valorItemCalculado, então não entram aqui
                       const custosAdicionais = freteProporcional + impostoProporcional;
 
-                      // Encontrar menor valor TOTAL para este item (para comparação)
+                      // Encontrar menor valor TOTAL (incluindo custos adicionais proporcionais) para este item
                       let menorValor: number | null = null;
                       let fornecedorMenorValor: typeof fornecedorVencedor | null = null;
                       
                       // Encontrar menor valor UNITÁRIO para este item (para badge de eficiência)
+                      // IMPORTANTE: valor unitário NÃO inclui custos adicionais
                       let menorValorUnitario: number | null = null;
                       let fornecedorMenorValorUnitario: typeof fornecedorVencedor | null = null;
                       
                       fornecedores.filter(f => f.fornecedor_id).forEach((f) => {
                         const cellFornecedor = mapaFornecedorItens[f.id]?.[itemKey];
                         if (cellFornecedor) {
-                          const total = valorItemCalculado(cellFornecedor);
-                          if (total > 0 && (menorValor === null || total < menorValor)) {
-                            menorValor = total;
+                          // Calcular valor do item (sem custos adicionais)
+                          const valorItem = valorItemCalculado(cellFornecedor);
+                          
+                          // Calcular custos adicionais proporcionais para este fornecedor
+                          const subtotalParcialFornecedorComparacao = itensAgrupados
+                            .filter((i) => itensSelecionados.has(getItemKey(i)))
+                            .reduce((sum, i) => {
+                              const key = getItemKey(i);
+                              const c = mapaFornecedorItens[f.id]?.[key];
+                              if (c && c.is_vencedor) {
+                                return sum + valorItemCalculado(c);
+                              }
+                              return sum;
+                            }, 0);
+                          
+                          const proporcaoItem = subtotalParcialFornecedorComparacao > 0 
+                            ? valorItem / subtotalParcialFornecedorComparacao 
+                            : 0;
+                          
+                          // Garantir que os valores sejam numéricos
+                          const frete = typeof f.valor_frete === 'number' 
+                            ? f.valor_frete 
+                            : (f.valor_frete != null && f.valor_frete !== '' ? Number(f.valor_frete) : 0);
+                          const imposto = typeof f.valor_imposto === 'number' 
+                            ? f.valor_imposto 
+                            : (f.valor_imposto != null && f.valor_imposto !== '' ? Number(f.valor_imposto) : 0);
+                          const custosAdicionaisProporcionais = (frete + imposto) * proporcaoItem;
+                          
+                          // Valor total incluindo custos adicionais proporcionais
+                          const valorTotalComCustos = valorItem + custosAdicionaisProporcionais;
+                          
+                          // Comparar valor total com custos adicionais
+                          if (valorTotalComCustos > 0 && (menorValor === null || valorTotalComCustos < menorValor)) {
+                            menorValor = valorTotalComCustos;
                             fornecedorMenorValor = f;
                           }
                           
-                          // Comparar valor unitário
+                          // Comparar valor unitário (SEM custos adicionais) para eficiência
                           const valorUnit = cellFornecedor.valor_unitario || 0;
                           if (valorUnit > 0 && (menorValorUnitario === null || valorUnit < menorValorUnitario)) {
                             menorValorUnitario = valorUnit;
@@ -4467,9 +5016,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                         }
                       });
 
-                      const isMelhorPreco = menorValor !== null && valorSelecionado === menorValor;
+                      // Comparar valor total incluindo custos adicionais proporcionais
+                      const valorTotalSelecionadoComCustos = valorSelecionado + custosAdicionais;
+                      const isMelhorPreco = menorValor !== null && Math.abs(valorTotalSelecionadoComCustos - menorValor) < 0.01;
                       const diferencaValor = menorValor !== null && !isMelhorPreco 
-                        ? valorSelecionado - menorValor 
+                        ? valorTotalSelecionadoComCustos - menorValor 
                         : 0;
                       
                       // Verificar se tem o menor valor unitário (Eficiência em Compras)
@@ -4496,6 +5047,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                         nomeFornecedor,
                         valorSelecionado,
                         precoNegociado,
+                        freteProporcional,
+                        impostoProporcional,
                         custosAdicionais,
                         isMelhorPreco,
                         menorValor,
@@ -4671,18 +5224,36 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                 </div>
                                 <div className="text-right">
                                       <div className="space-y-1 mb-2">
+                                        {/* IMPORTANTE: Valor do item SEM custos adicionais - custos adicionais são do fornecedor, não do item */}
                                         <div className="text-xs text-muted-foreground">Preço Negociado</div>
                                         <div className="font-semibold text-base">
-                                          R$ {decisao.precoNegociado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                          R$ {decisao.valorSelecionado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </div>
-                                        <div className="text-xs text-muted-foreground">Custos Adicionais</div>
-                                        <div className="font-semibold text-sm text-orange-600">
-                                          R$ {decisao.custosAdicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground pt-1 border-t">Total</div>
-                                        <div className="font-bold text-lg">
-                                          R$ {(decisao.valorSelecionado + decisao.custosAdicionais).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                        </div>
+                                        {/* Custos adicionais são exibidos apenas como informação do fornecedor, NÃO fazem parte do valor do item */}
+                                        {(decisao.freteProporcional > 0 || decisao.impostoProporcional > 0) && (
+                                          <>
+                                            <div className="text-xs text-muted-foreground mt-2">Custos Adicionais (Fornecedor)</div>
+                                            {decisao.freteProporcional > 0 && (
+                                              <div className="text-xs text-muted-foreground">
+                                                Frete: <span className="font-semibold text-orange-600">R$ {decisao.freteProporcional.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                              </div>
+                                            )}
+                                            {decisao.impostoProporcional > 0 && (
+                                              <div className="text-xs text-muted-foreground">
+                                                Imposto: <span className="font-semibold text-orange-600">R$ {decisao.impostoProporcional.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                              </div>
+                                            )}
+                                            {decisao.custosAdicionais > 0 && (
+                                              <div className="font-semibold text-sm text-orange-600 mt-1">
+                                                Total: R$ {decisao.custosAdicionais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                              </div>
+                                            )}
+                                            <div className="text-xs text-muted-foreground italic mt-1">
+                                              (Não incluído no valor do item)
+                                            </div>
+                                          </>
+                                        )}
+                                        {/* NOTA: NÃO exibir campo "Total" aqui - o valor do item não inclui custos adicionais */}
                                       </div>
                                       <div className="flex flex-col gap-1 mt-2">
                                         {decisao.temEficienciaCompras && (
@@ -5372,7 +5943,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
               <Button
                 variant="outline"
                 onClick={handleSalvarRascunho}
-                disabled={submitting || !!cotacaoId}
+                disabled={submitting}
               >
                 {cotacaoId ? 'Atualizar Rascunho' : 'Salvar como Rascunho'}
               </Button>

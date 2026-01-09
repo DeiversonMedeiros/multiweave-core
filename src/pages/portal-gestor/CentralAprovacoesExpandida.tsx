@@ -119,108 +119,51 @@ const CentralAprovacoesExpandida: React.FC = () => {
       is_requisicao_compra: isRequisicaoCompra
     });
 
+    // Guardar dados antigos para rollback em caso de erro
+    const approvalId = selectedApproval.id;
+    const approvalToRestore = { ...selectedApproval }; // Cópia para rollback
+    const previousData = queryClient.getQueryData<Approval[]>(
+      ['pending-approvals', selectedCompany?.id, user?.id]
+    );
+    
     try {
+      // Atualizar cache otimisticamente ANTES de chamar a mutation
+      // Isso garante feedback imediato ao usuário
+      queryClient.setQueryData<Approval[]>(
+        ['pending-approvals', selectedCompany?.id, user?.id],
+        (oldData) => {
+          if (!oldData) return oldData;
+          return oldData.filter(a => a.id !== approvalId);
+        }
+      );
+      
+      // Fechar modal imediatamente para melhor UX
+      setIsApprovalModalOpen(false);
+      setSelectedApproval(null);
+      
+      // Processar aprovação (a mutation já faz invalidate e refetch)
       await processApproval.mutateAsync(mutationParams);
+      
       console.log('✅ [CentralAprovacoesExpandida.handleProcessApproval] Sucesso!');
       
       // Log específico para requisição de compra aprovada
       if (isRequisicaoCompra && status === 'aprovado') {
         console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] ✅ Requisição de compra aprovada!');
-        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Verifique os logs do banco de dados para confirmar se a cotação foi criada automaticamente.');
-        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Os logs do trigger criar_cotacao_automatica mostrarão o processo completo.');
-      }
-      
-      // Fechar modal e limpar seleção imediatamente
-      setIsApprovalModalOpen(false);
-      
-      // Remover a aprovação processada do cache localmente ANTES do refetch
-      // Isso garante que ela desapareça imediatamente da UI
-      const approvalId = selectedApproval?.id;
-      const processoId = selectedApproval?.processo_id;
-      const processoTipo = selectedApproval?.processo_tipo;
-      
-      // Atualizar cache removendo a aprovação processada IMEDIATAMENTE
-      // Isso faz com que a UI atualize instantaneamente
-      queryClient.setQueryData<Approval[]>(
-        ['pending-approvals', selectedCompany?.id, user?.id],
-        (oldData) => {
-          if (!oldData) return oldData;
-          const filtered = oldData.filter(a => a.id !== approvalId);
-          console.log('🗑️ [CentralAprovacoesExpandida] Removendo aprovação do cache local IMEDIATAMENTE', {
-            approvalId,
-            processoId,
-            processoTipo,
-            beforeCount: oldData.length,
-            afterCount: filtered.length,
-            removed: oldData.length - filtered.length
-          });
-          return filtered;
-        }
-      );
-      
-      setSelectedApproval(null);
-      
-      // IMPORTANTE: Invalidar queries IMEDIATAMENTE antes de aguardar
-      // Isso garante que quando o refetch acontecer, não usará cache antigo
-      queryClient.invalidateQueries({ 
-        queryKey: ['pending-approvals'],
-        exact: false // Invalidar todas as queries que começam com 'pending-approvals'
-      });
-      
-      // Aguardar um delay para garantir que a transação foi commitada no banco
-      // Isso evita race conditions onde o refetch acontece antes do commit
-      await new Promise(resolve => setTimeout(resolve, 600));
-      
-      // Refetch forçado com retry para confirmar que a aprovação foi removida
-      let retries = 0;
-      let refetchResult;
-      const maxRetries = 3;
-      do {
-        refetchResult = await Promise.all([
-          refetch(),
-          queryClient.refetchQueries({ 
-            queryKey: ['pending-approvals', selectedCompany?.id, user?.id],
-            exact: true
-          })
-        ]).then(results => results[0]); // Usar resultado do refetch do hook
-        
-        const stillPending = refetchResult.data?.some(a => a.id === approvalId) || false;
-        
-        console.log(`🔄 [CentralAprovacoesExpandida.handleProcessApproval] Refetch ${retries + 1}/${maxRetries}`, {
-          count: refetchResult.data?.length || 0,
-          approvalId,
-          stillPending,
-          retries,
-          timestamp: new Date().toISOString()
-        });
-        
-        if (!stillPending) {
-          console.log('✅ [CentralAprovacoesExpandida.handleProcessApproval] Aprovação confirmada como removida da lista!');
-          break;
-        }
-        
-        if (retries >= maxRetries - 1) {
-          console.warn('⚠️ [CentralAprovacoesExpandida.handleProcessApproval] Aprovação ainda aparece como pendente após múltiplos refetches!');
-          break;
-        }
-        
-        // Se ainda está pendente, aguardar mais um pouco e tentar novamente
-        // Delay progressivo: 400ms, 600ms
-        const delay = 400 + (retries * 200);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        retries++;
-      } while (retries < maxRetries);
-      
-      const finalStillPending = refetchResult.data?.some(a => a.id === approvalId) || false;
-      if (finalStillPending) {
-        console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Aprovação ainda aparece como pendente após múltiplos refetches!', {
-          approvalId,
-          processoId,
-          processoTipo,
-          finalCount: refetchResult.data?.length || 0
-        });
+        console.log('🛒 [CentralAprovacoesExpandida.handleProcessApproval] 📝 Se todas as aprovações foram concluídas, o trigger criará a cotação automaticamente.');
       }
     } catch (error) {
+      // Rollback do cache em caso de erro
+      if (previousData) {
+        queryClient.setQueryData<Approval[]>(
+          ['pending-approvals', selectedCompany?.id, user?.id],
+          previousData
+        );
+      }
+      
+      // Reabrir modal em caso de erro
+      setSelectedApproval(approvalToRestore);
+      setIsApprovalModalOpen(true);
+      
       console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Erro ao processar aprovação:', error);
       console.error('❌ [CentralAprovacoesExpandida.handleProcessApproval] Detalhes:', {
         message: error instanceof Error ? error.message : String(error),

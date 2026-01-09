@@ -681,38 +681,10 @@ export class ApprovalService {
 
       console.log('✅ [ApprovalService.processApproval] Sucesso! Resultado:', data);
       
-      // Verificar se a aprovação foi realmente atualizada
-      if (data === true) {
-        const { data: updatedApproval, error: verifyError } = await supabase
-          .from('aprovacoes_unificada')
-          .select('id, status')
-          .eq('id', aprovacao_id)
-          .single();
-        
-        if (verifyError) {
-          console.warn('⚠️ [ApprovalService.processApproval] Erro ao verificar status atualizado:', verifyError);
-        } else {
-          console.log('✅ [ApprovalService.processApproval] Status verificado:', {
-            id: updatedApproval?.id,
-            status: updatedApproval?.status,
-            esperado: status,
-            correto: updatedApproval?.status === status
-          });
-          
-          if (updatedApproval?.status !== status) {
-            console.error('❌ [ApprovalService.processApproval] ATENÇÃO: Status não foi atualizado corretamente!', {
-              esperado: status,
-              atual: updatedApproval?.status
-            });
-          }
-        }
-      }
-      
       // Se foi uma requisição de compra aprovada, informar sobre a cotação
       if (!approvalError && approvalData && approvalData.processo_tipo === 'requisicao_compra' && status === 'aprovado') {
         console.log('🛒 [ApprovalService.processApproval] ✅ Requisição de compra aprovada!');
-        console.log('🛒 [ApprovalService.processApproval] 📝 Verifique os logs do banco de dados para confirmar se a cotação foi criada automaticamente.');
-        console.log('🛒 [ApprovalService.processApproval] 📝 Os logs do trigger criar_cotacao_automatica mostrarão o processo completo.');
+        console.log('🛒 [ApprovalService.processApproval] 📝 Se todas as aprovações foram concluídas, o trigger criará a cotação automaticamente.');
       }
       
       return data;

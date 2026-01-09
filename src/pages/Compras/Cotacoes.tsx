@@ -129,6 +129,8 @@ export default function CotacoesPage() {
           isOpen={showGerarCotacao}
           onClose={() => {
             setShowGerarCotacao(false);
+            // ✅ Limpar seleções quando modal fechar
+            // Isso garante que o botão "Gerar Cotação" não mostre contagem após fechar
             setSelectedRequisicoes([]);
             setSelectedItemIds([]);
           }}

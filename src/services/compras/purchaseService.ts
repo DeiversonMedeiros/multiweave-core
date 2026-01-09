@@ -64,6 +64,8 @@ export interface QuoteCycleInput {
     fornecedor_id: string;
     prazo_entrega?: number;
     condicoes_comerciais?: string;
+    valor_frete?: number; // ✅ Campo de frete por fornecedor
+    valor_imposto?: number; // ✅ Campo de imposto por fornecedor
   }[];
   prazo_resposta?: string;
   observacoes?: string;
@@ -1164,8 +1166,11 @@ export const purchaseService = {
           data: {
             cotacao_id: (ciclo as any)?.id,
             fornecedor_id: fornecedor.fornecedor_id,
-            prazo_entrega: fornecedor.prazo_entrega,
-            condicoes_comerciais: fornecedor.condicoes_comerciais,
+            prazo_entrega: fornecedor.prazo_entrega || 0,
+            condicoes_comerciais: fornecedor.condicoes_comerciais || '',
+            // ✅ IMPORTANTE: Salvar valor_frete e valor_imposto para que sejam preservados no fluxo
+            valor_frete: fornecedor.valor_frete != null ? Number(fornecedor.valor_frete) : 0,
+            valor_imposto: fornecedor.valor_imposto != null ? Number(fornecedor.valor_imposto) : 0,
           },
         }),
       ),
