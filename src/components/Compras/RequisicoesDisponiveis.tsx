@@ -468,6 +468,40 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     }
   }, [modoExplodido, requisicoesDisponiveis]);
 
+  // ✅ IMPORTANTE: Limpar seleção quando itens selecionados não estiverem mais disponíveis
+  // Isso acontece quando uma cotação é gerada e os itens são movidos para "em cotação ativa"
+  useEffect(() => {
+    // Só executar se há seleção ativa
+    if (modoExplodido && selectedItens.size > 0) {
+      // Verificar se os itens selecionados ainda estão disponíveis
+      const itensAindaDisponiveis = itensExplodidos.filter((item: ItemExplodido) => 
+        selectedItens.has(item.id) && !itensEmCotacao.has(item.requisicao_item_id)
+      );
+      
+      // Se há itens selecionados que não estão mais disponíveis, limpar a seleção
+      if (itensAindaDisponiveis.length < selectedItens.size) {
+        console.log('🧹 [RequisicoesDisponiveis] Limpando seleção: itens não estão mais disponíveis');
+        setSelectedItens(new Set());
+        setSelectedRequisicoes(new Set());
+      }
+    } else if (!modoExplodido && selectedRequisicoes.size > 0) {
+      // Modo agrupado: verificar se as requisições selecionadas ainda estão disponíveis
+      const requisicoesAindaDisponiveis = requisicoesDisponiveis.filter((req: any) => 
+        selectedRequisicoes.has(req.id)
+      );
+      
+      // Se há requisições selecionadas que não estão mais disponíveis, limpar a seleção
+      if (requisicoesAindaDisponiveis.length < selectedRequisicoes.size) {
+        console.log('🧹 [RequisicoesDisponiveis] Limpando seleção: requisições não estão mais disponíveis');
+        setSelectedRequisicoes(new Set());
+        setSelectedItens(new Set());
+      }
+    }
+    // ✅ Remover selectedItens e selectedRequisicoes das dependências para evitar loops
+    // O efeito será executado quando itensEmCotacao ou requisicoesDisponiveis mudarem
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itensEmCotacao, requisicoesDisponiveis, itensExplodidos, modoExplodido]);
+
   const carregarItensExplodidos = async () => {
     if (!selectedCompany?.id) return;
     
@@ -665,8 +699,11 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
 
       if (filters.somente_pendentes) {
         result = result.filter((req: any) => {
-          const status = req.workflow_state || req.status;
-          return status === 'aprovada' || status === 'em_cotacao';
+          const status = req.status;
+          const workflowState = req.workflow_state;
+          // Incluir requisições aprovadas (status = 'aprovada') OU com workflow_state = 'em_cotacao'
+          // Isso garante que requisições aprovadas apareçam no modo agrupado
+          return status === 'aprovada' || workflowState === 'em_cotacao';
         });
       }
 
@@ -883,6 +920,12 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
       });
       
       onGerarCotacao(Array.from(requisicoesDosItens), itemIdsSelecionados);
+      
+      // ✅ IMPORTANTE: Limpar seleção imediatamente após abrir o modal
+      // Isso garante que o botão "Gerar Cotação" não mostre contagem enquanto o modal está aberto
+      // A seleção será restaurada se o usuário cancelar, mas será limpa se gerar com sucesso
+      setSelectedItens(new Set());
+      setSelectedRequisicoes(new Set());
     } else {
       if (selectedRequisicoes.size === 0) {
         toast({
@@ -893,6 +936,11 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         return;
       }
       onGerarCotacao(Array.from(selectedRequisicoes));
+      
+      // ✅ IMPORTANTE: Limpar seleção imediatamente após abrir o modal
+      // Isso garante que o botão "Gerar Cotação" não mostre contagem enquanto o modal está aberto
+      setSelectedRequisicoes(new Set());
+      setSelectedItens(new Set());
     }
   };
 
