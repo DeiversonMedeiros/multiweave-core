@@ -34,6 +34,8 @@ import { RequireEntity } from '@/components/RequireAuth';
 import { useEmployeeByUserId } from '@/hooks/rh/useEmployees';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { getMonthDaysInfo, completeRecordsWithRestDays } from '@/services/rh/timeRecordReportService';
+import { TimeRecord } from '@/integrations/supabase/rh-types';
 
 type TimeRecordStatus = 'pendente' | 'aprovado' | 'rejeitado';
 
@@ -87,7 +89,80 @@ export default function HistoricoMarcacoesPage() {
   });
 
   // Combinar todas as páginas em um único array
-  const timeRecords = data?.pages.flatMap(page => page.data) || [];
+  const rawTimeRecords = data?.pages.flatMap(page => page.data) || [];
+  
+  // Estado para armazenar informações dos dias do mês
+  const [daysInfo, setDaysInfo] = useState<Map<string, import('@/services/rh/timeRecordReportService').DayInfo>>(new Map());
+  const [isLoadingDaysInfo, setIsLoadingDaysInfo] = useState(false);
+  
+  // Buscar informações dos dias do mês quando o período for um mês completo
+  useEffect(() => {
+    if (!employee?.id || !selectedCompany?.id || !filters.startDate || !filters.endDate) {
+      return;
+    }
+    
+    // Verificar se o período é um mês completo
+    const start = new Date(filters.startDate);
+    const end = new Date(filters.endDate);
+    const isFullMonth = start.getDate() === 1 && 
+                        end.getDate() === new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate() &&
+                        start.getMonth() === end.getMonth() &&
+                        start.getFullYear() === end.getFullYear();
+    
+    if (isFullMonth) {
+      setIsLoadingDaysInfo(true);
+      getMonthDaysInfo(
+        employee.id,
+        selectedCompany.id,
+        start.getMonth() + 1,
+        start.getFullYear()
+      ).then(info => {
+        setDaysInfo(info);
+        setIsLoadingDaysInfo(false);
+      }).catch(err => {
+        console.error('[HistoricoMarcacoesPage] Erro ao buscar informações dos dias:', err);
+        setIsLoadingDaysInfo(false);
+      });
+    } else {
+      setDaysInfo(new Map());
+    }
+  }, [employee?.id, selectedCompany?.id, filters.startDate, filters.endDate]);
+  
+  // Estado para armazenar registros completos (com DSR)
+  const [timeRecords, setTimeRecords] = useState<TimeRecord[]>(rawTimeRecords);
+  
+  // Completar registros com dias de folga quando necessário
+  useEffect(() => {
+    if (daysInfo.size === 0 || !filters.startDate || !filters.endDate || !employee?.id || !selectedCompany?.id) {
+      setTimeRecords(rawTimeRecords);
+      return;
+    }
+    
+    const start = new Date(filters.startDate);
+    const end = new Date(filters.endDate);
+    const isFullMonth = start.getDate() === 1 && 
+                        end.getDate() === new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate() &&
+                        start.getMonth() === end.getMonth() &&
+                        start.getFullYear() === end.getFullYear();
+    
+    if (isFullMonth) {
+      completeRecordsWithRestDays(
+        rawTimeRecords as TimeRecord[],
+        start.getMonth() + 1,
+        start.getFullYear(),
+        daysInfo,
+        employee.id,
+        selectedCompany.id
+      ).then(completeRecords => {
+        setTimeRecords(completeRecords);
+      }).catch(err => {
+        console.error('[HistoricoMarcacoesPage] Erro ao completar registros:', err);
+        setTimeRecords(rawTimeRecords);
+      });
+    } else {
+      setTimeRecords(rawTimeRecords);
+    }
+  }, [rawTimeRecords, daysInfo, filters.startDate, filters.endDate, employee?.id, selectedCompany?.id]);
 
   // Wrapper para fetchNextPage que só permite chamadas explícitas do botão
   const fetchNextPage = useCallback(() => {
@@ -362,44 +437,108 @@ export default function HistoricoMarcacoesPage() {
           <CardContent>
             {timeRecords && timeRecords.length > 0 ? (
               <div className="space-y-4">
-                {timeRecords.map((record) => (
+                {timeRecords.map((record) => {
+                  const isVirtual = record.id.startsWith('virtual-');
+                  const isRestDay = (record as any).is_dia_folga || (isVirtual && record.id.includes('-dsr'));
+                  const isVacation = isVirtual && record.id.includes('-ferias');
+                  const isMedicalCertificate = isVirtual && record.id.includes('-atestado');
+                  const isCompensation = isVirtual && record.id.includes('-compensacao');
+                  const hasNoMarks = !record.entrada && !record.saida && !record.entrada_almoco && !record.saida_almoco;
+                  
+                  // Determinar cor e label baseado no tipo
+                  let virtualBgColor = 'bg-blue-50 border-blue-200';
+                  let virtualBadgeColor = 'bg-blue-100 text-blue-800';
+                  let virtualIconColor = 'bg-blue-200 text-blue-700';
+                  let virtualLabel = 'DSR';
+                  let virtualDescription = 'Dia de Descanso Semanal Remunerado';
+                  
+                  if (isVacation) {
+                    virtualBgColor = 'bg-green-50 border-green-200';
+                    virtualBadgeColor = 'bg-green-100 text-green-800';
+                    virtualIconColor = 'bg-green-200 text-green-700';
+                    virtualLabel = 'Férias';
+                    virtualDescription = 'Período de Férias';
+                  } else if (isMedicalCertificate) {
+                    virtualBgColor = 'bg-yellow-50 border-yellow-200';
+                    virtualBadgeColor = 'bg-yellow-100 text-yellow-800';
+                    virtualIconColor = 'bg-yellow-200 text-yellow-700';
+                    virtualLabel = 'Atestado';
+                    virtualDescription = 'Atestado Médico';
+                  } else if (isCompensation) {
+                    virtualBgColor = 'bg-purple-50 border-purple-200';
+                    virtualBadgeColor = 'bg-purple-100 text-purple-800';
+                    virtualIconColor = 'bg-purple-200 text-purple-700';
+                    virtualLabel = 'Compensação';
+                    virtualDescription = record.observacoes || 'Compensação de Horas';
+                  }
+                  
+                  return (
                   <div
                     key={record.id}
-                    className="p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                    className={`p-4 border rounded-lg hover:bg-gray-50 transition-colors ${isVirtual ? virtualBgColor : ''}`}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center space-x-3">
-                        <div className="p-2 rounded-full bg-blue-100 text-blue-600">
+                        <div className={`p-2 rounded-full ${isVirtual ? virtualIconColor : 'bg-blue-100 text-blue-600'}`}>
                           <Calendar className="h-4 w-4" />
                         </div>
                         <div>
                           <h3 className="font-medium text-gray-900">
                             {formatDate(record.data_registro)}
+                            {isVirtual && <span className={`ml-2 font-semibold ${isVacation ? 'text-green-600' : isMedicalCertificate ? 'text-yellow-600' : isCompensation ? 'text-purple-600' : 'text-blue-600'}`}>
+                              ({virtualLabel})
+                            </span>}
                           </h3>
-                          <p className="text-sm text-gray-500">
-                            Criado em {format(parseISO(record.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                          </p>
+                          {!isVirtual && (
+                            <p className="text-sm text-gray-500">
+                              Criado em {format(parseISO(record.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                            </p>
+                          )}
+                          {isVirtual && (
+                            <p className={`text-sm font-medium ${isVacation ? 'text-green-600' : isMedicalCertificate ? 'text-yellow-600' : isCompensation ? 'text-purple-600' : 'text-blue-600'}`}>
+                              {virtualDescription}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {getStatusIcon(record.status)}
-                        <Badge className={getStatusColor(record.status)}>
-                          {getStatusLabel(record.status)}
-                        </Badge>
+                        {!isVirtual && getStatusIcon(record.status)}
+                        {isVirtual ? (
+                          <Badge className={virtualBadgeColor}>
+                            {virtualLabel}
+                          </Badge>
+                        ) : (
+                          <Badge className={getStatusColor(record.status)}>
+                            {getStatusLabel(record.status)}
+                          </Badge>
+                        )}
                       </div>
                     </div>
 
                     {/* Horários */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
-                      <div className="text-center">
-                        <div className="flex items-center justify-center mb-1">
-                          <Clock3 className="h-4 w-4 text-green-600 mr-1" />
-                          <span className="text-sm font-medium text-gray-700">Entrada</span>
-                        </div>
-                        <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.entrada)}
-                        </div>
+                    {isVirtual && hasNoMarks ? (
+                      <div className={`text-center py-4 rounded-lg ${isVacation ? 'bg-green-50' : isMedicalCertificate ? 'bg-yellow-50' : isCompensation ? 'bg-purple-50' : 'bg-blue-50'}`}>
+                        <p className={`font-semibold ${isVacation ? 'text-green-700' : isMedicalCertificate ? 'text-yellow-700' : isCompensation ? 'text-purple-700' : 'text-blue-700'}`}>
+                          {virtualDescription}
+                        </p>
+                        <p className={`text-sm mt-1 ${isVacation ? 'text-green-600' : isMedicalCertificate ? 'text-yellow-600' : isCompensation ? 'text-purple-600' : 'text-blue-600'}`}>
+                          {isVacation ? 'Período de férias - sem marcações' : 
+                           isMedicalCertificate ? 'Atestado médico - sem marcações' :
+                           isCompensation ? 'Compensação de horas - sem marcações' :
+                           'Dia de folga - sem marcações'}
+                        </p>
                       </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-1">
+                            <Clock3 className="h-4 w-4 text-green-600 mr-1" />
+                            <span className="text-sm font-medium text-gray-700">Entrada</span>
+                          </div>
+                          <div className="text-lg font-bold text-gray-900">
+                            {isRestDay && !record.entrada ? 'DSR' : formatTime(record.entrada)}
+                          </div>
+                        </div>
                       
                       <div className="text-center">
                         <div className="flex items-center justify-center mb-1">
@@ -451,8 +590,10 @@ export default function HistoricoMarcacoesPage() {
                         </div>
                       </div>
                     </div>
-
-                    {/* Total de horas e observações */}
+                    )}
+                    
+                    {/* Total de horas e observações - apenas se não for virtual */}
+                    {!isVirtual && (
                     <div className="flex items-center justify-between pt-3 border-t mb-3">
                       <div className="flex items-center space-x-4">
                         <div className="text-sm">
@@ -510,8 +651,10 @@ export default function HistoricoMarcacoesPage() {
                         </div>
                       )}
                     </div>
+                    )}
 
-                    {/* Endereços e Localizações */}
+                    {/* Endereços e Localizações - apenas se não for virtual */}
+                    {!isVirtual && (
                     <div className="mt-3 border-t pt-3">
                       <div className="flex items-start gap-2 text-sm">
                         <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -603,14 +746,20 @@ export default function HistoricoMarcacoesPage() {
                                             {eventLabel && (
                                               <div className="text-xs font-medium text-blue-600 mb-1">{eventLabel}</div>
                                             )}
-                                            <div className="text-gray-900 font-medium max-w-full break-words">
-                                              {locAddr.trim() || (locHasCoords ? `${locLat}, ${locLng}` : 'Sem endereço')}
-                                            </div>
+                                            {/* Sempre mostrar endereço quando disponível */}
+                                            {locHasAddress && (
+                                              <div className="text-gray-900 font-medium max-w-full break-words mb-1">
+                                                {locAddr.trim()}
+                                              </div>
+                                            )}
                                             <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
                                               {locHasCoords && (
                                                 <span className="font-mono text-xs">
-                                                  ({locLat}, {locLng})
+                                                  {locLat}, {locLng}
                                                 </span>
+                                              )}
+                                              {!locHasAddress && locHasCoords && (
+                                                <span className="text-gray-400 text-xs">(Sem endereço)</span>
                                               )}
                                               {locMapHref && (
                                                 <a
@@ -635,14 +784,20 @@ export default function HistoricoMarcacoesPage() {
                                 if (location.hasAddress || location.hasCoords) {
                                   return (
                                     <div>
-                                      <div className="text-gray-900 font-medium max-w-full break-words" title={location.endereco || ''}>
-                                        {location.endereco?.trim() || (location.hasCoords ? `${location.latitude}, ${location.longitude}` : 'Endereço não informado')}
-                                      </div>
+                                      {/* Sempre mostrar endereço quando disponível */}
+                                      {location.hasAddress && (
+                                        <div className="text-gray-900 font-medium max-w-full break-words mb-1" title={location.endereco || ''}>
+                                          {location.endereco?.trim()}
+                                        </div>
+                                      )}
                                       <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
                                         {location.hasCoords && (
                                           <span className="font-mono text-xs">
-                                            ({location.latitude}, {location.longitude})
+                                            {location.latitude}, {location.longitude}
                                           </span>
+                                        )}
+                                        {!location.hasAddress && location.hasCoords && (
+                                          <span className="text-gray-400 text-xs">(Sem endereço)</span>
                                         )}
                                         {mapHref && (
                                           <a
@@ -673,8 +828,10 @@ export default function HistoricoMarcacoesPage() {
                         </div>
                       </div>
                     </div>
+                    )}
                   </div>
-                ))}
+                );
+                })}
                 
                 {/* Indicador de carregamento */}
                 {isFetchingNextPage && (

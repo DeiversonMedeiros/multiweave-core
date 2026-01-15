@@ -476,36 +476,9 @@ export const PayrollService = {
           });
           payrolls.push(payroll);
 
-          // Criar conta a pagar automaticamente se a folha foi processada e a configuração estiver habilitada
-          if (payroll && (payroll.status === 'processado' || payroll.status === 'pago') && integrationConfig?.autoCreateAP) {
-            try {
-              const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-              const monthName = monthNames[(payroll.mes_referencia || 1) - 1];
-              const period = `${monthName}/${payroll.ano_referencia}`;
-              
-              // Calcular data de vencimento
-              const dueDate = new Date();
-              dueDate.setDate(dueDate.getDate() + (integrationConfig.defaultDueDate || 5));
-              
-              await integrationService.createAccountPayable(
-                params.companyId,
-                {
-                  payrollId: payroll.id,
-                  employeeId: employee.id,
-                  employeeName: employee.nome || 'Funcionário',
-                  netSalary: payroll.salario_liquido || 0,
-                  period: period,
-                  dueDate: dueDate.toISOString().split('T')[0],
-                  costCenter: employee.cost_center_id || undefined
-                },
-                integrationConfig
-              );
-            } catch (apError) {
-              console.error(`Erro ao criar conta a pagar para funcionário ${employee.nome}:`, apError);
-              // Não falhar o processamento da folha se a conta a pagar falhar
-            }
-          }
+          // NOTA: A conta a pagar agora é criada apenas quando a folha é validada pelo RH
+          // através da função handleValidatePayroll na página PayrollPage
+          // Isso permite que o RH revise e edite a folha antes de validar
         } catch (error) {
           console.error(`Erro ao processar folha do funcionário ${employee.nome}:`, error);
           // Continua processando outros funcionários

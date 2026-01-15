@@ -19,15 +19,33 @@ export async function callSchemaFunction<T = any>(
   });
 
   if (error) {
-    console.error(`Erro ao chamar ${schemaName}.${functionName}:`, error);
+    console.error(`[callSchemaFunction] ❌ Erro ao chamar ${schemaName}.${functionName}:`, error);
     throw error;
   }
 
   if (data?.error) {
+    // Se a função não existe, não é um erro crítico - apenas logar como warning
+    const isFunctionNotFound = data.message?.includes('does not exist') || 
+                               data.message?.includes('não existe') ||
+                               data.sqlstate === '42883'; // SQLSTATE para função não encontrada
+    
+    if (isFunctionNotFound) {
+      console.warn(`[callSchemaFunction] ⚠️ Função ${schemaName}.${functionName} não encontrada no banco de dados. Isso pode ser esperado se a funcionalidade ainda não foi implementada.`);
+      return null; // Retornar null em vez de lançar erro
+    }
+    
+    console.error(`[callSchemaFunction] ❌ Erro na resposta de ${schemaName}.${functionName}:`, data.error, data.message);
     throw new Error(data.message || `Erro ao chamar ${schemaName}.${functionName}`);
   }
 
-  return (data?.result ?? data) as T | null;
+  let result = (data?.result ?? data) as T | null;
+  
+  // Se o resultado é uma string "true" ou "false", converter para boolean
+  if (typeof result === 'string' && (result === 'true' || result === 'false')) {
+    result = (result === 'true') as T;
+  }
+  
+  return result;
 }
 
 export interface EntityFilters {
@@ -638,19 +656,54 @@ export const EntityService = {
   }): Promise<void> => {
     const { schema, table, companyId, id, skipCompanyFilter = false } = params;
     
+    // Validar parâmetros obrigatórios
+    if (!schema || !table || !id) {
+      const errorMsg = `Parâmetros inválidos para delete: schema=${schema}, table=${table}, id=${id}`;
+      console.error(`❌ [EntityService.delete] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+    
     // Para schemas que não sejam 'public', usar RPC function
     if (schema !== 'public') {
-      const { error } = await (supabase as any).rpc('delete_entity_data', {
+      const rpcParams: any = {
         schema_name: schema,
         table_name: table,
-        company_id_param: skipCompanyFilter ? null : companyId,
         id_param: id
+      };
+      
+      // Só adicionar company_id_param se não for para pular o filtro
+      // Se skipCompanyFilter for true, não enviar o parâmetro (ou enviar null se a função aceitar)
+      if (!skipCompanyFilter && companyId) {
+        rpcParams.company_id_param = companyId;
+      } else {
+        // Para tabelas sem company_id, passar null explicitamente
+        rpcParams.company_id_param = null;
+      }
+      
+      console.log('🔍 [EntityService.delete] Chamando RPC delete_entity_data:', {
+        schema,
+        table,
+        id,
+        companyId,
+        skipCompanyFilter,
+        rpcParams
       });
+      
+      const { data, error } = await (supabase as any).rpc('delete_entity_data', rpcParams);
 
       if (error) {
-        console.error(`Erro ao remover item de ${schema}.${table}:`, error);
+        console.error(`❌ [EntityService.delete] Erro ao remover item de ${schema}.${table}:`, {
+          error,
+          errorMessage: error.message,
+          errorDetails: error.details,
+          errorHint: error.hint,
+          errorCode: error.code,
+          params: rpcParams
+        });
         throw error;
       }
+      
+      console.log('✅ [EntityService.delete] Item removido com sucesso:', { schema, table, id, data });
       return;
     }
 

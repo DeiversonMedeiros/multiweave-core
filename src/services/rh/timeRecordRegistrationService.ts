@@ -276,6 +276,24 @@ export async function registerTimeRecord(
     const photoBase64Value = photoBase64.value;
     const locationValue = location.status === 'fulfilled' ? location.value : null;
 
+    // 2.1. Fazer reverse geocoding para obter endereço (se tiver localização)
+    let address: string | null = null;
+    if (locationValue && locationValue.lat && locationValue.lng) {
+      try {
+        const { GeolocationService } = await import('@/services/geolocationService');
+        const geocodeResult = await GeolocationService.reverseGeocode(
+          locationValue.lat,
+          locationValue.lng
+        );
+        address = geocodeResult.address || `Coordenadas: ${locationValue.lat.toFixed(6)}, ${locationValue.lng.toFixed(6)}`;
+        console.log('[timeRecordRegistrationService] 📍 Endereço obtido via reverse geocoding:', address);
+      } catch (geocodeError: any) {
+        console.warn('[timeRecordRegistrationService] ⚠️ Erro ao obter endereço, usando coordenadas como fallback:', geocodeError.message);
+        // Fallback: usar coordenadas como endereço
+        address = `Coordenadas: ${locationValue.lat.toFixed(6)}, ${locationValue.lng.toFixed(6)}`;
+      }
+    }
+
     // 3. Preparar payload com timestamp UTC e timezone (já capturado acima)
 
     // Mapear tipo para event_type
@@ -335,7 +353,8 @@ export async function registerTimeRecord(
       p_latitude: locationValue ? locationValue.lat : null,
       p_longitude: locationValue ? locationValue.lng : null,
       p_accuracy_meters: accuracyMeters,
-      p_photo_url: photoUrl
+      p_photo_url: photoUrl,
+      p_endereco: address // Adicionar endereço obtido via reverse geocoding
     } as any); // Type assertion temporário até tipagem do RPC ser atualizada
 
     if (rpcError) {

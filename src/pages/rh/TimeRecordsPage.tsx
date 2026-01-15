@@ -51,6 +51,7 @@ import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { formatDateOnly } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { TimeRecordsImportModal } from '@/components/rh/TimeRecordsImportModal';
 
 // =====================================================
 // COMPONENTE PRINCIPAL
@@ -72,6 +73,7 @@ export default function TimeRecordsPage() {
   const [showTimeClock, setShowTimeClock] = useState(false);
   const [activeTab, setActiveTab] = useState('registros');
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set());
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
 
   // Hooks
@@ -459,6 +461,13 @@ export default function TimeRecordsPage() {
           >
             <Clock className="h-4 w-4 mr-2" />
             {showTimeClock ? 'Ocultar Relógio' : 'Mostrar Relógio'}
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Importar em Massa
           </Button>
           <Button onClick={handleCreate}>
             <Plus className="h-4 w-4 mr-2" />
@@ -882,28 +891,22 @@ export default function TimeRecordsPage() {
                     <div className="mt-3 flex items-start gap-2 text-sm border-t pt-3">
                       <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
                       <div className="space-y-1 flex-1">
-                        <div className="text-gray-900 font-medium max-w-full break-words" title={location.endereco || ''}>
-                          {location.endereco?.trim() || 'Endereço não informado'}
-                        </div>
+                        {/* Sempre mostrar endereço quando disponível */}
+                        {location.hasAddress && (
+                          <div className="text-gray-900 font-medium max-w-full break-words mb-1" title={location.endereco || ''}>
+                            {location.endereco?.trim()}
+                          </div>
+                        )}
                         <div className="text-gray-500 flex items-center gap-2 flex-wrap">
-                          {location.hasCoords ? (
-                            <>
-                              <span className="font-mono text-xs">
-                                ({location.latitude}, {location.longitude})
-                              </span>
-                              {mapHref && (
-                                <a
-                                  href={mapHref}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:underline text-xs flex items-center gap-1"
-                                >
-                                  <MapPin className="h-3 w-3" />
-                                  Ver no mapa
-                                </a>
-                              )}
-                            </>
-                          ) : location.hasAddress && mapHref ? (
+                          {location.hasCoords && (
+                            <span className="font-mono text-xs">
+                              {location.latitude}, {location.longitude}
+                            </span>
+                          )}
+                          {!location.hasAddress && location.hasCoords && (
+                            <span className="text-gray-400 text-xs">(Sem endereço)</span>
+                          )}
+                          {mapHref && (
                             <a
                               href={mapHref}
                               target="_blank"
@@ -913,7 +916,8 @@ export default function TimeRecordsPage() {
                               <MapPin className="h-3 w-3" />
                               Ver no mapa
                             </a>
-                          ) : (
+                          )}
+                          {!location.hasCoords && !location.hasAddress && (
                             <span className="text-xs">Coordenadas não informadas</span>
                           )}
                           {record.localizacao_type && (
@@ -1184,6 +1188,16 @@ export default function TimeRecordsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Modal de Importação */}
+      <TimeRecordsImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        companyId={selectedCompany?.id || ''}
+        onSuccess={() => {
+          refetch();
+        }}
+      />
 
       {/* Modal */}
       <FormModal

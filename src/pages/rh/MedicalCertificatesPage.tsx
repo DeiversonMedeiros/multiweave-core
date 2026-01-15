@@ -51,10 +51,11 @@ export default function MedicalCertificatesPage() {
 
   // Filtrar atestados
   const filteredCertificates = medicalCertificates?.filter(certificate => {
+    const searchLower = searchTerm.toLowerCase();
     const matchesSearch = 
-      certificate.medico_nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      certificate.employee?.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      certificate.cid_codigo?.toLowerCase().includes(searchTerm.toLowerCase());
+      (certificate.medico_nome?.toLowerCase() || '').includes(searchLower) ||
+      (certificate.employee?.nome?.toLowerCase() || '').includes(searchLower) ||
+      (certificate.cid_codigo?.toLowerCase() || '').includes(searchLower);
     
     const matchesStatus = statusFilter === 'todos' || certificate.status === statusFilter;
     

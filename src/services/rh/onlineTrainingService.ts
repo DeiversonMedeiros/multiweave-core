@@ -1,6 +1,7 @@
 import { EntityService } from '@/services/generic/entityService';
 import { callSchemaFunction } from '@/services/generic/entityService';
 import { supabase } from '@/integrations/supabase/client';
+import type { Training } from '@/hooks/rh/useTraining';
 
 // =====================================================
 // TIPOS E INTERFACES
@@ -12,7 +13,7 @@ export interface TrainingContent {
   training_id: string;
   titulo: string;
   descricao?: string;
-  tipo_conteudo: 'video' | 'pdf' | 'texto' | 'link_externo';
+  tipo_conteudo: 'video' | 'pdf' | 'texto' | 'link_externo' | 'audio';
   ordem: number;
   duracao_minutos?: number;
   url_conteudo?: string;
@@ -168,7 +169,7 @@ export interface TrainingAssignment {
   employee_id?: string;
   position_id?: string;
   unit_id?: string;
-  tipo_atribuicao: 'obrigatorio' | 'opcional';
+  tipo_atribuicao: 'obrigatorio' | 'opcional' | 'publica';
   data_limite?: string;
   notificar: boolean;
   created_at: string;
@@ -220,13 +221,12 @@ export const OnlineTrainingService = {
   },
 
   async getContent(companyId: string, contentId: string): Promise<TrainingContent | null> {
-    const result = await EntityService.get<TrainingContent>({
-      schema: 'rh',
-      table: 'training_content',
-      companyId,
-      id: contentId
-    });
-    return result.data;
+    return await EntityService.getById<TrainingContent>(
+      'rh',
+      'training_content',
+      contentId,
+      companyId
+    );
   },
 
   async createContent(companyId: string, data: Omit<TrainingContent, 'id' | 'created_at' | 'updated_at'>): Promise<TrainingContent> {
@@ -434,13 +434,12 @@ export const OnlineTrainingService = {
   },
 
   async getExam(companyId: string, examId: string): Promise<TrainingExam | null> {
-    const result = await EntityService.get<TrainingExam>({
-      schema: 'rh',
-      table: 'training_exams',
-      companyId,
-      id: examId
-    });
-    return result.data;
+    return await EntityService.getById<TrainingExam>(
+      'rh',
+      'training_exams',
+      examId,
+      companyId
+    );
   },
 
   async createExam(companyId: string, data: Omit<TrainingExam, 'id' | 'created_at' | 'updated_at'>): Promise<TrainingExam> {
@@ -488,14 +487,14 @@ export const OnlineTrainingService = {
     question: TrainingExamQuestion;
     alternatives: TrainingExamAlternative[];
   } | null> {
-    const question = await EntityService.get<TrainingExamQuestion>({
-      schema: 'rh',
-      table: 'training_exam_questions',
-      companyId,
-      id: questionId
-    });
+    const question = await EntityService.getById<TrainingExamQuestion>(
+      'rh',
+      'training_exam_questions',
+      questionId,
+      companyId
+    );
 
-    if (!question.data) return null;
+    if (!question) return null;
 
     const alternatives = await EntityService.list<TrainingExamAlternative>({
       schema: 'rh',
@@ -509,7 +508,7 @@ export const OnlineTrainingService = {
     });
 
     return {
-      question: question.data,
+      question: question,
       alternatives: alternatives.data
     };
   },
@@ -591,38 +590,38 @@ export const OnlineTrainingService = {
     }
   ): Promise<TrainingExamAnswer> {
     // Buscar questão para calcular pontuação
-    const question = await EntityService.get<TrainingExamQuestion>({
-      schema: 'rh',
-      table: 'training_exam_questions',
-      companyId,
-      id: questionId
-    });
+    const question = await EntityService.getById<TrainingExamQuestion>(
+      'rh',
+      'training_exam_questions',
+      questionId,
+      companyId
+    );
 
     let isCorrect = false;
     let pontuacaoObtida = 0;
 
-    if (question.data) {
-      if (question.data.tipo_questao === 'multipla_escolha' && data.alternative_id) {
-        const alternative = await EntityService.get<TrainingExamAlternative>({
-          schema: 'rh',
-          table: 'training_exam_alternatives',
-          companyId,
-          id: data.alternative_id
-        });
-        if (alternative.data) {
-          isCorrect = alternative.data.is_correct;
-          pontuacaoObtida = isCorrect ? question.data.pontuacao : 0;
+    if (question) {
+      if (question.tipo_questao === 'multipla_escolha' && data.alternative_id) {
+        const alternative = await EntityService.getById<TrainingExamAlternative>(
+          'rh',
+          'training_exam_alternatives',
+          data.alternative_id,
+          companyId
+        );
+        if (alternative) {
+          isCorrect = alternative.is_correct;
+          pontuacaoObtida = isCorrect ? question.pontuacao : 0;
         }
-      } else if (question.data.tipo_questao === 'verdadeiro_falso' && data.alternative_id) {
-        const alternative = await EntityService.get<TrainingExamAlternative>({
-          schema: 'rh',
-          table: 'training_exam_alternatives',
-          companyId,
-          id: data.alternative_id
-        });
-        if (alternative.data) {
-          isCorrect = alternative.data.is_correct;
-          pontuacaoObtida = isCorrect ? question.data.pontuacao : 0;
+      } else if (question.tipo_questao === 'verdadeiro_falso' && data.alternative_id) {
+        const alternative = await EntityService.getById<TrainingExamAlternative>(
+          'rh',
+          'training_exam_alternatives',
+          data.alternative_id,
+          companyId
+        );
+        if (alternative) {
+          isCorrect = alternative.is_correct;
+          pontuacaoObtida = isCorrect ? question.pontuacao : 0;
         }
       } else {
         // Para texto livre e numérico, pontuação será avaliada manualmente
@@ -686,13 +685,12 @@ export const OnlineTrainingService = {
   },
 
   async getExamAttempt(companyId: string, attemptId: string): Promise<TrainingExamAttempt | null> {
-    const result = await EntityService.get<TrainingExamAttempt>({
-      schema: 'rh',
-      table: 'training_exam_attempts',
-      companyId,
-      id: attemptId
-    });
-    return result.data;
+    return await EntityService.getById<TrainingExamAttempt>(
+      'rh',
+      'training_exam_attempts',
+      attemptId,
+      companyId
+    );
   },
 
   async getExamAttemptAnswers(companyId: string, attemptId: string): Promise<TrainingExamAnswer[]> {
@@ -783,6 +781,8 @@ export const OnlineTrainingService = {
   // =====================================================
 
   async getDashboardStats(companyId: string, trainingId?: string): Promise<TrainingDashboardStats> {
+    console.log('[getDashboardStats] Chamando função com:', { companyId, trainingId });
+    
     const result = await callSchemaFunction<TrainingDashboardStats>(
       'rh',
       'get_training_dashboard_stats',
@@ -791,16 +791,70 @@ export const OnlineTrainingService = {
         p_training_id: trainingId || null
       }
     );
-    return result || {
-      total_trainings: 0,
-      trainings_to_start: 0,
-      trainings_in_progress: 0,
-      trainings_completed: 0,
-      total_enrollments: 0,
-      total_certificates: 0,
-      avg_completion_rate: 0,
-      avg_reaction_score: 0
+    
+    console.log('[getDashboardStats] Resultado bruto da função:', result);
+    console.log('[getDashboardStats] Tipo do resultado:', typeof result);
+    
+    // Garantir que todos os valores numéricos sejam convertidos corretamente
+    if (!result) {
+      console.log('[getDashboardStats] Resultado é null/undefined, retornando zeros');
+      return {
+        total_trainings: 0,
+        trainings_to_start: 0,
+        trainings_in_progress: 0,
+        trainings_completed: 0,
+        total_enrollments: 0,
+        total_certificates: 0,
+        avg_completion_rate: 0,
+        avg_reaction_score: 0
+      };
+    }
+    
+    // Se o resultado for uma string JSON, fazer parse
+    let parsedResult = result;
+    if (typeof result === 'string') {
+      try {
+        parsedResult = JSON.parse(result);
+        console.log('[getDashboardStats] Resultado parseado:', parsedResult);
+      } catch (e) {
+        console.error('[getDashboardStats] Erro ao fazer parse do JSON:', e);
+        return {
+          total_trainings: 0,
+          trainings_to_start: 0,
+          trainings_in_progress: 0,
+          trainings_completed: 0,
+          total_enrollments: 0,
+          total_certificates: 0,
+          avg_completion_rate: 0,
+          avg_reaction_score: 0
+        };
+      }
+    }
+    
+    // Usar conversão mais robusta
+    // Se o valor for null/undefined, usar 0
+    // Se for um número válido, usar o número
+    // Se for NaN, usar 0
+    const toNumber = (value: any): number => {
+      if (value == null) return 0;
+      const num = Number(value);
+      return isNaN(num) ? 0 : num;
     };
+    
+    const processed = {
+      total_trainings: toNumber(parsedResult.total_trainings),
+      trainings_to_start: toNumber(parsedResult.trainings_to_start),
+      trainings_in_progress: toNumber(parsedResult.trainings_in_progress),
+      trainings_completed: toNumber(parsedResult.trainings_completed),
+      total_enrollments: toNumber(parsedResult.total_enrollments),
+      total_certificates: toNumber(parsedResult.total_certificates),
+      avg_completion_rate: toNumber(parsedResult.avg_completion_rate),
+      avg_reaction_score: toNumber(parsedResult.avg_reaction_score)
+    };
+    
+    console.log('[getDashboardStats] Resultado processado:', processed);
+    
+    return processed;
   },
 
   async getMandatoryTrainingsPending(companyId: string, employeeId: string): Promise<any> {
@@ -812,6 +866,154 @@ export const OnlineTrainingService = {
         p_company_id: companyId
       }
     );
+  },
+
+  // =====================================================
+  // TREINAMENTOS DISPONÍVEIS PARA O COLABORADOR
+  // =====================================================
+
+  async getAvailableTrainingsForEmployee(companyId: string, employeeId: string): Promise<{
+    assigned: Array<{
+      training: Training;
+      assignment: TrainingAssignment;
+      progress?: TrainingProgressStats;
+      deadline?: string;
+    }>;
+    byPosition: Array<{
+      training: Training;
+      assignment: TrainingAssignment;
+      progress?: TrainingProgressStats;
+      deadline?: string;
+    }>;
+    public: Array<{
+      training: Training;
+      assignment: TrainingAssignment;
+      progress?: TrainingProgressStats;
+    }>;
+  }> {
+    // Buscar treinamentos online ativos
+    const trainingsResult = await EntityService.list<Training>({
+      schema: 'rh',
+      table: 'trainings',
+      companyId,
+      filters: {
+        modalidade: 'online',
+        is_active: true
+      }
+    });
+
+    const trainings = trainingsResult.data;
+
+    // Buscar atribuições
+    const assignmentsResult = await EntityService.list<TrainingAssignment>({
+      schema: 'rh',
+      table: 'training_assignments',
+      companyId,
+      filters: {}
+    });
+
+    const assignments = assignmentsResult.data;
+
+    // Buscar dados do funcionário para verificar cargo
+    const employeeResult = await EntityService.list({
+      schema: 'rh',
+      table: 'employees',
+      companyId,
+      filters: {
+        id: employeeId
+      }
+    });
+
+    const employee = employeeResult.data[0] as any;
+    const positionId = employee?.position_id;
+    const unitId = employee?.unit_id;
+
+    const assigned: any[] = [];
+    const byPosition: any[] = [];
+    const publicTrainings: any[] = [];
+
+    // Processar cada treinamento
+    for (const training of trainings) {
+      // Buscar atribuições relacionadas a este treinamento
+      const trainingAssignments = assignments.filter(a => a.training_id === training.id);
+
+      for (const assignment of trainingAssignments) {
+        let shouldInclude = false;
+        let assignmentType: 'assigned' | 'byPosition' | 'public' | null = null;
+
+        // Verificar se é atribuição pública
+        if (assignment.tipo_atribuicao === 'publica') {
+          shouldInclude = true;
+          assignmentType = 'public';
+        }
+        // Verificar se é atribuição direta ao funcionário
+        else if (assignment.employee_id === employeeId) {
+          shouldInclude = true;
+          assignmentType = 'assigned';
+        }
+        // Verificar se é atribuição por cargo
+        else if (assignment.position_id === positionId) {
+          shouldInclude = true;
+          assignmentType = 'byPosition';
+        }
+        // Verificar se é atribuição por departamento
+        else if (assignment.unit_id === unitId) {
+          shouldInclude = true;
+          assignmentType = 'byPosition';
+        }
+
+        if (shouldInclude && assignmentType) {
+          // Buscar progresso
+          let progress: TrainingProgressStats | undefined;
+          try {
+            progress = await this.getProgressStats(companyId, training.id, employeeId);
+          } catch (err) {
+            console.error('Erro ao buscar progresso:', err);
+          }
+
+          const trainingData = {
+            training,
+            assignment,
+            progress,
+            deadline: assignment.data_limite
+          };
+
+          if (assignmentType === 'assigned') {
+            assigned.push(trainingData);
+          } else if (assignmentType === 'byPosition') {
+            byPosition.push(trainingData);
+          } else if (assignmentType === 'public') {
+            publicTrainings.push(trainingData);
+          }
+        }
+      }
+    }
+
+    // Remover duplicatas (mesmo treinamento pode aparecer em múltiplas categorias)
+    const seenTrainingIds = new Set<string>();
+    const uniqueAssigned = assigned.filter(t => {
+      if (seenTrainingIds.has(t.training.id)) return false;
+      seenTrainingIds.add(t.training.id);
+      return true;
+    });
+
+    const uniqueByPosition = byPosition.filter(t => {
+      if (seenTrainingIds.has(t.training.id)) return false;
+      seenTrainingIds.add(t.training.id);
+      return true;
+    });
+
+    const uniquePublic = publicTrainings.filter(t => {
+      if (seenTrainingIds.has(t.training.id)) return false;
+      seenTrainingIds.add(t.training.id);
+      return true;
+    });
+
+    return {
+      assigned: uniqueAssigned,
+      byPosition: uniqueByPosition,
+      public: uniquePublic
+    };
   }
 };
 

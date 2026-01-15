@@ -15,6 +15,7 @@ import {
   X, 
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
   FileText,
   CheckCircle,
   XCircle
@@ -33,7 +34,7 @@ interface ExamEditorProps {
 
 export const ExamEditor: React.FC<ExamEditorProps> = ({
   trainingId,
-  examId,
+  examId: initialExamId,
   contentId,
   onSave,
   onCancel
@@ -41,16 +42,41 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [examId, setExamId] = useState<string | undefined>(initialExamId);
   const [exam, setExam] = useState<TrainingExam | null>(null);
-  const [questions, setQuestions] = useState<(TrainingExamQuestion & { alternatives: TrainingExamAlternative[] })[]>([]);
+  const [exams, setExams] = useState<TrainingExam[]>([]);
+  const [loadingExams, setLoadingExams] = useState(false);
+  const [questions, setQuestions] = useState<Array<{ question: TrainingExamQuestion; alternatives: TrainingExamAlternative[] }>>([]);
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null);
   const [showQuestionForm, setShowQuestionForm] = useState(false);
+  const [showExamForm, setShowExamForm] = useState(false);
 
   useEffect(() => {
     if (examId && selectedCompany?.id) {
       loadExam();
+    } else if (selectedCompany?.id && trainingId) {
+      loadExams();
     }
-  }, [examId, selectedCompany?.id]);
+  }, [examId, selectedCompany?.id, trainingId]);
+
+  const loadExams = async () => {
+    if (!selectedCompany?.id || !trainingId) return;
+
+    setLoadingExams(true);
+    try {
+      const examsData = await OnlineTrainingService.listExams(selectedCompany.id, trainingId);
+      setExams(examsData);
+    } catch (err) {
+      console.error('Erro ao carregar provas:', err);
+      toast({
+        title: 'Erro',
+        description: 'Erro ao carregar lista de provas',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoadingExams(false);
+    }
+  };
 
   const loadExam = async () => {
     if (!selectedCompany?.id || !examId) return;
@@ -63,6 +89,11 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
       }
     } catch (err) {
       console.error('Erro ao carregar prova:', err);
+      toast({
+        title: 'Erro',
+        description: 'Erro ao carregar prova',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -96,6 +127,7 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
     try {
       if (examId) {
         await OnlineTrainingService.updateExam(selectedCompany.id, examId, examData);
+        await loadExam(); // Recarregar a prova atualizada
         toast({
           title: 'Sucesso',
           description: 'Prova atualizada com sucesso!',
@@ -109,6 +141,10 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
           is_active: true
         });
         setExam(newExam);
+        setExamId(newExam.id);
+        setShowExamForm(false);
+        await loadExams(); // Recarregar a lista de provas
+        await loadExam(); // Carregar a prova recém-criada
         toast({
           title: 'Sucesso',
           description: 'Prova criada com sucesso!',
@@ -124,6 +160,36 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectExam = async (selectedExamId: string) => {
+    setExamId(selectedExamId);
+    setShowExamForm(false);
+  };
+
+  const handleDeleteExam = async (examToDeleteId: string) => {
+    if (!selectedCompany?.id) return;
+    if (!confirm('Tem certeza que deseja excluir esta prova?')) return;
+
+    try {
+      await OnlineTrainingService.updateExam(selectedCompany.id, examToDeleteId, { is_active: false });
+      toast({
+        title: 'Sucesso',
+        description: 'Prova excluída com sucesso!',
+      });
+      await loadExams();
+      if (examId === examToDeleteId) {
+        setExamId(undefined);
+        setExam(null);
+        setQuestions([]);
+      }
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: 'Erro ao excluir prova',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -219,13 +285,95 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Lista de Provas (quando não há prova selecionada) */}
+      {!examId && !showExamForm && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Provas</CardTitle>
+                <CardDescription>
+                  Gerencie as provas do treinamento
+                </CardDescription>
+              </div>
+              <Button onClick={() => setShowExamForm(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nova Prova
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loadingExams ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Carregando provas...</p>
+              </div>
+            ) : exams.length === 0 ? (
+              <Alert>
+                <AlertDescription>
+                  Nenhuma prova cadastrada. Clique em "Nova Prova" para começar.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="space-y-2">
+                {exams.map((examItem) => (
+                  <div
+                    key={examItem.id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
+                  >
+                    <div className="flex items-center gap-4 flex-1">
+                      <FileText className="h-5 w-5 text-muted-foreground" />
+                      <div className="flex-1">
+                        <div className="font-medium">{examItem.titulo}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {examItem.descricao || 'Sem descrição'}
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <Badge variant="outline">
+                            {examItem.tipo_avaliacao === 'entre_aulas' ? 'Entre Aulas' : 
+                             examItem.tipo_avaliacao === 'final' ? 'Final' : 'Diagnóstica'}
+                          </Badge>
+                          <Badge variant="outline">
+                            Nota mínima: {examItem.nota_minima_aprovacao}%
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSelectExam(examItem.id)}
+                      >
+                        <Edit className="h-4 w-4 mr-2" />
+                        Editar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteExam(examItem.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Formulário da Prova */}
-      {!examId && (
+      {showExamForm && !examId && (
         <ExamForm
           trainingId={trainingId}
           contentId={contentId}
           onSave={handleSaveExam}
-          onCancel={onCancel}
+          onCancel={() => {
+            setShowExamForm(false);
+            if (onCancel) onCancel();
+          }}
         />
       )}
 
@@ -235,7 +383,22 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setExamId(undefined);
+                        setExam(null);
+                        setQuestions([]);
+                        loadExams();
+                      }}
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Voltar para Lista
+                    </Button>
+                  </div>
                   <CardTitle>{exam.titulo}</CardTitle>
                   <CardDescription>{exam.descricao}</CardDescription>
                 </div>

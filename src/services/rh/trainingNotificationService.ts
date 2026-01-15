@@ -47,6 +47,15 @@ export const TrainingNotificationService = {
           p_company_id: companyId
         }
       );
+      
+      // Se a função não existe (retorna null), retornar resposta padrão
+      if (!result) {
+        return {
+          success: true,
+          notifications_created: 0,
+          message: 'Função não disponível - migração não aplicada'
+        };
+      }
 
       functionsAvailable.create = true;
       return result || {

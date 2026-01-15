@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useMonthlyTimeRecords, TimeRecord } from '@/hooks/rh/useMonthlyTimeRecords';
 import { EntityService } from '@/services/generic/entityService';
+import { getMonthDaysInfo, completeRecordsWithRestDays } from '@/services/rh/timeRecordReportService';
 
 // Removido interface duplicada - usando a do service
 
@@ -390,6 +391,82 @@ function SignatureCardWithRecords({
   const [year, month] = signature.month_year.split('-').map(Number);
   
   const { data: monthlyRecords, isLoading: recordsLoading } = useMonthlyTimeRecords(year, month);
+  
+  // Estado para armazenar informações dos dias do mês e registros completos
+  const [daysInfo, setDaysInfo] = useState<Map<string, import('@/services/rh/timeRecordReportService').DayInfo>>(new Map());
+  const [isLoadingDaysInfo, setIsLoadingDaysInfo] = useState(false);
+  const [completeRecords, setCompleteRecords] = useState<TimeRecord[]>([]);
+  
+  // Buscar informações dos dias do mês
+  useEffect(() => {
+    if (!employeeId || !companyId) {
+      return;
+    }
+    
+    setIsLoadingDaysInfo(true);
+    getMonthDaysInfo(
+      employeeId,
+      companyId,
+      month,
+      year
+    ).then(info => {
+      setDaysInfo(info);
+      setIsLoadingDaysInfo(false);
+    }).catch(err => {
+      console.error('[SignatureCardWithRecords] Erro ao buscar informações dos dias:', err);
+      setIsLoadingDaysInfo(false);
+    });
+  }, [employeeId, companyId, month, year]);
+  
+  // Completar registros com dias de folga quando necessário
+  useEffect(() => {
+    if (daysInfo.size === 0 || !monthlyRecords || !employeeId || !companyId) {
+      // Se não tem daysInfo ou monthlyRecords, usar apenas os registros originais
+      const recordsArray = monthlyRecords 
+        ? Object.entries(monthlyRecords.recordsByDate)
+            .map(([date, record]) => ({ ...record, data_registro: date }))
+            .sort((a, b) => a.data_registro.localeCompare(b.data_registro))
+        : [];
+      setCompleteRecords(recordsArray);
+      return;
+    }
+    
+    // Converter recordsByDate para array
+    const recordsArray = Object.entries(monthlyRecords.recordsByDate)
+      .map(([date, record]) => ({ ...record, data_registro: date }))
+      .sort((a, b) => a.data_registro.localeCompare(b.data_registro));
+    
+    // Completar com DSR, Férias, Atestado, Compensação
+    // Converter para o formato esperado por completeRecordsWithRestDays
+    const recordsForCompletion = recordsArray.map(record => ({
+      ...record,
+      // Garantir que todos os campos opcionais estejam presentes
+      horas_trabalhadas: record.horas_trabalhadas || 0,
+      horas_extras: record.horas_extras || 0,
+      horas_extras_50: record.horas_extras_50 || 0,
+      horas_extras_100: record.horas_extras_100 || 0,
+      horas_negativas: record.horas_negativas || 0,
+      horas_noturnas: record.horas_noturnas || 0,
+      horas_faltas: record.horas_faltas || 0,
+      is_feriado: (record as any).is_feriado || false,
+      is_domingo: (record as any).is_domingo || false,
+      is_dia_folga: (record as any).is_dia_folga || false,
+    })) as any[];
+    
+    completeRecordsWithRestDays(
+      recordsForCompletion,
+      month,
+      year,
+      daysInfo,
+      employeeId,
+      companyId
+    ).then(completed => {
+      setCompleteRecords(completed as TimeRecord[]);
+    }).catch(err => {
+      console.error('[SignatureCardWithRecords] Erro ao completar registros:', err);
+      setCompleteRecords(recordsArray);
+    });
+  }, [monthlyRecords, daysInfo, month, year, employeeId, companyId]);
 
   // Calcular saldo mensal do banco de horas usando função SQL
   // O cálculo é feito no banco de dados para garantir consistência
@@ -506,11 +583,14 @@ function SignatureCardWithRecords({
     }
   };
 
-  const recordsArray = monthlyRecords 
-    ? Object.entries(monthlyRecords.recordsByDate)
-        .map(([date, record]) => ({ ...record, data_registro: date }))
-        .sort((a, b) => a.data_registro.localeCompare(b.data_registro))
-    : [];
+  // Usar registros completos (com DSR, Férias, etc.) se disponível, senão usar os originais
+  const recordsArray = completeRecords.length > 0 
+    ? completeRecords
+    : (monthlyRecords 
+        ? Object.entries(monthlyRecords.recordsByDate)
+            .map(([date, record]) => ({ ...record, data_registro: date }))
+            .sort((a, b) => a.data_registro.localeCompare(b.data_registro))
+        : []);
 
   // Calcular métricas consolidadas (igual à página time-records)
   const summaryMetrics = useMemo(() => {
@@ -689,33 +769,32 @@ function SignatureCardWithRecords({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recordsArray.map((record) => (
-                      <TableRow key={record.id || record.data_registro}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">
-                              {formatDateShort(record.data_registro)}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {getDayOfWeek(record.data_registro)}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{formatTime(record.entrada)}</TableCell>
-                        <TableCell>{formatTime(record.saida_almoco)}</TableCell>
-                        <TableCell>{formatTime(record.entrada_almoco)}</TableCell>
-                        <TableCell>{formatTime(record.saida)}</TableCell>
-                        <TableCell>{formatHours(record.horas_trabalhadas)}</TableCell>
-                        <TableCell>
-                          {record.horas_extras ? (
-                            <span className="text-green-600 font-medium">
-                              {formatHours(record.horas_extras)}
-                            </span>
-                          ) : (
-                            '-'
-                          )}
-                        </TableCell>
-                        <TableCell>
+                    {recordsArray.map((record) => {
+                      // Verificar se é registro virtual (DSR, Férias, Atestado, Compensação)
+                      const isVirtual = record.id?.startsWith('virtual-');
+                      const isDSR = isVirtual && record.is_dia_folga;
+                      const isVacation = isVirtual && record.observacoes === 'Férias';
+                      const isMedicalCertificate = isVirtual && record.observacoes === 'Atestado Médico';
+                      const isCompensation = isVirtual && record.observacoes?.startsWith('Comp.');
+                      
+                      // Determinar cor de fundo e estilo baseado no tipo
+                      let rowClassName = '';
+                      let statusBadge = null;
+                      
+                      if (isDSR) {
+                        rowClassName = 'bg-blue-50 hover:bg-blue-100';
+                        statusBadge = <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300">DSR</Badge>;
+                      } else if (isVacation) {
+                        rowClassName = 'bg-green-50 hover:bg-green-100';
+                        statusBadge = <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300">Férias</Badge>;
+                      } else if (isMedicalCertificate) {
+                        rowClassName = 'bg-yellow-50 hover:bg-yellow-100';
+                        statusBadge = <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300">Atestado</Badge>;
+                      } else if (isCompensation) {
+                        rowClassName = 'bg-purple-50 hover:bg-purple-100';
+                        statusBadge = <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-300">{record.observacoes || 'Compensação'}</Badge>;
+                      } else {
+                        statusBadge = (
                           <Badge 
                             variant={
                               record.status === 'aprovado' ? 'default' :
@@ -725,9 +804,73 @@ function SignatureCardWithRecords({
                           >
                             {record.status || 'Pendente'}
                           </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                        );
+                      }
+                      
+                      return (
+                        <TableRow key={record.id || record.data_registro} className={rowClassName}>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">
+                                {formatDateShort(record.data_registro)}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {getDayOfWeek(record.data_registro)}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual && !record.entrada ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              formatTime(record.entrada)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual && !record.saida_almoco ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              formatTime(record.saida_almoco)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual && !record.entrada_almoco ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              formatTime(record.entrada_almoco)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual && !record.saida ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              formatTime(record.saida)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              formatHours(record.horas_trabalhadas)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : record.horas_extras ? (
+                              <span className="text-green-600 font-medium">
+                                {formatHours(record.horas_extras)}
+                              </span>
+                            ) : (
+                              '-'
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {statusBadge}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>

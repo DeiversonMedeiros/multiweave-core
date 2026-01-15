@@ -707,14 +707,20 @@ const AcompanhamentoPonto: React.FC = () => {
                                             {eventLabel && (
                                               <div className="text-xs font-medium text-blue-600 mb-1">{eventLabel}</div>
                                             )}
-                                            <div className="text-gray-900 font-medium max-w-full break-words">
-                                              {locAddr.trim() || (locHasCoords ? `${locLat}, ${locLng}` : 'Sem endereço')}
-                                            </div>
+                                            {/* Sempre mostrar endereço quando disponível */}
+                                            {locHasAddress && (
+                                              <div className="text-gray-900 font-medium max-w-full break-words mb-1">
+                                                {locAddr.trim()}
+                                              </div>
+                                            )}
                                             <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
                                               {locHasCoords && (
                                                 <span className="font-mono text-xs">
-                                                  ({locLat}, {locLng})
+                                                  {locLat}, {locLng}
                                                 </span>
+                                              )}
+                                              {!locHasAddress && locHasCoords && (
+                                                <span className="text-gray-400 text-xs">(Sem endereço)</span>
                                               )}
                                               {locMapHref && (
                                                 <a
@@ -739,14 +745,20 @@ const AcompanhamentoPonto: React.FC = () => {
                                 if (location.hasAddress || location.hasCoords) {
                                   return (
                                     <div>
-                                      <div className="text-gray-900 font-medium max-w-full break-words" title={location.endereco || ''}>
-                                        {location.endereco?.trim() || (location.hasCoords ? `${location.latitude}, ${location.longitude}` : 'Endereço não informado')}
-                                      </div>
+                                      {/* Sempre mostrar endereço quando disponível */}
+                                      {location.hasAddress && (
+                                        <div className="text-gray-900 font-medium max-w-full break-words mb-1" title={location.endereco || ''}>
+                                          {location.endereco?.trim()}
+                                        </div>
+                                      )}
                                       <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
                                         {location.hasCoords && (
                                           <span className="font-mono text-xs">
-                                            ({location.latitude}, {location.longitude})
+                                            {location.latitude}, {location.longitude}
                                           </span>
+                                        )}
+                                        {!location.hasAddress && location.hasCoords && (
+                                          <span className="text-gray-400 text-xs">(Sem endereço)</span>
                                         )}
                                         {mapHref && (
                                           <a

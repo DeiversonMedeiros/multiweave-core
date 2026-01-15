@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { X, File, Video, FileText, Image, Loader2 } from 'lucide-react';
+import { X, File, Video, FileText, Image, Loader2, Headphones } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface FilePreviewProps {
   file: File;
-  fileType: 'video' | 'pdf' | 'text' | 'image';
+  fileType: 'video' | 'pdf' | 'text' | 'image' | 'audio';
   onRemove: () => void;
   onConfirm: () => void;
 }
@@ -61,7 +61,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
 
     // Cleanup
     return () => {
-      if (previewUrl && (fileType === 'video' || fileType === 'image' || fileType === 'pdf')) {
+      if (previewUrl && (fileType === 'video' || fileType === 'image' || fileType === 'pdf' || fileType === 'audio')) {
         URL.revokeObjectURL(previewUrl);
       }
     };
@@ -83,6 +83,8 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         return <FileText className="h-8 w-8 text-red-500" />;
       case 'image':
         return <Image className="h-8 w-8 text-blue-500" />;
+      case 'audio':
+        return <Headphones className="h-8 w-8 text-purple-500" />;
       default:
         return <File className="h-8 w-8 text-gray-500" />;
     }
@@ -145,6 +147,24 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
             <pre className="text-sm whitespace-pre-wrap font-mono">
               {previewUrl}
             </pre>
+          </div>
+        );
+
+      case 'audio':
+        return (
+          <div className="w-full flex items-center justify-center bg-gray-100 rounded-lg p-8">
+            <div className="w-full max-w-md">
+              <div className="flex items-center justify-center mb-4">
+                <Headphones className="h-16 w-16 text-purple-500" />
+              </div>
+              <audio
+                src={previewUrl || undefined}
+                controls
+                className="w-full"
+              >
+                Seu navegador não suporta o elemento de áudio.
+              </audio>
+            </div>
           </div>
         );
 

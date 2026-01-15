@@ -159,57 +159,10 @@ export default function PayrollIndividualPage() {
           company_id: selectedCompany?.id
         });
 
-        // Criar conta a pagar automaticamente se a folha foi processada
-        if (newPayroll && (newPayroll.status === 'processado' || newPayroll.status === 'pago')) {
-          try {
-            const integrationService = FinancialIntegrationService.getInstance();
-            const config = await integrationService.getIntegrationConfig(selectedCompany?.id || '');
-            
-            if (config.autoCreateAP) {
-              // Buscar dados do funcionário
-              const employeeResult = await EntityService.getById<Employee>({
-                schema: 'rh',
-                table: 'employees',
-                companyId: selectedCompany?.id || '',
-                id: data.employee_id
-              });
-              
-              if (employeeResult) {
-                const employee = employeeResult;
-                const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-                const monthName = monthNames[(newPayroll.mes_referencia || 1) - 1];
-                const period = `${monthName}/${newPayroll.ano_referencia}`;
-                
-                // Calcular data de vencimento
-                const dueDate = new Date();
-                dueDate.setDate(dueDate.getDate() + (config.defaultDueDate || 5));
-                
-                await integrationService.createAccountPayable(
-                  selectedCompany?.id || '',
-                  {
-                    payrollId: newPayroll.id,
-                    employeeId: employee.id || data.employee_id,
-                    employeeName: employee.nome || 'Funcionário',
-                    netSalary: newPayroll.salario_liquido || 0,
-                    period: period,
-                    dueDate: dueDate.toISOString().split('T')[0],
-                    costCenter: employee.cost_center_id || undefined
-                  },
-                  config
-                );
-                
-                toast.success('Folha criada e conta a pagar gerada automaticamente');
-              }
-            }
-          } catch (apError) {
-            console.error('Erro ao criar conta a pagar:', apError);
-            // Não falhar a criação da folha se a conta a pagar falhar
-            toast.warning('Folha criada, mas houve erro ao criar conta a pagar');
-          }
-        } else {
-          toast.success('Folha criada com sucesso');
-        }
+        // NOTA: A conta a pagar agora é criada apenas quando a folha é validada pelo RH
+        // através da função handleValidatePayroll na página PayrollPage
+        // Isso permite que o RH revise e edite a folha antes de validar
+        toast.success('Folha criada com sucesso');
       } else if (modalMode === 'edit' && selectedPayroll) {
         await updatePayroll.mutateAsync({
           id: selectedPayroll.id,

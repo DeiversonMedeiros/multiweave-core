@@ -33,19 +33,6 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
-    const supabaseClient = createClient(
-      supabaseUrl,
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
-    
-    console.log('update-user-password: Supabase client created');
 
     // Verify that the requesting user is an admin
     const authHeader = req.headers.get('Authorization');
@@ -58,16 +45,49 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     
-    const { data: { user: requestingUser }, error: authError } = await supabaseClient.auth.getUser(token);
-    console.log('update-user-password: Auth result:', { requestingUser: requestingUser?.id, authError });
-
-    if (authError || !requestingUser) {
-      console.error('update-user-password: Authentication error:', authError);
+    // Validate user token using REST API
+    console.log('update-user-password: Validating user token');
+    const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'apikey': serviceRoleKey
+      }
+    });
+    
+    if (!userResponse.ok) {
+      console.error('update-user-password: Token validation failed:', userResponse.status, userResponse.statusText);
+      const errorText = await userResponse.text();
+      console.error('update-user-password: Error response:', errorText);
       return new Response(
         JSON.stringify({ error: 'Não autorizado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    
+    const requestingUser = await userResponse.json();
+    console.log('update-user-password: User validated:', { userId: requestingUser.id, email: requestingUser.email });
+    
+    if (!requestingUser || !requestingUser.id) {
+      console.error('update-user-password: Invalid user data');
+      return new Response(
+        JSON.stringify({ error: 'Não autorizado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Create service role client for admin operations
+    const supabaseClient = createClient(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+    
+    console.log('update-user-password: Supabase client created');
 
     // Check if requesting user is admin
     const { data: isAdmin, error: adminCheckError } = await supabaseClient

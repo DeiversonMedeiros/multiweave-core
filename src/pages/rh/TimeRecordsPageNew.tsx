@@ -59,9 +59,12 @@ import {
   downloadFile,
   calculateDSR,
   getBankHoursBalanceUntilDate,
-  TimeRecordReportData
+  TimeRecordReportData,
+  completeRecordsWithRestDays,
+  getMonthDaysInfo
 } from '@/services/rh/timeRecordReportService';
 import { toast } from 'sonner';
+import { TimeRecordsImportModal } from '@/components/rh/TimeRecordsImportModal';
 
 // =====================================================
 // COMPONENTE DE IMAGEM DO MODAL COM TRATAMENTO DE ERRO
@@ -298,6 +301,9 @@ export default function TimeRecordsPageNew() {
   const [expandedAddresses, setExpandedAddresses] = useState<Set<string>>(new Set());
   // Cache de signed URLs geradas sob demanda
   const [signedUrlCache, setSignedUrlCache] = useState<Map<string, string>>(new Map());
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  // Estado para armazenar registros completos (com DSR, Férias, etc.) por funcionário
+  const [completeRecordsByEmployee, setCompleteRecordsByEmployee] = useState<Map<string, TimeRecord[]>>(new Map());
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
 
   // Helper para extrair path relativo do photo_url
@@ -958,8 +964,8 @@ export default function TimeRecordsPageNew() {
     // Log detalhado dos registros filtrados
     const sampleRecords = filteredRecordsForSummary.slice(0, 10).map(r => ({
       id: r.id,
-      data: r.data_registro,
-      funcionario: r.employee_nome,
+      data: (r as any).data_registro,
+      funcionario: (r as any).employee_nome,
       horas_trabalhadas: r.horas_trabalhadas,
       horas_extras_50: r.horas_extras_50,
       horas_extras_100: r.horas_extras_100,
@@ -983,8 +989,8 @@ export default function TimeRecordsPageNew() {
       registrosComDados: filteredRecordsForSummary.length - registrosZerados.length,
       sampleRecords: sampleRecords.slice(0, 10).map(r => ({
         id: r.id,
-        data_registro: r.data_registro,
-        employee_nome: r.employee_nome,
+        data_registro: (r as any).data,
+        employee_nome: (r as any).funcionario,
         horas_trabalhadas: r.horas_trabalhadas,
         horas_extras_50: r.horas_extras_50,
         horas_extras_100: r.horas_extras_100,
@@ -1147,6 +1153,54 @@ export default function TimeRecordsPageNew() {
     return result;
   }, [filteredRecordsForSummary, summaryMonth, summaryYear]);
 
+  // Completar registros com DSR, Férias, Atestado, etc. para cada funcionário (retroativo)
+  useEffect(() => {
+    if (!summaryMonth || !summaryYear || !selectedCompany?.id || employeeSummary.length === 0) {
+      setCompleteRecordsByEmployee(new Map());
+      return;
+    }
+
+    const month = parseInt(summaryMonth);
+    const year = parseInt(summaryYear);
+    const newCompleteRecords = new Map<string, TimeRecord[]>();
+
+    // Processar cada funcionário de forma assíncrona
+    const processEmployees = async () => {
+      const promises = employeeSummary.map(async (summary) => {
+        try {
+          // Buscar informações dos dias do mês (retroativo - funciona para qualquer mês/ano)
+          const daysInfo = await getMonthDaysInfo(
+            summary.employeeId,
+            selectedCompany.id,
+            month,
+            year
+          );
+
+          // Completar registros com DSR, Férias, Atestado, etc.
+          const completeRecords = await completeRecordsWithRestDays(
+            summary.records,
+            month,
+            year,
+            daysInfo,
+            summary.employeeId,
+            selectedCompany.id
+          );
+
+          newCompleteRecords.set(summary.employeeId, completeRecords);
+        } catch (err) {
+          console.error(`[TimeRecordsPageNew] Erro ao completar registros para ${summary.employeeName}:`, err);
+          // Em caso de erro, usar registros originais
+          newCompleteRecords.set(summary.employeeId, summary.records);
+        }
+      });
+
+      await Promise.all(promises);
+      setCompleteRecordsByEmployee(newCompleteRecords);
+    };
+
+    processEmployees();
+  }, [employeeSummary, summaryMonth, summaryYear, selectedCompany?.id]);
+
   const toggleEmployeeExpanded = (employeeId: string) => {
     setExpandedEmployees(prev => {
       const newSet = new Set(prev);
@@ -1296,11 +1350,12 @@ export default function TimeRecordsPageNew() {
         year: parseInt(summaryYear),
         records: summary.records,
         bankHoursBalance,
-        dsr
+        dsr,
+        companyId: selectedCompany.id
       };
 
-      // Gerar HTML
-      const html = generateTimeRecordReportHTML(reportData);
+      // Gerar HTML (agora é assíncrono)
+      const html = await generateTimeRecordReportHTML(reportData);
       
       // Fazer download
       const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -1346,11 +1401,12 @@ export default function TimeRecordsPageNew() {
         year: parseInt(summaryYear),
         records: summary.records,
         bankHoursBalance,
-        dsr
+        dsr,
+        companyId: selectedCompany.id
       };
 
-      // Gerar CSV
-      const csv = generateTimeRecordReportCSV(reportData);
+      // Gerar CSV (agora é assíncrono)
+      const csv = await generateTimeRecordReportCSV(reportData);
       
       // Fazer download
       const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -1526,6 +1582,14 @@ export default function TimeRecordsPageNew() {
           <Button onClick={handleClockOut} variant="outline" className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
             Saída
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Importar em Massa
           </Button>
           <Button onClick={handleCreate} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
@@ -2013,14 +2077,20 @@ export default function TimeRecordsPageNew() {
                                         {eventLabel && (
                                           <div className="text-xs font-medium text-blue-600 mb-1">{eventLabel}</div>
                                         )}
-                                        <div className="text-gray-900 font-medium max-w-full break-words">
-                                          {locAddr.trim() || (locHasCoords ? `${locLat}, ${locLng}` : 'Sem endereço')}
-                                        </div>
+                                        {/* Sempre mostrar endereço quando disponível */}
+                                        {locHasAddress && (
+                                          <div className="text-gray-900 font-medium max-w-full break-words mb-1">
+                                            {locAddr.trim()}
+                                          </div>
+                                        )}
                                         <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
                                           {locHasCoords && (
                                             <span className="font-mono text-xs">
-                                              ({locLat}, {locLng})
+                                              {locLat}, {locLng}
                                             </span>
+                                          )}
+                                          {!locHasAddress && locHasCoords && (
+                                            <span className="text-gray-400 text-xs">(Sem endereço)</span>
                                           )}
                                           {locMapHref && (
                                             <a
@@ -2042,17 +2112,30 @@ export default function TimeRecordsPageNew() {
                             }
                             
                             // Fallback: usar localização única da função getLocationForRecord
+                            const location = getLocationForRecord(record);
+                            const mapHref = location.hasCoords
+                              ? `https://www.google.com/maps?q=${location.latitude},${location.longitude}`
+                              : location.hasAddress
+                                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location.endereco || '')}`
+                                : undefined;
+                            
                             if (location.hasAddress || location.hasCoords) {
                               return (
                                 <div>
-                                  <div className="text-gray-900 font-medium max-w-full break-words" title={location.endereco || ''}>
-                                    {location.endereco?.trim() || (location.hasCoords ? `${location.latitude}, ${location.longitude}` : 'Endereço não informado')}
-                                  </div>
+                                  {/* Sempre mostrar endereço quando disponível */}
+                                  {location.hasAddress && (
+                                    <div className="text-gray-900 font-medium max-w-full break-words mb-1" title={location.endereco || ''}>
+                                      {location.endereco?.trim()}
+                                    </div>
+                                  )}
                                   <div className="text-gray-500 flex items-center gap-2 flex-wrap mt-1">
                                     {location.hasCoords && (
                                       <span className="font-mono text-xs">
-                                        ({location.latitude}, {location.longitude})
+                                        {location.latitude}, {location.longitude}
                                       </span>
+                                    )}
+                                    {!location.hasAddress && location.hasCoords && (
+                                      <span className="text-gray-400 text-xs">(Sem endereço)</span>
                                     )}
                                     {mapHref && (
                                       <a
@@ -2368,22 +2451,60 @@ export default function TimeRecordsPageNew() {
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {summary.records
-                                      .sort((a, b) => 
-                                        new Date(b.data_registro).getTime() - new Date(a.data_registro).getTime()
-                                      )
-                                      .map((record) => (
-                                        <TableRow key={record.id}>
+                                    {(completeRecordsByEmployee.get(summary.employeeId) || summary.records)
+                                      .sort((a, b) => {
+                                        // Ordenar por data (sem problemas de timezone)
+                                        const dateA = a.data_registro.split('T')[0];
+                                        const dateB = b.data_registro.split('T')[0];
+                                        return dateB.localeCompare(dateA);
+                                      })
+                                      .map((record) => {
+                                        const isVirtual = record.id.startsWith('virtual-');
+                                        const isRestDay = (record as any).is_dia_folga || (isVirtual && record.id.includes('-dsr'));
+                                        const isVacation = isVirtual && record.id.includes('-ferias');
+                                        const isMedicalCertificate = isVirtual && record.id.includes('-atestado');
+                                        const isCompensation = isVirtual && record.id.includes('-compensacao');
+                                        
+                                        // Determinar label e cor
+                                        let displayLabel = '';
+                                        let rowBgColor = '';
+                                        if (isVacation) {
+                                          displayLabel = 'Férias';
+                                          rowBgColor = 'bg-green-50';
+                                        } else if (isMedicalCertificate) {
+                                          displayLabel = 'Atestado';
+                                          rowBgColor = 'bg-yellow-50';
+                                        } else if (isCompensation) {
+                                          displayLabel = record.observacoes || 'Compensação';
+                                          rowBgColor = 'bg-purple-50';
+                                        } else if (isRestDay && !record.entrada) {
+                                          displayLabel = 'DSR';
+                                          rowBgColor = 'bg-blue-50';
+                                        }
+                                        
+                                        return (
+                                        <TableRow key={record.id} className={rowBgColor}>
                                           <TableCell>
                                             {formatDateOnly(record.data_registro)}
+                                            {displayLabel && (
+                                              <Badge variant="outline" className="ml-2 text-xs">
+                                                {displayLabel}
+                                              </Badge>
+                                            )}
                                           </TableCell>
                                           <TableCell>
-                                            <span className="font-medium">
-                                              {record.horas_trabalhadas?.toFixed(2) || '0.00'}h
-                                            </span>
+                                            {displayLabel ? (
+                                              <span className="text-muted-foreground italic">{displayLabel}</span>
+                                            ) : (
+                                              <span className="font-medium">
+                                                {record.horas_trabalhadas?.toFixed(2) || '0.00'}h
+                                              </span>
+                                            )}
                                           </TableCell>
                                           <TableCell>
-                                            {record.horas_negativas && record.horas_negativas > 0 ? (
+                                            {displayLabel ? (
+                                              <span className="text-muted-foreground">-</span>
+                                            ) : record.horas_negativas && record.horas_negativas > 0 ? (
                                               <span className="text-red-600 font-medium">
                                                 -{record.horas_negativas.toFixed(2)}h
                                               </span>
@@ -2392,7 +2513,9 @@ export default function TimeRecordsPageNew() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            {record.horas_extras_50 && record.horas_extras_50 > 0 ? (
+                                            {displayLabel ? (
+                                              <span className="text-muted-foreground">-</span>
+                                            ) : record.horas_extras_50 && record.horas_extras_50 > 0 ? (
                                               <span className="text-orange-600 font-medium">
                                                 +{record.horas_extras_50.toFixed(2)}h
                                               </span>
@@ -2401,7 +2524,9 @@ export default function TimeRecordsPageNew() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            {record.horas_extras_100 && record.horas_extras_100 > 0 ? (
+                                            {displayLabel ? (
+                                              <span className="text-muted-foreground">-</span>
+                                            ) : record.horas_extras_100 && record.horas_extras_100 > 0 ? (
                                               <span className="text-purple-600 font-medium">
                                                 +{record.horas_extras_100.toFixed(2)}h
                                               </span>
@@ -2410,7 +2535,9 @@ export default function TimeRecordsPageNew() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            {record.horas_noturnas && record.horas_noturnas > 0 ? (
+                                            {displayLabel ? (
+                                              <span className="text-muted-foreground">-</span>
+                                            ) : record.horas_noturnas && record.horas_noturnas > 0 ? (
                                               <span className="text-indigo-600 font-medium">
                                                 +{record.horas_noturnas.toFixed(2)}h
                                               </span>
@@ -2419,12 +2546,24 @@ export default function TimeRecordsPageNew() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            <Badge className={getStatusColor(record.status || '')}>
-                                              {getStatusLabel(record.status || '')}
-                                            </Badge>
+                                            {isVirtual ? (
+                                              <Badge className={
+                                                isVacation ? 'bg-green-100 text-green-800' :
+                                                isMedicalCertificate ? 'bg-yellow-100 text-yellow-800' :
+                                                isCompensation ? 'bg-purple-100 text-purple-800' :
+                                                'bg-blue-100 text-blue-800'
+                                              }>
+                                                {displayLabel}
+                                              </Badge>
+                                            ) : (
+                                              <Badge className={getStatusColor(record.status || '')}>
+                                                {getStatusLabel(record.status || '')}
+                                              </Badge>
+                                            )}
                                           </TableCell>
                                         </TableRow>
-                                      ))}
+                                      );
+                                      })}
                                   </TableBody>
                                 </Table>
                               </div>
@@ -2546,6 +2685,16 @@ export default function TimeRecordsPageNew() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Importação */}
+      <TimeRecordsImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        companyId={selectedCompany?.id || ''}
+        onSuccess={() => {
+          refetch();
+        }}
+      />
     </div>
     </RequireEntity>
   );

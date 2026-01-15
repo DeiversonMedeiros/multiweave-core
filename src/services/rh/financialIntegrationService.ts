@@ -29,6 +29,7 @@ export interface AccountsPayable {
   category?: string; // Para compatibilidade
   centro_custo_id?: string;
   cost_center_id?: string; // Para compatibilidade
+  conta_bancaria_id?: string; // Conta bancária da empresa (de onde sai o pagamento)
   payroll_id?: string;
   employee_id?: string;
   created_at: string;
@@ -140,6 +141,87 @@ export class FinancialIntegrationService {
   }
 
   /**
+   * Busca classe financeira para folha de pagamento
+   * Retorna no formato "codigo - nome" para corresponder às configurações de aprovação
+   */
+  private async getPayrollFinancialClass(
+    companyId: string,
+    defaultClassName?: string
+  ): Promise<string> {
+    try {
+      // Buscar classe financeira na tabela classes_financeiras
+      // Procurar por nomes relacionados a folha de pagamento
+      const searchNames = [
+        defaultClassName || 'Salários e Ordenados',
+        'Folha de Pagamento',
+        'Salários',
+        'Ordenados',
+        'Remunerações'
+      ];
+
+      for (const searchName of searchNames) {
+        try {
+          const result = await EntityService.list<{
+            id: string;
+            codigo: string;
+            nome: string;
+            is_active: boolean;
+          }>({
+            schema: 'financeiro',
+            table: 'classes_financeiras',
+            companyId: companyId,
+            filters: {
+              nome: searchName,
+              is_active: true
+            },
+            pageSize: 1
+          });
+
+          if (result.data && result.data.length > 0) {
+            const classe = result.data[0];
+            // Retornar no formato "codigo - nome" para corresponder às configurações de aprovação
+            return `${classe.codigo} - ${classe.nome}`;
+          }
+        } catch (error) {
+          console.warn(`Erro ao buscar classe financeira "${searchName}":`, error);
+        }
+      }
+
+      // Se não encontrou, tentar buscar pelo código "1.1.01" que é o padrão para salários
+      try {
+        const result = await EntityService.list<{
+          id: string;
+          codigo: string;
+          nome: string;
+          is_active: boolean;
+        }>({
+          schema: 'financeiro',
+          table: 'classes_financeiras',
+          companyId: companyId,
+          filters: {
+            codigo: '1.1.01',
+            is_active: true
+          },
+          pageSize: 1
+        });
+
+        if (result.data && result.data.length > 0) {
+          const classe = result.data[0];
+          return `${classe.codigo} - ${classe.nome}`;
+        }
+      } catch (error) {
+        console.warn('Erro ao buscar classe financeira pelo código 1.1.01:', error);
+      }
+
+      // Se não encontrou, retornar o nome padrão (sem código)
+      return defaultClassName || 'Salários e Ordenados';
+    } catch (error) {
+      console.error('Erro ao buscar classe financeira:', error);
+      return defaultClassName || 'Salários e Ordenados';
+    }
+  }
+
+  /**
    * Cria conta a pagar individual
    */
   async createAccountPayable(
@@ -148,11 +230,67 @@ export class FinancialIntegrationService {
     config: IntegrationConfig
   ): Promise<AccountsPayable> {
     try {
+      // Buscar classe financeira da tabela classes_financeiras
+      const classeFinanceira = await this.getPayrollFinancialClass(
+        companyId,
+        config.defaultFinancialClass
+      );
+
+      // Buscar conta bancária da empresa (de onde sai o pagamento)
+      let contaBancariaId: string | null = null;
+      try {
+        const contasBancariasResult = await EntityService.list<{
+          id: string;
+          is_active: boolean;
+        }>({
+          schema: 'financeiro',
+          table: 'contas_bancarias',
+          companyId: companyId,
+          filters: {
+            is_active: true
+          },
+          orderBy: 'created_at',
+          orderDirection: 'ASC',
+          pageSize: 1
+        });
+
+        if (contasBancariasResult.data && contasBancariasResult.data.length > 0) {
+          contaBancariaId = contasBancariasResult.data[0].id;
+          console.log('✅ [createAccountPayable] Conta bancária encontrada:', contaBancariaId);
+        } else {
+          console.warn('⚠️ [createAccountPayable] Nenhuma conta bancária ativa encontrada para a empresa');
+        }
+      } catch (error) {
+        console.warn('⚠️ [createAccountPayable] Erro ao buscar conta bancária:', error);
+        // Continuar sem conta bancária se houver erro
+      }
+
+      // Gerar número do título sequencial usando a função RPC
+      let numeroTitulo: string;
+      try {
+        const { supabase } = await import('@/integrations/supabase/client');
+        const { data, error } = await supabase.rpc('generate_titulo_number', {
+          p_company_id: companyId,
+          p_tipo: 'PAGAR'
+        });
+
+        if (error) {
+          console.warn('Erro ao gerar número do título sequencial, usando formato alternativo:', error);
+          // Fallback: usar formato com período se a função RPC falhar
+          numeroTitulo = `FOLHA-${mapping.period.replace(/\//g, '-')}`;
+        } else {
+          numeroTitulo = data || `FOLHA-${mapping.period.replace(/\//g, '-')}`;
+        }
+      } catch (error) {
+        console.warn('Erro ao chamar função RPC generate_titulo_number, usando formato alternativo:', error);
+        numeroTitulo = `FOLHA-${mapping.period.replace(/\//g, '-')}`;
+      }
+
       const apData: any = {
         company_id: companyId,
-        fornecedor_id: mapping.employeeId, // Funcionário como "fornecedor"
-        fornecedor_nome: mapping.employeeName,
-        numero_titulo: `FOLHA-${mapping.period.replace(/\//g, '-')}-${mapping.employeeId.substring(0, 8)}`,
+        fornecedor_id: null, // NULL porque funcionários não são partners - usamos employee_id para identificar
+        fornecedor_nome: mapping.employeeName, // Nome do funcionário para referência
+        numero_titulo: numeroTitulo, // Código sequencial gerado pela função RPC
         descricao: `Folha de Pagamento - ${mapping.employeeName} - ${mapping.period}`,
         valor_original: mapping.netSalary,
         valor_atual: mapping.netSalary,
@@ -160,10 +298,11 @@ export class FinancialIntegrationService {
         data_vencimento: mapping.dueDate,
         status: 'pendente' as const,
         categoria: config.defaultCategory || 'Folha de Pagamento',
-        classe_financeira: config.defaultFinancialClass || 'Salários e Ordenados', // Classe financeira para aprovações
-        centro_custo_id: mapping.costCenter || null,
+        classe_financeira: classeFinanceira, // Classe financeira buscada da tabela
+        centro_custo_id: mapping.costCenter || null, // Centro de custo do funcionário
+        conta_bancaria_id: contaBancariaId, // Conta bancária da empresa (de onde sai o pagamento)
         payroll_id: mapping.payrollId,
-        employee_id: mapping.employeeId,
+        employee_id: mapping.employeeId, // ID do funcionário (campo específico para folha)
         observacoes: `Folha de Pagamento gerada automaticamente`,
         is_active: true
       };

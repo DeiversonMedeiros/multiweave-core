@@ -12,6 +12,7 @@ import { useActiveEmployees } from '@/hooks/rh/useEmployees';
 import { useToast } from '@/hooks/use-toast';
 import { useBankHoursLegacyImports } from '@/hooks/useBankHoursLegacyImports';
 import { Employee } from '@/integrations/supabase/rh-types';
+import { formatDateOnly } from '@/lib/utils';
 
 interface BankHoursLegacyImportProps {
   companyId: string;
@@ -241,7 +242,7 @@ export function BankHoursLegacyImport({ companyId }: BankHoursLegacyImportProps)
                             ) : null}
                           </div>
                         </TableCell>
-                        <TableCell>{new Date(item.reference_date).toLocaleDateString('pt-BR')}</TableCell>
+                        <TableCell>{formatDateOnly(item.reference_date)}</TableCell>
                         <TableCell>
                           <Badge variant={item.hours_amount >= 0 ? 'default' : 'destructive'}>{formatHours(item.hours_amount)}</Badge>
                         </TableCell>

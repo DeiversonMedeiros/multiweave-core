@@ -51,7 +51,8 @@ export default function HoleritesPage() {
         table: 'payroll',
         companyId: selectedCompany.id,
         filters: {
-          employee_id: employee.id
+          employee_id: employee.id,
+          status: 'validado' // Apenas folhas validadas são visíveis para o colaborador
         },
         orderBy: 'mes_referencia',
         orderDirection: 'DESC'
@@ -188,7 +189,8 @@ export default function HoleritesPage() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <Badge variant="outline">
-                      {slip.status === 'processado' ? 'Disponível' : 'Processando'}
+                      {slip.status === 'validado' ? 'Disponível' : 
+                       slip.status === 'pago' ? 'Pago' : 'Processando'}
                     </Badge>
                     <Button
                       size="sm"
@@ -295,11 +297,11 @@ function PayrollDetailsView({ payroll, employee }: { payroll: Payroll; employee:
               <p className="text-sm text-muted-foreground">Status</p>
               <Badge variant={
                 payroll.status === 'pago' ? 'default' :
-                payroll.status === 'processado' ? 'outline' :
+                payroll.status === 'validado' ? 'outline' :
                 payroll.status === 'cancelado' ? 'destructive' : 'secondary'
               }>
                 {payroll.status === 'pago' ? 'Pago' :
-                 payroll.status === 'processado' ? 'Processado' :
+                 payroll.status === 'validado' ? 'Validado' :
                  payroll.status === 'cancelado' ? 'Cancelado' : 'Pendente'}
               </Badge>
             </div>

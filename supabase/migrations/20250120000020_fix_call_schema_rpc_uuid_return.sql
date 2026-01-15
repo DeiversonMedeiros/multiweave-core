@@ -28,19 +28,53 @@ BEGIN
     -- Para criar_ferias_fracionadas: p_company_id, p_employee_id, p_ano, p_periodos, p_observacoes
     -- Para aprovar_ferias: p_vacation_id, p_aprovado_por
     -- Para rejeitar_ferias: p_vacation_id, p_aprovado_por, p_motivo_rejeicao
+    -- Para is_rest_day: p_employee_id, p_company_id, p_date
+    -- Para is_holiday: p_date, p_company_id
     WITH ordered_params AS (
         SELECT 
             key,
             value,
-            CASE key
-                WHEN 'p_company_id' THEN 1
-                WHEN 'p_employee_id' THEN 2
-                WHEN 'p_ano' THEN 3
-                WHEN 'p_periodos' THEN 4
-                WHEN 'p_observacoes' THEN 5
-                WHEN 'p_vacation_id' THEN 1
-                WHEN 'p_aprovado_por' THEN 2
-                WHEN 'p_motivo_rejeicao' THEN 3
+            CASE 
+                -- is_rest_day: p_employee_id, p_company_id, p_date
+                WHEN p_function_name = 'is_rest_day' THEN
+                    CASE key
+                        WHEN 'p_employee_id' THEN 1
+                        WHEN 'p_company_id' THEN 2
+                        WHEN 'p_date' THEN 3
+                        ELSE 99
+                    END
+                -- is_holiday: p_date, p_company_id
+                WHEN p_function_name = 'is_holiday' THEN
+                    CASE key
+                        WHEN 'p_date' THEN 1
+                        WHEN 'p_company_id' THEN 2
+                        ELSE 99
+                    END
+                -- criar_ferias_fracionadas: p_company_id, p_employee_id, p_ano, p_periodos, p_observacoes
+                WHEN p_function_name = 'criar_ferias_fracionadas' THEN
+                    CASE key
+                        WHEN 'p_company_id' THEN 1
+                        WHEN 'p_employee_id' THEN 2
+                        WHEN 'p_ano' THEN 3
+                        WHEN 'p_periodos' THEN 4
+                        WHEN 'p_observacoes' THEN 5
+                        ELSE 99
+                    END
+                -- aprovar_ferias: p_vacation_id, p_aprovado_por
+                WHEN p_function_name = 'aprovar_ferias' THEN
+                    CASE key
+                        WHEN 'p_vacation_id' THEN 1
+                        WHEN 'p_aprovado_por' THEN 2
+                        ELSE 99
+                    END
+                -- rejeitar_ferias: p_vacation_id, p_aprovado_por, p_motivo_rejeicao
+                WHEN p_function_name = 'rejeitar_ferias' THEN
+                    CASE key
+                        WHEN 'p_vacation_id' THEN 1
+                        WHEN 'p_aprovado_por' THEN 2
+                        WHEN 'p_motivo_rejeicao' THEN 3
+                        ELSE 99
+                    END
                 ELSE 99
             END as param_order
         FROM jsonb_each(p_params)
@@ -61,6 +95,9 @@ BEGIN
                     THEN quote_literal(value #>> '{}') || '::UUID'
                     WHEN key LIKE '%_id' OR key LIKE '%id' THEN 
                         quote_literal(value #>> '{}') || '::UUID'
+                    -- DATE: detectar formato de data YYYY-MM-DD
+                    WHEN key LIKE '%_date' OR key = 'p_date' OR (value #>> '{}') ~ '^\d{4}-\d{2}-\d{2}$' THEN
+                        quote_literal(value #>> '{}') || '::DATE'
                     ELSE quote_literal(value #>> '{}') || '::TEXT'
                 END
             WHEN jsonb_typeof(value) = 'number' THEN 

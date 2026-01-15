@@ -88,7 +88,14 @@ export function ContaPagarDetails({
   // Encontrar nomes dos relacionamentos
   const centroCusto = costCentersData?.data?.find(cc => cc.id === conta.centro_custo_id);
   const projeto = projectsData?.data?.find(p => p.id === conta.projeto_id);
-  const contaBancaria = contasBancarias?.find(cb => cb.id === conta.conta_bancaria_id);
+  
+  // Buscar conta bancária vinculada ou usar a primeira conta ativa como padrão
+  let contaBancaria = contasBancarias?.find(cb => cb.id === conta.conta_bancaria_id);
+  if (!contaBancaria && contasBancarias && contasBancarias.length > 0) {
+    // Se não houver conta vinculada, usar a primeira conta ativa
+    contaBancaria = contasBancarias.find(cb => cb.is_active !== false) || contasBancarias[0];
+  }
+  
   const parcelas = parcelasData?.data || [];
 
   // Buscar nome da classe financeira
@@ -345,12 +352,31 @@ export function ContaPagarDetails({
                     <p className="text-sm capitalize">{conta.forma_pagamento}</p>
                   </div>
                 )}
-                {contaBancaria && (
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground">Conta Bancária</Label>
-                    <p className="text-sm">{contaBancaria.nome} - {contaBancaria.banco}</p>
-                  </div>
-                )}
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium text-muted-foreground">Conta Bancária</Label>
+                  {contaBancaria ? (
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">
+                        {contaBancaria.banco_nome} ({contaBancaria.banco_codigo})
+                        {conta.conta_bancaria_id !== contaBancaria.id && (
+                          <span className="text-xs text-muted-foreground ml-2">(Padrão)</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Agência: {contaBancaria.agencia} | Conta: {contaBancaria.conta} | Tipo: {contaBancaria.tipo_conta === 'corrente' ? 'Corrente' : contaBancaria.tipo_conta === 'poupanca' ? 'Poupança' : 'Investimento'}
+                      </p>
+                      {contaBancaria.saldo_atual !== undefined && (
+                        <p className="text-xs text-muted-foreground">
+                          Saldo: R$ {contaBancaria.saldo_atual.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-0.5">
+                      <p className="text-sm text-muted-foreground italic">Nenhuma conta bancária cadastrada</p>
+                    </div>
+                  )}
+                </div>
                 {classeFinanceiraNome && (
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">Classe Financeira</Label>

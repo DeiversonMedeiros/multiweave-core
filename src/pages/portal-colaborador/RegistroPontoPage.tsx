@@ -1037,10 +1037,16 @@ export default function RegistroPontoPage() {
                 eventData.latitude = registrationData.latitude;
                 eventData.longitude = registrationData.longitude;
                 console.log('[PONTO] 📍 Localização adicionada:', { lat: eventData.latitude, lon: eventData.longitude });
-              }
-              if (registrationData.address) {
-                eventData.endereco = registrationData.address;
-                console.log('[PONTO] 🏠 Endereço adicionado:', eventData.endereco);
+                
+                // Sempre adicionar endereço: usar o address se disponível, senão usar coordenadas como fallback
+                if (registrationData.address) {
+                  eventData.endereco = registrationData.address;
+                  console.log('[PONTO] 🏠 Endereço adicionado:', eventData.endereco);
+                } else {
+                  // Fallback: usar coordenadas como endereço se não houver address
+                  eventData.endereco = `Coordenadas: ${registrationData.latitude.toFixed(6)}, ${registrationData.longitude.toFixed(6)}`;
+                  console.log('[PONTO] 🏠 Endereço (fallback coordenadas):', eventData.endereco);
+                }
               }
               if (registrationData.localizacao_type) {
                 eventData.source = registrationData.localizacao_type;

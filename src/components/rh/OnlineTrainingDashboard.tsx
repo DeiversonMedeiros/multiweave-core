@@ -56,14 +56,14 @@ export const OnlineTrainingDashboard: React.FC<OnlineTrainingDashboardProps> = (
   }
 
   const {
-    total_trainings,
-    trainings_to_start,
-    trainings_in_progress,
-    trainings_completed,
-    total_enrollments,
-    total_certificates,
-    avg_completion_rate,
-    avg_reaction_score
+    total_trainings = 0,
+    trainings_to_start = 0,
+    trainings_in_progress = 0,
+    trainings_completed = 0,
+    total_enrollments = 0,
+    total_certificates = 0,
+    avg_completion_rate = 0,
+    avg_reaction_score = 0
   } = stats;
 
   // Calcular percentuais
@@ -183,9 +183,9 @@ export const OnlineTrainingDashboard: React.FC<OnlineTrainingDashboardProps> = (
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Taxa Média</span>
-                  <span className="text-2xl font-bold">{avg_completion_rate.toFixed(1)}%</span>
+                  <span className="text-2xl font-bold">{(avg_completion_rate ?? 0).toFixed(1)}%</span>
                 </div>
-                <Progress value={avg_completion_rate} className="h-3" />
+                <Progress value={avg_completion_rate ?? 0} className="h-3" />
               </div>
               <div className="text-sm text-muted-foreground">
                 Baseado em {total_enrollments} inscrições
@@ -210,11 +210,11 @@ export const OnlineTrainingDashboard: React.FC<OnlineTrainingDashboardProps> = (
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Nota Média</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl font-bold">{avg_reaction_score.toFixed(1)}</span>
+                    <span className="text-2xl font-bold">{(avg_reaction_score ?? 0).toFixed(1)}</span>
                     <Badge variant="outline">/ 5.0</Badge>
                   </div>
                 </div>
-                <Progress value={(avg_reaction_score / 5) * 100} className="h-3" />
+                <Progress value={((avg_reaction_score ?? 0) / 5) * 100} className="h-3" />
               </div>
               <div className="text-sm text-muted-foreground">
                 Baseado nas avaliações de reação dos participantes

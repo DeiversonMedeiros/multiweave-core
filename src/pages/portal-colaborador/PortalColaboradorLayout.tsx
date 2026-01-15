@@ -26,7 +26,8 @@ import {
   Bell,
   History,
   Edit,
-  Fuel
+  Fuel,
+  BookOpen
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NotificationCenter } from '@/components/NotificationCenter';
@@ -109,6 +110,12 @@ const menuItems = [
     href: '/portal-colaborador/registro-abastecimento',
     icon: Fuel,
     description: 'Registre abastecimentos de combustível'
+  },
+  {
+    title: 'Treinamentos',
+    href: '/portal-colaborador/treinamentos',
+    icon: BookOpen,
+    description: 'Acesse seus treinamentos online'
   }
 ];
 
@@ -327,12 +334,12 @@ export default function PortalColaboradorLayout() {
                     <div className="space-y-2">
                       {menuItems.map((item) => {
                         const Icon = item.icon;
-                        const isActive = location.pathname === item.href;
+                        const itemIsActive = isActive(item.href);
                         
                         return (
                           <Button
                             key={item.href}
-                            variant={isActive ? "secondary" : "ghost"}
+                            variant={itemIsActive ? "secondary" : "ghost"}
                             className="w-full justify-start"
                             onClick={() => {
                               navigate(item.href);

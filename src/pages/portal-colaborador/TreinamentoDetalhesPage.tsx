@@ -27,10 +27,10 @@ import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { useToast } from '@/hooks/use-toast';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequireModule } from '@/components/RequireAuth';
 import { useTraining } from '@/hooks/rh/useTraining';
 
-export default function OnlineTrainingPage() {
+export default function TreinamentoDetalhesPage() {
   const { trainingId } = useParams<{ trainingId: string }>();
   const navigate = useNavigate();
   const { selectedCompany } = useCompany();
@@ -370,14 +370,14 @@ export default function OnlineTrainingPage() {
   };
 
   return (
-    <RequireEntity entityName="trainings" action="read">
+    <RequireModule module="portal_colaborador" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              onClick={() => navigate('/rh/treinamentos')}
+              onClick={() => navigate('/portal-colaborador/treinamentos')}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Voltar
@@ -385,7 +385,7 @@ export default function OnlineTrainingPage() {
             <div>
               <h1 className="text-3xl font-bold flex items-center gap-2">
                 <BookOpen className="h-8 w-8" />
-                Treinamento Online
+                {currentTraining?.nome || 'Treinamento Online'}
               </h1>
               <p className="text-muted-foreground mt-1">
                 Aula {currentContentIndex + 1} de {content.length}
@@ -582,7 +582,6 @@ export default function OnlineTrainingPage() {
           </div>
         )}
       </div>
-    </RequireEntity>
+    </RequireModule>
   );
 }
-

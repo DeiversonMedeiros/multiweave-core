@@ -45,6 +45,7 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
   canAdvance = true
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -59,6 +60,11 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
   const isCompleted = progress?.concluido || false;
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loadingUrl, setLoadingUrl] = useState(false);
+  
+  // Rastreamento de tempo para conteúdo não-mídia (texto, PDF, link)
+  const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
+  const [timeTrackingInterval, setTimeTrackingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [contentViewStartTime, setContentViewStartTime] = useState<number | null>(null);
 
   // Carregar URL do arquivo (signed URL se estiver no Storage)
   useEffect(() => {
@@ -101,22 +107,78 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
     loadFileUrl();
   }, [content.url_conteudo, content.arquivo_path]);
 
+  // Rastrear tempo para conteúdo não-mídia (texto, PDF, link)
   useEffect(() => {
-    if (videoRef.current && content.tipo_conteudo === 'video') {
-      const video = videoRef.current;
-      
+    const needsTimeTracking = ['texto', 'pdf', 'link_externo'].includes(content.tipo_conteudo);
+    
+    if (needsTimeTracking) {
+      // Iniciar rastreamento quando o componente monta
+      const startTime = Date.now();
+      setContentViewStartTime(startTime);
+      let accumulatedTime = watchedTime; // Tempo já assistido anteriormente
+      setTimeSpentSeconds(accumulatedTime);
+
+      // Atualizar tempo a cada segundo
+      const interval = setInterval(() => {
+        accumulatedTime += 1;
+        setTimeSpentSeconds(accumulatedTime);
+        
+        // Atualizar progresso a cada 10 segundos
+        if (accumulatedTime % 10 === 0) {
+          const tempoMinimoSegundos = 120; // 2 minutos
+          const percentual = Math.min((accumulatedTime / tempoMinimoSegundos) * 100, 100);
+          
+          onProgressUpdate({
+            tempo_assistido_segundos: accumulatedTime,
+            ultima_posicao_segundos: 0,
+            percentual_concluido: percentual
+          });
+        }
+      }, 1000);
+
+      setTimeTrackingInterval(interval);
+
+      return () => {
+        clearInterval(interval);
+        // Salvar tempo final ao desmontar
+        const finalTime = Math.floor((Date.now() - startTime) / 1000) + watchedTime;
+        const tempoMinimoSegundos = 120; // 2 minutos
+        const percentual = Math.min((finalTime / tempoMinimoSegundos) * 100, 100);
+        
+        onProgressUpdate({
+          tempo_assistido_segundos: finalTime,
+          ultima_posicao_segundos: 0,
+          percentual_concluido: percentual
+        });
+      };
+    } else {
+      // Limpar intervalo se não precisa rastrear
+      if (timeTrackingInterval) {
+        clearInterval(timeTrackingInterval);
+        setTimeTrackingInterval(null);
+      }
+      setContentViewStartTime(null);
+      setTimeSpentSeconds(0);
+    }
+  }, [content.tipo_conteudo, content.id, watchedTime, onProgressUpdate]);
+
+  useEffect(() => {
+    const mediaElement = content.tipo_conteudo === 'video' ? videoRef.current : 
+                        content.tipo_conteudo === 'audio' ? audioRef.current : null;
+    
+    if (mediaElement && (content.tipo_conteudo === 'video' || content.tipo_conteudo === 'audio')) {
       // Restaurar posição anterior
       if (startPosition > 0) {
-        video.currentTime = startPosition;
+        mediaElement.currentTime = startPosition;
       }
 
       // Event listeners
-      video.addEventListener('loadedmetadata', () => {
-        setDuration(video.duration);
-      });
+      const handleLoadedMetadata = () => {
+        setDuration(mediaElement.duration);
+      };
 
-      video.addEventListener('timeupdate', () => {
-        const current = video.currentTime;
+      const handleTimeUpdate = () => {
+        const current = mediaElement.currentTime;
         setCurrentTime(current);
         
         const percent = duration > 0 ? (current / duration) * 100 : 0;
@@ -130,29 +192,36 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
             percentual_concluido: percent
           });
         }
-      });
+      };
 
-      video.addEventListener('ended', () => {
+      const handleEnded = () => {
         setIsPlaying(false);
         if (!isCompleted) {
           onComplete();
         }
-      });
+      };
+
+      mediaElement.addEventListener('loadedmetadata', handleLoadedMetadata);
+      mediaElement.addEventListener('timeupdate', handleTimeUpdate);
+      mediaElement.addEventListener('ended', handleEnded);
 
       return () => {
-        video.removeEventListener('loadedmetadata', () => {});
-        video.removeEventListener('timeupdate', () => {});
-        video.removeEventListener('ended', () => {});
+        mediaElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        mediaElement.removeEventListener('timeupdate', handleTimeUpdate);
+        mediaElement.removeEventListener('ended', handleEnded);
       };
     }
   }, [content, startPosition, watchedTime, duration, isCompleted, onProgressUpdate, onComplete]);
 
   const togglePlay = () => {
-    if (videoRef.current) {
+    const mediaElement = content.tipo_conteudo === 'video' ? videoRef.current : 
+                        content.tipo_conteudo === 'audio' ? audioRef.current : null;
+    
+    if (mediaElement) {
       if (isPlaying) {
-        videoRef.current.pause();
+        mediaElement.pause();
       } else {
-        videoRef.current.play();
+        mediaElement.play();
       }
       setIsPlaying(!isPlaying);
     }
@@ -169,8 +238,11 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
   };
 
   const toggleMute = () => {
-    if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
+    const mediaElement = content.tipo_conteudo === 'video' ? videoRef.current : 
+                        content.tipo_conteudo === 'audio' ? audioRef.current : null;
+    
+    if (mediaElement) {
+      mediaElement.muted = !isMuted;
       setIsMuted(!isMuted);
     }
   };
@@ -273,6 +345,83 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
                 >
                   <Maximize className="h-5 w-5" />
                 </Button>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'audio':
+        if (loadingUrl) {
+          return (
+            <div className="flex items-center justify-center h-64 bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg border">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p>Carregando áudio...</p>
+              </div>
+            </div>
+          );
+        }
+        if (!fileUrl) {
+          return (
+            <Alert>
+              <AlertDescription>
+                URL do áudio não disponível.
+              </AlertDescription>
+            </Alert>
+          );
+        }
+        return (
+          <div className="w-full bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg border p-6">
+            <div className="max-w-2xl mx-auto">
+              {/* Player de áudio */}
+              <audio
+                ref={audioRef}
+                src={fileUrl}
+                className="w-full mb-4"
+                controls={false}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+              />
+              
+              {/* Controles customizados */}
+              <div className="space-y-4">
+                {/* Barra de progresso */}
+                <div 
+                  className="w-full h-2 bg-white/40 rounded-full cursor-pointer"
+                  onClick={handleSeek}
+                >
+                  <div 
+                    className="h-full bg-primary rounded-full transition-all"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+
+                {/* Controles */}
+                <div className="flex items-center gap-4">
+                  <Button
+                    variant="default"
+                    size="lg"
+                    onClick={togglePlay}
+                    className="rounded-full w-16 h-16"
+                  >
+                    {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+                  </Button>
+
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{content.titulo}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatTime(currentTime)} / {formatTime(duration)}
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggleMute}
+                  >
+                    {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

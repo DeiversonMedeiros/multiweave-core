@@ -476,17 +476,58 @@ export async function calculatePayroll(
 
     // 3. Buscar funcionários
     console.log('👥 [calculatePayroll] Buscando funcionários ativos...');
-    const funcionariosResult = await EntityService.list<Employee>({
-      schema: 'rh',
-      table: 'employees',
-      companyId: params.companyId,
-      filters: {
-        status: 'ativo',
-        ...(params.funcionariosIds && { id: { in: params.funcionariosIds } })
-      },
-      orderBy: 'nome',
-      orderDirection: 'ASC'
-    });
+    
+    let funcionariosResult: { data: Employee[]; totalCount: number; hasMore: boolean };
+    
+    // Se há IDs específicos, buscar cada funcionário individualmente e combinar
+    if (params.funcionariosIds && params.funcionariosIds.length > 0) {
+      const funcionarios: Employee[] = [];
+      
+      // Buscar cada funcionário individualmente usando EntityService
+      for (const employeeId of params.funcionariosIds) {
+        try {
+          const employeeResult = await EntityService.list<Employee>({
+            schema: 'rh',
+            table: 'employees',
+            companyId: params.companyId,
+            filters: {
+              status: 'ativo',
+              id: employeeId
+            },
+            orderBy: 'nome',
+            orderDirection: 'ASC',
+            pageSize: 1
+          });
+          
+          if (employeeResult.data && employeeResult.data.length > 0) {
+            funcionarios.push(employeeResult.data[0]);
+          }
+        } catch (error) {
+          console.warn(`Erro ao buscar funcionário ${employeeId}:`, error);
+        }
+      }
+      
+      // Ordenar por nome
+      funcionarios.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+      
+      funcionariosResult = {
+        data: funcionarios,
+        totalCount: funcionarios.length,
+        hasMore: false
+      };
+    } else {
+      // Se não há IDs específicos, usar EntityService normalmente
+      funcionariosResult = await EntityService.list<Employee>({
+        schema: 'rh',
+        table: 'employees',
+        companyId: params.companyId,
+        filters: {
+          status: 'ativo'
+        },
+        orderBy: 'nome',
+        orderDirection: 'ASC'
+      });
+    }
 
     const funcionarios = funcionariosResult.data;
     const totalFuncionarios = funcionarios.length;
@@ -640,12 +681,13 @@ export async function calculatePayroll(
         }
         
         // Atualizar totais da folha
+        // Status 'em_revisao' permite que o RH edite antes de validar
         const totais = calculatePayrollTotals(eventos);
         await updatePayroll(params.companyId, payroll.id, {
           ...totais,
           horas_trabalhadas: totalHorasTrabalhadas,
           horas_extras: totalHorasExtras,
-          status: 'processado'
+          status: 'em_revisao'
         });
 
         funcionariosProcessados++;
@@ -861,7 +903,7 @@ async function getOrCreatePayroll(
       throw new Error('Funcionário não encontrado');
     }
 
-    // Criar nova folha
+    // Criar nova folha com status 'em_revisao' para permitir edição antes da validação
     return await createPayroll(companyId, {
       employee_id: employeeId,
       mes_referencia: mesReferencia,
@@ -873,7 +915,7 @@ async function getOrCreatePayroll(
       total_vencimentos: 0,
       total_descontos: 0,
       salario_liquido: 0,
-      status: 'pendente'
+      status: 'em_revisao'
     });
 
   } catch (error) {

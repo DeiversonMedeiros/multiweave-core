@@ -13,7 +13,7 @@ import { FilePreview } from './FilePreview';
 interface TrainingFileUploadProps {
   trainingId: string;
   contentId?: string;
-  fileType: 'video' | 'pdf' | 'text' | 'link_externo';
+  fileType: 'video' | 'pdf' | 'text' | 'link_externo' | 'audio';
   onUploadComplete: (filePath: string, fileUrl: string) => void;
   onRemove?: () => void;
   currentFile?: string;
@@ -52,14 +52,33 @@ export const TrainingFileUpload: React.FC<TrainingFileUploadProps> = ({
         return 'application/pdf';
       case 'text':
         return 'text/plain,text/html,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      case 'audio':
+        return 'audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/mp4,audio/x-m4a,.m4a';
       default:
         return '*';
     }
   };
 
+  const getAcceptedExtensions = () => {
+    switch (fileType) {
+      case 'audio':
+        return ['.mp3', '.wav', '.ogg', '.m4a', '.mp4'];
+      case 'video':
+        return ['.mp4', '.webm', '.ogg', '.mov'];
+      case 'pdf':
+        return ['.pdf'];
+      case 'text':
+        return ['.txt', '.html', '.doc', '.docx'];
+      default:
+        return [];
+    }
+  };
+
   const getMaxSize = () => {
     if (maxSizeMB) return maxSizeMB;
-    return fileType === 'video' ? MAX_SIZE_VIDEO : MAX_SIZE_PDF;
+    if (fileType === 'video') return MAX_SIZE_VIDEO;
+    if (fileType === 'audio') return 100; // 100MB para áudio
+    return MAX_SIZE_PDF;
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,10 +92,19 @@ export const TrainingFileUpload: React.FC<TrainingFileUploadProps> = ({
       return;
     }
 
-    // Validar tipo
+    // Validar tipo (por MIME type ou extensão)
     const acceptedTypes = getAcceptedTypes().split(',');
-    if (acceptedTypes[0] !== '*' && !acceptedTypes.includes(file.type)) {
-      setError(`Tipo de arquivo não permitido. Tipos aceitos: ${acceptedTypes.join(', ')}`);
+    const acceptedExtensions = getAcceptedExtensions();
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+    
+    const isValidMimeType = acceptedTypes[0] === '*' || acceptedTypes.includes(file.type);
+    const isValidExtension = acceptedExtensions.length === 0 || acceptedExtensions.includes(fileExtension);
+    
+    if (!isValidMimeType && !isValidExtension) {
+      const extensionsList = acceptedExtensions.length > 0 
+        ? acceptedExtensions.join(', ')
+        : acceptedTypes.join(', ');
+      setError(`Tipo de arquivo não permitido. Tipos aceitos: ${extensionsList}`);
       return;
     }
 
@@ -215,11 +243,11 @@ export const TrainingFileUpload: React.FC<TrainingFileUploadProps> = ({
   };
 
   // Se estiver mostrando preview, renderizar componente de preview
-  if (showPreview && previewFile) {
+  if (showPreview && previewFile && fileType !== 'link_externo') {
     return (
       <FilePreview
         file={previewFile}
-        fileType={fileType}
+        fileType={fileType as 'video' | 'pdf' | 'text' | 'image' | 'audio'}
         onRemove={handleCancelPreview}
         onConfirm={handleConfirmUpload}
       />
@@ -230,7 +258,7 @@ export const TrainingFileUpload: React.FC<TrainingFileUploadProps> = ({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>
-          {fileType === 'video' ? 'Vídeo' : fileType === 'pdf' ? 'PDF' : 'Arquivo'} 
+          {fileType === 'video' ? 'Vídeo' : fileType === 'audio' ? 'Áudio' : fileType === 'pdf' ? 'PDF' : 'Arquivo'} 
           {fileType === 'link_externo' && ' (URL Externa)'}
         </Label>
         
