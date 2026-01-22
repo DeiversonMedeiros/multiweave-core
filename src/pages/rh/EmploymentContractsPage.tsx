@@ -29,7 +29,7 @@ import { useEmploymentContracts, useEmploymentContractMutations } from '@/hooks/
 import { EmploymentContractWithEmployee } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 // Funções utilitárias locais
@@ -45,7 +45,7 @@ const formatDate = (date: string): string => {
 };
 
 export default function EmploymentContractsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     status: '',
@@ -205,7 +205,7 @@ export default function EmploymentContractsPage() {
   };
 
   return (
-    <RequireEntity entityName="employment_contracts" action="read">
+    <RequirePage pagePath="/rh/EmploymentContractsPage*" action="read">
       <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
@@ -314,6 +314,6 @@ export default function EmploymentContractsPage() {
         />
       </FormModal>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

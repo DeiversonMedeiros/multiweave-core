@@ -27,7 +27,7 @@ import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { useToast } from '@/hooks/use-toast';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { useTraining } from '@/hooks/rh/useTraining';
 
 export default function OnlineTrainingPage() {
@@ -370,7 +370,7 @@ export default function OnlineTrainingPage() {
   };
 
   return (
-    <RequireEntity entityName="trainings" action="read">
+    <RequirePage pagePath="/rh/treinamentos*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -582,7 +582,7 @@ export default function OnlineTrainingPage() {
           </div>
         )}
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

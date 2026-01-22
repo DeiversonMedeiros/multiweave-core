@@ -13,12 +13,12 @@ import {
   DollarSign
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function ComprovantesPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
 
@@ -76,7 +76,7 @@ export default function ComprovantesPage() {
   }
 
   return (
-    <RequireEntity entityName="income_statements" action="read">
+    <RequirePage pagePath="/portal-colaborador/comprovantes*" action="read">
       <div className="p-6 space-y-6">
       {/* Header */}
       <div>
@@ -166,6 +166,6 @@ export default function ComprovantesPage() {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

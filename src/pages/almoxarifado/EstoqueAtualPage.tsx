@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select';
 import { useEstoqueAtual } from '@/hooks/almoxarifado/useEstoqueAtualQuery';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 
 const EstoqueAtualPage: React.FC = () => {
@@ -83,7 +83,7 @@ const EstoqueAtualPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="estoque_atual" action="read">
+    <RequirePage pagePath="/almoxarifado/estoque*" action="read">
       <div className="container mx-auto p-6">
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
@@ -291,7 +291,7 @@ const EstoqueAtualPage: React.FC = () => {
           </div>
         )}
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

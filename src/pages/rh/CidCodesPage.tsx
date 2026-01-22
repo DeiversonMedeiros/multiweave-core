@@ -6,7 +6,7 @@ import { CidCode } from '@/integrations/supabase/rh-types';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCompany } from '@/lib/company-context';
@@ -148,7 +148,7 @@ const CidCodesPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="cid_codes" action="read">
+    <RequirePage pagePath="/rh/cid-codes*" action="read">
       <div className="container mx-auto p-6">
       <DataTable
         data={data}
@@ -174,7 +174,7 @@ const CidCodesPage: React.FC = () => {
         loading={createMutation.isPending || updateMutation.isPending}
       />
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

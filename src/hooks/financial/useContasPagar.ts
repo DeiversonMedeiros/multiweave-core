@@ -27,6 +27,7 @@ interface UseContasPagarReturn {
   reprovarContaPagar: (id: string, observacoes?: string) => Promise<void>;
   suspenderContaPagar: (id: string, observacoes?: string) => Promise<void>;
   payContaPagar: (id: string, dataPagamento: string, valorPago: number) => Promise<void>;
+  estornarContaPagar: (id: string, observacoes?: string) => Promise<void>;
   refresh: () => Promise<void>;
   canCreate: boolean;
   canEdit: boolean;
@@ -528,16 +529,28 @@ export function useContasPagar(): UseContasPagarReturn {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
-      const { data, error } = await supabase.rpc('reprovar_conta_pagar', {
-        p_conta_pagar_id: id,
-        p_company_id: selectedCompany.id,
-        p_reprovado_por: user.id,
-        p_observacoes: observacoes || null,
+      // Usar call_schema_rpc para chamar função do schema financeiro
+      const { data, error } = await supabase.rpc('call_schema_rpc', {
+        p_schema_name: 'financeiro',
+        p_function_name: 'reprovar_conta_pagar',
+        p_params: {
+          p_conta_pagar_id: id,
+          p_company_id: selectedCompany.id,
+          p_reprovado_por: user.id,
+          p_observacoes: observacoes || null,
+        },
       });
 
       if (error) {
         console.error('Erro ao reprovar conta a pagar:', error);
         throw new Error(`Erro ao reprovar conta a pagar: ${error.message}`);
+      }
+
+      // call_schema_rpc retorna { result: ... } ou { error: true, message: ... }
+      if (data?.error) {
+        const errorMessage = data.message || 'Erro ao reprovar conta a pagar';
+        console.error('Erro retornado pela função:', errorMessage);
+        throw new Error(errorMessage);
       }
 
       await loadContasPagar();
@@ -555,16 +568,28 @@ export function useContasPagar(): UseContasPagarReturn {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
-      const { data, error } = await supabase.rpc('suspender_conta_pagar', {
-        p_conta_pagar_id: id,
-        p_company_id: selectedCompany.id,
-        p_suspenso_por: user.id,
-        p_observacoes: observacoes || null,
+      // Usar call_schema_rpc para chamar função do schema financeiro
+      const { data, error } = await supabase.rpc('call_schema_rpc', {
+        p_schema_name: 'financeiro',
+        p_function_name: 'suspender_conta_pagar',
+        p_params: {
+          p_conta_pagar_id: id,
+          p_company_id: selectedCompany.id,
+          p_suspenso_por: user.id,
+          p_observacoes: observacoes || null,
+        },
       });
 
       if (error) {
         console.error('Erro ao suspender conta a pagar:', error);
         throw new Error(`Erro ao suspender conta a pagar: ${error.message}`);
+      }
+
+      // call_schema_rpc retorna { result: ... } ou { error: true, message: ... }
+      if (data?.error) {
+        const errorMessage = data.message || 'Erro ao suspender conta a pagar';
+        console.error('Erro retornado pela função:', errorMessage);
+        throw new Error(errorMessage);
       }
 
       await loadContasPagar();
@@ -599,6 +624,46 @@ export function useContasPagar(): UseContasPagarReturn {
     }
   };
 
+  // Estornar conta a pagar
+  const estornarContaPagar = async (id: string, observacoes?: string) => {
+    if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+
+    try {
+      // Obter usuário atual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      // Usar call_schema_rpc para chamar função do schema financeiro
+      const { data, error } = await supabase.rpc('call_schema_rpc', {
+        p_schema_name: 'financeiro',
+        p_function_name: 'estornar_conta_pagar',
+        p_params: {
+          p_conta_pagar_id: id,
+          p_company_id: selectedCompany.id,
+          p_estornado_por: user.id,
+          p_observacoes: observacoes || null,
+          p_data_estorno: new Date().toISOString().split('T')[0], // Data atual no formato YYYY-MM-DD
+        },
+      });
+
+      if (error) {
+        console.error('Erro ao estornar conta a pagar:', error);
+        throw new Error(`Erro ao estornar conta a pagar: ${error.message}`);
+      }
+
+      // call_schema_rpc retorna { result: ... } ou { error: true, message: ... }
+      if (data?.error) {
+        const errorMessage = data.message || 'Erro ao estornar conta a pagar';
+        console.error('Erro retornado pela função:', errorMessage);
+        throw new Error(errorMessage);
+      }
+
+      await loadContasPagar();
+    } catch (err) {
+      throw err;
+    }
+  };
+
   // Recarregar dados
   const refresh = async () => {
     await loadContasPagar();
@@ -623,6 +688,7 @@ export function useContasPagar(): UseContasPagarReturn {
     reprovarContaPagar,
     suspenderContaPagar,
     payContaPagar,
+    estornarContaPagar,
     refresh,
     canCreate,
     canEdit,

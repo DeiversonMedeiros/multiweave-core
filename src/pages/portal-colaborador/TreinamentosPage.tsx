@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +21,8 @@ import {
   Globe,
   Calendar,
   Filter,
-  ArrowRight
+  ArrowRight,
+  Download
 } from 'lucide-react';
 import { OnlineTrainingService } from '@/services/rh/onlineTrainingService';
 import { useCompany } from '@/lib/company-context';
@@ -30,6 +31,8 @@ import { useEmployees } from '@/hooks/rh/useEmployees';
 import { useToast } from '@/hooks/use-toast';
 import { RequireModule } from '@/components/RequireAuth';
 import { cn } from '@/lib/utils';
+import { EntityService } from '@/services/generic/entityService';
+import { downloadCertificate, CertificateData } from '@/services/rh/certificateService';
 
 interface TrainingCardData {
   training: any;
@@ -51,7 +54,7 @@ export default function TreinamentosPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'assigned' | 'position' | 'public'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'assigned' | 'position' | 'public' | 'certificates'>('all');
 
   // Buscar employee_id do usuário
   const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
@@ -63,14 +66,122 @@ export default function TreinamentosPage() {
   const { data: trainingsData, isLoading, error, refetch } = useQuery({
     queryKey: ['available-trainings', employeeId, selectedCompany?.id],
     queryFn: async () => {
-      if (!selectedCompany?.id || !employeeId) return null;
-      return await OnlineTrainingService.getAvailableTrainingsForEmployee(
+      console.log('[TreinamentosPage] 🔄 Iniciando busca de treinamentos disponíveis', {
+        companyId: selectedCompany?.id,
+        employeeId,
+        timestamp: new Date().toISOString()
+      });
+      
+      if (!selectedCompany?.id || !employeeId) {
+        console.log('[TreinamentosPage] ⚠️ Parâmetros faltando, retornando null');
+        return null;
+      }
+      
+      const result = await OnlineTrainingService.getAvailableTrainingsForEmployee(
         selectedCompany.id,
         employeeId
       );
+      
+      console.log('[TreinamentosPage] ✅ Treinamentos recebidos', {
+        assigned: result.assigned.length,
+        byPosition: result.byPosition.length,
+        public: result.public.length,
+        total: result.assigned.length + result.byPosition.length + result.public.length,
+        assignedDetails: result.assigned.map(t => ({
+          trainingId: t.training.id,
+          trainingName: t.training.nome,
+          hasProgress: !!t.progress,
+          progress: t.progress ? {
+            progress_percent: t.progress.progress_percent,
+            completed_content: t.progress.completed_content,
+            total_content: t.progress.total_content
+          } : null
+        }))
+      });
+      
+      return result;
     },
-    enabled: !!selectedCompany?.id && !!employeeId && !!employee
+    enabled: !!selectedCompany?.id && !!employeeId && !!employee,
+    staleTime: 0, // Sempre considerar os dados como stale para forçar refetch
+    refetchOnWindowFocus: true, // Refetch quando a janela recebe foco
+    refetchOnMount: true // Refetch quando o componente é montado
   });
+
+  // Buscar certificados do funcionário
+  const { data: certificatesData, isLoading: isLoadingCertificates, refetch: refetchCertificates } = useQuery({
+    queryKey: ['training-certificates', employeeId, selectedCompany?.id],
+    queryFn: async () => {
+      if (!selectedCompany?.id || !employeeId) return [];
+      
+      try {
+        const result = await EntityService.list({
+          schema: 'rh',
+          table: 'training_certificates',
+          companyId: selectedCompany.id,
+          filters: {
+            employee_id: employeeId
+          },
+          orderBy: 'data_emissao',
+          orderDirection: 'DESC'
+        });
+        
+        // Buscar dados dos treinamentos para cada certificado
+        const certificatesWithTraining = await Promise.all(
+          result.data.map(async (cert: any) => {
+            try {
+              // Tentar buscar dados do treinamento
+              const trainingResult = await EntityService.getById({
+                schema: 'rh',
+                table: 'trainings',
+                id: cert.training_id,
+                companyId: selectedCompany.id
+              });
+              
+              return {
+                ...cert,
+                training_nome: trainingResult?.nome || 'Treinamento',
+                training_carga_horaria: trainingResult?.carga_horaria || 0
+              };
+            } catch (err) {
+              console.error('Erro ao buscar treinamento:', err);
+              return {
+                ...cert,
+                training_nome: 'Treinamento',
+                training_carga_horaria: 0
+              };
+            }
+          })
+        );
+        
+        return certificatesWithTraining;
+      } catch (err) {
+        console.error('Erro ao buscar certificados:', err);
+        return [];
+      }
+    },
+    enabled: !!selectedCompany?.id && !!employeeId && activeTab === 'certificates',
+    staleTime: 0, // Sempre considerar os dados como stale para forçar refetch
+    refetchOnWindowFocus: true, // Refetch quando a janela recebe foco
+    refetchOnMount: true // Refetch quando o componente é montado
+  });
+
+  // Refetch automático quando a página recebe foco (usuário volta de outra página)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (selectedCompany?.id && employeeId) {
+        console.log('[TreinamentosPage] Página recebeu foco, refazendo busca de treinamentos');
+        refetch();
+        if (activeTab === 'certificates') {
+          refetchCertificates();
+        }
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [selectedCompany?.id, employeeId, refetch, refetchCertificates, activeTab]);
 
   // Filtrar treinamentos baseado na busca e aba ativa
   const filteredTrainings = () => {
@@ -159,13 +270,73 @@ export default function TreinamentosPage() {
 
   const getTrainingStatus = (training: TrainingCardData) => {
     const progress = training.progress;
-    if (!progress) return { status: 'not_started', label: 'Não Iniciado', color: 'gray' };
     
-    if (progress.progress_percent >= 100) {
+    console.log('[TreinamentosPage.getTrainingStatus] 🎯 Calculando status do treinamento', {
+      trainingId: training.training.id,
+      trainingName: training.training.nome,
+      hasProgress: !!progress,
+      progressData: progress ? {
+        progress_percent: progress.progress_percent,
+        completed_content: progress.completed_content,
+        total_content: progress.total_content,
+        progress_percent_type: typeof progress.progress_percent,
+        completed_content_type: typeof progress.completed_content,
+        total_content_type: typeof progress.total_content
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+    
+    if (!progress) {
+      console.log('[TreinamentosPage.getTrainingStatus] ⚠️ Sem progresso, retornando "Não Iniciado"', {
+        trainingId: training.training.id,
+        trainingName: training.training.nome
+      });
+      return { status: 'not_started', label: 'Não Iniciado', color: 'gray' };
+    }
+    
+    // Verificar se está concluído: progress_percent >= 100 OU todos os conteúdos foram concluídos
+    const isCompleted = progress.progress_percent >= 100 || 
+                       (progress.completed_content > 0 && 
+                        progress.total_content > 0 && 
+                        progress.completed_content === progress.total_content);
+    
+    console.log('[TreinamentosPage.getTrainingStatus] 🔍 Verificação de conclusão', {
+      trainingId: training.training.id,
+      trainingName: training.training.nome,
+      progress_percent: progress.progress_percent,
+      progress_percent_ge_100: progress.progress_percent >= 100,
+      completed_content: progress.completed_content,
+      total_content: progress.total_content,
+      all_completed_check: progress.completed_content > 0 && 
+                          progress.total_content > 0 && 
+                          progress.completed_content === progress.total_content,
+      isCompleted,
+      finalStatus: isCompleted ? 'completed' : (progress.progress_percent > 0 || progress.completed_content > 0 ? 'in_progress' : 'not_started')
+    });
+    
+    if (isCompleted) {
+      console.log('[TreinamentosPage.getTrainingStatus] ✅ Treinamento concluído', {
+        trainingId: training.training.id,
+        trainingName: training.training.nome
+      });
       return { status: 'completed', label: 'Concluído', color: 'green' };
-    } else if (progress.progress_percent > 0) {
+    } else if (progress.progress_percent > 0 || progress.completed_content > 0) {
+      console.log('[TreinamentosPage.getTrainingStatus] 🔄 Treinamento em andamento', {
+        trainingId: training.training.id,
+        trainingName: training.training.nome,
+        progress_percent: progress.progress_percent,
+        completed_content: progress.completed_content
+      });
       return { status: 'in_progress', label: 'Em Andamento', color: 'blue' };
     }
+    
+    console.log('[TreinamentosPage.getTrainingStatus] ⚠️ Treinamento não iniciado', {
+      trainingId: training.training.id,
+      trainingName: training.training.nome,
+      progress_percent: progress.progress_percent,
+      completed_content: progress.completed_content
+    });
+    
     return { status: 'not_started', label: 'Não Iniciado', color: 'gray' };
   };
 
@@ -296,7 +467,7 @@ export default function TreinamentosPage() {
 
         {/* Tabs e Lista de Treinamentos */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="all">
               Todos ({totalCount})
             </TabsTrigger>
@@ -311,6 +482,10 @@ export default function TreinamentosPage() {
             <TabsTrigger value="public">
               <Globe className="h-4 w-4 mr-2" />
               Públicos ({publicCount})
+            </TabsTrigger>
+            <TabsTrigger value="certificates">
+              <Award className="h-4 w-4 mr-2" />
+              Certificados
             </TabsTrigger>
           </TabsList>
 
@@ -347,9 +522,26 @@ export default function TreinamentosPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {trainings.map((trainingData) => {
                   const { training, progress, deadline } = trainingData;
+                  
+                  console.log('[TreinamentosPage] 🎨 Renderizando card de treinamento', {
+                    trainingId: training.id,
+                    trainingName: training.nome,
+                    hasProgress: !!progress,
+                    progressData: progress,
+                    timestamp: new Date().toISOString()
+                  });
+                  
                   const status = getTrainingStatus(trainingData);
                   const deadlineNear = isDeadlineNear(deadline);
                   const deadlineOverdue = isDeadlineOverdue(deadline);
+                  
+                  console.log('[TreinamentosPage] 🏷️ Status calculado para renderização', {
+                    trainingId: training.id,
+                    trainingName: training.nome,
+                    status: status.status,
+                    label: status.label,
+                    progress: progress
+                  });
 
                   return (
                     <Card
@@ -491,6 +683,144 @@ export default function TreinamentosPage() {
                             </AlertDescription>
                           </Alert>
                         )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Aba de Certificados */}
+          <TabsContent value="certificates" className="mt-6">
+            {isLoadingCertificates ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground">Carregando certificados...</p>
+                </div>
+              </div>
+            ) : !certificatesData || certificatesData.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-12">
+                    <Award className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">Nenhum certificado encontrado</h3>
+                    <p className="text-muted-foreground">
+                      Você ainda não possui certificados de treinamentos concluídos.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {certificatesData.map((certificate: any) => {
+                  // Buscar treinamento nos dados disponíveis ou usar dados do certificado
+                  let training = trainingsData?.assigned
+                    .concat(trainingsData?.byPosition || [])
+                    .concat(trainingsData?.public || [])
+                    .find((t: any) => t.training.id === certificate.training_id)?.training;
+                  
+                  // Se não encontrou, usar dados básicos do certificado
+                  if (!training) {
+                    training = {
+                      id: certificate.training_id,
+                      nome: certificate.training_nome || 'Treinamento',
+                      carga_horaria: 0
+                    };
+                  }
+
+                  const formatDate = (dateString: string) => {
+                    return new Date(dateString).toLocaleDateString('pt-BR');
+                  };
+
+                  const handleDownload = async () => {
+                    if (!selectedCompany?.id || !employee) return;
+                    
+                    try {
+                      // Usar dados do certificado (já incluem dados do treinamento)
+                      const trainingName = certificate.training_nome || training?.nome || 'Treinamento';
+                      const trainingHours = certificate.training_carga_horaria || training?.carga_horaria || 0;
+
+                      const certificateData: CertificateData = {
+                        trainingId: certificate.training_id,
+                        employeeId: certificate.employee_id,
+                        employeeName: employee.nome,
+                        trainingName: trainingName,
+                        completionDate: certificate.data_emissao,
+                        certificateNumber: certificate.numero_certificado,
+                        companyName: selectedCompany.razao_social || selectedCompany.nome_fantasia || 'Empresa',
+                        hours: trainingHours,
+                        score: certificate.nota_final
+                      };
+
+                      await downloadCertificate(certificateData);
+                      
+                      toast({
+                        title: 'Certificado baixado!',
+                        description: 'O certificado foi baixado com sucesso.',
+                      });
+                    } catch (err) {
+                      console.error('Erro ao baixar certificado:', err);
+                      toast({
+                        title: 'Erro',
+                        description: 'Erro ao baixar certificado.',
+                        variant: 'destructive'
+                      });
+                    }
+                  };
+
+                  return (
+                    <Card key={certificate.id} className="hover:shadow-lg transition-shadow">
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                              <Award className="h-5 w-5 text-yellow-500" />
+                              {certificate.training_nome || training?.nome || 'Treinamento'}
+                            </CardTitle>
+                            <CardDescription className="mt-2">
+                              Certificado Nº: {certificate.numero_certificado}
+                            </CardDescription>
+                          </div>
+                          <Badge 
+                            variant={certificate.status === 'valido' ? 'default' : 'secondary'}
+                            className={certificate.status === 'valido' ? 'bg-green-100 text-green-800' : ''}
+                          >
+                            {certificate.status === 'valido' ? 'Válido' : certificate.status}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">Emitido em:</span>
+                            <span className="font-medium">{formatDate(certificate.data_emissao)}</span>
+                          </div>
+                          {certificate.data_validade && (
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-muted-foreground">Válido até:</span>
+                              <span className="font-medium">{formatDate(certificate.data_validade)}</span>
+                            </div>
+                          )}
+                          {certificate.nota_final !== null && certificate.nota_final !== undefined && (
+                            <div className="flex items-center gap-2">
+                              <Award className="h-4 w-4 text-muted-foreground" />
+                              <span className="text-muted-foreground">Nota Final:</span>
+                              <span className="font-medium">{certificate.nota_final}</span>
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          onClick={handleDownload}
+                          variant="outline"
+                          className="w-full"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Baixar Certificado
+                        </Button>
                       </CardContent>
                     </Card>
                   );

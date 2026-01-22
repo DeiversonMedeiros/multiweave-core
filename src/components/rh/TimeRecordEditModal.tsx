@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -78,6 +78,7 @@ export function TimeRecordEditModal({
   const { selectedCompany } = useCompany();
   const [isCalculating, setIsCalculating] = useState(false);
   const [calculatedHours, setCalculatedHours] = useState<number>(0);
+  const bodyScrollLockRef = useRef<{ originalOverflow: string; originalPosition: string; originalTop: string } | null>(null);
 
   // Buscar registro existente
   const { data: existingRecord } = useQuery({
@@ -168,6 +169,64 @@ export function TimeRecordEditModal({
       reset();
     }
   }, [existingRecord, isCreating, setValue, reset]);
+
+  // Bloquear scroll do body quando o modal está aberto (especialmente importante para mobile)
+  useEffect(() => {
+    if (isOpen) {
+      // Salvar valores originais
+      const originalOverflow = document.body.style.overflow;
+      const originalPosition = document.body.style.position;
+      const originalTop = document.body.style.top;
+      
+      bodyScrollLockRef.current = {
+        originalOverflow,
+        originalPosition,
+        originalTop
+      };
+
+      // Bloquear scroll
+      const scrollY = window.scrollY;
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.width = '100%';
+
+      // Prevenir scroll em touch devices apenas fora do modal
+      const preventScroll = (e: TouchEvent) => {
+        const target = e.target as Element;
+        // Permitir scroll dentro do modal e dentro do Select
+        if (
+          target.closest('[role="dialog"]') ||
+          target.closest('[data-radix-select-content]') ||
+          target.closest('[role="listbox"]') ||
+          target.closest('textarea') ||
+          target.closest('input')
+        ) {
+          return;
+        }
+        // Bloquear scroll apenas no body/overlay
+        e.preventDefault();
+      };
+
+      document.addEventListener('touchmove', preventScroll, { passive: false });
+
+      return () => {
+        // Restaurar valores originais
+        if (bodyScrollLockRef.current) {
+          document.body.style.overflow = bodyScrollLockRef.current.originalOverflow;
+          document.body.style.position = bodyScrollLockRef.current.originalPosition;
+          document.body.style.top = bodyScrollLockRef.current.originalTop;
+          
+          const scrollY = document.body.style.top ? parseInt(document.body.style.top || '0') * -1 : 0;
+          if (scrollY) {
+            window.scrollTo(0, scrollY);
+          }
+        }
+        
+        document.removeEventListener('touchmove', preventScroll);
+      };
+    }
+  }, [isOpen]);
 
   // Watch form values for real-time calculation
   const watchedValues = watch();
@@ -448,7 +507,30 @@ export function TimeRecordEditModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent 
+        className="max-w-2xl max-h-[90vh] overflow-y-auto"
+        onPointerDownOutside={(e) => {
+          // Prevenir fechamento acidental em mobile
+          const target = e.target as HTMLElement;
+          if (target.closest('[role="listbox"]') || target.closest('[data-radix-select-content]')) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          // Prevenir interação fora do modal quando o Select está aberto
+          const target = e.target as HTMLElement;
+          if (target.closest('[role="listbox"]') || target.closest('[data-radix-select-content]')) {
+            e.preventDefault();
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          // Permitir fechar com ESC apenas se o Select não estiver aberto
+          const selectOpen = document.querySelector('[data-radix-select-content][data-state="open"]');
+          if (selectOpen) {
+            e.preventDefault();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Clock className="w-5 h-5" />
@@ -628,14 +710,32 @@ export function TimeRecordEditModal({
                   <Select 
                     onValueChange={(value) => {
                       field.onChange(value);
-                      setValue('motivo_id', value, { shouldValidate: true });
+                      setValue('motivo_id', value, { shouldValidate: true, shouldDirty: true });
                     }}
                     value={field.value || ''}
+                    onOpenChange={(open) => {
+                      // Quando o Select fecha, garantir que o modal continue responsivo
+                      if (!open) {
+                        // Pequeno delay para garantir que o Select fechou completamente
+                        // e o modal está pronto para receber interações
+                        setTimeout(() => {
+                          // Não forçar foco, apenas garantir que o modal está ativo
+                          const dialog = document.querySelector('[role="dialog"]');
+                          if (dialog) {
+                            (dialog as HTMLElement).focus();
+                          }
+                        }, 50);
+                      }
+                    }}
                   >
-                    <SelectTrigger className={errors.motivo_id ? 'border-red-500' : ''}>
+                    <SelectTrigger 
+                      className={errors.motivo_id ? 'border-red-500' : ''}
+                    >
                       <SelectValue placeholder="Selecione um motivo" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent 
+                      position="popper"
+                    >
                       {delayReasons.map((reason) => (
                         <SelectItem key={reason.id} value={reason.id}>
                           {reason.nome}

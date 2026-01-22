@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { ConfiguracaoSefazPage } from '@/components/financial/ConfiguracaoSefazPage';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 interface SefazPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface SefazPageProps {
 
 export function SefazPage({ className }: SefazPageProps) {
   return (
-    <RequireEntity entityName="nfe" action="read">
+    <RequirePage pagePath="/financeiro/fiscal*" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export function SefazPage({ className }: SefazPageProps) {
         </div>
         <ConfiguracaoSefazPage />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

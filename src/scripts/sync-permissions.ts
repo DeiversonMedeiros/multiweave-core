@@ -55,7 +55,7 @@ const PERMISSION_MANAGER_MODULES = [
 const PERMISSION_MANAGER_ENTITIES = [
   'usuarios', 'empresas', 'perfis', 'projetos', 'materiais_equipamentos', 'parceiros', 'services', 'centros_custo',
   'employees', 'registros_ponto', 'time_records', 'vacations', 'reimbursement_requests', 'periodic_exams',
-  'disciplinary_actions', 'trainings', 'positions', 'work_shifts', 'holidays', 'rubricas', 'units', 'dependents',
+  'disciplinary_actions', 'treinamentos', 'positions', 'work_shifts', 'holidays', 'rubricas', 'units', 'dependents',
   'employment_contracts', 'medical_agreements', 'benefits', 'payroll_config', 'payroll', 'income_statements', 'esocial',
   'inss_brackets', 'irrf_brackets', 'fgts_config', 'delay_reasons', 'absence_types', 'cid_codes', 'allowance_types',
   'deficiency_types', 'awards_productivity', 'medical_plans', 'employee_medical_plans', 'unions', 'employee_union_memberships',

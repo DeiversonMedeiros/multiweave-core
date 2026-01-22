@@ -25,7 +25,7 @@ import { usePositions, useDeletePosition } from '@/hooks/rh/usePositions';
 import { Position } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -35,11 +35,9 @@ import { usePermissions } from '@/hooks/usePermissions';
 
 export default function PositionsPage() {
   console.log('🔍 [DEBUG] PositionsPage renderizado');
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   
-  console.log('🔍 [DEBUG] Permissões:', { canCreateEntity, canEditEntity, canDeleteEntity });
-  console.log('🔍 [DEBUG] canCreateEntity("positions"):', canCreateEntity('positions'));
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -215,7 +213,7 @@ export default function PositionsPage() {
   ];
 
   return (
-    <RequireEntity entityName="positions" action="read">
+    <RequirePage pagePath="/rh/positions*" action="read">
       <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
@@ -395,6 +393,6 @@ export default function PositionsPage() {
         </div>
       </FormModal>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

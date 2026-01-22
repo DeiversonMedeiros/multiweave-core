@@ -30,12 +30,12 @@ import { Rubrica } from '@/integrations/supabase/rh-types';
 import { getRubricaTypeColor, getRubricaNatureColor, formatCurrency, formatPercent } from '@/services/rh/rubricasService';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function RubricasPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     tipo: 'all',
@@ -245,7 +245,7 @@ export default function RubricasPage() {
   };
 
   return (
-    <RequireEntity entityName="rubricas" action="read">
+    <RequirePage pagePath="/rh/rubricas*" action="read">
       <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
@@ -366,6 +366,6 @@ export default function RubricasPage() {
         />
       </FormModal>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

@@ -6,7 +6,7 @@ import { DeficiencyType } from '@/integrations/supabase/rh-types';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCompany } from '@/lib/company-context';
@@ -213,7 +213,7 @@ const DeficiencyTypesPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="deficiency_types" action="read">
+    <RequirePage pagePath="/rh/deficiency-types*" action="read">
       <div className="container mx-auto p-6">
       <DataTable
         data={data}
@@ -239,7 +239,7 @@ const DeficiencyTypesPage: React.FC = () => {
         loading={isLoading}
       />
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

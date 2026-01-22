@@ -9,7 +9,7 @@ import { useIntegrationConfig, useSaveIntegrationConfig } from '@/hooks/rh/useFi
 import { IntegrationConfig } from '@/services/rh/financialIntegrationService';
 import { toast } from 'sonner';
 import { Loader2, Save, Settings, DollarSign, Calendar, Tag } from 'lucide-react';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 // =====================================================
 // PÁGINA DE CONFIGURAÇÃO DE INTEGRAÇÃO FINANCEIRA
@@ -68,7 +68,7 @@ export default function FinancialIntegrationConfigPage() {
   }
 
   return (
-    <RequireEntity entity="rh" action="write">
+    <RequirePage pagePath="/rh/financial-integration-config*" action="edit">
       <div className="p-6 space-y-6">
         {/* Header */}
         <div>
@@ -223,7 +223,7 @@ export default function FinancialIntegrationConfigPage() {
           </div>
         </form>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

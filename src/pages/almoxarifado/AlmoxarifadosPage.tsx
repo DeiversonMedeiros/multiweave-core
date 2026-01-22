@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { 
@@ -37,7 +37,7 @@ const almoxarifadoSchema = z.object({
 type AlmoxarifadoFormData = z.infer<typeof almoxarifadoSchema>;
 
 export default function AlmoxarifadosPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { data: almoxarifados = [], isLoading } = useAlmoxarifados();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAlmoxarifado, setEditingAlmoxarifado] = useState<Almoxarifado | null>(null);
@@ -165,7 +165,7 @@ export default function AlmoxarifadosPage() {
       header: "Ações",
       accessor: (item: Almoxarifado) => (
         <div className="flex gap-2">
-          {canEditEntity('almoxarifados') && (
+          {canEditPage('/almoxarifado/almoxarifados*') && (
             <Button
               variant="outline"
               size="sm"
@@ -174,7 +174,7 @@ export default function AlmoxarifadosPage() {
               <Edit className="h-4 w-4" />
             </Button>
           )}
-          {canDeleteEntity('almoxarifados') && (
+          {canDeletePage('/almoxarifado/almoxarifados*') && (
             <Button
               variant="outline"
               size="sm"
@@ -192,7 +192,7 @@ export default function AlmoxarifadosPage() {
   if (isLoading) return <div>Carregando...</div>;
 
   return (
-    <RequireEntity entityName="almoxarifados" action="read">
+    <RequirePage pagePath="/almoxarifado/almoxarifados*" action="read">
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -207,7 +207,7 @@ export default function AlmoxarifadosPage() {
         <DataTable
           data={almoxarifados}
           columns={columns}
-          onNew={canCreateEntity('almoxarifados') ? handleNew : undefined}
+          onNew={canCreatePage('/almoxarifado/almoxarifados*') ? handleNew : undefined}
           onExport={() => toast.info("Exportação em desenvolvimento")}
           searchPlaceholder="Buscar por código ou nome..."
           newButtonLabel="Novo Almoxarifado"
@@ -350,7 +350,7 @@ export default function AlmoxarifadosPage() {
           </Dialog>
         </PermissionGuard>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

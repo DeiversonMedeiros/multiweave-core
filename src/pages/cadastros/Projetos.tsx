@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -117,7 +117,7 @@ const UF_PARA_REGIAO: Record<string, "CENTRO-OESTE" | "NORDESTE" | "NORTE" | "SU
 type ProjectFormData = z.infer<typeof projectSchema>;
 
 export default function Projetos() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(true);
@@ -407,7 +407,7 @@ export default function Projetos() {
       header: "Ações",
       accessor: (item: Project) => (
         <div className="flex gap-2">
-          {canEditEntity('projects') && (
+          {canEditPage('/cadastros/projetos*') && (
             <Button
               variant="ghost"
               size="sm"
@@ -416,7 +416,7 @@ export default function Projetos() {
               <Edit className="h-4 w-4" />
             </Button>
           )}
-          {canDeleteEntity('projects') && (
+          {canDeletePage('/cadastros/projetos*') && (
             <Button
               variant="ghost"
               size="sm"
@@ -433,7 +433,7 @@ export default function Projetos() {
   if (loading) return <div>Carregando...</div>;
 
   return (
-    <RequireEntity entityName="projects" action="read">
+    <RequirePage pagePath="/cadastros/projetos*" action="read">
       <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Projetos</h1>
@@ -445,13 +445,13 @@ export default function Projetos() {
       <DataTable
         data={projetos}
         columns={columns}
-        onNew={canCreateEntity('projects') ? handleNew : undefined}
+        onNew={canCreatePage('/cadastros/projetos*') ? handleNew : undefined}
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por código ou nome..."
         newButtonLabel="Novo Projeto"
       />
 
-      {(canCreateEntity('projects') || canEditEntity('projects')) && (
+      {(canCreatePage('/cadastros/projetos*') || canEditPage('/cadastros/projetos*')) && (
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -648,6 +648,6 @@ export default function Projetos() {
         </Dialog>
       )}
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

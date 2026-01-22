@@ -13,12 +13,12 @@ import {
 } from 'lucide-react';
 import { useEstoqueAtual, useEstoqueKPIs } from '@/hooks/almoxarifado/useEstoqueAtualQuery';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 const DashboardEstoquePage: React.FC = () => {
-  const { canReadEntity } = usePermissions();
+  const { canReadPage } = usePermissions();
   const { data: estoque = [], isLoading: estoqueLoading, refetch: refetchEstoque } = useEstoqueAtual();
   const { data: kpis, isLoading: kpisLoading } = useEstoqueKPIs();
   const { data: materiais = [], isLoading: materiaisLoading } = useMateriaisEquipamentos();
@@ -33,7 +33,7 @@ const DashboardEstoquePage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="estoque_atual" action="read">
+    <RequirePage pagePath="/almoxarifado/estoque*" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
@@ -220,7 +220,7 @@ const DashboardEstoquePage: React.FC = () => {
         </Card>
       </div>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

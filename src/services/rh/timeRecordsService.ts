@@ -62,9 +62,8 @@ export const TimeRecordsService = {
   }): Promise<{ data: TimeRecord[]; totalCount: number }> => {
     const serviceStartTime = performance.now();
     
-    // Chamada RPC
-    const rpcStartTime = performance.now();
-    const { data, error } = await supabase.rpc('get_time_records_paginated', {
+    // Log detalhado dos parâmetros antes da chamada RPC
+    const rpcParams = {
       company_id_param: params.companyId,
       page_offset: params.pageOffset || 0,
       page_limit: params.pageLimit || 50,
@@ -73,20 +72,57 @@ export const TimeRecordsService = {
       end_date_filter: params.endDate || null,
       status_filter: params.status || null,
       manager_user_id_filter: params.managerUserId || null,
+    };
+    
+    console.log('[TimeRecordsService.listPaginated] 🔍 Chamando RPC com parâmetros:', {
+      ...rpcParams,
+      manager_user_id_filter_type: typeof rpcParams.manager_user_id_filter,
+      manager_user_id_filter_value: rpcParams.manager_user_id_filter,
+      has_manager_user_id_filter: rpcParams.manager_user_id_filter !== null && rpcParams.manager_user_id_filter !== undefined,
+      timestamp: new Date().toISOString(),
     });
+    
+    // Chamada RPC
+    const rpcStartTime = performance.now();
+    const { data, error } = await supabase.rpc('get_time_records_paginated', rpcParams);
     const rpcEndTime = performance.now();
     const rpcDuration = rpcEndTime - rpcStartTime;
 
     if (error) {
-      console.error('[TimeRecordsService.listPaginated] error:', error);
+      console.error('[TimeRecordsService.listPaginated] ❌ ERRO na RPC:', {
+        error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        params: rpcParams,
+        timestamp: new Date().toISOString(),
+      });
       throw error;
     }
 
     // Verificar se data é um array
     const dataArray = Array.isArray(data) ? data : [];
     
+    console.log('[TimeRecordsService.listPaginated] 📊 Resposta da RPC:', {
+      dataType: typeof data,
+      isArray: Array.isArray(data),
+      dataLength: dataArray.length,
+      dataIsNull: data === null,
+      dataIsUndefined: data === undefined,
+      firstElement: dataArray[0] || null,
+      params: rpcParams,
+      duration: `${rpcDuration.toFixed(2)}ms`,
+      timestamp: new Date().toISOString(),
+    });
+    
     if (!dataArray || dataArray.length === 0) {
-      console.log(`[TimeRecordsService.listPaginated] RPC: ${rpcDuration.toFixed(2)}ms | Sem dados`);
+      console.warn(`[TimeRecordsService.listPaginated] ⚠️ RPC: ${rpcDuration.toFixed(2)}ms | Sem dados`, {
+        params: rpcParams,
+        dataType: typeof data,
+        dataValue: data,
+        timestamp: new Date().toISOString(),
+      });
       return { data: [], totalCount: 0 };
     }
 

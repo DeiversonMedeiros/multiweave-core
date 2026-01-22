@@ -31,12 +31,12 @@ import { InssBracket } from '@/integrations/supabase/rh-types';
 import { formatCurrency, formatTaxRate, formatDate } from '@/services/rh/inssBracketsService';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function InssBracketsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     ano_vigencia: 2024,
@@ -230,7 +230,7 @@ export default function InssBracketsPage() {
   };
 
   return (
-    <RequireEntity entityName="inss_brackets" action="read">
+    <RequirePage pagePath="/rh/inss-brackets*" action="read">
       <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
@@ -365,6 +365,6 @@ export default function InssBracketsPage() {
         />
       </FormModal>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

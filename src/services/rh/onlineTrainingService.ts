@@ -281,23 +281,351 @@ export const OnlineTrainingService = {
   },
 
   async getProgressStats(companyId: string, trainingId: string, employeeId: string): Promise<TrainingProgressStats> {
-    const result = await callSchemaFunction<TrainingProgressStats>(
-      'rh',
-      'calculate_training_progress',
-      {
-        p_training_id: trainingId,
-        p_employee_id: employeeId,
-        p_company_id: companyId
+    console.log('[getProgressStats] 🚀 INÍCIO - Buscando estatísticas de progresso', {
+      companyId,
+      trainingId,
+      employeeId,
+      timestamp: new Date().toISOString()
+    });
+    
+    try {
+      const rawResult = await callSchemaFunction<any>(
+        'rh',
+        'calculate_training_progress',
+        {
+          p_training_id: trainingId,
+          p_employee_id: employeeId,
+          p_company_id: companyId
+        }
+      );
+      
+      console.log('[getProgressStats] 📥 Resultado bruto da função do banco:', {
+        trainingId,
+        employeeId,
+        rawResult,
+        rawResultString: typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult),
+        rawResultLength: typeof rawResult === 'string' ? rawResult.length : 'N/A',
+        resultType: typeof rawResult,
+        isNull: rawResult === null,
+        isUndefined: rawResult === undefined,
+        isString: typeof rawResult === 'string',
+        firstChars: typeof rawResult === 'string' ? rawResult.substring(0, 200) : 'N/A',
+        // Expandir completamente a string
+        fullRawResultString: typeof rawResult === 'string' ? rawResult : null,
+        // Tentar parsear se for string
+        parsedFromString: typeof rawResult === 'string' ? (() => {
+          try {
+            return JSON.parse(rawResult);
+          } catch {
+            return 'ERRO_NO_PARSE';
+          }
+        })() : null
+      });
+      
+      // Se o resultado é uma string JSON, fazer parse
+      let result: any = rawResult;
+      if (typeof rawResult === 'string') {
+        try {
+          result = JSON.parse(rawResult);
+          console.log('[getProgressStats] 🔄 Resultado parseado de string JSON:', {
+            trainingId,
+            employeeId,
+            parsedResult: result
+          });
+        } catch (parseError) {
+          console.error('[getProgressStats] ❌ Erro ao fazer parse do JSON:', {
+            trainingId,
+            employeeId,
+            rawResult,
+            error: parseError
+          });
+          throw new Error('Erro ao processar resposta do servidor');
+        }
       }
-    );
-    return result || {
-      total_content: 0,
-      completed_content: 0,
-      progress_percent: 0,
-      total_time_minutes: 0,
-      time_watched_seconds: 0,
-      time_watched_minutes: 0
-    };
+      
+      // Verificar se há erro na resposta OU se os valores estão zerados (pode ser problema de RLS)
+      const hasError = result?.error === true;
+      const hasZeroValues = result && result.total_content === 0 && result.completed_content === 0;
+      
+      console.log('[getProgressStats] 🔍 Verificando se precisa usar fallback:', {
+        trainingId,
+        employeeId,
+        hasError,
+        hasZeroValues,
+        result: result
+      });
+      
+      if (hasError || hasZeroValues) {
+        if (hasError) {
+          console.error('[getProgressStats] ❌ ERRO retornado pela função do banco:', {
+            trainingId,
+            employeeId,
+            error: result.error,
+            message: result.message,
+            fullResult: result
+          });
+        } else {
+          console.warn('[getProgressStats] ⚠️ Valores zerados retornados pela função (possível problema de RLS):', {
+            trainingId,
+            employeeId,
+            result: result
+          });
+        }
+        
+        // Se for erro de acesso negado OU valores zerados, tentar buscar progresso diretamente da tabela
+        if (hasError && (result.message === 'Acesso negado' || result.message?.includes('Acesso negado'))) {
+          console.log('[getProgressStats] 🔄 Erro de acesso negado detectado, tentando buscar progresso diretamente da tabela');
+        } else if (hasZeroValues) {
+          console.log('[getProgressStats] 🔄 Valores zerados detectados, tentando buscar progresso diretamente da tabela (fallback)');
+        }
+        
+        try {
+          // Buscar progresso diretamente da tabela training_progress
+          const progressResult = await EntityService.list({
+            schema: 'rh',
+            table: 'training_progress',
+            companyId,
+            filters: {
+              training_id: trainingId,
+              employee_id: employeeId
+            }
+          });
+          
+          console.log('[getProgressStats] 📊 Progresso encontrado diretamente:', {
+            trainingId,
+            employeeId,
+            progressCount: progressResult.data.length,
+            progressItems: progressResult.data.map((p: any) => ({
+              content_id: p.content_id,
+              concluido: p.concluido,
+              percentual_concluido: p.percentual_concluido
+            }))
+          });
+          
+          // Buscar conteúdos do treinamento
+          const contentResult = await EntityService.list({
+            schema: 'rh',
+            table: 'training_content',
+            companyId,
+            filters: {
+              training_id: trainingId,
+              is_active: true
+            }
+          });
+          
+          console.log('[getProgressStats] 📚 Conteúdos encontrados diretamente:', {
+            trainingId,
+            contentCount: contentResult.data.length
+          });
+          
+          const totalContent = contentResult.data.length;
+          // Considerar concluído se concluido = true OU percentual_concluido >= 100
+          const completedContent = progressResult.data.filter((p: any) => 
+            p.concluido === true || (p.percentual_concluido !== null && p.percentual_concluido >= 100)
+          ).length;
+          
+          const progressPercent = totalContent > 0 ? (completedContent / totalContent) * 100 : 0;
+          
+          // Se todos concluídos, garantir 100%
+          const finalProgressPercent = (completedContent === totalContent && totalContent > 0) ? 100 : progressPercent;
+          
+          // Calcular tempo assistido
+          const totalTimeWatchedSeconds = progressResult.data.reduce((sum: number, p: any) => 
+            sum + (Number(p.tempo_assistido_segundos) || 0), 0
+          );
+          const totalTimeMinutes = contentResult.data.reduce((sum: number, c: any) => 
+            sum + (Number(c.duracao_minutos) || 0), 0
+          );
+          
+          const fallbackResult: TrainingProgressStats = {
+            total_content: totalContent,
+            completed_content: completedContent,
+            progress_percent: finalProgressPercent,
+            total_time_minutes: totalTimeMinutes,
+            time_watched_seconds: totalTimeWatchedSeconds,
+            time_watched_minutes: Math.round((totalTimeWatchedSeconds / 60) * 100) / 100
+          };
+          
+          console.log('[getProgressStats] ✅ Progresso calculado diretamente da tabela (FALLBACK):', {
+            trainingId,
+            employeeId,
+            fallbackResult,
+            calculationDetails: {
+              totalContent,
+              completedContent,
+              progressPercent,
+              finalProgressPercent,
+              allProgressItems: progressResult.data,
+              allContentItems: contentResult.data
+            }
+          });
+          
+          return fallbackResult;
+        } catch (fallbackError) {
+          console.error('[getProgressStats] ❌ Erro ao buscar progresso diretamente:', fallbackError);
+          if (hasError) {
+            throw new Error(result.message || 'Erro ao buscar progresso do treinamento');
+          }
+          // Se não foi erro, mas valores zerados, retornar os valores zerados mesmo
+          // (melhor mostrar "Não iniciado" do que crashar)
+        }
+      }
+      
+      console.log('[getProgressStats] 📊 Resultado processado (sem erro):', {
+        trainingId,
+        employeeId,
+        result,
+        resultStringified: JSON.stringify(result),
+        keys: result ? Object.keys(result) : null,
+        rawValues: result ? {
+          total_content: result.total_content,
+          completed_content: result.completed_content,
+          progress_percent: result.progress_percent,
+          total_time_minutes: result.total_time_minutes,
+          time_watched_seconds: result.time_watched_seconds,
+          time_watched_minutes: result.time_watched_minutes,
+          total_content_type: typeof result.total_content,
+          completed_content_type: typeof result.completed_content,
+          progress_percent_type: typeof result.progress_percent,
+          total_content_value: result.total_content,
+          completed_content_value: result.completed_content,
+          progress_percent_value: result.progress_percent
+        } : null
+      });
+      
+      // Verificar se result é null ou undefined
+      if (!result) {
+        console.warn('[getProgressStats] ⚠️ Resultado é null/undefined, retornando valores padrão');
+        return {
+          total_content: 0,
+          completed_content: 0,
+          progress_percent: 0,
+          total_time_minutes: 0,
+          time_watched_seconds: 0,
+          time_watched_minutes: 0
+        };
+      }
+      
+      // Garantir que todos os valores sejam válidos (não null, não NaN, não undefined)
+      const safeResult: TrainingProgressStats = {
+        total_content: Number(result?.total_content) || 0,
+        completed_content: Number(result?.completed_content) || 0,
+        progress_percent: Number(result?.progress_percent) || 0,
+        total_time_minutes: Number(result?.total_time_minutes) || 0,
+        time_watched_seconds: Number(result?.time_watched_seconds) || 0,
+        time_watched_minutes: Number(result?.time_watched_minutes) || 0
+      };
+      
+      console.log('[getProgressStats] 🔄 Valores após conversão Number():', {
+        trainingId,
+        employeeId,
+        before: {
+          total_content: result?.total_content,
+          completed_content: result?.completed_content,
+          progress_percent: result?.progress_percent,
+          total_content_raw: result?.total_content,
+          completed_content_raw: result?.completed_content,
+          progress_percent_raw: result?.progress_percent
+        },
+        after: {
+          total_content: safeResult.total_content,
+          completed_content: safeResult.completed_content,
+          progress_percent: safeResult.progress_percent
+        },
+        isNaN: {
+          total_content: isNaN(safeResult.total_content),
+          completed_content: isNaN(safeResult.completed_content),
+          progress_percent: isNaN(safeResult.progress_percent)
+        },
+        conversionDetails: {
+          total_content_converted: Number(result?.total_content),
+          completed_content_converted: Number(result?.completed_content),
+          progress_percent_converted: Number(result?.progress_percent),
+          total_content_or_zero: Number(result?.total_content) || 0,
+          completed_content_or_zero: Number(result?.completed_content) || 0,
+          progress_percent_or_zero: Number(result?.progress_percent) || 0
+        }
+      });
+      
+      // Se todos os conteúdos foram concluídos, garantir que progress_percent seja 100
+      if (safeResult.total_content > 0 && 
+          safeResult.completed_content === safeResult.total_content && 
+          safeResult.progress_percent < 100) {
+        console.log('[getProgressStats] 🔧 CORREÇÃO: Todos os conteúdos concluídos mas progress_percent < 100', {
+          trainingId,
+          employeeId,
+          before: safeResult.progress_percent,
+          after: 100,
+          completed_content: safeResult.completed_content,
+          total_content: safeResult.total_content
+        });
+        safeResult.progress_percent = 100;
+      }
+      
+      // Garantir que progress_percent esteja entre 0 e 100
+      if (isNaN(safeResult.progress_percent) || safeResult.progress_percent < 0) {
+        console.log('[getProgressStats] ⚠️ progress_percent inválido (NaN ou < 0), corrigindo para 0', {
+          trainingId,
+          employeeId,
+          original: safeResult.progress_percent
+        });
+        safeResult.progress_percent = 0;
+      } else if (safeResult.progress_percent > 100) {
+        console.log('[getProgressStats] ⚠️ progress_percent > 100, corrigindo para 100', {
+          trainingId,
+          employeeId,
+          original: safeResult.progress_percent
+        });
+        safeResult.progress_percent = 100;
+      }
+      
+      console.log('[getProgressStats] ✅ Resultado final processado:', {
+        trainingId,
+        employeeId,
+        finalResult: safeResult,
+        finalResultStringified: JSON.stringify(safeResult),
+        breakdown: {
+          total_content: safeResult.total_content,
+          completed_content: safeResult.completed_content,
+          progress_percent: safeResult.progress_percent,
+          total_time_minutes: safeResult.total_time_minutes,
+          time_watched_seconds: safeResult.time_watched_seconds,
+          time_watched_minutes: safeResult.time_watched_minutes
+        },
+        isComplete: safeResult.progress_percent >= 100 || 
+                   (safeResult.completed_content > 0 && 
+                    safeResult.total_content > 0 && 
+                    safeResult.completed_content === safeResult.total_content),
+        completionChecks: {
+          progress_percent_ge_100: safeResult.progress_percent >= 100,
+          completed_gt_0: safeResult.completed_content > 0,
+          total_gt_0: safeResult.total_content > 0,
+          completed_eq_total: safeResult.completed_content === safeResult.total_content,
+          all_conditions: safeResult.completed_content > 0 && 
+                         safeResult.total_content > 0 && 
+                         safeResult.completed_content === safeResult.total_content
+        }
+      });
+      
+      return safeResult;
+    } catch (error) {
+      console.error('[getProgressStats] ❌ ERRO ao buscar estatísticas de progresso:', {
+        trainingId,
+        employeeId,
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
+      });
+      // Retornar valores padrão em caso de erro
+      return {
+        total_content: 0,
+        completed_content: 0,
+        progress_percent: 0,
+        total_time_minutes: 0,
+        time_watched_seconds: 0,
+        time_watched_minutes: 0
+      };
+    }
   },
 
   async updateProgress(
@@ -693,6 +1021,21 @@ export const OnlineTrainingService = {
     );
   },
 
+  async listExamAttempts(companyId: string, examId: string, employeeId: string): Promise<TrainingExamAttempt[]> {
+    const result = await EntityService.list<TrainingExamAttempt>({
+      schema: 'rh',
+      table: 'training_exam_attempts',
+      companyId,
+      filters: {
+        exam_id: examId,
+        employee_id: employeeId
+      },
+      orderBy: 'tentativa_numero',
+      orderDirection: 'DESC'
+    });
+    return result.data;
+  },
+
   async getExamAttemptAnswers(companyId: string, attemptId: string): Promise<TrainingExamAnswer[]> {
     const result = await EntityService.list<TrainingExamAnswer>({
       schema: 'rh',
@@ -966,9 +1309,31 @@ export const OnlineTrainingService = {
           // Buscar progresso
           let progress: TrainingProgressStats | undefined;
           try {
+            console.log('[getAvailableTrainingsForEmployee] 🔍 Buscando progresso para treinamento', {
+              trainingId: training.id,
+              trainingName: training.nome,
+              employeeId,
+              companyId
+            });
+            
             progress = await this.getProgressStats(companyId, training.id, employeeId);
+            
+            console.log('[getAvailableTrainingsForEmployee] ✅ Progresso recebido', {
+              trainingId: training.id,
+              trainingName: training.nome,
+              progress: progress ? {
+                progress_percent: progress.progress_percent,
+                completed_content: progress.completed_content,
+                total_content: progress.total_content,
+                isComplete: progress.progress_percent >= 100 || (progress.completed_content > 0 && progress.completed_content === progress.total_content)
+              } : 'undefined'
+            });
           } catch (err) {
-            console.error('Erro ao buscar progresso:', err);
+            console.error('[getAvailableTrainingsForEmployee] ❌ Erro ao buscar progresso:', {
+              trainingId: training.id,
+              trainingName: training.nome,
+              error: err
+            });
           }
 
           const trainingData = {
@@ -977,6 +1342,16 @@ export const OnlineTrainingService = {
             progress,
             deadline: assignment.data_limite
           };
+          
+          console.log('[getAvailableTrainingsForEmployee] 📦 Dados do treinamento preparados', {
+            trainingId: training.id,
+            trainingName: training.nome,
+            assignmentType,
+            hasProgress: !!progress,
+            progressPercent: progress?.progress_percent,
+            completedContent: progress?.completed_content,
+            totalContent: progress?.total_content
+          });
 
           if (assignmentType === 'assigned') {
             assigned.push(trainingData);
@@ -1009,11 +1384,64 @@ export const OnlineTrainingService = {
       return true;
     });
 
-    return {
+    const finalResult = {
       assigned: uniqueAssigned,
       byPosition: uniqueByPosition,
       public: uniquePublic
     };
+    
+    console.log('[getAvailableTrainingsForEmployee] ✅ RESULTADO FINAL', {
+      employeeId,
+      companyId,
+      totalAssigned: finalResult.assigned.length,
+      totalByPosition: finalResult.byPosition.length,
+      totalPublic: finalResult.public.length,
+      assignedDetails: finalResult.assigned.map(t => ({
+        trainingId: t.training.id,
+        trainingName: t.training.nome,
+        hasProgress: !!t.progress,
+        progress: t.progress ? {
+          progress_percent: t.progress.progress_percent,
+          completed_content: t.progress.completed_content,
+          total_content: t.progress.total_content,
+          isComplete: t.progress.progress_percent >= 100 || 
+                     (t.progress.completed_content > 0 && 
+                      t.progress.total_content > 0 && 
+                      t.progress.completed_content === t.progress.total_content)
+        } : null
+      })),
+      byPositionDetails: finalResult.byPosition.map(t => ({
+        trainingId: t.training.id,
+        trainingName: t.training.nome,
+        hasProgress: !!t.progress,
+        progress: t.progress ? {
+          progress_percent: t.progress.progress_percent,
+          completed_content: t.progress.completed_content,
+          total_content: t.progress.total_content,
+          isComplete: t.progress.progress_percent >= 100 || 
+                     (t.progress.completed_content > 0 && 
+                      t.progress.total_content > 0 && 
+                      t.progress.completed_content === t.progress.total_content)
+        } : null
+      })),
+      publicDetails: finalResult.public.map(t => ({
+        trainingId: t.training.id,
+        trainingName: t.training.nome,
+        hasProgress: !!t.progress,
+        progress: t.progress ? {
+          progress_percent: t.progress.progress_percent,
+          completed_content: t.progress.completed_content,
+          total_content: t.progress.total_content,
+          isComplete: t.progress.progress_percent >= 100 || 
+                     (t.progress.completed_content > 0 && 
+                      t.progress.total_content > 0 && 
+                      t.progress.completed_content === t.progress.total_content)
+        } : null
+      })),
+      timestamp: new Date().toISOString()
+    });
+
+    return finalResult;
   }
 };
 

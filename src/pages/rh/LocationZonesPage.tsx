@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
 import { useToast } from '@/hooks/use-toast';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { LocationZoneConfigModal } from '@/components/rh/LocationZoneConfigModal';
@@ -56,7 +56,7 @@ import { GeolocationService } from '@/services/geolocationService';
 export default function LocationZonesPage() {
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingZone, setEditingZone] = useState<LocationZone | null>(null);
@@ -160,7 +160,7 @@ export default function LocationZonesPage() {
   }
 
   return (
-    <RequireEntity entityName="registros_ponto" action="read">
+    <RequirePage pagePath="/rh/time-records*" action="read">
       <div className="container mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -170,7 +170,7 @@ export default function LocationZonesPage() {
               Configure as áreas geográficas onde é permitido registrar ponto
             </p>
           </div>
-          <PermissionGuard entityName="registros_ponto" action="create">
+          <PermissionGuard page="/rh/location-zones*" action="create">
             <Button onClick={handleAdd}>
               <Plus className="h-4 w-4 mr-2" />
               Nova Zona
@@ -254,7 +254,7 @@ export default function LocationZonesPage() {
                       <Navigation className="h-4 w-4 mr-1" />
                       Testar
                     </Button>
-                    <PermissionGuard entityName="registros_ponto" action="edit">
+                    <PermissionGuard page="/rh/location-zones*" action="edit">
                       <Button
                         variant="outline"
                         size="sm"
@@ -263,7 +263,7 @@ export default function LocationZonesPage() {
                         <Edit className="h-4 w-4" />
                       </Button>
                     </PermissionGuard>
-                    <PermissionGuard entityName="registros_ponto" action="delete">
+                    <PermissionGuard page="/rh/location-zones*" action="delete">
                       <Button
                         variant="outline"
                         size="sm"
@@ -431,7 +431,7 @@ export default function LocationZonesPage() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

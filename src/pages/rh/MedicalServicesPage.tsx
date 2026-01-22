@@ -293,7 +293,7 @@ const MedicalServiceForm = React.forwardRef<HTMLFormElement, {
 MedicalServiceForm.displayName = 'MedicalServiceForm';
 
 export default function MedicalServicesPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<{

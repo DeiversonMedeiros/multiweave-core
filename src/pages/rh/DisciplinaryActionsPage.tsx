@@ -45,12 +45,12 @@ import {
 import { useCompany } from '@/lib/company-context';
 import { useRHData } from '@/hooks/generic/useEntityData';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function DisciplinaryActionsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     employee_id: 'all',
@@ -180,7 +180,7 @@ export default function DisciplinaryActionsPage() {
   };
 
   return (
-    <RequireEntity entityName="disciplinary_actions" action="read">
+    <RequirePage pagePath="/rh/disciplinary-actions*" action="read">
       <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -445,6 +445,6 @@ export default function DisciplinaryActionsPage() {
         />
       </FormModal>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

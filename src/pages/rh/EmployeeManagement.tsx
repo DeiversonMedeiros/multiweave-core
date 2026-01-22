@@ -41,7 +41,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { formatDateOnly } from '@/lib/utils';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -50,7 +50,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 // =====================================================
 
 export default function EmployeeManagement() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   console.log('EmployeeManagement renderizado');
   
   const { selectedCompany } = useCompany();
@@ -305,7 +305,7 @@ export default function EmployeeManagement() {
       cell: ({ row }) => {
         const employee = row.original;
         return (
-          <RequireEntity entityName="employees" action="read">
+          <RequirePage pagePath="/rh/employees*" action="read">
       <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
               <Users className="h-5 w-5 text-primary" />
@@ -697,6 +697,6 @@ export default function EmployeeManagement() {
         </div>
       )}
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

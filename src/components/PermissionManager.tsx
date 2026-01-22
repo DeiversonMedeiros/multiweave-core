@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Eye, Plus, Edit, Trash, Shield, Users, Building } from 'lucide-react';
+import { Eye, Plus, Edit, Trash, Shield, Users, FileText } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -28,10 +28,10 @@ interface ModulePermission {
   can_delete: boolean;
 }
 
-interface EntityPermission {
+interface PagePermission {
   id: string;
   profile_id: string;
-  entity_name: string;
+  page_path: string;
   can_read: boolean;
   can_create: boolean;
   can_edit: boolean;
@@ -43,7 +43,7 @@ export const PermissionManager: React.FC = () => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<string>('');
   const [modulePermissions, setModulePermissions] = useState<ModulePermission[]>([]);
-  const [entityPermissions, setEntityPermissions] = useState<EntityPermission[]>([]);
+  const [pagePermissions, setPagePermissions] = useState<PagePermission[]>([]);
   const [loading, setLoading] = useState(true);
 
   const modules = [
@@ -72,130 +72,212 @@ export const PermissionManager: React.FC = () => {
     'configuracoes'
   ];
 
-  const entities = [
-    // Entidades básicas
-    'usuarios',
-    'empresas',
-    'perfis',
-    'projetos',
-    'materiais_equipamentos',
-    'parceiros',
-    'services',
-    'centros_custo',
+
+  const pagesByModule: { [key: string]: string[] } = {
+    'dashboard': [
+      '/*'
+    ],
+    'portal_colaborador': [
+      '/portal-colaborador*',
+      '/portal-colaborador/registro-ponto*',
+      '/portal-colaborador/correcao-ponto*',
+      '/portal-colaborador/assinatura-ponto*',
+      '/portal-colaborador/historico-marcacoes*',
+      '/portal-colaborador/banco-horas*',
+      '/portal-colaborador/ferias*',
+      '/portal-colaborador/holerites*',
+      '/portal-colaborador/reembolsos*',
+      '/portal-colaborador/atestados*',
+      '/portal-colaborador/exames*',
+      '/portal-colaborador/comprovantes*',
+      '/portal-colaborador/registro-abastecimento*',
+      '/portal-colaborador/treinamentos*'
+    ],
+    'portal_gestor': [
+      '/portal-gestor*',
+      '/portal-gestor/dashboard*',
+      '/portal-gestor/aprovacoes*',
+      '/portal-gestor/aprovacoes/rh*',
+      '/portal-gestor/aprovacoes/ferias*',
+      '/portal-gestor/aprovacoes/compensacoes*',
+      '/portal-gestor/aprovacoes/reembolsos*',
+      '/portal-gestor/aprovacoes/atestados*',
+      '/portal-gestor/aprovacoes/equipamentos*',
+      '/portal-gestor/aprovacoes/correcoes-ponto*',
+      '/portal-gestor/aprovacoes/horas-extras*',
+      '/portal-gestor/aprovacoes/assinaturas-ponto*',
+      '/portal-gestor/acompanhamento/ponto*',
+      '/portal-gestor/acompanhamento/exames*',
+      '/portal-gestor/acompanhamento/banco-horas*'
+    ],
+    'cadastros': [
+      '/cadastros*',
+      '/cadastros/empresas*',
+      '/cadastros/usuarios*',
+      '/cadastros/perfis*',
+      '/cadastros/vinculos-usuario-empresa*',
+      '/cadastros/projetos*',
+      '/cadastros/parceiros*',
+      '/cadastros/servicos*',
+      '/cadastros/centros-custo*',
+      '/cadastros/departamentos*'
+    ],
+    'financeiro': [
+      '/financeiro*',
+      '/financeiro/contas-pagar*',
+      '/financeiro/contas-receber*',
+      '/financeiro/lotes-pagamento*',
+      '/financeiro/tesouraria*',
+      '/financeiro/conciliacao-bancaria*',
+      '/financeiro/parametrizacao-tributaria*',
+      '/financeiro/obrigacoes-fiscais*',
+      '/financeiro/fiscal*',
+      '/financeiro/contabilidade*',
+      '/financeiro/classes-financeiras*',
+      '/financeiro/sefaz*',
+      '/financeiro/bancaria*',
+      '/financeiro/governanca*'
+    ],
+    'compras': [
+      '/compras*',
+      '/compras/requisicoes*',
+      '/compras/cotacoes*',
+      '/compras/pedidos*',
+      '/compras/fornecedores*',
+      '/compras/contratos*',
+      '/compras/historico*'
+    ],
+    'almoxarifado': [
+      '/almoxarifado*',
+      '/almoxarifado/dashboard*',
+      '/almoxarifado/estoque*',
+      '/almoxarifado/materiais*',
+      '/almoxarifado/almoxarifados*',
+      '/almoxarifado/localizacoes*',
+      '/almoxarifado/entradas*',
+      '/almoxarifado/saidas*',
+      '/almoxarifado/inventario*',
+      '/almoxarifado/historico*',
+      '/almoxarifado/relatorios*'
+    ],
+    'frota': [
+      '/frota*',
+      '/frota/dashboard*',
+      '/frota/veiculos*',
+      '/frota/condutores*',
+      '/frota/vistorias*',
+      '/frota/manutencoes*',
+      '/frota/ocorrencias*',
+      '/frota/solicitacoes*',
+      '/frota/alertas*'
+    ],
+    'logistica': [
+      '/logistica*',
+      '/logistica/dashboard*',
+      '/logistica/calendario*',
+      '/logistica/viagens*',
+      '/logistica/custos*'
+    ],
+    'rh': [
+      '/rh*',
+      '/rh/employees*',
+      '/rh/employee-user-links*',
+      '/rh/employee-benefits*',
+      '/rh/positions*',
+      '/rh/units*',
+      '/rh/organograma*',
+      '/rh/dependents*',
+      '/rh/unions*',
+      '/rh/work-shifts*',
+      '/rh/time-records*',
+      '/rh/correcao-ponto-config*',
+      '/rh/assinatura-ponto-config*',
+      '/rh/ponto-eletronico-config*',
+      '/rh/location-zones*',
+      '/rh/bank-hours*',
+      '/rh/holidays*',
+      '/rh/compensation-requests*',
+      '/rh/benefits*',
+      '/rh/medical-agreements*',
+      '/rh/medical-services*',
+      '/rh/employee-deductions*',
+      '/rh/periodic-exams*',
+      '/rh/medical-certificates*',
+      '/rh/awards-productivity*',
+      '/rh/rubricas*',
+      '/rh/inss-brackets*',
+      '/rh/irrf-brackets*',
+      '/rh/fgts-config*',
+      '/rh/financial-integration-config*',
+      '/rh/absence-types*',
+      '/rh/delay-reasons*',
+      '/rh/cid-codes*',
+      '/rh/allowance-types*',
+      '/rh/deficiency-types*',
+      '/rh/payroll*',
+      '/rh/payroll-individual*',
+      '/rh/equipment-rental-payments*',
+      '/rh/equipment-rental-approvals*',
+      '/rh/configuracao-flash*',
+      '/rh/vacations*',
+      '/rh/disciplinary-actions*',
+      '/rh/recruitment*',
+      '/rh/training*',
+      '/rh/treinamentos*',
+      '/rh/esocial*',
+      '/rh/esocial-integration*',
+      '/rh/analytics*'
+    ],
+    'combustivel': [
+      '/combustivel*',
+      '/combustivel/dashboard*',
+      '/combustivel/parametros*',
+      '/combustivel/orcamento*',
+      '/combustivel/solicitacoes*',
+      '/combustivel/consumo/veiculo*',
+      '/combustivel/consumo/colaborador*',
+      '/combustivel/relatorios*'
+    ],
+    'metalurgica': [
+      '/metalurgica*',
+      '/metalurgica/dashboard*',
+      '/metalurgica/ordens-producao*',
+      '/metalurgica/ordens-servico*',
+      '/metalurgica/lotes*',
+      '/metalurgica/qualidade*',
+      '/metalurgica/galvanizacao*',
+      '/metalurgica/produtos*',
+      '/metalurgica/maquinas*',
+      '/metalurgica/pcp*',
+      '/metalurgica/nao-conformidades*',
+      '/metalurgica/relatorios*'
+    ],
+    'comercial': [
+      '/comercial*'
+    ],
+    'implantacao': [
+      '/implantacao*'
+    ],
+    'configuracoes': [
+      '/configuracoes*',
+      '/configuracoes/aprovacoes*'
+    ]
+  };
+
+  const getPageDisplayName = (pagePath: string) => {
+    // Remove wildcard e formata
+    const cleanPath = pagePath.replace('*', '');
+    const parts = cleanPath.split('/').filter(p => p);
+    if (parts.length === 0) return pagePath;
     
-    // Entidades RH
-    'employees', // Tabela: rh.employees (usado nas páginas)
-    'registros_ponto', // Usado em LocationZonesPage - pode ser diferente de time_records
-    'time_records', // Tabela: rh.time_records (usado nas páginas de histórico)
-    'vacations', // Tabela: rh.vacations (usado nas páginas)
-    'reimbursement_requests', // Tabela: rh.reimbursement_requests
-    'periodic_exams', // Tabela: rh.periodic_exams (usado nas páginas)
-    'disciplinary_actions', // Tabela: rh.disciplinary_actions (usado nas páginas)
-    'trainings', // Tabela: rh.trainings
-    'positions', // Tabela: rh.positions (usado nas páginas)
-    'work_shifts', // Tabela: rh.work_shifts (usado nas páginas)
-    'holidays', // Tabela: rh.holidays (usado nas páginas)
-    'rubricas', // Tabela: rh.rubricas (usado nas páginas)
-    'units', // Tabela: rh.units (usado nas páginas)
-    'dependents', // Tabela: rh.dependents (usado nas páginas)
-    'employment_contracts', // Tabela: rh.employment_contracts (usado nas páginas)
-    'medical_agreements', // Tabela: rh.medical_agreements
-    'benefits', // Tabela: rh.benefits
-    'payroll_config', // Tabela: rh.payroll_config (usado nas páginas)
-    'payroll', // Usado nas páginas
-    'income_statements', // Tabela: rh.income_statements (usado em ComprovantesPage)
-    'esocial', // Usado nas páginas
-    
-    // Entidades RH - Parâmetros e Configurações
-    'inss_brackets', // Tabela: rh.inss_brackets
-    'irrf_brackets', // Tabela: rh.irrf_brackets
-    'fgts_config', // Tabela: rh.fgts_config
-    'delay_reasons', // Tabela: rh.delay_reasons
-    'absence_types', // Tabela: rh.absence_types
-    'cid_codes', // Tabela: rh.cid_codes
-    'allowance_types', // Tabela: rh.allowance_types
-    'deficiency_types', // Tabela: rh.deficiency_types
-    
-    // Entidades RH - Benefícios e Convênios
-    'awards_productivity', // Tabela: rh.awards_productivity
-    'medical_plans', // Tabela: rh.medical_plans
-    'employee_medical_plans', // Tabela: rh.employee_medical_plans
-    'unions', // Tabela: rh.unions
-    'employee_union_memberships', // Tabela: rh.employee_union_memberships
-    
-    // Entidades RH - Processamento
-    'payroll_calculation', // Tabela: rh.payroll_calculations (mantido para compatibilidade, mas não mais usado)
-    
-    // Entidades Financeiras
-    'contas_pagar', // Tabela: financeiro.contas_pagar
-    'contas_receber', // Tabela: financeiro.contas_receber
-    'borderos', // Tabela: financeiro.borderos
-    'remessas_bancarias', // Tabela: financeiro.remessas_bancarias
-    'retornos_bancarios', // Tabela: financeiro.retornos_bancarios
-    'contas_bancarias', // Tabela: financeiro.contas_bancarias
-    'conciliacoes_bancarias', // Tabela: financeiro.conciliacoes_bancarias
-    'fluxo_caixa', // Tabela: financeiro.fluxo_caixa
-    'nfe', // Tabela: financeiro.nfe
-    'nfse', // Tabela: financeiro.nfse
-    'plano_contas', // Tabela: financeiro.plano_contas
-    'lancamentos_contabeis', // Tabela: financeiro.lancamentos_contabeis
-    'configuracoes_aprovacao', // Tabela: public.configuracoes_aprovacao_unificada (sistema unificado)
-    'aprovacoes', // Tabela: public.aprovacoes_unificada (sistema unificado)
-    'accounts_payable', // Tabela: financeiro.accounts_payable (se diferente de contas_pagar)
-    'configuracao_fiscal', // Tabela: financeiro.configuracao_fiscal
-    'configuracao_bancaria', // Tabela: financeiro.configuracao_bancaria
-    
-    // Entidades Almoxarifado
-    'estoque_atual',
-    'movimentacoes_estoque',
-    'entradas_materiais',
-    'entrada_itens',
-    'checklist_recebimento',
-    'transferencias',
-    'transferencia_itens',
-    'inventarios',
-    'inventario_itens',
-    'almoxarifados',
-    'localizacoes_fisicas',
-    'warehouse_transfers',
-    'material_exit_requests',
-    'inventory_dashboard',
-    'inventory_management',
-    'warehouse_reports',
-    
-    // Entidades do Processo de Compras
-    'solicitacoes_compra',
-    'cotacoes',
-    'pedidos_compra',
-    'aprovacoes_compra',
-    'fornecedores',
-    'contratos_compra',
-    'historico_compras',
-    'avaliacao_fornecedores',
-    'fornecedores_dados',
-    
-    // Entidades Frota
-    'vehicles', // Tabela: frota.vehicles
-    'vehicle_documents', // Tabela: frota.vehicle_documents
-    'drivers', // Tabela: frota.drivers
-    'vehicle_assignments', // Tabela: frota.vehicle_assignments
-    'vehicle_inspections', // Tabela: frota.vehicle_inspections
-    'inspection_items', // Tabela: frota.inspection_items
-    'vehicle_maintenances', // Tabela: frota.vehicle_maintenances
-    'vehicle_occurrences', // Tabela: frota.vehicle_occurrences
-    'vehicle_requests', // Tabela: frota.vehicle_requests
-    'vehicle_images', // Tabela: frota.vehicle_images
-    
-    // Entidades específicas dos Portais (criadas manualmente)
-    'approval_center', // Usado em CentralAprovacoes.tsx
-    'approval_configs', // Usado em CentralAprovacoesExpandida.tsx
-    'approvals', // Usado em CentralAprovacoesExpandida.tsx
-    'exam_management', // Usado em AcompanhamentoExames.tsx
-    'manager_dashboard', // Usado em GestorDashboard.tsx
-    'portal_colaborador', // Usado em TestPortal.tsx
-    'time_tracking_management', // Usado em AcompanhamentoPonto.tsx
-    'vacation_approvals' // Usado em AprovacaoFerias.tsx
-  ];
+    // Última parte do caminho
+    const lastPart = parts[parts.length - 1];
+    // Converter kebab-case para título
+    return lastPart
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
 
   useEffect(() => {
     if (isAdmin) {
@@ -206,7 +288,7 @@ export const PermissionManager: React.FC = () => {
   useEffect(() => {
     if (selectedProfile) {
       loadModulePermissions();
-      loadEntityPermissions();
+      loadPagePermissions();
     }
   }, [selectedProfile]);
 
@@ -240,17 +322,18 @@ export const PermissionManager: React.FC = () => {
     }
   };
 
-  const loadEntityPermissions = async () => {
+
+  const loadPagePermissions = async () => {
     if (!selectedProfile) return;
 
     try {
       const { data, error } = await supabase
-        .rpc('get_entity_permissions_by_profile', { p_profile_id: selectedProfile });
+        .rpc('get_page_permissions_by_profile', { p_profile_id: selectedProfile });
 
       if (error) throw error;
-      setEntityPermissions(data || []);
+      setPagePermissions(data || []);
     } catch (error: any) {
-      toast.error('Erro ao carregar permissões de entidades: ' + error.message);
+      toast.error('Erro ao carregar permissões de páginas: ' + error.message);
     }
   };
 
@@ -296,8 +379,15 @@ export const PermissionManager: React.FC = () => {
     }
   };
 
-  const updateEntityPermission = async (
-    entityName: string,
+
+  const getModulePermissionValue = (moduleName: string, action: 'can_read' | 'can_create' | 'can_edit' | 'can_delete') => {
+    const permission = modulePermissions.find(p => p.module_name === moduleName);
+    return permission ? permission[action] : false;
+  };
+
+
+  const updatePagePermission = async (
+    pagePath: string,
     action: 'can_read' | 'can_create' | 'can_edit' | 'can_delete',
     value: boolean
   ) => {
@@ -305,9 +395,9 @@ export const PermissionManager: React.FC = () => {
 
     try {
       const { data, error } = await supabase
-        .rpc('update_entity_permission_production', {
+        .rpc('update_page_permission_production', {
           p_profile_id: selectedProfile,
-          p_entity_name: entityName,
+          p_page_path: pagePath,
           p_action: action,
           p_value: value
         });
@@ -317,11 +407,11 @@ export const PermissionManager: React.FC = () => {
       // Atualizar estado local
       if (data && data.length > 0) {
         const updatedPermission = data[0];
-        setEntityPermissions(prev => {
-          const existing = prev.find(p => p.entity_name === entityName);
+        setPagePermissions(prev => {
+          const existing = prev.find(p => p.page_path === pagePath);
           if (existing) {
             return prev.map(p => 
-              p.entity_name === entityName 
+              p.page_path === pagePath 
                 ? { ...p, ...updatedPermission }
                 : p
             );
@@ -331,20 +421,15 @@ export const PermissionManager: React.FC = () => {
         });
       }
 
-      toast.success('Permissão de entidade atualizada com sucesso');
+      toast.success('Permissão de página atualizada com sucesso');
     } catch (error: any) {
-      console.error('Erro ao atualizar permissão de entidade:', error);
-      toast.error('Erro ao atualizar permissão de entidade: ' + error.message);
+      console.error('Erro ao atualizar permissão de página:', error);
+      toast.error('Erro ao atualizar permissão de página: ' + error.message);
     }
   };
 
-  const getModulePermissionValue = (moduleName: string, action: 'can_read' | 'can_create' | 'can_edit' | 'can_delete') => {
-    const permission = modulePermissions.find(p => p.module_name === moduleName);
-    return permission ? permission[action] : false;
-  };
-
-  const getEntityPermissionValue = (entityName: string, action: 'can_read' | 'can_create' | 'can_edit' | 'can_delete') => {
-    const permission = entityPermissions.find(p => p.entity_name === entityName);
+  const getPagePermissionValue = (pagePath: string, action: 'can_read' | 'can_create' | 'can_edit' | 'can_delete') => {
+    const permission = pagePermissions.find(p => p.page_path === pagePath);
     return permission ? permission[action] : false;
   };
 
@@ -378,259 +463,6 @@ export const PermissionManager: React.FC = () => {
     return moduleNames[moduleName] || moduleName.replace('_', ' ');
   };
 
-  // Função para mapear entidades para seus módulos
-  const getEntityModule = (entityName: string): string => {
-    const entityModuleMap: { [key: string]: string } = {
-      // Entidades básicas - cadastros
-      'usuarios': 'cadastros',
-      'empresas': 'cadastros',
-      'perfis': 'configuracoes',
-      'projetos': 'projetos',
-      'materiais_equipamentos': 'materiais_equipamentos',
-      'parceiros': 'parceiros',
-      'services': 'projetos',
-      'centros_custo': 'centros_custo',
-      
-      // Entidades RH
-      'employees': 'rh',
-      'registros_ponto': 'rh',
-      'time_records': 'rh',
-      'vacations': 'rh',
-      'reimbursement_requests': 'rh',
-      'periodic_exams': 'rh',
-      'disciplinary_actions': 'rh',
-      'trainings': 'treinamento',
-      'positions': 'rh',
-      'work_shifts': 'rh',
-      'holidays': 'rh',
-      'rubricas': 'rh',
-      'units': 'rh',
-      'dependents': 'rh',
-      'employment_contracts': 'rh',
-      'medical_agreements': 'rh',
-      'benefits': 'rh',
-      'payroll_config': 'rh',
-      'payroll': 'rh',
-      'income_statements': 'rh',
-      'esocial': 'rh',
-      'inss_brackets': 'rh',
-      'irrf_brackets': 'rh',
-      'fgts_config': 'rh',
-      'delay_reasons': 'rh',
-      'absence_types': 'rh',
-      'cid_codes': 'rh',
-      'allowance_types': 'rh',
-      'deficiency_types': 'rh',
-      'awards_productivity': 'rh',
-      'medical_plans': 'rh',
-      'employee_medical_plans': 'rh',
-      'unions': 'rh',
-      'employee_union_memberships': 'rh',
-      'payroll_calculation': 'rh',
-      
-      // Entidades Financeiras
-      'contas_pagar': 'financeiro',
-      'contas_receber': 'financeiro',
-      'borderos': 'financeiro',
-      'remessas_bancarias': 'financeiro',
-      'retornos_bancarios': 'financeiro',
-      'contas_bancarias': 'financeiro',
-      'conciliacoes_bancarias': 'financeiro',
-      'fluxo_caixa': 'financeiro',
-      'nfe': 'financeiro',
-      'nfse': 'financeiro',
-      'plano_contas': 'financeiro',
-      'lancamentos_contabeis': 'financeiro',
-      'configuracoes_aprovacao': 'financeiro',
-      'aprovacoes': 'financeiro',
-      'accounts_payable': 'financeiro',
-      'configuracao_fiscal': 'financeiro',
-      'configuracao_bancaria': 'financeiro',
-      
-      // Entidades Almoxarifado
-      'estoque_atual': 'almoxarifado',
-      'movimentacoes_estoque': 'almoxarifado',
-      'entradas_materiais': 'almoxarifado',
-      'entrada_itens': 'almoxarifado',
-      'checklist_recebimento': 'almoxarifado',
-      'transferencias': 'almoxarifado',
-      'transferencia_itens': 'almoxarifado',
-      'inventarios': 'almoxarifado',
-      'inventario_itens': 'almoxarifado',
-      'almoxarifados': 'almoxarifado',
-      'localizacoes_fisicas': 'almoxarifado',
-      'warehouse_transfers': 'almoxarifado',
-      'material_exit_requests': 'almoxarifado',
-      'inventory_dashboard': 'almoxarifado',
-      'inventory_management': 'almoxarifado',
-      'warehouse_reports': 'almoxarifado',
-      
-      // Entidades do Processo de Compras
-      'solicitacoes_compra': 'compras',
-      'cotacoes': 'compras',
-      'pedidos_compra': 'compras',
-      'aprovacoes_compra': 'compras',
-      'fornecedores': 'compras',
-      'contratos_compra': 'compras',
-      'historico_compras': 'compras',
-      'avaliacao_fornecedores': 'compras',
-      'fornecedores_dados': 'compras',
-      
-      // Entidades Frota
-      'vehicles': 'frota',
-      'vehicle_documents': 'frota',
-      'drivers': 'frota',
-      'vehicle_assignments': 'frota',
-      'vehicle_inspections': 'frota',
-      'inspection_items': 'frota',
-      'vehicle_maintenances': 'frota',
-      'vehicle_occurrences': 'frota',
-      'vehicle_requests': 'frota',
-      'vehicle_images': 'frota',
-      
-      // Entidades específicas dos Portais
-      'approval_center': 'portal_gestor',
-      'approval_configs': 'portal_gestor',
-      'approvals': 'portal_gestor',
-      'exam_management': 'portal_gestor',
-      'manager_dashboard': 'portal_gestor',
-      'portal_colaborador': 'portal_colaborador',
-      'time_tracking_management': 'portal_gestor',
-      'vacation_approvals': 'portal_gestor'
-    };
-    return entityModuleMap[entityName] || 'cadastros'; // Default para cadastros se não encontrado
-  };
-
-  // Função para agrupar entidades por módulo
-  const groupEntitiesByModule = () => {
-    const grouped: { [key: string]: string[] } = {};
-    entities.forEach(entity => {
-      const module = getEntityModule(entity);
-      if (!grouped[module]) {
-        grouped[module] = [];
-      }
-      grouped[module].push(entity);
-    });
-    return grouped;
-  };
-
-  // Função para obter nome de exibição das entidades em português
-  const getEntityDisplayName = (entityName: string) => {
-    const entityNames: { [key: string]: string } = {
-      'usuarios': 'Usuários',
-      'empresas': 'Empresas',
-      'perfis': 'Perfis',
-      'projetos': 'Projetos',
-      'materiais_equipamentos': 'Materiais e Equipamentos',
-      'parceiros': 'Parceiros',
-      'centros_custo': 'Centros de Custo',
-      // RH
-      'employees': 'Funcionários (rh.employees)',
-      'registros_ponto': 'Registros de Ponto - Localização',
-      'time_records': 'Registros de Ponto - Histórico (rh.time_records)',
-      'vacations': 'Férias (rh.vacations)',
-      'reimbursement_requests': 'Solicitações de Reembolso (rh.reimbursement_requests)',
-      'periodic_exams': 'Exames Periódicos (rh.periodic_exams)',
-      'disciplinary_actions': 'Ações Disciplinares (rh.disciplinary_actions)',
-      'trainings': 'Treinamentos (rh.trainings)',
-      'positions': 'Cargos (rh.positions)',
-      'work_shifts': 'Escalas de Trabalho (rh.work_shifts)',
-      'holidays': 'Feriados (rh.holidays)',
-      'rubricas': 'Rubricas (rh.rubricas)',
-      'units': 'Unidades/Departamentos (rh.units)',
-      'dependents': 'Dependentes (rh.dependents)',
-      'employment_contracts': 'Contratos de Trabalho (rh.employment_contracts)',
-      'medical_agreements': 'Convênios Médicos (rh.medical_agreements)',
-      'benefits': 'Benefícios (rh.benefits)',
-      'payroll_config': 'Configurações de Folha (rh.payroll_config)',
-      'payroll': 'Folha de Pagamento',
-      'income_statements': 'Comprovantes de Rendimentos (rh.income_statements)',
-      'esocial': 'eSocial',
-      // RH - Parâmetros e Configurações
-      'inss_brackets': 'Faixas INSS (rh.inss_brackets)',
-      'irrf_brackets': 'Faixas IRRF (rh.irrf_brackets)',
-      'fgts_config': 'Configurações FGTS (rh.fgts_config)',
-      'delay_reasons': 'Motivos de Atraso (rh.delay_reasons)',
-      'absence_types': 'Tipos de Afastamento (rh.absence_types)',
-      'cid_codes': 'Códigos CID (rh.cid_codes)',
-      'allowance_types': 'Tipos de Adicionais (rh.allowance_types)',
-      'deficiency_types': 'Tipos de Deficiência (rh.deficiency_types)',
-      // RH - Benefícios e Convênios
-      'awards_productivity': 'Premiações e Produtividade (rh.awards_productivity)',
-      'medical_plans': 'Planos Médicos (rh.medical_plans)',
-      'employee_medical_plans': 'Adesões de Planos Médicos (rh.employee_medical_plans)',
-      'unions': 'Sindicatos (rh.unions)',
-      'employee_union_memberships': 'Vínculos Sindicais (rh.employee_union_memberships)',
-      // RH - Processamento
-      'payroll_calculation': 'Cálculo de Folha (rh.payroll_calculations)',
-      // Financeiro
-      'contas_pagar': 'Contas a Pagar',
-      'contas_receber': 'Contas a Receber',
-      'borderos': 'Borderôs',
-      'remessas_bancarias': 'Remessas Bancárias',
-      'retornos_bancarios': 'Retornos Bancários',
-      'contas_bancarias': 'Contas Bancárias',
-      'conciliacoes_bancarias': 'Conciliações Bancárias',
-      'fluxo_caixa': 'Fluxo de Caixa',
-      'nfe': 'NF-e',
-      'nfse': 'NFS-e',
-      'plano_contas': 'Plano de Contas',
-      'lancamentos_contabeis': 'Lançamentos Contábeis',
-      'configuracoes_aprovacao': 'Configurações de Aprovação',
-      'aprovacoes': 'Aprovações',
-      'accounts_payable': 'Contas a Pagar - Alternativa (financeiro.accounts_payable)',
-      'configuracao_fiscal': 'Configuração Fiscal',
-      'configuracao_bancaria': 'Configuração Bancária',
-      // Almoxarifado
-      'estoque_atual': 'Estoque Atual',
-      'movimentacoes_estoque': 'Movimentações de Estoque',
-      'entradas_materiais': 'Entradas de Materiais',
-      'entrada_itens': 'Itens de Entrada',
-      'checklist_recebimento': 'Checklist de Recebimento',
-      'transferencias': 'Transferências',
-      'transferencia_itens': 'Itens de Transferência',
-      'inventarios': 'Inventários',
-      'inventario_itens': 'Itens de Inventário',
-      'almoxarifados': 'Almoxarifados',
-      'localizacoes_fisicas': 'Localizações Físicas',
-      'warehouse_transfers': 'Transferências de Almoxarifado',
-      'material_exit_requests': 'Solicitações de Saída',
-      'inventory_dashboard': 'Dashboard de Estoque',
-      'inventory_management': 'Gestão de Inventário',
-      'warehouse_reports': 'Relatórios de Almoxarifado',
-      // Compras
-      'solicitacoes_compra': 'Solicitações de Compra',
-      'cotacoes': 'Cotações',
-      'pedidos_compra': 'Pedidos de Compra',
-      'aprovacoes_compra': 'Aprovações de Compra',
-      'fornecedores': 'Fornecedores',
-      'contratos_compra': 'Contratos de Compra',
-      'historico_compras': 'Histórico de Compras',
-      'avaliacao_fornecedores': 'Avaliação de Fornecedores',
-      'fornecedores_dados': 'Dados de Fornecedores',
-      // Frota
-      'vehicles': 'Veículos (frota.vehicles)',
-      'vehicle_documents': 'Documentos de Veículos (frota.vehicle_documents)',
-      'drivers': 'Condutores (frota.drivers)',
-      'vehicle_assignments': 'Atribuições de Veículos (frota.vehicle_assignments)',
-      'vehicle_inspections': 'Vistorias (frota.vehicle_inspections)',
-      'inspection_items': 'Itens de Vistoria (frota.inspection_items)',
-      'vehicle_maintenances': 'Manutenções (frota.vehicle_maintenances)',
-      'vehicle_occurrences': 'Ocorrências (frota.vehicle_occurrences)',
-      'vehicle_requests': 'Solicitações de Veículos (frota.vehicle_requests)',
-      'vehicle_images': 'Imagens de Veículos (frota.vehicle_images)',
-      // Entidades específicas dos Portais
-      'approval_center': 'Central de Aprovações (Portal Gestor)',
-      'approval_configs': 'Configurações de Aprovação (Portal Gestor)',
-      'approvals': 'Aprovações (Portal Gestor)',
-      'exam_management': 'Gestão de Exames (Portal Gestor)',
-      'manager_dashboard': 'Dashboard do Gestor (Portal Gestor)',
-      'portal_colaborador': 'Portal do Colaborador',
-      'time_tracking_management': 'Gestão de Registro de Ponto (Portal Gestor)',
-      'vacation_approvals': 'Aprovações de Férias (Portal Gestor)'
-    };
-    return entityNames[entityName] || entityName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
 
   if (!isAdmin) {
     return (
@@ -701,7 +533,7 @@ export const PermissionManager: React.FC = () => {
               <Tabs defaultValue="modules" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="modules">Módulos</TabsTrigger>
-                  <TabsTrigger value="entities">Entidades</TabsTrigger>
+                  <TabsTrigger value="pages">Páginas</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="modules" className="space-y-4">
@@ -774,74 +606,79 @@ export const PermissionManager: React.FC = () => {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="entities" className="space-y-6">
-                  {Object.entries(groupEntitiesByModule()).map(([module, moduleEntities]) => (
+                <TabsContent value="pages" className="space-y-6">
+                  {Object.entries(pagesByModule).map(([module, modulePages]) => (
                     <Card key={module}>
                       <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                          <Building className="h-5 w-5" />
+                          <FileText className="h-5 w-5" />
                           {getModuleDisplayName(module)}
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="grid gap-4">
-                          {moduleEntities.map(entity => (
-                            <Card key={entity} className="border-l-4 border-l-primary/20">
+                          {modulePages.map(pagePath => (
+                            <Card key={pagePath} className="border-l-4 border-l-primary/20">
                               <CardContent className="p-4">
                                 <div className="flex items-center justify-between mb-3">
-                                  <h3 className="font-medium">
-                                    {getEntityDisplayName(entity)}
-                                  </h3>
+                                  <div>
+                                    <h3 className="font-medium">
+                                      {getPageDisplayName(pagePath)}
+                                    </h3>
+                                    <p className="text-xs text-muted-foreground font-mono mt-1">
+                                      {pagePath}
+                                    </p>
+                                  </div>
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                   <div className="flex items-center space-x-2">
                                     <Switch
-                                      id={`${entity}-read`}
-                                      checked={getEntityPermissionValue(entity, 'can_read')}
+                                      id={`${pagePath}-read`}
+                                      checked={getPagePermissionValue(pagePath, 'can_read')}
                                       onCheckedChange={(checked) => 
-                                        updateEntityPermission(entity, 'can_read', checked)
+                                        updatePagePermission(pagePath, 'can_read', checked)
                                       }
                                     />
-                                    <Label htmlFor={`${entity}-read`} className="flex items-center gap-1">
+                                    <Label htmlFor={`${pagePath}-read`} className="flex items-center gap-1">
                                       <Eye className="h-3 w-3" />
                                       Visualizar
                                     </Label>
                                   </div>
                                   <div className="flex items-center space-x-2">
                                     <Switch
-                                      id={`${entity}-create`}
-                                      checked={getEntityPermissionValue(entity, 'can_create')}
+                                      id={`${pagePath}-create`}
+                                      checked={getPagePermissionValue(pagePath, 'can_create')}
                                       onCheckedChange={(checked) => 
-                                        updateEntityPermission(entity, 'can_create', checked)
+                                        updatePagePermission(pagePath, 'can_create', checked)
                                       }
                                     />
-                                    <Label htmlFor={`${entity}-create`} className="flex items-center gap-1">
+                                    <Label htmlFor={`${pagePath}-create`} className="flex items-center gap-1">
                                       <Plus className="h-3 w-3" />
                                       Criar
                                     </Label>
                                   </div>
                                   <div className="flex items-center space-x-2">
                                     <Switch
-                                      id={`${entity}-edit`}
-                                      checked={getEntityPermissionValue(entity, 'can_edit')}
+                                      id={`${pagePath}-edit`}
+                                      checked={getPagePermissionValue(pagePath, 'can_edit')}
                                       onCheckedChange={(checked) => 
-                                        updateEntityPermission(entity, 'can_edit', checked)
+                                        updatePagePermission(pagePath, 'can_edit', checked)
                                       }
                                     />
-                                    <Label htmlFor={`${entity}-edit`} className="flex items-center gap-1">
+                                    <Label htmlFor={`${pagePath}-edit`} className="flex items-center gap-1">
                                       <Edit className="h-3 w-3" />
                                       Editar
                                     </Label>
                                   </div>
                                   <div className="flex items-center space-x-2">
                                     <Switch
-                                      id={`${entity}-delete`}
-                                      checked={getEntityPermissionValue(entity, 'can_delete')}
+                                      id={`${pagePath}-delete`}
+                                      checked={getPagePermissionValue(pagePath, 'can_delete')}
                                       onCheckedChange={(checked) => 
-                                        updateEntityPermission(entity, 'can_delete', checked)
+                                        updatePagePermission(pagePath, 'can_delete', checked)
                                       }
                                     />
-                                    <Label htmlFor={`${entity}-delete`} className="flex items-center gap-1">
+                                    <Label htmlFor={`${pagePath}-delete`} className="flex items-center gap-1">
                                       <Trash className="h-3 w-3" />
                                       Excluir
                                     </Label>

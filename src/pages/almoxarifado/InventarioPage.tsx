@@ -32,7 +32,7 @@ import { useInventario, Inventario } from '@/hooks/almoxarifado/useInventarioQue
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { toast } from 'sonner';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -175,7 +175,7 @@ const InventarioPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="inventarios" action="read">
+    <RequirePage pagePath="/almoxarifado/inventario*" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
@@ -489,7 +489,7 @@ const InventarioPage: React.FC = () => {
         </div>
       )}
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

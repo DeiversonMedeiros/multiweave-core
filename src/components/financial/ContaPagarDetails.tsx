@@ -57,6 +57,7 @@ interface ContaPagarDetailsProps {
   onReprovar?: (conta: ContaPagar) => void;
   onSuspender?: (conta: ContaPagar) => void;
   onPay: (conta: ContaPagar) => void;
+  onEstornar?: (conta: ContaPagar) => void;
   canEdit: boolean;
   canDelete: boolean;
   canApprove: boolean;
@@ -72,6 +73,7 @@ export function ContaPagarDetails({
   onReprovar,
   onSuspender,
   onPay,
+  onEstornar,
   canEdit,
   canDelete,
   canApprove,
@@ -173,6 +175,7 @@ export function ContaPagarDetails({
       pago: { label: 'Pago', variant: 'success' as const, icon: CheckCircle },
       vencido: { label: 'Vencido', variant: 'destructive' as const, icon: AlertTriangle },
       cancelado: { label: 'Cancelado', variant: 'outline' as const, icon: XCircle },
+      estornado: { label: 'Estornado', variant: 'default' as const, icon: RotateCcw },
     };
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pendente;
@@ -771,6 +774,17 @@ export function ContaPagarDetails({
               >
                 <DollarSign className="h-4 w-4 mr-2" />
                 Registrar Pagamento
+              </Button>
+            )}
+            {canEdit && conta.status === 'pago' && onEstornar && (
+              <Button 
+                variant="outline" 
+                onClick={() => onEstornar(conta)}
+                className="text-orange-600 hover:text-orange-700"
+                title="Estornar conta (após verificar no banco)"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Estornar
               </Button>
             )}
             {canDelete && !hasPayment && (

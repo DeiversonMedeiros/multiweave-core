@@ -27,7 +27,7 @@ import { useDeleteEmployee } from '@/hooks/rh/useEmployees';
 import { useRHData } from '@/hooks/generic/useEntityData';
 import { Employee, EmployeeFilters } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { formatDateOnly } from '@/lib/utils';
@@ -38,7 +38,7 @@ import { formatDateOnly } from '@/lib/utils';
 
 export default function EmployeesPage() {
   const { selectedCompany } = useCompany();
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [filters, setFilters] = useState<EmployeeFilters>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -237,7 +237,7 @@ export default function EmployeesPage() {
   ];
 
   return (
-    <RequireEntity entityName="employees" action="read">
+    <RequirePage pagePath="/rh/employees*" action="read">
       <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
@@ -338,6 +338,6 @@ export default function EmployeesPage() {
         />
       </FormModal>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

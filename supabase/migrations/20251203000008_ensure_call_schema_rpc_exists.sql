@@ -73,29 +73,37 @@ BEGIN
     
     -- Executar e retornar resultado
     -- Tentar diferentes tipos de retorno
+    -- IMPORTANTE: Tentar JSONB primeiro para funções que retornam JSONB
     BEGIN
-        EXECUTE v_sql INTO v_uuid_result;
-        RETURN jsonb_build_object('result', v_uuid_result::text);
+        EXECUTE v_sql INTO v_result;
+        -- Se conseguiu executar, pode ser JSONB ou outro tipo
+        -- Verificar se é JSONB válido
+        IF jsonb_typeof(v_result) = 'object' OR jsonb_typeof(v_result) = 'array' THEN
+            RETURN jsonb_build_object('result', v_result);
+        ELSE
+            -- Se não é JSONB, retornar como está (pode ser convertido para texto depois)
+            RETURN jsonb_build_object('result', v_result);
+        END IF;
     EXCEPTION WHEN OTHERS THEN
         BEGIN
-            EXECUTE v_sql INTO v_int_result;
-            RETURN jsonb_build_object('result', v_int_result);
+            EXECUTE v_sql INTO v_uuid_result;
+            RETURN jsonb_build_object('result', v_uuid_result::text);
         EXCEPTION WHEN OTHERS THEN
             BEGIN
-                EXECUTE v_sql INTO v_bool_result;
-                RETURN jsonb_build_object('result', v_bool_result);
+                EXECUTE v_sql INTO v_int_result;
+                RETURN jsonb_build_object('result', v_int_result);
             EXCEPTION WHEN OTHERS THEN
                 BEGIN
-                    EXECUTE v_sql INTO v_text_result;
-                    RETURN jsonb_build_object('result', v_text_result);
+                    EXECUTE v_sql INTO v_bool_result;
+                    RETURN jsonb_build_object('result', v_bool_result);
                 EXCEPTION WHEN OTHERS THEN
                     BEGIN
-                        EXECUTE v_sql INTO v_decimal_result;
-                        RETURN jsonb_build_object('result', v_decimal_result);
+                        EXECUTE v_sql INTO v_text_result;
+                        RETURN jsonb_build_object('result', v_text_result);
                     EXCEPTION WHEN OTHERS THEN
                         BEGIN
-                            EXECUTE v_sql INTO v_result;
-                            RETURN COALESCE(v_result, jsonb_build_object('result', NULL));
+                            EXECUTE v_sql INTO v_decimal_result;
+                            RETURN jsonb_build_object('result', v_decimal_result);
                         EXCEPTION WHEN OTHERS THEN
                             RETURN jsonb_build_object(
                                 'error', true,

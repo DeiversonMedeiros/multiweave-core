@@ -48,7 +48,7 @@ import { ptBR } from 'date-fns/locale';
 
 const OrdensProducaoPage: React.FC = () => {
   const { selectedCompany } = useCompany();
-  const { canCreateEntity, canEditEntity, canReadEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canReadPage } = usePermissions();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [isModalOpen, setIsModalOpen] = useState(false);

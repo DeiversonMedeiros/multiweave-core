@@ -117,7 +117,7 @@ export function CotacaoApprovalCard({
           
           <div className="flex items-center gap-2">
             <PermissionButton
-              entityName="approvals"
+              page="/portal-gestor/aprovacoes*"
               action="edit"
               variant="outline"
               size="sm"
@@ -127,7 +127,7 @@ export function CotacaoApprovalCard({
               Processar
             </PermissionButton>
             <PermissionButton
-              entityName="approvals"
+              page="/portal-gestor/aprovacoes*"
               action="edit"
               variant="outline"
               size="sm"

@@ -14,7 +14,7 @@ import FgtsConfigForm from '@/components/rh/FgtsConfigForm';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function FgtsConfigPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState({
     ano_vigencia: 2024, // Dados padrão inseridos para 2024

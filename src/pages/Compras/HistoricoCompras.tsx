@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -280,7 +280,7 @@ const HistoricoCompras: React.FC = () => {
   }
 
   return (
-    <RequireEntity entityName="historico_compras" action="read">
+    <RequirePage pagePath="/compras/historico*" action="read">
       <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
@@ -757,7 +757,7 @@ const HistoricoCompras: React.FC = () => {
         </DialogContent>
       </Dialog>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

@@ -2,9 +2,17 @@ import { useState, useEffect } from 'react';
 import { usePermissions } from './usePermissions';
 import { PermissionAction } from './useAuthorization';
 
+const ENTITY_TO_PAGE: Record<string, string> = {
+  users: '/cadastros/usuarios*', companies: '/cadastros/empresas*', profiles: '/cadastros/perfis*',
+  projects: '/cadastros/projetos*', partners: '/cadastros/parceiros*', cost_centers: '/cadastros/centros-custo*',
+  services: '/cadastros/servicos*', employees: '/rh/employees*', cotacoes: '/compras/cotacoes*',
+  solicitacoes_compra: '/compras/requisicoes*', pedidos_compra: '/compras/pedidos*'
+};
+
 interface PermissionCheckOptions {
   module?: string;
   entity?: string;
+  page?: string;
   action?: PermissionAction;
   companyId?: string;
 }
@@ -15,10 +23,10 @@ export const usePermissionCheck = (options: PermissionCheckOptions) => {
     canCreateModule,
     canEditModule,
     canDeleteModule,
-    canReadEntity,
-    canCreateEntity,
-    canEditEntity,
-    canDeleteEntity,
+    canReadPage,
+    canCreatePage,
+    canEditPage,
+    canDeletePage,
     hasModuleAccess,
     hasCompanyAccess,
     isAdmin
@@ -33,44 +41,27 @@ export const usePermissionCheck = (options: PermissionCheckOptions) => {
 
       try {
         let permission = false;
+        const action = options.action;
 
-        // Verificar permissão de módulo
-        if (options.module && options.action) {
-          switch (options.action) {
-            case 'read':
-              permission = canReadModule(options.module);
-              break;
-            case 'create':
-              permission = canCreateModule(options.module);
-              break;
-            case 'edit':
-              permission = canEditModule(options.module);
-              break;
-            case 'delete':
-              permission = canDeleteModule(options.module);
-              break;
+        if (options.module && action) {
+          switch (action) {
+            case 'read': permission = canReadModule(options.module); break;
+            case 'create': permission = canCreateModule(options.module); break;
+            case 'edit': permission = canEditModule(options.module); break;
+            case 'delete': permission = canDeleteModule(options.module); break;
           }
         }
 
-        // Verificar permissão de entidade
-        if (options.entity && options.action) {
-          switch (options.action) {
-            case 'read':
-              permission = canReadEntity(options.entity);
-              break;
-            case 'create':
-              permission = canCreateEntity(options.entity);
-              break;
-            case 'edit':
-              permission = canEditEntity(options.entity);
-              break;
-            case 'delete':
-              permission = canDeleteEntity(options.entity);
-              break;
+        const pagePath = options.page || (options.entity ? ENTITY_TO_PAGE[options.entity] : null);
+        if (pagePath && action) {
+          switch (action) {
+            case 'read': permission = permission || canReadPage(pagePath); break;
+            case 'create': permission = permission || canCreatePage(pagePath); break;
+            case 'edit': permission = permission || canEditPage(pagePath); break;
+            case 'delete': permission = permission || canDeletePage(pagePath); break;
           }
         }
 
-        // Verificar acesso a empresa
         if (options.companyId) {
           const companyAccess = await hasCompanyAccess(options.companyId);
           permission = permission && companyAccess;
@@ -86,9 +77,8 @@ export const usePermissionCheck = (options: PermissionCheckOptions) => {
     };
 
     checkPermission();
-  }, [options, canReadModule, canCreateModule, canEditModule, canDeleteModule, 
-      canReadEntity, canCreateEntity, canEditEntity, canDeleteEntity, 
-      hasModuleAccess, hasCompanyAccess]);
+  }, [options, canReadModule, canCreateModule, canEditModule, canDeleteModule,
+      canReadPage, canCreatePage, canEditPage, canDeletePage, hasModuleAccess, hasCompanyAccess]);
 
   return {
     hasPermission,
@@ -102,9 +92,13 @@ export const useModuleAccess = (moduleName: string, action: PermissionAction = '
   return usePermissionCheck({ module: moduleName, action });
 };
 
-// Hook para verificar acesso a entidade
+/** @deprecated Use usePermissionCheck({ page: '/path*', action }) ou usePageAccess */
 export const useEntityAccess = (entityName: string, action: PermissionAction = 'read') => {
   return usePermissionCheck({ entity: entityName, action });
+};
+
+export const usePageAccess = (pagePath: string, action: PermissionAction = 'read') => {
+  return usePermissionCheck({ page: pagePath, action });
 };
 
 // Hook para verificar acesso a empresa

@@ -9,7 +9,7 @@ import { UpdatePasswordDialog } from "@/components/forms/UpdatePasswordDialog";
 import { Button } from "@/components/ui/button";
 import { Key, Edit } from "lucide-react";
 import { toast } from "sonner";
-import { RequireEntity } from "@/components/RequireAuth";
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard } from "@/components/PermissionGuard";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useMultiTenancy } from "@/hooks/useMultiTenancy";
@@ -22,7 +22,7 @@ export default function Usuarios() {
   const [editingUsuario, setEditingUsuario] = useState<User | null>(null);
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [selectedUserForPassword, setSelectedUserForPassword] = useState<User | null>(null);
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { currentCompany, isAdmin } = useMultiTenancy();
 
   useEffect(() => {
@@ -197,7 +197,7 @@ export default function Usuarios() {
     {
       header: "Ações",
       accessor: (item: User) => {
-        const canUpdate = canEditEntity('users'); // Usar canEditEntity para update também
+        const canUpdate = canEditPage('/cadastros/usuarios*');
         return (
           <div className="flex gap-2">
             {canUpdate && (
@@ -251,7 +251,7 @@ export default function Usuarios() {
   }
 
   return (
-    <RequireEntity entityName="users" action="read">
+    <RequirePage pagePath="/cadastros/usuarios*" action="read">
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Usuários</h1>
@@ -268,7 +268,7 @@ export default function Usuarios() {
         <DataTable
           data={usuarios}
           columns={columns}
-          onNew={canCreateEntity('users') ? () => {
+          onNew={canCreatePage('/cadastros/usuarios*') ? () => {
             setEditingUsuario(null);
             setIsDialogOpen(true);
           } : undefined}
@@ -277,7 +277,7 @@ export default function Usuarios() {
           newButtonLabel="Novo Usuário"
         />
 
-        {(canCreateEntity('users') || canEditEntity('users')) && (
+        {(canCreatePage('/cadastros/usuarios*') || canEditPage('/cadastros/usuarios*')) && (
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
             setIsDialogOpen(open);
             if (!open) {
@@ -322,6 +322,6 @@ export default function Usuarios() {
           />
         )}
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

@@ -109,7 +109,7 @@ export default function SolicitacoesAbastecimento() {
             <p className="text-gray-600">Gerencie solicitações de abastecimento de combustível</p>
           </div>
           <PermissionButton
-            entityName="refuel_requests"
+            page="/combustivel/solicitacoes*"
             action="create"
             onClick={() => {
               setEditingRequest(null);
@@ -240,7 +240,7 @@ export default function SolicitacoesAbastecimento() {
                           </Button>
                           {request.status === 'pendente' && (
                             <PermissionButton
-                              entityName="refuel_requests"
+                              page="/combustivel/solicitacoes*"
                               action="edit"
                               variant="ghost"
                               size="sm"

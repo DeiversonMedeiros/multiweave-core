@@ -95,7 +95,7 @@ export default function OrcamentoCombustivel() {
               </SelectContent>
             </Select>
             <PermissionButton
-              entityName="fuel_budgets"
+              page="/combustivel/orcamento*"
               action="create"
               onClick={() => {
                 setEditingBudget(null);
@@ -220,7 +220,7 @@ export default function OrcamentoCombustivel() {
                         </div>
                         <div className="flex items-center gap-2">
                           <PermissionButton
-                            entityName="fuel_budgets"
+                            page="/combustivel/orcamento*"
                             action="edit"
                             variant="ghost"
                             size="sm"
@@ -232,7 +232,7 @@ export default function OrcamentoCombustivel() {
                             <Edit className="w-4 h-4" />
                           </PermissionButton>
                           <PermissionButton
-                            entityName="fuel_budgets"
+                            page="/combustivel/orcamento*"
                             action="delete"
                             variant="ghost"
                             size="sm"

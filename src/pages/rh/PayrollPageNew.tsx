@@ -36,7 +36,7 @@ import { useProcessAllPayroll } from '@/hooks/rh/usePayroll';
 // =====================================================
 
 export default function PayrollPageNew() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');

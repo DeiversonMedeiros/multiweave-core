@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { LotesPagamentoPage as LotesPagamentoComponent } from '@/components/financial/LotesPagamentoPage';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 interface LotesPagamentoPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface LotesPagamentoPageProps {
 
 export default function LotesPagamentoPage({ className }: LotesPagamentoPageProps) {
   return (
-    <RequireEntity entityName="borderos" action="read">
+    <RequirePage pagePath="/financeiro/lotes-pagamento*" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export default function LotesPagamentoPage({ className }: LotesPagamentoPageProp
         </div>
         <LotesPagamentoComponent />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

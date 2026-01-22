@@ -26,7 +26,7 @@ import { EmployeeBenefitAssignmentForm } from '@/components/rh/EmployeeBenefitAs
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { EmployeeBenefitAssignment, BenefitConfiguration } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { formatDateString } from '@/utils/dateUtils';
@@ -36,7 +36,7 @@ import { formatDateString } from '@/utils/dateUtils';
 // =====================================================
 
 export default function EmployeeBenefitsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -247,7 +247,7 @@ export default function EmployeeBenefitsPage() {
   }
 
   return (
-    <RequireEntity entityName="employees" action="read">
+    <RequirePage pagePath="/rh/employees*" action="read">
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -370,6 +370,6 @@ export default function EmployeeBenefitsPage() {
           />
         </FormModal>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

@@ -104,8 +104,14 @@ export function MonthlyTimeRecordsCalendar({
   const getRecordStatus = (record?: TimeRecord, date?: string) => {
     // PRIORIDADE 1: Se há correção pendente para esta data, SEMPRE mostrar como pendente
     // (independente de ter registro completo ou não)
-    if (date && pendingCorrectionsByDate.has(date)) {
-      return 'pending_correction';
+    if (date) {
+      const hasPendingCorrection = pendingCorrectionsByDate.has(date);
+      if (hasPendingCorrection) {
+        console.log(`✅ [MonthlyTimeRecordsCalendar] Data ${date} tem correção pendente - Status: pending_correction`);
+      }
+      if (hasPendingCorrection) {
+        return 'pending_correction';
+      }
     }
     
     if (!record) {
@@ -335,10 +341,22 @@ export function MonthlyTimeRecordsCalendar({
                   </div>
                 )}
 
-                {/* Indicador para dias sem registro */}
+                {/* Indicador para dias sem registro ou com correção pendente sem registro */}
                 {!record && (
-                  <div className="flex-1 flex items-center justify-center">
-                    <Plus className="w-4 h-4 text-gray-400" />
+                  <div className="flex-1 flex flex-col items-center justify-center gap-1">
+                    {status === 'pending_correction' ? (
+                      <>
+                        <Clock className="w-4 h-4 text-orange-600" />
+                        <Badge
+                          variant="secondary"
+                          className="text-xs px-1 py-0 bg-orange-100 text-orange-800"
+                        >
+                          {getStatusText(status)}
+                        </Badge>
+                      </>
+                    ) : (
+                      <Plus className="w-4 h-4 text-gray-400" />
+                    )}
                   </div>
                 )}
               </CardContent>

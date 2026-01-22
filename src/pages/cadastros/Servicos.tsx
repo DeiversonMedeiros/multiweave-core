@@ -17,7 +17,7 @@ import { Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -49,7 +49,7 @@ const serviceSchema = z.object({
 type ServiceFormData = z.infer<typeof serviceSchema>;
 
 export default function Servicos() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [servicos, setServicos] = useState<Service[]>([]);
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [parceiros, setParceiros] = useState<Partner[]>([]);
@@ -292,7 +292,7 @@ export default function Servicos() {
       header: "Ações",
       accessor: (item: Service) => (
         <div className="flex gap-2">
-          {canEditEntity('services') && (
+          {canEditPage('/cadastros/servicos*') && (
             <Button
               variant="ghost"
               size="sm"
@@ -301,7 +301,7 @@ export default function Servicos() {
               <Edit className="h-4 w-4" />
             </Button>
           )}
-          {canDeleteEntity('services') && (
+          {canDeletePage('/cadastros/servicos*') && (
             <Button
               variant="ghost"
               size="sm"
@@ -318,7 +318,7 @@ export default function Servicos() {
   if (loading) return <div>Carregando...</div>;
 
   return (
-    <RequireEntity entityName="services" action="read">
+    <RequirePage pagePath="/cadastros/servicos*" action="read">
       <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Serviços</h1>
@@ -330,7 +330,7 @@ export default function Servicos() {
       <DataTable
         data={servicos}
         columns={columns}
-        onNew={canCreateEntity('services') ? handleNew : undefined}
+        onNew={canCreatePage('/cadastros/servicos*') ? handleNew : undefined}
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por código ou nome..."
         newButtonLabel="Novo Serviço"
@@ -476,7 +476,7 @@ export default function Servicos() {
         </Dialog>
       </PermissionGuard>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

@@ -13,12 +13,12 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function ExamesPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
 
@@ -96,7 +96,7 @@ export default function ExamesPage() {
   }
 
   return (
-    <RequireEntity entityName="periodic_exams" action="read">
+    <RequirePage pagePath="/portal-colaborador/exames*" action="read">
       <div className="p-6 space-y-6">
       {/* Header */}
       <div>
@@ -200,6 +200,6 @@ export default function ExamesPage() {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

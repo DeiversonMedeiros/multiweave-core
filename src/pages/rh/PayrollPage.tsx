@@ -50,7 +50,7 @@ import {
 } from 'lucide-react';
 import { SimpleDataTable } from '@/components/rh/SimpleDataTable';
 import { TableActions } from '@/components/rh/TableActions';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { 
   usePayroll, 
@@ -76,7 +76,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 export default function PayrollPage() {
   const { selectedCompany } = useCompany();
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [monthFilter, setMonthFilter] = useState(new Date().getMonth() + 1);
@@ -530,7 +530,7 @@ export default function PayrollPage() {
   ];
 
   return (
-    <RequireEntity entityName="payroll" action="read">
+    <RequirePage pagePath="/rh/payroll*" action="read">
       <div className="space-y-6">
         {/* Cabeçalho */}
         <div className="flex items-center justify-between">
@@ -875,7 +875,7 @@ export default function PayrollPage() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

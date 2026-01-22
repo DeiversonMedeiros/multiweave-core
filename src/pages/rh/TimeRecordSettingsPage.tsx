@@ -10,12 +10,12 @@ import { useCompany } from '@/lib/company-context';
 import { useTimeRecordSettings } from '@/hooks/rh/useTimeRecordSettings';
 import { EntityService } from '@/services/generic/entityService';
 import { toast } from 'sonner';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function TimeRecordSettingsPage() {
   const { selectedCompany } = useCompany();
-  const { canEditEntity } = usePermissions();
+  const { canEditPage } = usePermissions();
   const queryClient = useQueryClient();
   const { data: settings, isLoading } = useTimeRecordSettings();
   
@@ -67,7 +67,7 @@ export default function TimeRecordSettingsPage() {
   });
 
   const handleSave = () => {
-    if (!canEditEntity('time_record_settings')) {
+    if (!canEditPage('/rh/ponto-eletronico-config*')) {
       toast.error('Você não tem permissão para atualizar essas configurações');
       return;
     }
@@ -83,7 +83,7 @@ export default function TimeRecordSettingsPage() {
   }
 
   return (
-    <RequireEntity entityName="time_record_settings" action="read">
+    <RequirePage pagePath="/rh/TimeRecordSettingsPage*" action="read">
       <div className="p-6 space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Configurações de Ponto Eletrônico</h1>
@@ -151,7 +151,7 @@ export default function TimeRecordSettingsPage() {
             <div className="flex justify-end gap-2">
               <Button
                 onClick={handleSave}
-                disabled={saveMutation.isPending || !canEditEntity('time_record_settings')}
+                disabled={saveMutation.isPending || !canEditPage('/rh/ponto-eletronico-config*')}
                 className="min-w-[120px]"
               >
                 {saveMutation.isPending ? (
@@ -170,7 +170,7 @@ export default function TimeRecordSettingsPage() {
           </CardContent>
         </Card>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

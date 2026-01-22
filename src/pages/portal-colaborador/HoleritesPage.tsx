@@ -22,7 +22,7 @@ import {
   Eye
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Payroll, PayrollEvent, Employee } from '@/integrations/supabase/rh-types';
@@ -31,7 +31,7 @@ import { generatePayslipPDF, downloadPayslip } from '@/services/rh/payslipServic
 import { usePayrollEvents } from '@/hooks/rh/usePayrollCalculation';
 
 export default function HoleritesPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
   const [selectedPayroll, setSelectedPayroll] = useState<Payroll | null>(null);

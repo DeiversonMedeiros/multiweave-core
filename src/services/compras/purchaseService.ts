@@ -1158,27 +1158,129 @@ export const purchaseService = {
     );
 
     const fornecedoresNovos = await Promise.all(
-      fornecedoresParaCriar.map((fornecedor) =>
-        EntityService.create({
+      fornecedoresParaCriar.map((fornecedor) => {
+        const dadosFornecedor = {
+          cotacao_id: (ciclo as any)?.id,
+          fornecedor_id: fornecedor.fornecedor_id,
+          prazo_entrega: fornecedor.prazo_entrega || 0,
+          condicoes_comerciais: fornecedor.condicoes_comerciais || '',
+          // ✅ IMPORTANTE: Salvar valor_frete, valor_imposto, desconto_percentual e desconto_valor para que sejam preservados no fluxo
+          valor_frete: fornecedor.valor_frete != null ? Number(fornecedor.valor_frete) : 0,
+          valor_imposto: fornecedor.valor_imposto != null ? Number(fornecedor.valor_imposto) : 0,
+          desconto_percentual: fornecedor.desconto_percentual != null ? Number(fornecedor.desconto_percentual) : 0,
+          desconto_valor: fornecedor.desconto_valor != null ? Number(fornecedor.desconto_valor) : 0,
+          // ✅ NOVOS CAMPOS: Condições de pagamento
+          forma_pagamento: fornecedor.forma_pagamento || null,
+          is_parcelada: fornecedor.is_parcelada || false,
+          numero_parcelas: fornecedor.is_parcelada ? (fornecedor.numero_parcelas || 1) : 1,
+          intervalo_parcelas: fornecedor.is_parcelada ? (fornecedor.intervalo_parcelas || '30') : '30',
+        };
+        
+        console.log(`[purchaseService.startQuoteCycle] Criando fornecedor ${fornecedor.fornecedor_id} com dados:`, {
+          fornecedor_recebido: {
+            valor_frete: fornecedor.valor_frete,
+            valor_imposto: fornecedor.valor_imposto,
+            desconto_percentual: fornecedor.desconto_percentual,
+            desconto_valor: fornecedor.desconto_valor
+          },
+          dados_para_criar: dadosFornecedor
+        });
+        
+        return EntityService.create({
           schema: 'compras',
           table: 'cotacao_fornecedores',
           companyId: params.companyId,
-          data: {
-            cotacao_id: (ciclo as any)?.id,
-            fornecedor_id: fornecedor.fornecedor_id,
-            prazo_entrega: fornecedor.prazo_entrega || 0,
-            condicoes_comerciais: fornecedor.condicoes_comerciais || '',
-            // ✅ IMPORTANTE: Salvar valor_frete e valor_imposto para que sejam preservados no fluxo
-            valor_frete: fornecedor.valor_frete != null ? Number(fornecedor.valor_frete) : 0,
-            valor_imposto: fornecedor.valor_imposto != null ? Number(fornecedor.valor_imposto) : 0,
-          },
-        }),
-      ),
+          data: dadosFornecedor,
+        });
+      }),
     );
 
-    // Combinar fornecedores existentes com os novos criados
+    // ✅ CORREÇÃO: Atualizar fornecedores existentes com os novos valores de frete/desconto
+    // Isso garante que quando uma cotação é editada, os valores sejam atualizados corretamente
+    const fornecedoresParaAtualizar = params.input.fornecedores.filter(
+      (f) => fornecedoresExistentesIds.has(f.fornecedor_id)
+    );
+
+    const fornecedoresAtualizados = await Promise.allSettled(
+      fornecedoresParaAtualizar.map(async (fornecedor) => {
+        const fornecedorExistente = fornecedoresExistentes.find(
+          (fe: any) => fe.fornecedor_id === fornecedor.fornecedor_id
+        );
+        
+        if (!fornecedorExistente) {
+          console.warn(`[purchaseService.startQuoteCycle] Fornecedor ${fornecedor.fornecedor_id} não encontrado para atualização`);
+          return null;
+        }
+
+        const dadosAtualizacao = {
+          prazo_entrega: fornecedor.prazo_entrega != null ? Number(fornecedor.prazo_entrega) : fornecedorExistente.prazo_entrega || 0,
+          condicoes_comerciais: fornecedor.condicoes_comerciais || fornecedorExistente.condicoes_comerciais || '',
+          // ✅ IMPORTANTE: Atualizar valor_frete, valor_imposto, desconto_percentual e desconto_valor
+          // Usar os valores do fornecedor recebido, não os valores existentes
+          valor_frete: fornecedor.valor_frete != null ? Number(fornecedor.valor_frete) : (fornecedorExistente.valor_frete || 0),
+          valor_imposto: fornecedor.valor_imposto != null ? Number(fornecedor.valor_imposto) : (fornecedorExistente.valor_imposto || 0),
+          desconto_percentual: fornecedor.desconto_percentual != null ? Number(fornecedor.desconto_percentual) : (fornecedorExistente.desconto_percentual || 0),
+          desconto_valor: fornecedor.desconto_valor != null ? Number(fornecedor.desconto_valor) : (fornecedorExistente.desconto_valor || 0),
+          // ✅ NOVOS CAMPOS: Condições de pagamento
+          forma_pagamento: fornecedor.forma_pagamento !== undefined ? fornecedor.forma_pagamento : (fornecedorExistente.forma_pagamento || null),
+          is_parcelada: fornecedor.is_parcelada !== undefined ? fornecedor.is_parcelada : (fornecedorExistente.is_parcelada || false),
+          numero_parcelas: fornecedor.is_parcelada !== undefined 
+            ? (fornecedor.is_parcelada ? (fornecedor.numero_parcelas || 1) : 1)
+            : (fornecedorExistente.numero_parcelas || 1),
+          intervalo_parcelas: fornecedor.is_parcelada !== undefined
+            ? (fornecedor.is_parcelada ? (fornecedor.intervalo_parcelas || '30') : '30')
+            : (fornecedorExistente.intervalo_parcelas || '30'),
+        };
+
+        console.log(`[purchaseService.startQuoteCycle] Atualizando fornecedor existente ${fornecedorExistente.id} (${fornecedor.fornecedor_id}) com dados:`, {
+          fornecedor_recebido: {
+            valor_frete: fornecedor.valor_frete,
+            valor_imposto: fornecedor.valor_imposto,
+            desconto_percentual: fornecedor.desconto_percentual,
+            desconto_valor: fornecedor.desconto_valor
+          },
+          fornecedor_existente: {
+            valor_frete: fornecedorExistente.valor_frete,
+            valor_imposto: fornecedorExistente.valor_imposto,
+            desconto_percentual: fornecedorExistente.desconto_percentual,
+            desconto_valor: fornecedorExistente.desconto_valor
+          },
+          dados_atualizacao: dadosAtualizacao
+        });
+
+        await EntityService.update({
+          schema: 'compras',
+          table: 'cotacao_fornecedores',
+          companyId: params.companyId,
+          id: fornecedorExistente.id,
+          data: dadosAtualizacao,
+        });
+
+        return { ...fornecedorExistente, ...dadosAtualizacao };
+      }),
+    );
+
+    // Filtrar apenas os updates bem-sucedidos
+    const fornecedoresAtualizadosSucesso = fornecedoresAtualizados
+      .filter((result) => result.status === 'fulfilled' && result.value !== null)
+      .map((result) => (result as PromiseFulfilledResult<any>).value);
+
+    // Log de erros se houver
+    fornecedoresAtualizados.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`[purchaseService.startQuoteCycle] Erro ao atualizar fornecedor ${fornecedoresParaAtualizar[index]?.fornecedor_id}:`, result.reason);
+      }
+    });
+
+    // Combinar fornecedores existentes atualizados com os novos criados
+    // Substituir os fornecedores existentes pelos atualizados
+    const fornecedoresExistentesAtualizados = fornecedoresExistentes.map((fe: any) => {
+      const atualizado = fornecedoresAtualizadosSucesso.find((fa: any) => fa.id === fe.id);
+      return atualizado || fe;
+    });
+
     const fornecedoresCriados = [
-      ...fornecedoresExistentes,
+      ...fornecedoresExistentesAtualizados,
       ...fornecedoresNovos,
     ];
 

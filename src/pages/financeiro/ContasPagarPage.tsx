@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { ContasPagarPage as ContasPagarComponent } from '@/components/financial/ContasPagarPage';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 interface ContasPagarPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface ContasPagarPageProps {
 
 export function ContasPagarPage({ className }: ContasPagarPageProps) {
   return (
-    <RequireEntity entityName="contas_pagar" action="read">
+    <RequirePage pagePath="/financeiro/contas-pagar*" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
         </div>
         <ContasPagarComponent />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

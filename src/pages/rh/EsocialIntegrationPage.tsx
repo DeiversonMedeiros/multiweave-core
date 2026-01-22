@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -142,7 +142,7 @@ const EsocialIntegrationPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="esocial" action="read">
+    <RequirePage pagePath="/rh/esocial*" action="read">
       <div className="container mx-auto p-6">
 
       <DataTable
@@ -167,7 +167,7 @@ const EsocialIntegrationPage: React.FC = () => {
         editingItem={editingItem}
       />
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

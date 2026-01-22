@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCentralAprovacoes } from '@/hooks/portal-gestor/useCentralAprovacoes';
@@ -222,7 +222,7 @@ const CentralAprovacoes: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="approval_center" action="read">
+    <RequirePage pagePath="/portal-gestor/aprovacoes*" action="read">
       <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -508,7 +508,7 @@ const CentralAprovacoes: React.FC = () => {
         </div>
       )}
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

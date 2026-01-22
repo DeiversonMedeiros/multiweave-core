@@ -30,7 +30,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { useEmployeeByUserId } from '@/hooks/rh/useEmployees';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -320,7 +320,7 @@ export default function HistoricoMarcacoesPage() {
 
   if (isLoading) {
     return (
-      <RequireEntity entityName="time_records" action="read">
+      <RequirePage pagePath="/portal-colaborador/historico-marcacoes*" action="read">
         <div className="p-6 space-y-6">
           <div className="flex items-center justify-center h-64">
             <div className="flex items-center space-x-2">
@@ -329,13 +329,13 @@ export default function HistoricoMarcacoesPage() {
             </div>
           </div>
         </div>
-      </RequireEntity>
+      </RequirePage>
     );
   }
 
   if (error) {
     return (
-      <RequireEntity entityName="time_records" action="read">
+      <RequirePage pagePath="/portal-colaborador/historico-marcacoes*" action="read">
         <div className="p-6 space-y-6">
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
@@ -345,12 +345,12 @@ export default function HistoricoMarcacoesPage() {
             </div>
           </div>
         </div>
-      </RequireEntity>
+      </RequirePage>
     );
   }
 
   return (
-    <RequireEntity entityName="time_records" action="read">
+    <RequirePage pagePath="/portal-colaborador/historico-marcacoes*" action="read">
       <div className="p-6 space-y-6">
         {/* Header */}
         <div>
@@ -866,6 +866,6 @@ export default function HistoricoMarcacoesPage() {
           </CardContent>
         </Card>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

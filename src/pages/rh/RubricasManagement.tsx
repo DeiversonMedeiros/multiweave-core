@@ -48,7 +48,7 @@ import { useCreateRubrica, useUpdateRubrica, useDeleteRubrica } from '@/hooks/rh
 import { Rubrica } from '@/integrations/supabase/rh-types';
 import { toast } from 'sonner';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -76,7 +76,7 @@ interface FormulaSimulation {
 // =====================================================
 
 export default function RubricasManagement() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [activeTab, setActiveTab] = useState('list');
   const [filters, setFilters] = useState<RubricaFilters>({
@@ -174,7 +174,7 @@ export default function RubricasManagement() {
   };
 
   return (
-    <RequireEntity entityName="rubricas" action="read">
+    <RequirePage pagePath="/rh/rubricas*" action="read">
       <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
@@ -541,6 +541,6 @@ export default function RubricasManagement() {
         </DialogContent>
       </Dialog>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

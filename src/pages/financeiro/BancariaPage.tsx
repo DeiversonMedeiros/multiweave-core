@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { ConfiguracaoBancariaPage } from '@/components/financial/ConfiguracaoBancariaPage';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 interface BancariaPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface BancariaPageProps {
 
 export function BancariaPage({ className }: BancariaPageProps) {
   return (
-    <RequireEntity entityName="configuracao_bancaria" action="read">
+    <RequirePage pagePath="/financeiro/bancaria*" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export function BancariaPage({ className }: BancariaPageProps) {
         </div>
         <ConfiguracaoBancariaPage />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

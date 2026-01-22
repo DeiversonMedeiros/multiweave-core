@@ -45,7 +45,7 @@ import { useEmployees } from '@/hooks/rh/useEmployees';
 import { TimeRecord, Employee } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { formatDateOnly } from '@/lib/utils';
@@ -58,7 +58,7 @@ import { TimeRecordsImportModal } from '@/components/rh/TimeRecordsImportModal';
 // =====================================================
 
 export default function TimeRecordsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -444,7 +444,7 @@ export default function TimeRecordsPage() {
 
 
   return (
-    <RequireEntity entityName="time_records" action="read">
+    <RequirePage pagePath="/portal-colaborador/historico-marcacoes*" action="read">
       <div className="space-y-6">
       {/* Cabeçalho */}
       <div className="flex items-center justify-between">
@@ -688,7 +688,7 @@ export default function TimeRecordsPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {canEditEntity && (
+                          {canEditPage('/rh/time-records*') && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -699,7 +699,7 @@ export default function TimeRecordsPage() {
                               <Edit className="h-4 w-4" />
                             </Button>
                           )}
-                          {record.status === 'pendente' && canEditEntity && (
+                          {record.status === 'pendente' && canEditPage('/rh/time-records*') && (
                             <>
                               <Button
                                 variant="ghost"
@@ -721,7 +721,7 @@ export default function TimeRecordsPage() {
                               </Button>
                             </>
                           )}
-                          {canDeleteEntity && (
+                          {canDeletePage('/rh/time-records*') && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1376,7 +1376,7 @@ export default function TimeRecordsPage() {
         </div>
       </FormModal>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

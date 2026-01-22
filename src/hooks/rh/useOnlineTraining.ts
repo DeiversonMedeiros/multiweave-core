@@ -115,7 +115,15 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
   const [stats, setStats] = useState<TrainingProgressStats | null>(null);
 
   const loadProgress = useCallback(async () => {
+    console.log('[useTrainingProgress.loadProgress] INÍCIO', {
+      companyId: selectedCompany?.id,
+      trainingId,
+      employeeId,
+      timestamp: new Date().toISOString()
+    });
+
     if (!selectedCompany?.id || !trainingId || !employeeId) {
+      console.log('[useTrainingProgress.loadProgress] ABORTADO: parâmetros faltando');
       setProgress([]);
       setStats(null);
       return;
@@ -124,15 +132,24 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
     setLoading(true);
     setError(null);
     try {
+      console.log('[useTrainingProgress.loadProgress] Buscando progresso...');
       const progressData = await OnlineTrainingService.getProgress(selectedCompany.id, trainingId, employeeId);
+      console.log('[useTrainingProgress.loadProgress] Progresso recebido', {
+        count: progressData.length,
+        items: progressData.map(p => ({ content_id: p.content_id, concluido: p.concluido }))
+      });
       setProgress(progressData);
 
+      console.log('[useTrainingProgress.loadProgress] Buscando stats...');
       const statsData = await OnlineTrainingService.getProgressStats(selectedCompany.id, trainingId, employeeId);
+      console.log('[useTrainingProgress.loadProgress] Stats recebidos', statsData);
       setStats(statsData);
     } catch (err) {
+      console.error('[useTrainingProgress.loadProgress] ERRO', err);
       setError(err instanceof Error ? err.message : 'Erro ao carregar progresso');
     } finally {
       setLoading(false);
+      console.log('[useTrainingProgress.loadProgress] FIM');
     }
   }, [selectedCompany?.id, trainingId, employeeId]);
 
@@ -145,11 +162,66 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
       concluido?: boolean;
     }
   ) => {
-    if (!selectedCompany?.id) return;
+    console.log('[useTrainingProgress.updateProgress] INÍCIO', {
+      contentId,
+      data,
+      trainingId,
+      employeeId,
+      timestamp: new Date().toISOString()
+    });
 
-    setLoading(true);
-    setError(null);
+    if (!selectedCompany?.id) {
+      console.log('[useTrainingProgress.updateProgress] ABORTADO: sem company_id');
+      return;
+    }
+
+    // Usar uma flag para evitar atualizações durante unmount
+    let isMounted = true;
+
+    // Atualizar estado local imediatamente para feedback visual
+    // Mas apenas se os dados realmente mudaram para evitar loops
+    setProgress(prev => {
+      const existingIndex = prev.findIndex(p => p.content_id === contentId);
+      if (existingIndex >= 0) {
+        const existing = prev[existingIndex];
+        // Verificar se realmente precisa atualizar
+        const needsUpdate = 
+          (data.tempo_assistido_segundos !== undefined && data.tempo_assistido_segundos !== existing.tempo_assistido_segundos) ||
+          (data.percentual_concluido !== undefined && Math.abs(data.percentual_concluido - existing.percentual_concluido) > 0.1) ||
+          (data.concluido !== undefined && data.concluido !== existing.concluido);
+        
+        console.log('[useTrainingProgress.updateProgress] Verificação de atualização', {
+          needsUpdate,
+          existing: {
+            tempo_assistido_segundos: existing.tempo_assistido_segundos,
+            percentual_concluido: existing.percentual_concluido,
+            concluido: existing.concluido
+          },
+          new: data
+        });
+        
+        if (!needsUpdate && !data.concluido) {
+          console.log('[useTrainingProgress.updateProgress] PULANDO: dados não mudaram');
+          return prev; // Não atualizar se nada mudou
+        }
+
+        console.log('[useTrainingProgress.updateProgress] ATUALIZANDO estado local');
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...existing,
+          ...data,
+          data_ultima_atualizacao: new Date().toISOString(),
+          status: data.concluido ? 'concluido' : 'em_andamento',
+        };
+        return updated;
+      }
+      console.log('[useTrainingProgress.updateProgress] Conteúdo não encontrado no progresso local');
+      return prev;
+    });
+
+    // Atualizar no backend sem setLoading para não bloquear UI
     try {
+      console.log('[useTrainingProgress.updateProgress] Chamando OnlineTrainingService.updateProgress');
       await OnlineTrainingService.updateProgress(
         selectedCompany.id,
         trainingId,
@@ -157,14 +229,34 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
         employeeId,
         data
       );
-      await loadProgress();
+      console.log('[useTrainingProgress.updateProgress] Backend atualizado com sucesso');
+      
+      // Atualizar stats localmente se foi marcado como concluído
+      // Apenas se ainda estiver montado
+      if (isMounted && data.concluido) {
+        console.log('[useTrainingProgress.updateProgress] Atualizando stats localmente');
+        setStats(prev => {
+          if (!prev) return prev;
+          const newCompleted = prev.completed_content + 1;
+          const newPercent = prev.total_content > 0 
+            ? (newCompleted / prev.total_content) * 100 
+            : 0;
+          return {
+            ...prev,
+            completed_content: newCompleted,
+            progress_percent: Math.min(newPercent, 100)
+          };
+        });
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao atualizar progresso');
+      console.error('[useTrainingProgress.updateProgress] ERRO', err);
+      if (isMounted) {
+        setError(err instanceof Error ? err.message : 'Erro ao atualizar progresso');
+      }
       throw err;
-    } finally {
-      setLoading(false);
     }
-  }, [selectedCompany?.id, trainingId, employeeId, loadProgress]);
+    console.log('[useTrainingProgress.updateProgress] FIM');
+  }, [selectedCompany?.id, trainingId, employeeId]);
 
   const markAsCompleted = useCallback(async (contentId: string, tempoAssistidoSegundos: number = 0) => {
     if (!selectedCompany?.id) return;
@@ -179,6 +271,11 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
         employeeId,
         tempoAssistidoSegundos
       );
+      
+      // Aguardar um pouco para garantir que o banco de dados processou a atualização
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Recarregar progresso para atualizar as estatísticas
       await loadProgress();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao marcar como concluído');
@@ -189,10 +286,21 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
   }, [selectedCompany?.id, trainingId, employeeId, loadProgress]);
 
   useEffect(() => {
+    console.log('[useTrainingProgress.useEffect] Executado', {
+      trainingId,
+      employeeId,
+      companyId: selectedCompany?.id,
+      timestamp: new Date().toISOString()
+    });
+    
     if (trainingId && employeeId && selectedCompany?.id) {
+      console.log('[useTrainingProgress.useEffect] Chamando loadProgress');
       loadProgress();
+    } else {
+      console.log('[useTrainingProgress.useEffect] Condições não atendidas, não carregando');
     }
-  }, [loadProgress, trainingId, employeeId, selectedCompany?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trainingId, employeeId, selectedCompany?.id]);
 
   return {
     progress,

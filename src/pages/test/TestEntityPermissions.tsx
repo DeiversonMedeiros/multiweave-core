@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,42 +13,43 @@ export default function TestEntityPermissions() {
   
   const {
     isAdmin,
-    canReadEntity,
-    canCreateEntity,
-    canEditEntity,
-    canDeleteEntity,
-    hasEntityPermission
+    canReadPage,
+    canCreatePage,
+    canEditPage,
+    canDeletePage,
+    hasPagePermission
   } = usePermissions();
 
-  const testEntities = [
-    'users',
-    'companies', 
-    'profiles',
-    'projects',
-    'materials_equipment',
-    'partners',
-    'cost_centers',
-    'employees',
-    'time_records',
-    'vacations'
+  const testPages = [
+    { name: 'users', path: '/cadastros/usuarios*' },
+    { name: 'companies', path: '/cadastros/empresas*' },
+    { name: 'profiles', path: '/cadastros/perfis*' },
+    { name: 'projects', path: '/cadastros/projetos*' },
+    { name: 'materials_equipment', path: '/almoxarifado/materiais*' },
+    { name: 'partners', path: '/cadastros/parceiros*' },
+    { name: 'cost_centers', path: '/cadastros/centros-custo*' },
+    { name: 'employees', path: '/rh/employees*' },
+    { name: 'time_records', path: '/rh/time-records*' },
+    { name: 'vacations', path: '/rh/vacations*' }
   ];
 
   const runTests = async () => {
     setIsLoading(true);
     const results: any[] = [];
 
-    for (const entity of testEntities) {
+    for (const page of testPages) {
       const result = {
-        entity,
+        entity: page.name,
+        pagePath: page.path,
         isAdmin,
-        canRead: canReadEntity(entity),
-        canCreate: canCreateEntity(entity),
-        canEdit: canEditEntity(entity),
-        canDelete: canDeleteEntity(entity),
-        hasPermissionRead: hasEntityPermission(entity, 'read'),
-        hasPermissionCreate: hasEntityPermission(entity, 'create'),
-        hasPermissionEdit: hasEntityPermission(entity, 'edit'),
-        hasPermissionDelete: hasEntityPermission(entity, 'delete'),
+        canRead: canReadPage(page.path),
+        canCreate: canCreatePage(page.path),
+        canEdit: canEditPage(page.path),
+        canDelete: canDeletePage(page.path),
+        hasPermissionRead: hasPagePermission(page.path, 'read'),
+        hasPermissionCreate: hasPagePermission(page.path, 'create'),
+        hasPermissionEdit: hasPagePermission(page.path, 'edit'),
+        hasPermissionDelete: hasPagePermission(page.path, 'delete'),
         timestamp: new Date().toISOString()
       };
       
@@ -109,7 +110,10 @@ export default function TestEntityPermissions() {
                   {testResults.map((result, index) => (
                     <Card key={index} className="p-4">
                       <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-medium">{result.entity}</h4>
+                        <div>
+                          <h4 className="font-medium">{result.entity}</h4>
+                          <p className="text-xs text-gray-500 font-mono">{result.pagePath}</p>
+                        </div>
                         <div className="flex gap-2">
                           {getStatusIcon(result.isAdmin)}
                           <span className="text-sm text-gray-500">
@@ -145,33 +149,33 @@ export default function TestEntityPermissions() {
         </CardContent>
       </Card>
 
-      {/* Teste de RequireEntity */}
+      {/* Teste de RequirePage */}
       <Card>
         <CardHeader>
-          <CardTitle>Teste de RequireEntity</CardTitle>
+          <CardTitle>Teste de RequirePage</CardTitle>
           <CardDescription>
-            Testando o componente RequireEntity com diferentes entidades
+            Testando o componente RequirePage com diferentes páginas
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <RequireEntity entityName="users" action="read">
+            <RequirePage pagePath="/cadastros/usuarios*" action="read">
               <Card className="p-4 bg-green-50 border-green-200">
-                <p className="text-green-800">✅ RequireEntity para 'users' - READ funcionando!</p>
+                <p className="text-green-800">✅ RequirePage para '/cadastros/usuarios*' - READ funcionando!</p>
               </Card>
-            </RequireEntity>
+            </RequirePage>
 
-            <RequireEntity entityName="companies" action="read">
+            <RequirePage pagePath="/cadastros/empresas*" action="read">
               <Card className="p-4 bg-green-50 border-green-200">
-                <p className="text-green-800">✅ RequireEntity para 'companies' - READ funcionando!</p>
+                <p className="text-green-800">✅ RequirePage para '/cadastros/empresas*' - READ funcionando!</p>
               </Card>
-            </RequireEntity>
+            </RequirePage>
 
-            <RequireEntity entityName="profiles" action="read">
+            <RequirePage pagePath="/cadastros/perfis*" action="read">
               <Card className="p-4 bg-green-50 border-green-200">
-                <p className="text-green-800">✅ RequireEntity para 'profiles' - READ funcionando!</p>
+                <p className="text-green-800">✅ RequirePage para '/cadastros/perfis*' - READ funcionando!</p>
               </Card>
-            </RequireEntity>
+            </RequirePage>
           </div>
         </CardContent>
       </Card>
@@ -181,25 +185,25 @@ export default function TestEntityPermissions() {
         <CardHeader>
           <CardTitle>Teste de PermissionGuard</CardTitle>
           <CardDescription>
-            Testando o componente PermissionGuard com entidades
+            Testando o componente PermissionGuard com páginas
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <PermissionGuard entity="users" action="read">
-              <Button variant="outline">Botão protegido - Users Read</Button>
+            <PermissionGuard page="/cadastros/usuarios*" action="read">
+              <Button variant="outline">Botão protegido - Usuários Read</Button>
             </PermissionGuard>
 
-            <PermissionGuard entity="users" action="create">
-              <Button variant="default">Botão protegido - Users Create</Button>
+            <PermissionGuard page="/cadastros/usuarios*" action="create">
+              <Button variant="default">Botão protegido - Usuários Create</Button>
             </PermissionGuard>
 
-            <PermissionGuard entity="companies" action="edit">
-              <Button variant="secondary">Botão protegido - Companies Edit</Button>
+            <PermissionGuard page="/cadastros/empresas*" action="edit">
+              <Button variant="secondary">Botão protegido - Empresas Edit</Button>
             </PermissionGuard>
 
-            <PermissionGuard entity="profiles" action="delete">
-              <Button variant="destructive">Botão protegido - Profiles Delete</Button>
+            <PermissionGuard page="/cadastros/perfis*" action="delete">
+              <Button variant="destructive">Botão protegido - Perfis Delete</Button>
             </PermissionGuard>
           </div>
         </CardContent>

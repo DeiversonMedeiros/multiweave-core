@@ -47,12 +47,12 @@ import {
 } from '@/services/rh/periodicExamsService';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function PeriodicExamsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   console.log('🔍 [PeriodicExamsPage] selectedCompany:', selectedCompany);
   
@@ -244,7 +244,7 @@ export default function PeriodicExamsPage() {
   };
 
   return (
-    <RequireEntity entityName="periodic_exams" action="read">
+    <RequirePage pagePath="/rh/periodic-exams*" action="read">
       <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -463,6 +463,6 @@ export default function PeriodicExamsPage() {
         />
       </FormModal>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

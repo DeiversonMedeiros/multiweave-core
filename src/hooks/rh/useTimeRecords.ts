@@ -110,8 +110,27 @@ export function useTimeRecordsPaginated(
       const queryStartTime = performance.now();
 
       if (!selectedCompany?.id) {
+        console.warn('[useTimeRecordsPaginated] ⚠️ Sem company selecionada:', {
+          selectedCompany,
+          timestamp: new Date().toISOString(),
+        });
         return { data: [], hasMore: false, totalCount: 0 };
       }
+
+      // Log detalhado dos parâmetros antes de chamar o serviço
+      console.log('[useTimeRecordsPaginated] 📤 Chamando TimeRecordsService.listPaginated com:', {
+        companyId: selectedCompany.id,
+        pageOffset: pageParam as number,
+        pageLimit: pageSize,
+        employeeId: employeeId || null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+        status: status || null,
+        managerUserId: managerUserId || null,
+        managerUserIdType: typeof managerUserId,
+        hasManagerUserId: !!managerUserId,
+        timestamp: new Date().toISOString(),
+      });
 
       // Buscar registros paginados do servidor
       const serviceStartTime = performance.now();

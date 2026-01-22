@@ -3,13 +3,12 @@ import { Client } from 'pg';
 
 async function main() {
   const [, , filePath, connectionStringArg] = process.argv;
-  if (!filePath || !connectionStringArg) {
-    console.error('Usage: node scripts/execute-sql.mjs <file.sql> <postgresql://...>');
+  const connectionString = connectionStringArg || process.env.DATABASE_URL;
+  if (!filePath || !connectionString) {
+    console.error('Usage: node scripts/execute-sql.mjs <file.sql> [postgresql://...]');
+    console.error('  or set DATABASE_URL environment variable');
     process.exit(1);
   }
-
-  // Handle special chars in password already URL-encoded in the provided string
-  const connectionString = connectionStringArg;
 
   const sql = await fs.readFile(filePath, 'utf8');
 

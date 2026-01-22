@@ -27,7 +27,7 @@ import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard'
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function MedicalCertificatesPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');

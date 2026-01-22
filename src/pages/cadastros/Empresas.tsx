@@ -6,12 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmpresaForm } from "@/components/forms/EmpresaForm";
 import { toast } from "sonner";
-import { RequireEntity } from "@/components/RequireAuth";
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from "@/components/PermissionGuard";
 import { usePermissions } from "@/hooks/usePermissions";
 
 export default function Empresas() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [empresas, setEmpresas] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -59,7 +59,7 @@ export default function Empresas() {
   }
 
   return (
-    <RequireEntity entityName="companies" action="read">
+    <RequirePage pagePath="/cadastros/empresas*" action="read">
       <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Empresas / Filiais</h1>
@@ -78,7 +78,7 @@ export default function Empresas() {
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por nome ou CNPJ..."
         newButtonLabel="Nova Empresa"
-        showNewButton={canCreateEntity('companies')}
+        showNewButton={canCreatePage('/cadastros/empresas*')}
       />
 
       <PermissionGuard entity="companies" action="create">
@@ -101,6 +101,6 @@ export default function Empresas() {
         </Dialog>
       </PermissionGuard>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

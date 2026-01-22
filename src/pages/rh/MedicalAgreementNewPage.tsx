@@ -11,7 +11,7 @@ import MedicalAgreementForm from '@/components/rh/MedicalAgreementForm';
 import { useCreateMedicalAgreement } from '@/hooks/rh/useMedicalAgreements';
 import { MedicalAgreementCreateData } from '@/integrations/supabase/rh-types';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -29,7 +29,7 @@ const MedicalAgreementNewPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="medical_agreements" action="read">
+    <RequirePage pagePath="/rh/medical-agreements*" action="read">
       <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -65,7 +65,7 @@ const MedicalAgreementNewPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

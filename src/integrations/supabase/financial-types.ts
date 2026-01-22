@@ -23,7 +23,7 @@ export interface ContaPagar {
   departamento?: string;
   classe_financeira?: string;
   categoria?: string;
-  status: 'pendente' | 'aprovado' | 'pago' | 'vencido' | 'cancelado';
+  status: 'pendente' | 'aprovado' | 'pago' | 'vencido' | 'cancelado' | 'estornado';
   forma_pagamento?: string;
   conta_bancaria_id?: string;
   observacoes?: string;
@@ -78,7 +78,7 @@ export interface ContaPagarParcela {
   valor_juros: number;
   valor_multa: number;
   valor_pago: number;
-  status: 'pendente' | 'aprovado' | 'pago' | 'vencido' | 'cancelado';
+  status: 'pendente' | 'aprovado' | 'pago' | 'vencido' | 'cancelado' | 'estornado';
   numero_titulo?: string;
   observacoes?: string;
   created_at: string;

@@ -64,7 +64,8 @@ import {
   Eye,
   Paperclip,
   X as XIcon,
-  File
+  File,
+  Settings
 } from 'lucide-react';
 import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
@@ -138,7 +139,12 @@ interface FornecedorCotacao {
   desconto_percentual?: number;
   desconto_valor?: number;
   prazo_entrega?: number;
-  condicao_pagamento?: string;
+  condicao_pagamento?: string; // Campo legado, mantido para compatibilidade
+  // ✅ NOVOS CAMPOS: Condições de pagamento estruturadas
+  forma_pagamento?: string;
+  is_parcelada?: boolean;
+  numero_parcelas?: number;
+  intervalo_parcelas?: string;
   observacoes?: string;
   preco_unitario?: number; // Campo legado, mantido para compatibilidade
 }
@@ -167,6 +173,7 @@ type ItemFornecedorValor = {
   valor_unitario: number;
   desconto_percentual: number;
   desconto_valor: number;
+  valor_frete?: number;
   prazo_entrega_dias: number;
   condicao_pagamento: string;
   observacoes: string;
@@ -217,6 +224,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
     data_cotacao: new Date().toISOString().split('T')[0],
     data_limite: '',
     observacoes_internas: '',
+    valor_frete: 0 as number,
+    desconto_percentual: 0 as number,
+    desconto_valor: 0 as number,
   });
 
   // Requisições vinculadas
@@ -250,6 +260,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
   // Chave: material_id + tipo_requisicao (para diferenciar o mesmo material em tipos diferentes)
   const [mapaFornecedorItens, setMapaFornecedorItens] = useState<MapaFornecedorItens>({});
 
+  // Estado para controlar modal de frete/desconto do item
+  const [modalItemDetalhes, setModalItemDetalhes] = useState<{
+    fornecedorId: string;
+    itemKey: string;
+    item: ItemAgrupado;
+  } | null>(null);
+
   // Função helper para gerar chave composta do item no mapa
   const getItemKey = (item: ItemAgrupado): string => {
     return `${item.material_id}_${item.tipo_requisicao || 'sem_tipo'}`;
@@ -275,16 +292,17 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           const cell = mapaFornecedorItens[f.id]?.[itemKey];
           if (!cell) return;
           const total = valorItemCalculado(cell);
+          const custoComFreteItem = total + (cell.valor_frete || 0);
           porFornecedor.set(f.id, (porFornecedor.get(f.id) || 0) + total);
 
           const atual = porItem.get(item.material_id);
-          if (!atual || total < atual.melhor) {
-            porItem.set(item.material_id, { melhor: total, fornecedorId: f.id });
+          if (!atual || custoComFreteItem < atual.melhor) {
+            porItem.set(item.material_id, { melhor: custoComFreteItem, fornecedorId: f.id });
           }
         });
       });
 
-    // Agora calcular totais finais incluindo frete, imposto e desconto
+    // Agora calcular totais finais: subtotal itens + frete itens + frete/imposto forn - desconto forn
     const totaisFinais = new Map<string, number>();
     porFornecedor.forEach((subtotal, fid) => {
       const fornecedor = fornecedores.find(f => f.id === fid);
@@ -292,8 +310,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
         totaisFinais.set(fid, subtotal);
         return;
       }
-
-      const frete = fornecedor.valor_frete || 0;
+      const freteItens = itensAgrupados
+        .filter((i) => itensSelecionados.has(getItemKey(i)))
+        .reduce((s, item) => s + (mapaFornecedorItens[fid]?.[getItemKey(item)]?.valor_frete || 0), 0);
+      const frete = (fornecedor.valor_frete || 0) + freteItens;
       const imposto = fornecedor.valor_imposto || 0;
       const descontoPct = fornecedor.desconto_percentual || 0;
       const descontoValor = fornecedor.desconto_valor || 0;
@@ -596,6 +616,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           desconto_valor: fc.desconto_valor ? Number(fc.desconto_valor) : 0,
           prazo_entrega: fc.prazo_entrega,
           condicao_pagamento: fc.condicao_pagamento,
+          // ✅ NOVOS CAMPOS: Condições de pagamento estruturadas
+          forma_pagamento: fc.forma_pagamento || undefined,
+          is_parcelada: fc.is_parcelada || false,
+          numero_parcelas: fc.numero_parcelas || 1,
+          intervalo_parcelas: fc.intervalo_parcelas || '30',
           observacoes: fc.observacoes,
         };
       });
@@ -641,6 +666,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           valor_unitario: cotacaoItem.valor_unitario || 0,
           desconto_percentual: cotacaoItem.desconto_percentual || 0,
           desconto_valor: cotacaoItem.desconto_valor || 0,
+          valor_frete: cotacaoItem.valor_frete != null ? Number(cotacaoItem.valor_frete) : 0,
           prazo_entrega_dias: cotacaoItem.prazo_entrega_dias || 0,
           condicao_pagamento: cotacaoItem.condicao_pagamento || '',
           observacoes: cotacaoItem.observacoes || '',
@@ -650,12 +676,14 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
 
       setMapaFornecedorItens(mapa);
 
-      // Preencher formData da cotação
       setFormData({
         tipo_cotacao: quote.tipo_cotacao || 'reposicao',
         data_cotacao: quote.data_cotacao ? new Date(quote.data_cotacao).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         data_limite: quote.prazo_resposta ? new Date(quote.prazo_resposta).toISOString().split('T')[0] : '',
         observacoes_internas: quote.observacoes || '',
+        valor_frete: quote.valor_frete != null ? Number(quote.valor_frete) : 0,
+        desconto_percentual: quote.desconto_percentual != null ? Number(quote.desconto_percentual) : 0,
+        desconto_valor: quote.desconto_valor != null ? Number(quote.desconto_valor) : 0,
       });
 
       setLoadedRequisicoesIdsKey(`quote_${quoteId}`);
@@ -1429,6 +1457,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
               valor_unitario: 0,
               desconto_percentual: 0,
               desconto_valor: 0,
+              valor_frete: 0,
               prazo_entrega_dias: 0,
               condicao_pagamento: '',
               observacoes: '',
@@ -1585,6 +1614,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           valor_unitario: 0,
           desconto_percentual: 0,
           desconto_valor: 0,
+          valor_frete: 0,
           prazo_entrega_dias: 0,
           condicao_pagamento: '',
           observacoes: '',
@@ -1626,6 +1656,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             valor_unitario: 0,
             desconto_percentual: 0,
             desconto_valor: 0,
+            valor_frete: 0,
             prazo_entrega_dias: 0,
             condicao_pagamento: '',
             observacoes: '',
@@ -1664,7 +1695,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
         fornecedoresValidosList.forEach((f) => {
           const cell = mapaFornecedorItens[f.id]?.[itemKey];
           if (cell) {
-            const total = valorItemCalculado(cell);
+            // Calcular o valor total do item considerando:
+            // 1. Valor do item (quantidade * valor_unitario) com descontos
+            // 2. Frete do item (se houver)
+            const valorItem = valorItemCalculado(cell);
+            const freteItem = cell.valor_frete || 0;
+            const total = valorItem + freteItem;
+            
             if (total > 0) {
               if (lowestValue === null || total < lowestValue) {
                 lowestValue = total;
@@ -1809,13 +1846,21 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       }
 
       // Preparar dados para envio (similar ao handleEnviarAprovacao, mas sem validações rigorosas)
-      // ✅ IMPORTANTE: Incluir valor_frete e valor_imposto para que sejam salvos no banco
+      // ✅ IMPORTANTE: Incluir valor_frete, valor_imposto, desconto_percentual e desconto_valor para que sejam salvos no banco
+      // ✅ NOVO: Incluir condições de pagamento estruturadas
       const fornecedoresData = fornecedores.map((f) => ({
         fornecedor_id: f.fornecedor_id,
         prazo_entrega: f.prazo_entrega || 0,
         condicoes_comerciais: f.condicao_pagamento || '',
-        valor_frete: f.valor_frete || 0,
-        valor_imposto: f.valor_imposto || 0,
+        valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
+        valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
+        desconto_percentual: f.desconto_percentual != null ? Number(f.desconto_percentual) : 0,
+        desconto_valor: f.desconto_valor != null ? Number(f.desconto_valor) : 0,
+        // ✅ NOVOS CAMPOS: Condições de pagamento
+        forma_pagamento: f.forma_pagamento || null,
+        is_parcelada: f.is_parcelada || false,
+        numero_parcelas: f.is_parcelada ? (f.numero_parcelas || 1) : 1,
+        intervalo_parcelas: f.is_parcelada ? (f.intervalo_parcelas || '30') : '30',
       }));
 
       // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
@@ -1843,8 +1888,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             id: cicloId,
             data: {
               workflow_state: 'rascunho',
-              status: 'rascunho', // ✅ Atualizar também o status, não apenas workflow_state
+              status: 'rascunho',
               observacoes: formData.observacoes_internas?.trim() || null,
+              valor_frete: formData.valor_frete != null ? Number(formData.valor_frete) : 0,
+              desconto_percentual: formData.desconto_percentual != null ? Number(formData.desconto_percentual) : 0,
+              desconto_valor: formData.desconto_valor != null ? Number(formData.desconto_valor) : 0,
             },
           });
           console.log('✅ [handleGerarCotacao] Status do ciclo atualizado para rascunho:', updateResult);
@@ -1853,45 +1901,74 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
         }
       }
 
+      // ✅ CORREÇÃO: Mapear fornecedores corretamente mesmo quando já existem
+      // O mapeamento deve ser por fornecedor_id, não por índice, pois fornecedores existentes
+      // podem estar em posições diferentes no array
       const mapFornecedorParaCotacao = new Map<string, string>();
-      fornecedores.forEach((f, idx) => {
-        const created = fornecedoresCriados[idx];
+      fornecedores.forEach((f) => {
+        // Buscar pelo fornecedor_id para garantir que encontramos o registro correto
+        const created = fornecedoresCriados.find((fc: any) => fc.fornecedor_id === f.fornecedor_id);
         if (created?.id) {
           mapFornecedorParaCotacao.set(f.id, created.id);
+        } else {
+          console.warn(`[handleSalvarRascunho] ⚠️ Fornecedor ${f.fornecedor_id} (${f.fornecedor_nome}) não encontrado em fornecedoresCriados`);
         }
       });
 
-      // ✅ IMPORTANTE: Atualizar fornecedores com valor_frete e valor_imposto
+      // ✅ IMPORTANTE: Atualizar fornecedores com valor_frete, valor_imposto e desconto
       // Esses valores foram inseridos pelo comprador no painel e precisam ser salvos
       const updateFornecedoresPromises = fornecedores.map(async (f) => {
         const cotacaoFornecedorId = mapFornecedorParaCotacao.get(f.id);
-        if (!cotacaoFornecedorId) return;
+        if (!cotacaoFornecedorId) {
+          console.warn(`[handleSalvarRascunho] ⚠️ Fornecedor local ${f.id} não tem ID de cotacao_fornecedores mapeado`);
+          return;
+        }
 
         try {
+          const valoresParaSalvar = {
+            valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
+            valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
+            desconto_percentual: f.desconto_percentual != null ? Number(f.desconto_percentual) : 0,
+            desconto_valor: f.desconto_valor != null ? Number(f.desconto_valor) : 0,
+            prazo_entrega: f.prazo_entrega || 0,
+            condicoes_comerciais: f.condicao_pagamento || '',
+            // ✅ NOVOS CAMPOS: Condições de pagamento
+            forma_pagamento: f.forma_pagamento || null,
+            is_parcelada: f.is_parcelada || false,
+            numero_parcelas: f.is_parcelada ? (f.numero_parcelas || 1) : 1,
+            intervalo_parcelas: f.is_parcelada ? (f.intervalo_parcelas || '30') : '30',
+          };
+          
+          console.log(`[handleSalvarRascunho] Atualizando fornecedor ${cotacaoFornecedorId} (${f.fornecedor_nome}) com valores:`, {
+            fornecedor_local_id: f.id,
+            cotacao_fornecedor_id: cotacaoFornecedorId,
+            valores_originais: {
+              valor_frete: f.valor_frete,
+              valor_imposto: f.valor_imposto,
+              desconto_percentual: f.desconto_percentual,
+              desconto_valor: f.desconto_valor
+            },
+            valores_para_salvar: valoresParaSalvar
+          });
+          
           await EntityService.update({
             schema: 'compras',
             table: 'cotacao_fornecedores',
             companyId: selectedCompany!.id,
             id: cotacaoFornecedorId,
-            data: {
-              valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
-              valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
-              prazo_entrega: f.prazo_entrega || 0,
-              condicoes_comerciais: f.condicao_pagamento || '',
-            },
+            data: valoresParaSalvar,
           });
+          
+          console.log(`[handleSalvarRascunho] ✅ Fornecedor ${cotacaoFornecedorId} atualizado com sucesso`);
         } catch (error) {
-          console.error(`Erro ao atualizar fornecedor ${f.id} com frete/imposto:`, error);
-          // Não bloquear o fluxo se houver erro ao atualizar um fornecedor
+          console.error(`[handleSalvarRascunho] ❌ Erro ao atualizar fornecedor ${f.id} (${cotacaoFornecedorId}) com frete/imposto/desconto:`, error);
         }
       });
 
-      // Aguardar atualizações dos fornecedores antes de continuar
       await Promise.allSettled(updateFornecedoresPromises);
 
-      // Montar inserts item x fornecedor (mesmo processo do handleEnviarAprovacao)
       const inserts: Promise<any>[] = [];
-      const requisicaoItemIdsCotados = new Set<string>(); // Para rastrear quais itens foram cotados
+      const requisicaoItemIdsCotados = new Set<string>();
       
       fornecedores.forEach((fornecedor) => {
         if (!mapFornecedorParaCotacao.has(fornecedor.id)) return;
@@ -1902,17 +1979,12 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           .forEach((item) => {
             const itemKey = getItemKey(item);
             const valorMapa = mapaFornecedorItens[fornecedor.id]?.[itemKey];
-            // Para rascunho, permitir salvar mesmo sem valores preenchidos
             if (!valorMapa) return;
             
-            // Aplicar para cada item de origem (requisicao_item_id)
             item.itens_origem.forEach((origem) => {
               requisicaoItemIdsCotados.add(origem.id);
-              
-              // ✅ VERIFICAÇÃO FINAL: Verificar item individualmente antes de criar
               inserts.push(
                 (async () => {
-                  // Verificação final antes de criar (última linha de defesa)
                   try {
                     const itemAtual = await EntityService.getById({
                       schema: 'compras',
@@ -1920,19 +1992,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       id: origem.id,
                       companyId: selectedCompany!.id,
                     });
-
                     if (itemAtual && (itemAtual as any).status === 'cotado') {
                       throw new Error(`Item ${origem.id.substring(0, 8)} já foi cotado por outro comprador`);
                     }
                   } catch (error: any) {
-                    if (error.message?.includes('já foi cotado')) {
-                      throw error;
-                    }
-                    // Se erro ao buscar, continuar mas logar
+                    if (error.message?.includes('já foi cotado')) throw error;
                     console.warn(`Não foi possível verificar item ${origem.id} antes de criar:`, error);
                   }
-
-                  // Criar o registro
                   return EntityService.create({
                     schema: 'compras',
                     table: 'cotacao_item_fornecedor',
@@ -1945,10 +2011,11 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       valor_unitario: valorMapa.valor_unitario || 0,
                       desconto_percentual: valorMapa.desconto_percentual || 0,
                       desconto_valor: valorMapa.desconto_valor || 0,
+                      valor_frete: valorMapa.valor_frete != null ? Number(valorMapa.valor_frete) : 0,
                       prazo_entrega_dias: valorMapa.prazo_entrega_dias || null,
                       condicao_pagamento: valorMapa.condicao_pagamento || null,
                       observacoes: valorMapa.observacoes || null,
-                      status: 'rascunho',
+                      status: 'pendente',
                       is_vencedor: valorMapa.is_vencedor || false,
                     },
                   });
@@ -2066,6 +2133,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                   companyId: selectedCompany!.id,
                   id: itemId,
                   data: { status: 'cotado' },
+                  skipCompanyFilter: true, // requisicao_itens não tem company_id
                 }).catch((error) => {
                   console.error(`Erro ao atualizar status do item ${itemId}:`, error);
                 })
@@ -2189,13 +2257,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
         const cell = mapaFornecedorItens[f.id]?.[itemKey];
         if (cell && cell.quantidade_ofertada > 0 && cell.valor_unitario > 0) {
           temFornecedor = true;
-          // Calcular valor total do item para este fornecedor
-          const valorTotal = (cell.quantidade_ofertada || 0) * (cell.valor_unitario || 0);
-          // Descontos
-          const descontoValor = (cell.desconto_valor || 0) + (valorTotal * (cell.desconto_percentual || 0) / 100);
-          const valorFinal = valorTotal - descontoValor;
-          
-          // Verificar se é o menor preço
+          // Calcular valor total do item para este fornecedor (usando a mesma lógica da função handleSelectLowestPrices)
+          const valorItem = valorItemCalculado(cell);
+          const freteItem = cell.valor_frete || 0;
+          const valorFinal = valorItem + freteItem;
           if (lowestValue === null || valorFinal < lowestValue) {
             lowestValue = valorFinal;
             lowestSupplierId = f.id;
@@ -2304,14 +2369,31 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       }
 
       // Preparar dados para envio
-      // ✅ IMPORTANTE: Incluir valor_frete e valor_imposto para que sejam salvos/atualizados no banco
-      const fornecedoresData = fornecedores.map((f) => ({
-        fornecedor_id: f.fornecedor_id,
-        prazo_entrega: f.prazo_entrega || 0,
-        condicoes_comerciais: f.condicao_pagamento || '',
-        valor_frete: f.valor_frete || 0,
-        valor_imposto: f.valor_imposto || 0,
-      }));
+      // ✅ IMPORTANTE: Incluir valor_frete, valor_imposto, desconto_percentual e desconto_valor para que sejam salvos/atualizados no banco
+      const fornecedoresData = fornecedores.map((f) => {
+        const dados = {
+          fornecedor_id: f.fornecedor_id,
+          prazo_entrega: f.prazo_entrega || 0,
+          condicoes_comerciais: f.condicao_pagamento || '',
+          valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
+          valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
+          desconto_percentual: f.desconto_percentual != null ? Number(f.desconto_percentual) : 0,
+          desconto_valor: f.desconto_valor != null ? Number(f.desconto_valor) : 0,
+        };
+        
+        console.log(`[handleEnviarAprovacao] Preparando dados do fornecedor ${f.fornecedor_nome}:`, {
+          fornecedor_local_id: f.id,
+          valores_originais: {
+            valor_frete: f.valor_frete,
+            valor_imposto: f.valor_imposto,
+            desconto_percentual: f.desconto_percentual,
+            desconto_valor: f.desconto_valor
+          },
+          dados_enviados: dados
+        });
+        
+        return dados;
+      });
 
       // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
       const requisicaoItemIds = Array.from(requisicaoItemIdsParaVerificar);
@@ -2327,45 +2409,100 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       const fornecedoresCriados = cicloResponse?.fornecedores || [];
       const cicloId = cicloResponse?.ciclo?.id || cicloResponse?.id;
 
+      // ✅ CORREÇÃO: Mapear fornecedores corretamente mesmo quando já existem
+      // O mapeamento deve ser por fornecedor_id, não por índice, pois fornecedores existentes
+      // podem estar em posições diferentes no array
       const mapFornecedorParaCotacao = new Map<string, string>();
-      fornecedores.forEach((f, idx) => {
-        const created = fornecedoresCriados[idx];
+      fornecedores.forEach((f) => {
+        // Buscar pelo fornecedor_id para garantir que encontramos o registro correto
+        const created = fornecedoresCriados.find((fc: any) => fc.fornecedor_id === f.fornecedor_id);
         if (created?.id) {
           mapFornecedorParaCotacao.set(f.id, created.id);
+        } else {
+          console.warn(`[handleEnviarAprovacao] ⚠️ Fornecedor ${f.fornecedor_id} (${f.fornecedor_nome}) não encontrado em fornecedoresCriados`);
         }
       });
+
+      console.log('[handleEnviarAprovacao] Mapeamento fornecedor local -> cotacao_fornecedores:', 
+        Array.from(mapFornecedorParaCotacao.entries()).map(([localId, cotacaoId]) => ({
+          local_id: localId,
+          cotacao_fornecedor_id: cotacaoId,
+          fornecedor: fornecedores.find(f => f.id === localId)?.fornecedor_nome || 'N/A'
+        }))
+      );
 
       // ✅ IMPORTANTE: Atualizar fornecedores com valor_frete e valor_imposto
       // Esses valores foram inseridos pelo comprador no painel e precisam ser salvos
       const updateFornecedoresPromises = fornecedores.map(async (f) => {
         const cotacaoFornecedorId = mapFornecedorParaCotacao.get(f.id);
-        if (!cotacaoFornecedorId) return;
+        if (!cotacaoFornecedorId) {
+          console.warn(`[handleEnviarAprovacao] ⚠️ Fornecedor local ${f.id} não tem ID de cotacao_fornecedores mapeado`);
+          return;
+        }
 
         try {
+          const valoresParaSalvar = {
+            valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
+            valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
+            desconto_percentual: f.desconto_percentual != null ? Number(f.desconto_percentual) : 0,
+            desconto_valor: f.desconto_valor != null ? Number(f.desconto_valor) : 0,
+            prazo_entrega: f.prazo_entrega || 0,
+            condicoes_comerciais: f.condicao_pagamento || '',
+            // ✅ NOVOS CAMPOS: Condições de pagamento
+            forma_pagamento: f.forma_pagamento || null,
+            is_parcelada: f.is_parcelada || false,
+            numero_parcelas: f.is_parcelada ? (f.numero_parcelas || 1) : 1,
+            intervalo_parcelas: f.is_parcelada ? (f.intervalo_parcelas || '30') : '30',
+          };
+          
+          console.log(`[handleEnviarAprovacao] Atualizando fornecedor ${cotacaoFornecedorId} (${f.fornecedor_nome}) com valores:`, {
+            fornecedor_local_id: f.id,
+            cotacao_fornecedor_id: cotacaoFornecedorId,
+            valores_originais: {
+              valor_frete: f.valor_frete,
+              valor_imposto: f.valor_imposto,
+              desconto_percentual: f.desconto_percentual,
+              desconto_valor: f.desconto_valor
+            },
+            valores_para_salvar: valoresParaSalvar
+          });
+          
           await EntityService.update({
             schema: 'compras',
             table: 'cotacao_fornecedores',
             companyId: selectedCompany!.id,
             id: cotacaoFornecedorId,
-            data: {
-              valor_frete: f.valor_frete != null ? Number(f.valor_frete) : 0,
-              valor_imposto: f.valor_imposto != null ? Number(f.valor_imposto) : 0,
-              prazo_entrega: f.prazo_entrega || 0,
-              condicoes_comerciais: f.condicao_pagamento || '',
-            },
+            data: valoresParaSalvar,
           });
+          
+          console.log(`[handleEnviarAprovacao] ✅ Fornecedor ${cotacaoFornecedorId} atualizado com sucesso`);
         } catch (error) {
-          console.error(`Erro ao atualizar fornecedor ${f.id} com frete/imposto:`, error);
-          // Não bloquear o fluxo se houver erro ao atualizar um fornecedor
+          console.error(`[handleEnviarAprovacao] ❌ Erro ao atualizar fornecedor ${f.id} (${cotacaoFornecedorId}) com frete/imposto:`, error);
         }
       });
 
-      // Aguardar atualizações dos fornecedores antes de continuar
       await Promise.allSettled(updateFornecedoresPromises);
 
-      // Montar inserts item x fornecedor
+      if (cicloId) {
+        try {
+          await EntityService.update({
+            schema: 'compras',
+            table: 'cotacao_ciclos',
+            companyId: selectedCompany!.id,
+            id: cicloId,
+            data: {
+              valor_frete: formData.valor_frete != null ? Number(formData.valor_frete) : 0,
+              desconto_percentual: formData.desconto_percentual != null ? Number(formData.desconto_percentual) : 0,
+              desconto_valor: formData.desconto_valor != null ? Number(formData.desconto_valor) : 0,
+            },
+          });
+        } catch (e) {
+          console.warn('Erro ao atualizar frete/desconto geral do ciclo:', e);
+        }
+      }
+
       const inserts: Promise<any>[] = [];
-      const requisicaoItemIdsCotados = new Set<string>(); // Para rastrear quais itens foram cotados
+      const requisicaoItemIdsCotados = new Set<string>();
       
       fornecedores.forEach((fornecedor) => {
         if (!mapFornecedorParaCotacao.has(fornecedor.id)) return;
@@ -2380,14 +2517,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             const { quantidade_ofertada, valor_unitario } = valorMapa;
             if (!quantidade_ofertada || !valor_unitario) return;
 
-            // Aplicar para cada item de origem (requisicao_item_id)
             item.itens_origem.forEach((origem) => {
               requisicaoItemIdsCotados.add(origem.id);
-              
-              // ✅ VERIFICAÇÃO FINAL: Verificar item individualmente antes de criar
               inserts.push(
                 (async () => {
-                  // Verificação final antes de criar (última linha de defesa)
                   try {
                     const itemAtual = await EntityService.getById({
                       schema: 'compras',
@@ -2395,19 +2528,13 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       id: origem.id,
                       companyId: selectedCompany!.id,
                     });
-
                     if (itemAtual && (itemAtual as any).status === 'cotado') {
                       throw new Error(`Item ${origem.id.substring(0, 8)} já foi cotado por outro comprador`);
                     }
                   } catch (error: any) {
-                    if (error.message?.includes('já foi cotado')) {
-                      throw error;
-                    }
-                    // Se erro ao buscar, continuar mas logar
+                    if (error.message?.includes('já foi cotado')) throw error;
                     console.warn(`Não foi possível verificar item ${origem.id} antes de criar:`, error);
                   }
-
-                  // Criar o registro
                   return EntityService.create({
                     schema: 'compras',
                     table: 'cotacao_item_fornecedor',
@@ -2420,6 +2547,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       valor_unitario: valorMapa.valor_unitario,
                       desconto_percentual: valorMapa.desconto_percentual || 0,
                       desconto_valor: valorMapa.desconto_valor || 0,
+                      valor_frete: valorMapa.valor_frete != null ? Number(valorMapa.valor_frete) : 0,
                       prazo_entrega_dias: valorMapa.prazo_entrega_dias || null,
                       condicao_pagamento: valorMapa.condicao_pagamento || null,
                       observacoes: valorMapa.observacoes || null,
@@ -2544,6 +2672,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                   companyId: selectedCompany!.id,
                   id: itemId,
                   data: { status: 'cotado' },
+                  skipCompanyFilter: true, // requisicao_itens não tem company_id
                 }).catch((error) => {
                   console.error(`Erro ao atualizar status do item ${itemId}:`, error);
                 })
@@ -3824,7 +3953,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                               fornecedoresValidosList.forEach((f) => {
                                 const cell = mapaFornecedorItens[f.id]?.[itemKey];
                                 if (cell) {
-                                  const total = valorItemCalculado(cell);
+                                  const total = valorItemCalculado(cell) + (cell.valor_frete || 0);
                                   if (total > 0) {
                                     if (lowestValue === null || total < lowestValue) {
                                       lowestValue = total;
@@ -3875,7 +4004,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       const cell = mapaFornecedorItens[f.id]?.[itemKey];
                                       const isLowest = f.id === lowestSupplierId && lowestValue !== null;
                                       const isHighest = f.id === highestSupplierId && highestValue !== null && lowestSupplierId !== highestSupplierId;
-                                      const valorTotal = cell ? valorItemCalculado(cell) : 0;
+                                      // Calcular valor total incluindo frete do item para exibição
+                                      const valorItem = cell ? valorItemCalculado(cell) : 0;
+                                      const freteItem = cell?.valor_frete || 0;
+                                      const valorTotal = valorItem + freteItem;
 
                                           const isVencedor = cell?.is_vencedor || false;
 
@@ -3949,6 +4081,32 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                                 }
                                               </span>
                                                   </div>
+                                                </div>
+                                                
+                                                {/* Botão para abrir modal de frete/desconto */}
+                                                <div className="flex items-center justify-center pt-1 border-t">
+                                                  <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-7 text-xs px-2"
+                                                    onClick={() => {
+                                                      if (!readOnly) {
+                                                        setModalItemDetalhes({
+                                                          fornecedorId: f.id,
+                                                          itemKey,
+                                                          item,
+                                                        });
+                                                      }
+                                                    }}
+                                                    disabled={readOnly}
+                                                    title="Configurar frete e descontos do item"
+                                                  >
+                                                    <Settings className="h-3 w-3" />
+                                                    {(cell?.valor_frete || cell?.desconto_percentual || cell?.desconto_valor) && (
+                                                      <span className="ml-1 text-[10px] text-green-600 dark:text-green-400">•</span>
+                                                    )}
+                                                  </Button>
                                                 </div>
                                                 
                                                 {/* Checkbox Vencedor */}
@@ -4082,6 +4240,51 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-4">
+                          {/* Frete e Desconto da Cotação (Geral) - aplicado a toda a cotação */}
+                          <div className="p-4 border rounded-lg bg-muted/30 space-y-3">
+                            <div className="font-semibold text-sm">Frete e Desconto da Cotação (Geral)</div>
+                            <p className="text-xs text-muted-foreground">Aplicado ao total da cotação. Pode ser usado junto com frete/desconto por fornecedor e por item.</p>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Frete (R$)</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={formData.valor_frete ?? 0}
+                                  onChange={(e) => !readOnly && setFormData(f => ({ ...f, valor_frete: parseFloat(e.target.value) || 0 }))}
+                                  className="h-9 text-sm"
+                                  disabled={readOnly}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Desconto (%)</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  value={formData.desconto_percentual ?? 0}
+                                  onChange={(e) => !readOnly && setFormData(f => ({ ...f, desconto_percentual: parseFloat(e.target.value) || 0 }))}
+                                  className="h-9 text-sm"
+                                  disabled={readOnly}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs text-muted-foreground">Desconto (R$)</Label>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={formData.desconto_valor ?? 0}
+                                  onChange={(e) => !readOnly && setFormData(f => ({ ...f, desconto_valor: parseFloat(e.target.value) || 0 }))}
+                                  className="h-9 text-sm"
+                                  disabled={readOnly}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
                           {fornecedores.filter(f => f.fornecedor_id).map((f) => {
                             // Buscar fornecedor_dados pelo fornecedor_id
                             const fornecedorDados = fornecedoresDadosMap.get(f.fornecedor_id);
@@ -4186,6 +4389,12 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       onChange={(e) => {
                                         if (!readOnly) {
                                           const newValue = parseFloat(e.target.value) || 0;
+                                          console.log(`[ModalGerarCotacao] Atualizando desconto_percentual do fornecedor ${f.id} (${f.fornecedor_nome}):`, {
+                                            fornecedor_id: f.id,
+                                            fornecedor_nome: f.fornecedor_nome,
+                                            valor_anterior: descontoPct,
+                                            valor_novo: newValue
+                                          });
                                           setFornecedores(fornecedores.map(forn => 
                                             forn.id === f.id ? { ...forn, desconto_percentual: newValue } : forn
                                           ));
@@ -4207,6 +4416,12 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                       onChange={(e) => {
                                         if (!readOnly) {
                                           const newValue = parseFloat(e.target.value) || 0;
+                                          console.log(`[ModalGerarCotacao] Atualizando desconto_valor do fornecedor ${f.id} (${f.fornecedor_nome}):`, {
+                                            fornecedor_id: f.id,
+                                            fornecedor_nome: f.fornecedor_nome,
+                                            valor_anterior: descontoValor,
+                                            valor_novo: newValue
+                                          });
                                           setFornecedores(fornecedores.map(forn => 
                                             forn.id === f.id ? { ...forn, desconto_valor: newValue } : forn
                                           ));
@@ -4245,40 +4460,156 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                 </div>
 
                                 {/* Prazo e Condições */}
-                                <div className="grid grid-cols-2 gap-4 mt-3 pt-3 border-t">
-                                  <div>
-                                    <Label className="text-xs text-muted-foreground">Prazo de Entrega (dias)</Label>
-                                    <Input
-                                      type="number"
-                                      min="0"
-                                      value={f.prazo_entrega || 0}
-                                      onChange={(e) => {
-                                        if (!readOnly) {
-                                          const newValue = parseInt(e.target.value) || 0;
-                                          setFornecedores(fornecedores.map(forn => 
-                                            forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
-                                          ));
-                                        }
-                                      }}
-                                      className="h-9 text-sm"
-                                      disabled={readOnly}
-                                    />
+                                <div className="mt-3 pt-3 border-t">
+                                  <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <div>
+                                      <Label className="text-xs text-muted-foreground">Prazo de Entrega (dias)</Label>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        value={f.prazo_entrega || 0}
+                                        onChange={(e) => {
+                                          if (!readOnly) {
+                                            const newValue = parseInt(e.target.value) || 0;
+                                            setFornecedores(fornecedores.map(forn => 
+                                              forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
+                                            ));
+                                          }
+                                        }}
+                                        className="h-9 text-sm"
+                                        disabled={readOnly}
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs text-muted-foreground">Condição de Pagamento (Legado)</Label>
+                                      <Input
+                                        value={f.condicao_pagamento || ''}
+                                        onChange={(e) => {
+                                          if (!readOnly) {
+                                            setFornecedores(fornecedores.map(forn => 
+                                              forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
+                                            ));
+                                          }
+                                        }}
+                                        placeholder="Ex: 30/60/90 dias"
+                                        className="h-9 text-sm"
+                                        disabled={readOnly}
+                                      />
+                                    </div>
                                   </div>
-                                  <div>
-                                    <Label className="text-xs text-muted-foreground">Condição de Pagamento</Label>
-                                    <Input
-                                      value={f.condicao_pagamento || ''}
-                                      onChange={(e) => {
-                                        if (!readOnly) {
-                                          setFornecedores(fornecedores.map(forn => 
-                                            forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
-                                          ));
-                                        }
-                                      }}
-                                      placeholder="Ex: 30/60/90 dias"
-                                      className="h-9 text-sm"
-                                      disabled={readOnly}
-                                    />
+
+                                  {/* ✅ NOVO: Condições de Pagamento Estruturadas */}
+                                  <div className="space-y-3 pt-3 border-t">
+                                    <Label className="text-sm font-medium">Condições de Pagamento</Label>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      {/* Forma de Pagamento */}
+                                      <div>
+                                        <Label className="text-xs text-muted-foreground">Forma de Pagamento</Label>
+                                        <Select
+                                          value={f.forma_pagamento || ''}
+                                          onValueChange={(value) => {
+                                            if (!readOnly) {
+                                              setFornecedores(fornecedores.map(forn => 
+                                                forn.id === f.id ? { ...forn, forma_pagamento: value } : forn
+                                              ));
+                                            }
+                                          }}
+                                          disabled={readOnly}
+                                        >
+                                          <SelectTrigger className="h-9 text-sm">
+                                            <SelectValue placeholder="Selecione a forma" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="PIX">PIX</SelectItem>
+                                            <SelectItem value="Cartão de Crédito">Cartão de Crédito</SelectItem>
+                                            <SelectItem value="Cartão de Débito">Cartão de Débito</SelectItem>
+                                            <SelectItem value="À Vista">À Vista</SelectItem>
+                                            <SelectItem value="Transferência Bancária">Transferência Bancária</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+
+                                      {/* Parcelamento */}
+                                      <div className="flex items-end gap-2">
+                                        <div className="flex items-center space-x-2 pt-6">
+                                          <Checkbox
+                                            id={`parcelar-${f.id}`}
+                                            checked={f.is_parcelada || false}
+                                            onCheckedChange={(checked) => {
+                                              if (!readOnly) {
+                                                const isParcelada = checked === true;
+                                                setFornecedores(fornecedores.map(forn => 
+                                                  forn.id === f.id ? { 
+                                                    ...forn, 
+                                                    is_parcelada: isParcelada,
+                                                    numero_parcelas: isParcelada ? (forn.numero_parcelas || 2) : 1
+                                                  } : forn
+                                                ));
+                                              }
+                                            }}
+                                            disabled={readOnly}
+                                          />
+                                          <Label 
+                                            htmlFor={`parcelar-${f.id}`}
+                                            className="text-xs font-normal cursor-pointer"
+                                          >
+                                            Parcelar
+                                          </Label>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Número de Parcelas e Intervalo (quando parcelado) */}
+                                    {f.is_parcelada && (
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                        <div>
+                                          <Label className="text-xs text-muted-foreground">Número de Parcelas</Label>
+                                          <Input
+                                            type="number"
+                                            min="2"
+                                            max="12"
+                                            value={f.numero_parcelas || 2}
+                                            onChange={(e) => {
+                                              if (!readOnly) {
+                                                const newValue = Math.max(2, parseInt(e.target.value) || 2);
+                                                setFornecedores(fornecedores.map(forn => 
+                                                  forn.id === f.id ? { ...forn, numero_parcelas: newValue } : forn
+                                                ));
+                                              }
+                                            }}
+                                            className="h-9 text-sm"
+                                            disabled={readOnly}
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label className="text-xs text-muted-foreground">Intervalo entre Parcelas</Label>
+                                          <Select
+                                            value={f.intervalo_parcelas || '30'}
+                                            onValueChange={(value) => {
+                                              if (!readOnly) {
+                                                setFornecedores(fornecedores.map(forn => 
+                                                  forn.id === f.id ? { ...forn, intervalo_parcelas: value } : forn
+                                                ));
+                                              }
+                                            }}
+                                            disabled={readOnly}
+                                          >
+                                            <SelectTrigger className="h-9 text-sm">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="30">30 dias</SelectItem>
+                                              <SelectItem value="60">60 dias</SelectItem>
+                                              <SelectItem value="90">90 dias</SelectItem>
+                                              <SelectItem value="120">120 dias</SelectItem>
+                                              <SelectItem value="150">150 dias</SelectItem>
+                                              <SelectItem value="180">180 dias</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
@@ -4294,19 +4625,23 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                         const cell = mapaFornecedorItens[f.id]?.[itemKey];
                                         if (!cell || !cell.is_vencedor) return false;
                                         
-                                        // Calcular menor valor para este item
+                                        // Calcular menor valor para este item (incluindo frete do item)
                                         let menorValor: number | null = null;
                                         fornecedoresValidosParaComparacao.forEach((forn) => {
                                           const cellFornecedor = mapaFornecedorItens[forn.id]?.[itemKey];
                                           if (cellFornecedor) {
-                                            const total = valorItemCalculado(cellFornecedor);
+                                            const valorItem = valorItemCalculado(cellFornecedor);
+                                            const freteItem = cellFornecedor.valor_frete || 0;
+                                            const total = valorItem + freteItem;
                                             if (total > 0 && (menorValor === null || total < menorValor)) {
                                               menorValor = total;
                                             }
                                           }
                                         });
                                         
-                                        const valorVencedor = valorItemCalculado(cell);
+                                        const valorItemVencedor = valorItemCalculado(cell);
+                                        const freteItemVencedor = cell.valor_frete || 0;
+                                        const valorVencedor = valorItemVencedor + freteItemVencedor;
                                         return menorValor !== null && valorVencedor > menorValor;
                                       });
                                     
@@ -4849,8 +5184,18 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                     return sum + descontoCalculado;
                   }, 0);
                   
-                  // Calcular valor total da cotação
-                  const valorTotalCotacao = fornecedoresVencedores.reduce((sum, f) => sum + f.totalSelecionado, 0);
+                  // Calcular valor total da cotação (antes de aplicar campos gerais)
+                  const valorTotalAntesGeral = fornecedoresVencedores.reduce((sum, f) => sum + f.totalSelecionado, 0);
+                  
+                  // Aplicar campos gerais da cotação (frete, desconto percentual e desconto valor)
+                  const freteGeral = formData.valor_frete != null ? Number(formData.valor_frete) : 0;
+                  const descontoPercentualGeral = formData.desconto_percentual != null ? Number(formData.desconto_percentual) : 0;
+                  const descontoValorGeral = formData.desconto_valor != null ? Number(formData.desconto_valor) : 0;
+                  
+                  // Calcular: subtotal + frete geral - descontos gerais
+                  const baseParaDescontoGeral = valorTotalAntesGeral + freteGeral;
+                  const descontoGeralCalculado = (baseParaDescontoGeral * (descontoPercentualGeral / 100)) + descontoValorGeral;
+                  const valorTotalCotacao = Math.max(0, baseParaDescontoGeral - descontoGeralCalculado);
                   
                   // Calcular economia estimada: diferença entre valor selecionado e média das propostas
                   const economiaEstimada = (() => {
@@ -4864,23 +5209,25 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                         const itemKey = getItemKey(item);
                         const valoresFornecedores: number[] = [];
                         
-                        // Coletar todos os valores cotados para este item
+                        // Coletar todos os valores cotados para este item (incluindo frete do item)
                         fornecedores.filter(f => f.fornecedor_id).forEach((f) => {
                           const cell = mapaFornecedorItens[f.id]?.[itemKey];
                           if (cell) {
-                            const valor = valorItemCalculado(cell);
-                            if (valor > 0) {
-                              valoresFornecedores.push(valor);
+                            const valorItem = valorItemCalculado(cell);
+                            const freteItem = cell.valor_frete || 0;
+                            const valorTotal = valorItem + freteItem;
+                            if (valorTotal > 0) {
+                              valoresFornecedores.push(valorTotal);
                             }
                           }
                         });
                         
                         if (valoresFornecedores.length > 0) {
-                          // Calcular média dos valores
+                          // Calcular média dos valores (incluindo frete do item)
                           const mediaValor = valoresFornecedores.reduce((sum, v) => sum + v, 0) / valoresFornecedores.length;
                           somaValoresMedios += mediaValor;
                           
-                          // Encontrar valor selecionado (vencedor)
+                          // Encontrar valor selecionado (vencedor) incluindo frete do item
                           const fornecedorVencedor = fornecedores.find(f => {
                             const cell = mapaFornecedorItens[f.id]?.[itemKey];
                             return cell && cell.is_vencedor === true;
@@ -4888,7 +5235,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                           
                           if (fornecedorVencedor) {
                             const cell = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
-                            const valorSelecionado = cell ? valorItemCalculado(cell) : 0;
+                            const valorItemSelecionado = cell ? valorItemCalculado(cell) : 0;
+                            const freteItemSelecionado = cell?.valor_frete || 0;
+                            const valorSelecionado = valorItemSelecionado + freteItemSelecionado;
                             somaValoresSelecionados += valorSelecionado;
                           }
                         }
@@ -4917,7 +5266,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       if (!fornecedorVencedor) return null;
 
                       const cell = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
-                      const valorSelecionado = cell ? valorItemCalculado(cell) : 0;
+                      const valorItemSelecionado = cell ? valorItemCalculado(cell) : 0;
+                      const freteItemSelecionado = cell?.valor_frete || 0;
+                      const valorSelecionado = valorItemSelecionado + freteItemSelecionado;
 
                       // Calcular Preço Negociado (valor unitário * quantidade, sem descontos, frete, imposto)
                       const precoNegociado = cell ? (cell.valor_unitario || 0) * (cell.quantidade_ofertada || 0) : 0;
@@ -4926,22 +5277,25 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       const descontoItem = cell ? (precoNegociado * ((cell.desconto_percentual || 0) / 100) + (cell.desconto_valor || 0)) : 0;
                       
                       // Calcular proporção de frete e imposto para este item
-                      // Primeiro, calcular o subtotal parcial do fornecedor (itens vencedores, após descontos)
+                      // Primeiro, calcular o subtotal parcial do fornecedor (itens vencedores, após descontos + frete do item)
                       const subtotalParcialFornecedor = itensAgrupados
                         .filter((i) => itensSelecionados.has(getItemKey(i)))
                         .reduce((sum, i) => {
                           const key = getItemKey(i);
                           const c = mapaFornecedorItens[fornecedorVencedor.id]?.[key];
                           if (c && c.is_vencedor) {
-                            return sum + valorItemCalculado(c);
+                            const valorItemC = valorItemCalculado(c);
+                            const freteItemC = c.valor_frete || 0;
+                            return sum + valorItemC + freteItemC;
                           }
                           return sum;
                         }, 0);
                       
-                      // Usar o valor do item após descontos para calcular a proporção
-                      const valorItemAposDescontos = precoNegociado - descontoItem;
+                      // Usar o valor do item após descontos + frete do item para calcular a proporção
+                      // Nota: freteItemSelecionado já foi declarado acima
+                      const valorItemAposDescontosComFrete = precoNegociado - descontoItem + freteItemSelecionado;
                       const proporcaoItem = subtotalParcialFornecedor > 0 
-                        ? valorItemAposDescontos / subtotalParcialFornecedor 
+                        ? valorItemAposDescontosComFrete / subtotalParcialFornecedor 
                         : 0;
                       
                       // Garantir que os valores sejam numéricos
@@ -4970,8 +5324,10 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       fornecedores.filter(f => f.fornecedor_id).forEach((f) => {
                         const cellFornecedor = mapaFornecedorItens[f.id]?.[itemKey];
                         if (cellFornecedor) {
-                          // Calcular valor do item (sem custos adicionais)
+                          // Calcular valor do item (com descontos) + frete do item
                           const valorItem = valorItemCalculado(cellFornecedor);
+                          const freteItem = cellFornecedor.valor_frete || 0;
+                          const valorItemComFrete = valorItem + freteItem;
                           
                           // Calcular custos adicionais proporcionais para este fornecedor
                           const subtotalParcialFornecedorComparacao = itensAgrupados
@@ -4980,13 +5336,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                               const key = getItemKey(i);
                               const c = mapaFornecedorItens[f.id]?.[key];
                               if (c && c.is_vencedor) {
-                                return sum + valorItemCalculado(c);
+                                const valorItemC = valorItemCalculado(c);
+                                const freteItemC = c.valor_frete || 0;
+                                return sum + valorItemC + freteItemC;
                               }
                               return sum;
                             }, 0);
                           
                           const proporcaoItem = subtotalParcialFornecedorComparacao > 0 
-                            ? valorItem / subtotalParcialFornecedorComparacao 
+                            ? valorItemComFrete / subtotalParcialFornecedorComparacao 
                             : 0;
                           
                           // Garantir que os valores sejam numéricos
@@ -4998,8 +5356,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                             : (f.valor_imposto != null && f.valor_imposto !== '' ? Number(f.valor_imposto) : 0);
                           const custosAdicionaisProporcionais = (frete + imposto) * proporcaoItem;
                           
-                          // Valor total incluindo custos adicionais proporcionais
-                          const valorTotalComCustos = valorItem + custosAdicionaisProporcionais;
+                          // Valor total incluindo frete do item + custos adicionais proporcionais do fornecedor
+                          const valorTotalComCustos = valorItemComFrete + custosAdicionaisProporcionais;
                           
                           // Comparar valor total com custos adicionais
                           if (valorTotalComCustos > 0 && (menorValor === null || valorTotalComCustos < menorValor)) {
@@ -5016,7 +5374,8 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                         }
                       });
 
-                      // Comparar valor total incluindo custos adicionais proporcionais
+                      // Comparar valor total incluindo frete do item + custos adicionais proporcionais
+                      // Nota: valorSelecionado já inclui o frete do item, então não precisa adicionar novamente
                       const valorTotalSelecionadoComCustos = valorSelecionado + custosAdicionais;
                       const isMelhorPreco = menorValor !== null && Math.abs(valorTotalSelecionadoComCustos - menorValor) < 0.01;
                       const diferencaValor = menorValor !== null && !isMelhorPreco 
@@ -5027,10 +5386,12 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       const valorUnitarioSelecionado = cell ? (cell.valor_unitario || 0) : 0;
                       const temEficienciaCompras = menorValorUnitario !== null && valorUnitarioSelecionado === menorValorUnitario;
                       
-                      // Calcular economia na negociação (quando escolhido é menor que o menor disponível = economia positiva)
-                      // Se escolhido > menor disponível = economia negativa (gasto extra)
-                      const economiaNegociacao = menorValorUnitario !== null && valorUnitarioSelecionado > 0
-                        ? (menorValorUnitario - valorUnitarioSelecionado) * (cell?.quantidade_ofertada || 0)
+                      // Calcular economia na negociação (comparando valor total incluindo frete do item)
+                      // Economia = Menor valor total - Valor selecionado total
+                      // Se positivo = economia (escolhido é mais barato)
+                      // Se negativo = gasto extra (escolhido é mais caro)
+                      const economiaNegociacao = menorValor !== null && valorTotalSelecionadoComCustos > 0
+                        ? menorValor - valorTotalSelecionadoComCustos
                         : 0;
 
                       const fornecedorDados = fornecedoresDadosMap.get(fornecedorVencedor.fornecedor_id);
@@ -5405,6 +5766,39 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                                   </div>
                                 )}
                                 
+                                {/* Campos gerais da cotação */}
+                                {(freteGeral > 0 || descontoPercentualGeral > 0 || descontoValorGeral > 0) && (
+                                  <>
+                                    <div className="border-t pt-2 mt-2">
+                                      <Label className="text-muted-foreground text-xs font-semibold">Ajustes Gerais da Cotação</Label>
+                                    </div>
+                                    {freteGeral > 0 && (
+                                      <div className="flex justify-between items-center">
+                                        <Label className="text-muted-foreground text-sm">Frete Geral</Label>
+                                        <p className="font-medium text-sm text-blue-600">
+                                          + R$ {freteGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {descontoPercentualGeral > 0 && (
+                                      <div className="flex justify-between items-center">
+                                        <Label className="text-muted-foreground text-sm">Desconto Geral ({descontoPercentualGeral}%)</Label>
+                                        <p className="font-medium text-sm text-green-600">
+                                          - R$ {(baseParaDescontoGeral * (descontoPercentualGeral / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </p>
+                                      </div>
+                                    )}
+                                    {descontoValorGeral > 0 && (
+                                      <div className="flex justify-between items-center">
+                                        <Label className="text-muted-foreground text-sm">Desconto Geral (R$)</Label>
+                                        <p className="font-medium text-sm text-green-600">
+                                          - R$ {descontoValorGeral.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                                
                                 <div className="border-t pt-2 mt-2">
                                   <div className="flex justify-between items-center">
                                     <Label className="text-muted-foreground text-sm font-semibold">Total Final</Label>
@@ -5684,34 +6078,138 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                     </div>
 
                     {/* Prazo e Condições */}
-                    <div className="grid grid-cols-2 gap-4 pt-3 border-t">
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Prazo de Entrega (dias)</Label>
-                        <Input
-                          type="number"
-                          min="0"
-                          value={f.prazo_entrega || 0}
-                          onChange={(e) => {
-                            const newValue = parseInt(e.target.value) || 0;
-                            setFornecedores(fornecedores.map(forn => 
-                              forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
-                            ));
-                          }}
-                          className="h-9 text-sm"
-                        />
+                    <div className="pt-3 border-t">
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Prazo de Entrega (dias)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={f.prazo_entrega || 0}
+                            onChange={(e) => {
+                              const newValue = parseInt(e.target.value) || 0;
+                              setFornecedores(fornecedores.map(forn => 
+                                forn.id === f.id ? { ...forn, prazo_entrega: newValue } : forn
+                              ));
+                            }}
+                            className="h-9 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Condição de Pagamento (Legado)</Label>
+                          <Input
+                            value={f.condicao_pagamento || ''}
+                            onChange={(e) => {
+                              setFornecedores(fornecedores.map(forn => 
+                                forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
+                              ));
+                            }}
+                            placeholder="Ex: 30/60/90 dias"
+                            className="h-9 text-sm"
+                          />
+                        </div>
                       </div>
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Condição de Pagamento</Label>
-                        <Input
-                          value={f.condicao_pagamento || ''}
-                          onChange={(e) => {
-                            setFornecedores(fornecedores.map(forn => 
-                              forn.id === f.id ? { ...forn, condicao_pagamento: e.target.value } : forn
-                            ));
-                          }}
-                          placeholder="Ex: 30/60/90 dias"
-                          className="h-9 text-sm"
-                        />
+
+                      {/* ✅ NOVO: Condições de Pagamento Estruturadas */}
+                      <div className="space-y-3 pt-3 border-t">
+                        <Label className="text-sm font-medium">Condições de Pagamento</Label>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Forma de Pagamento */}
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Forma de Pagamento</Label>
+                            <Select
+                              value={f.forma_pagamento || ''}
+                              onValueChange={(value) => {
+                                setFornecedores(fornecedores.map(forn => 
+                                  forn.id === f.id ? { ...forn, forma_pagamento: value } : forn
+                                ));
+                              }}
+                            >
+                              <SelectTrigger className="h-9 text-sm">
+                                <SelectValue placeholder="Selecione a forma" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="PIX">PIX</SelectItem>
+                                <SelectItem value="Cartão de Crédito">Cartão de Crédito</SelectItem>
+                                <SelectItem value="Cartão de Débito">Cartão de Débito</SelectItem>
+                                <SelectItem value="À Vista">À Vista</SelectItem>
+                                <SelectItem value="Transferência Bancária">Transferência Bancária</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          {/* Parcelamento */}
+                          <div className="flex items-end gap-2">
+                            <div className="flex items-center space-x-2 pt-6">
+                              <Checkbox
+                                id={`parcelar-modal-${f.id}`}
+                                checked={f.is_parcelada || false}
+                                onCheckedChange={(checked) => {
+                                  const isParcelada = checked === true;
+                                  setFornecedores(fornecedores.map(forn => 
+                                    forn.id === f.id ? { 
+                                      ...forn, 
+                                      is_parcelada: isParcelada,
+                                      numero_parcelas: isParcelada ? (forn.numero_parcelas || 2) : 1
+                                    } : forn
+                                  ));
+                                }}
+                              />
+                              <Label 
+                                htmlFor={`parcelar-modal-${f.id}`}
+                                className="text-xs font-normal cursor-pointer"
+                              >
+                                Parcelar
+                              </Label>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Número de Parcelas e Intervalo (quando parcelado) */}
+                        {f.is_parcelada && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Número de Parcelas</Label>
+                              <Input
+                                type="number"
+                                min="2"
+                                max="12"
+                                value={f.numero_parcelas || 2}
+                                onChange={(e) => {
+                                  const newValue = Math.max(2, parseInt(e.target.value) || 2);
+                                  setFornecedores(fornecedores.map(forn => 
+                                    forn.id === f.id ? { ...forn, numero_parcelas: newValue } : forn
+                                  ));
+                                }}
+                                className="h-9 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Intervalo entre Parcelas</Label>
+                              <Select
+                                value={f.intervalo_parcelas || '30'}
+                                onValueChange={(value) => {
+                                  setFornecedores(fornecedores.map(forn => 
+                                    forn.id === f.id ? { ...forn, intervalo_parcelas: value } : forn
+                                  ));
+                                }}
+                              >
+                                <SelectTrigger className="h-9 text-sm">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="30">30 dias</SelectItem>
+                                  <SelectItem value="60">60 dias</SelectItem>
+                                  <SelectItem value="90">90 dias</SelectItem>
+                                  <SelectItem value="120">120 dias</SelectItem>
+                                  <SelectItem value="150">150 dias</SelectItem>
+                                  <SelectItem value="180">180 dias</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -5990,6 +6488,144 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
           )}
         </DialogFooter>
       </DialogContent>
+
+      {/* Modal de Frete e Descontos do Item */}
+      <Dialog 
+        open={modalItemDetalhes !== null} 
+        onOpenChange={(open) => {
+          if (!open) setModalItemDetalhes(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Configurar Item</DialogTitle>
+            <DialogDescription>
+              {modalItemDetalhes && (
+                <>
+                  Configure frete e descontos para o item: <strong>{modalItemDetalhes.item.material_nome}</strong>
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {modalItemDetalhes && (() => {
+            const cell = mapaFornecedorItens[modalItemDetalhes.fornecedorId]?.[modalItemDetalhes.itemKey];
+            return (
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="frete-item">Frete do Item (R$)</Label>
+                  <Input
+                    id="frete-item"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={cell?.valor_frete ?? ''}
+                    onChange={(e) => {
+                      handleUpdateMapaValor(
+                        modalItemDetalhes.fornecedorId,
+                        modalItemDetalhes.item,
+                        'valor_frete',
+                        parseFloat(e.target.value) || 0
+                      );
+                    }}
+                    placeholder="0,00"
+                    disabled={readOnly}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="desconto-percentual">Desconto Percentual (%)</Label>
+                  <Input
+                    id="desconto-percentual"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={cell?.desconto_percentual ?? ''}
+                    onChange={(e) => {
+                      handleUpdateMapaValor(
+                        modalItemDetalhes.fornecedorId,
+                        modalItemDetalhes.item,
+                        'desconto_percentual',
+                        parseFloat(e.target.value) || 0
+                      );
+                    }}
+                    placeholder="0,00"
+                    disabled={readOnly}
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="desconto-valor">Desconto em Valor (R$)</Label>
+                  <Input
+                    id="desconto-valor"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={cell?.desconto_valor ?? ''}
+                    onChange={(e) => {
+                      handleUpdateMapaValor(
+                        modalItemDetalhes.fornecedorId,
+                        modalItemDetalhes.item,
+                        'desconto_valor',
+                        parseFloat(e.target.value) || 0
+                      );
+                    }}
+                    placeholder="0,00"
+                    disabled={readOnly}
+                  />
+                </div>
+
+                {/* Exibir resumo do cálculo */}
+                {cell && (cell.valor_unitario || cell.valor_frete || cell.desconto_percentual || cell.desconto_valor) && (
+                  <div className="p-3 bg-muted rounded-md space-y-1">
+                    <div className="text-sm font-medium">Resumo do Cálculo:</div>
+                    <div className="text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span>Valor Bruto:</span>
+                        <span>R$ {((cell.quantidade_ofertada || 0) * (cell.valor_unitario || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      {cell.desconto_percentual > 0 && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Desconto ({cell.desconto_percentual}%):</span>
+                          <span>- R$ {(((cell.quantidade_ofertada || 0) * (cell.valor_unitario || 0)) * (cell.desconto_percentual / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      {cell.desconto_valor > 0 && (
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>Desconto (R$):</span>
+                          <span>- R$ {cell.desconto_valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-medium">
+                        <span>Valor do Item:</span>
+                        <span>R$ {valorItemCalculado(cell).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      {cell.valor_frete > 0 && (
+                        <div className="flex justify-between">
+                          <span>Frete:</span>
+                          <span>+ R$ {cell.valor_frete.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-bold text-primary border-t pt-1 mt-1">
+                        <span>Total:</span>
+                        <span>R$ {(valorItemCalculado(cell) + (cell.valor_frete || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setModalItemDetalhes(null)}
+            >
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

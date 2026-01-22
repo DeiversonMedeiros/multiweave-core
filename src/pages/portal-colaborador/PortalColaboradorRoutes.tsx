@@ -15,6 +15,9 @@ import ComprovantesPage from './ComprovantesPage';
 import RegistroAbastecimento from './RegistroAbastecimento';
 import TreinamentosPage from './TreinamentosPage';
 import TreinamentoDetalhesPage from './TreinamentoDetalhesPage';
+import TrainingExamPage from './TrainingExamPage';
+import TrainingExamResultPage from './TrainingExamResultPage';
+import TrainingCompletionPage from './TrainingCompletionPage';
 
 export default function PortalColaboradorRoutes() {
   return (
@@ -35,6 +38,9 @@ export default function PortalColaboradorRoutes() {
         <Route path="registro-abastecimento" element={<RegistroAbastecimento />} />
         <Route path="treinamentos" element={<TreinamentosPage />} />
         <Route path="treinamentos/:trainingId" element={<TreinamentoDetalhesPage />} />
+        <Route path="treinamentos/:trainingId/prova/:examId" element={<TrainingExamPage />} />
+        <Route path="treinamentos/:trainingId/prova/:examId/resultado/:attemptId" element={<TrainingExamResultPage />} />
+        <Route path="treinamentos/:trainingId/conclusao" element={<TrainingCompletionPage />} />
       </Route>
     </Routes>
   );

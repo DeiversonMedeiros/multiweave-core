@@ -46,7 +46,7 @@ import { useCompany } from '@/lib/company-context';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTimeRecordsPaginated, useDeleteTimeRecord, useApproveTimeRecord, useRejectTimeRecord } from '@/hooks/rh/useTimeRecords';
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { useEmployees } from '@/hooks/rh/useEmployees';
@@ -279,7 +279,7 @@ function PhotoImageWithErrorHandling({
 // =====================================================
 
 export default function TimeRecordsPageNew() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({
     startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 365 dias atrás (1 ano)
@@ -1555,16 +1555,16 @@ export default function TimeRecordsPageNew() {
 
   if (error) {
     return (
-      <RequireEntity entityName="time_records" action="read">
+      <RequirePage pagePath="/portal-colaborador/historico-marcacoes*" action="read">
         <div className="p-6">
           <div className="text-red-500">Erro ao carregar registros de ponto: {error.message}</div>
         </div>
-      </RequireEntity>
+      </RequirePage>
     );
   }
 
   return (
-    <RequireEntity entityName="time_records" action="read">
+    <RequirePage pagePath="/portal-colaborador/historico-marcacoes*" action="read">
       <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
@@ -1842,7 +1842,7 @@ export default function TimeRecordsPageNew() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
-                          {canEditEntity && (
+                          {canEditPage('/rh/time-records*') && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1853,7 +1853,7 @@ export default function TimeRecordsPageNew() {
                               <Edit className="h-4 w-4" />
                             </Button>
                           )}
-                          {canDeleteEntity && (
+                          {canDeletePage('/rh/time-records*') && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -2696,7 +2696,7 @@ export default function TimeRecordsPageNew() {
         }}
       />
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

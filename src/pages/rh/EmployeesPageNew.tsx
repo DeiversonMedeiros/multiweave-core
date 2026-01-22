@@ -27,7 +27,7 @@ import { EmployeeForm, EmployeeFormRef } from '@/components/rh/EmployeeForm';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { Employee, EmployeeFilters } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useNavigate } from 'react-router-dom';
@@ -39,7 +39,7 @@ import { formatDateOnly } from '@/lib/utils';
 // =====================================================
 
 export default function EmployeesPageNew() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const navigate = useNavigate();
   const [filters, setFilters] = useState<EmployeeFilters>({});
@@ -202,9 +202,9 @@ export default function EmployeesPageNew() {
       if (error?.message) {
         const errorMsg = error.message.toLowerCase();
         
-        // Erro de CPF duplicado
-        if (errorMsg.includes('duplicate key') || errorMsg.includes('cpf') || errorMsg.includes('employees_cpf_key')) {
-          errorMessage = 'Este CPF já está cadastrado. Verifique se o funcionário já existe ou use um CPF diferente.';
+        // Erro de CPF duplicado na mesma empresa
+        if (errorMsg.includes('duplicate key') || errorMsg.includes('cpf') || errorMsg.includes('employees_company_id_cpf_unique') || errorMsg.includes('employees_cpf_key')) {
+          errorMessage = 'Este CPF já está cadastrado nesta empresa. Verifique se o funcionário já existe ou use um CPF diferente.';
         }
         // Erro de constraint
         else if (errorMsg.includes('constraint') || errorMsg.includes('violates')) {
@@ -319,7 +319,7 @@ export default function EmployeesPageNew() {
   }
 
   return (
-    <RequireEntity entityName="employees" action="read">
+    <RequirePage pagePath="/rh/employees*" action="read">
       <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
@@ -413,6 +413,6 @@ export default function EmployeesPageNew() {
         />
       </FormModal>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

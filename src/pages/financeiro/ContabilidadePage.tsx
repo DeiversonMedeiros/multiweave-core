@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { ContabilidadePage as ContabilidadeComponent } from '@/components/financial/ContabilidadePage';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 interface ContabilidadePageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface ContabilidadePageProps {
 
 export function ContabilidadePage({ className }: ContabilidadePageProps) {
   return (
-    <RequireEntity entityName="plano_contas" action="read">
+    <RequirePage pagePath="/financeiro/contabilidade*" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export function ContabilidadePage({ className }: ContabilidadePageProps) {
         </div>
         <ContabilidadeComponent />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

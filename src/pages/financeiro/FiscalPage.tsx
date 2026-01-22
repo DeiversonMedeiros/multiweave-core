@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { FiscalPage as FiscalComponent } from '@/components/financial/FiscalPage';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 interface FiscalPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface FiscalPageProps {
 
 export function FiscalPage({ className }: FiscalPageProps) {
   return (
-    <RequireEntity entityName="nfe" action="read">
+    <RequirePage pagePath="/financeiro/fiscal*" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export function FiscalPage({ className }: FiscalPageProps) {
         </div>
         <FiscalComponent />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

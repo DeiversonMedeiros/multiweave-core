@@ -56,7 +56,7 @@ import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard'
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function CompensationRequestsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();

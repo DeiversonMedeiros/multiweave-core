@@ -12,6 +12,17 @@ export async function callSchemaFunction<T = any>(
   functionName: string,
   params: Record<string, any> = {},
 ): Promise<T | null> {
+  // Log antes da chamada
+  if (schemaName === 'rh' && functionName === 'calculate_training_progress') {
+    console.log('[callSchemaFunction] 🚀 ANTES da chamada RPC:', {
+      schemaName,
+      functionName,
+      params,
+      paramsStringified: JSON.stringify(params),
+      timestamp: new Date().toISOString()
+    });
+  }
+  
   const { data, error } = await (supabase as any).rpc('call_schema_rpc', {
     p_schema_name: schemaName,
     p_function_name: functionName,
@@ -21,6 +32,39 @@ export async function callSchemaFunction<T = any>(
   if (error) {
     console.error(`[callSchemaFunction] ❌ Erro ao chamar ${schemaName}.${functionName}:`, error);
     throw error;
+  }
+
+  // Log detalhado da resposta
+  if (schemaName === 'rh' && functionName === 'calculate_training_progress') {
+    console.log('[callSchemaFunction] 📥 Resposta completa da RPC call_schema_rpc:', {
+      schemaName,
+      functionName,
+      params,
+      paramsStringified: JSON.stringify(params),
+      data,
+      dataType: typeof data,
+      dataKeys: data ? Object.keys(data) : null,
+      dataResult: data?.result,
+      dataResultType: typeof data?.result,
+      dataResultString: typeof data?.result === 'string' ? data.result : JSON.stringify(data?.result),
+      dataResultFirst200Chars: typeof data?.result === 'string' ? data.result.substring(0, 200) : 'N/A',
+      dataError: data?.error,
+      error: error,
+      errorMessage: error?.message,
+      errorCode: error?.code,
+      fullResponse: JSON.stringify({ data, error }, null, 2),
+      fullDataStringified: JSON.stringify(data, null, 2),
+      // Expandir data completo
+      dataExpanded: data ? {
+        result: data.result,
+        resultType: typeof data.result,
+        resultLength: typeof data.result === 'string' ? data.result.length : 'N/A',
+        error: data.error,
+        message: data.message,
+        allKeys: Object.keys(data),
+        allValues: Object.values(data).map(v => typeof v === 'string' ? v.substring(0, 100) : v)
+      } : null
+    });
   }
 
   if (data?.error) {
@@ -39,6 +83,21 @@ export async function callSchemaFunction<T = any>(
   }
 
   let result = (data?.result ?? data) as T | null;
+  
+  // Log detalhado do resultado extraído
+  if (schemaName === 'rh' && functionName === 'calculate_training_progress') {
+    console.log('[callSchemaFunction] 🔍 Resultado extraído:', {
+      schemaName,
+      functionName,
+      result,
+      resultType: typeof result,
+      resultStringified: typeof result === 'string' ? result : JSON.stringify(result),
+      dataResult: data?.result,
+      dataResultType: typeof data?.result,
+      usingDataResult: data?.result !== undefined,
+      usingData: data?.result === undefined
+    });
+  }
   
   // Se o resultado é uma string "true" ou "false", converter para boolean
   if (typeof result === 'string' && (result === 'true' || result === 'false')) {
@@ -139,22 +198,38 @@ export const EntityService = {
 
     const { data, error } = await (supabase as any).rpc('get_entity_data', rpcParams);
 
-    console.log('🔍 [EntityService.list] Resposta BRUTA da RPC:', {
-      hasData: !!data,
-      dataType: typeof data,
-      isArray: Array.isArray(data),
-      dataLength: data?.length || 0,
-      hasError: !!error,
-      errorMessage: error?.message,
-      errorCode: error?.code,
-      firstItem: data?.[0] ? {
-        id: data[0].id,
-        hasData: !!data[0].data,
-        total_count: data[0].total_count,
-        total_countType: typeof data[0].total_count
-      } : null,
-      timestamp: new Date().toISOString()
-    });
+    // Log detalhado para cotacao_fornecedores
+    if (table === 'cotacao_fornecedores' && schema === 'compras') {
+      console.log('🔍 [EntityService.list] Resposta BRUTA da RPC (cotacao_fornecedores):', {
+        hasData: !!data,
+        dataType: typeof data,
+        isArray: Array.isArray(data),
+        dataLength: data?.length || 0,
+        hasError: !!error,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+        firstItem: data?.[0] ? JSON.parse(JSON.stringify(data[0])) : null,
+        allItems: data ? JSON.parse(JSON.stringify(data)) : null,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.log('🔍 [EntityService.list] Resposta BRUTA da RPC:', {
+        hasData: !!data,
+        dataType: typeof data,
+        isArray: Array.isArray(data),
+        dataLength: data?.length || 0,
+        hasError: !!error,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+        firstItem: data?.[0] ? {
+          id: data[0].id,
+          hasData: !!data[0].data,
+          total_count: data[0].total_count,
+          total_countType: typeof data[0].total_count
+        } : null,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     if (error) {
       console.error('❌ [EntityService.list] Erro da RPC:', {
@@ -233,6 +308,34 @@ export const EntityService = {
       }
     }
 
+    // Log detalhado para cotacao_fornecedores
+    if (table === 'cotacao_fornecedores' && schema === 'compras') {
+      console.log('🔍 [EntityService.list] DADOS COMPLETOS cotacao_fornecedores:', JSON.stringify(mappedData, null, 2));
+      if (mappedData.length > 0) {
+        console.log('🔍 [EntityService.list] Primeiro fornecedor detalhado:', {
+          ...(mappedData[0] as any),
+          valor_frete_detalhado: {
+            valor: (mappedData[0] as any).valor_frete,
+            tipo: typeof (mappedData[0] as any).valor_frete,
+            isNull: (mappedData[0] as any).valor_frete === null,
+            isUndefined: (mappedData[0] as any).valor_frete === undefined
+          },
+          desconto_percentual_detalhado: {
+            valor: (mappedData[0] as any).desconto_percentual,
+            tipo: typeof (mappedData[0] as any).desconto_percentual,
+            isNull: (mappedData[0] as any).desconto_percentual === null,
+            isUndefined: (mappedData[0] as any).desconto_percentual === undefined
+          },
+          desconto_valor_detalhado: {
+            valor: (mappedData[0] as any).desconto_valor,
+            tipo: typeof (mappedData[0] as any).desconto_valor,
+            isNull: (mappedData[0] as any).desconto_valor === null,
+            isUndefined: (mappedData[0] as any).desconto_valor === undefined
+          }
+        });
+      }
+    }
+    
     console.log('🔍 [EntityService.list] Dados mapeados:', {
       mappedDataLength: mappedData.length,
       sampleFirstItem: mappedData[0] ? {

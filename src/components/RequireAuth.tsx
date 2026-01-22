@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface RequireAuthProps {
   children: React.ReactNode;
   requiredPermission?: {
-    type: 'module' | 'entity';
+    type: 'module' | 'page';
     name: string;
     action: 'read' | 'create' | 'edit' | 'delete';
   };
@@ -44,15 +44,30 @@ export const RequireAuth: React.FC<RequireAuthProps> = ({
 
   // Verificação de permissões habilitada
   if (requiredPermission) {
-    const { isAdmin, hasModulePermission, hasEntityPermission } = usePermissions();
+    const { isAdmin, hasModulePermission, hasPagePermission, loading: permissionsLoading } = usePermissions();
+    const location = useLocation();
+    
+    // Mostrar loading enquanto carrega permissões
+    if (permissionsLoading) {
+      return (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      );
+    }
     
     if (isAdmin) {
       return <>{children}</>;
     }
 
-    const hasPermission = requiredPermission.type === 'module' 
-      ? hasModulePermission(requiredPermission.name, requiredPermission.action)
-      : hasEntityPermission(requiredPermission.name, requiredPermission.action);
+    let hasPermission = false;
+    if (requiredPermission.type === 'module') {
+      hasPermission = hasModulePermission(requiredPermission.name, requiredPermission.action);
+    } else if (requiredPermission.type === 'page') {
+      // Para páginas, usar o caminho atual se não foi especificado
+      const pagePath = requiredPermission.name || location.pathname;
+      hasPermission = hasPagePermission(pagePath, requiredPermission.action);
+    }
 
     if (!hasPermission) {
       return fallback || (
@@ -103,23 +118,26 @@ export const RequireModule: React.FC<RequireModuleProps> = ({
   );
 };
 
-// Componente para proteger por entidade
-interface RequireEntityProps {
+// Componente para proteger por página
+interface RequirePageProps {
   children: React.ReactNode;
-  entityName: string;
+  pagePath?: string; // Se não especificado, usa o caminho atual
   action?: 'read' | 'create' | 'edit' | 'delete';
   fallback?: React.ReactNode;
 }
 
-export const RequireEntity: React.FC<RequireEntityProps> = ({ 
+export const RequirePage: React.FC<RequirePageProps> = ({ 
   children, 
-  entityName, 
+  pagePath,
   action = 'read',
   fallback 
 }) => {
+  const location = useLocation();
+  const actualPath = pagePath || location.pathname;
+
   return (
     <RequireAuth 
-      requiredPermission={{ type: 'entity', name: entityName, action }}
+      requiredPermission={{ type: 'page', name: actualPath, action }}
       fallback={fallback}
     >
       {children}

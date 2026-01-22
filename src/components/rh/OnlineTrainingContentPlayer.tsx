@@ -46,6 +46,17 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // Usar refs para callbacks para evitar loops infinitos
+  const onProgressUpdateRef = useRef(onProgressUpdate);
+  const onCompleteRef = useRef(onComplete);
+  // Ref para rastrear última atualização de progresso e evitar chamadas muito frequentes
+  const lastProgressUpdateRef = useRef<{ time: number; timestamp: number }>({ time: 0, timestamp: 0 });
+  
+  // Atualizar refs quando callbacks mudarem
+  useEffect(() => {
+    onProgressUpdateRef.current = onProgressUpdate;
+    onCompleteRef.current = onComplete;
+  }, [onProgressUpdate, onComplete]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -109,26 +120,38 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
 
   // Rastrear tempo para conteúdo não-mídia (texto, PDF, link)
   useEffect(() => {
+    console.log('[OnlineTrainingContentPlayer] useEffect tempo tracking executado', {
+      tipo_conteudo: content.tipo_conteudo,
+      content_id: content.id,
+      watchedTime,
+      timestamp: new Date().toISOString()
+    });
+
     const needsTimeTracking = ['texto', 'pdf', 'link_externo'].includes(content.tipo_conteudo);
     
     if (needsTimeTracking) {
+      console.log('[OnlineTrainingContentPlayer] Iniciando rastreamento de tempo');
       // Iniciar rastreamento quando o componente monta
       const startTime = Date.now();
       setContentViewStartTime(startTime);
       let accumulatedTime = watchedTime; // Tempo já assistido anteriormente
       setTimeSpentSeconds(accumulatedTime);
 
-      // Atualizar tempo a cada segundo
+      // Atualizar tempo a cada segundo localmente
       const interval = setInterval(() => {
         accumulatedTime += 1;
         setTimeSpentSeconds(accumulatedTime);
         
-        // Atualizar progresso a cada 10 segundos
-        if (accumulatedTime % 10 === 0) {
-          const tempoMinimoSegundos = 120; // 2 minutos
-          const percentual = Math.min((accumulatedTime / tempoMinimoSegundos) * 100, 100);
-          
-          onProgressUpdate({
+        const tempoMinimoSegundos = 120; // 2 minutos
+        const percentual = Math.min((accumulatedTime / tempoMinimoSegundos) * 100, 100);
+        
+        // Atualizar progresso a cada 15 segundos OU quando atingir o tempo mínimo
+        if (accumulatedTime % 15 === 0 || accumulatedTime === tempoMinimoSegundos) {
+          console.log('[OnlineTrainingContentPlayer] Chamando onProgressUpdate do intervalo', {
+            accumulatedTime,
+            percentual
+          });
+          onProgressUpdateRef.current({
             tempo_assistido_segundos: accumulatedTime,
             ultima_posicao_segundos: 0,
             percentual_concluido: percentual
@@ -139,19 +162,13 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
       setTimeTrackingInterval(interval);
 
       return () => {
+        console.log('[OnlineTrainingContentPlayer] Cleanup: limpando intervalo de tempo');
         clearInterval(interval);
-        // Salvar tempo final ao desmontar
-        const finalTime = Math.floor((Date.now() - startTime) / 1000) + watchedTime;
-        const tempoMinimoSegundos = 120; // 2 minutos
-        const percentual = Math.min((finalTime / tempoMinimoSegundos) * 100, 100);
-        
-        onProgressUpdate({
-          tempo_assistido_segundos: finalTime,
-          ultima_posicao_segundos: 0,
-          percentual_concluido: percentual
-        });
+        // Não chamar onProgressUpdate no cleanup para evitar loops infinitos
+        // O progresso já é salvo periodicamente durante a visualização
       };
     } else {
+      console.log('[OnlineTrainingContentPlayer] Não precisa rastrear tempo, limpando');
       // Limpar intervalo se não precisa rastrear
       if (timeTrackingInterval) {
         clearInterval(timeTrackingInterval);
@@ -160,13 +177,25 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
       setContentViewStartTime(null);
       setTimeSpentSeconds(0);
     }
-  }, [content.tipo_conteudo, content.id, watchedTime, onProgressUpdate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content.tipo_conteudo, content.id, watchedTime]);
 
   useEffect(() => {
+    console.log('[OnlineTrainingContentPlayer] useEffect media executado', {
+      tipo_conteudo: content.tipo_conteudo,
+      content_id: content.id,
+      startPosition,
+      watchedTime,
+      duration,
+      isCompleted,
+      timestamp: new Date().toISOString()
+    });
+
     const mediaElement = content.tipo_conteudo === 'video' ? videoRef.current : 
                         content.tipo_conteudo === 'audio' ? audioRef.current : null;
     
     if (mediaElement && (content.tipo_conteudo === 'video' || content.tipo_conteudo === 'audio')) {
+      console.log('[OnlineTrainingContentPlayer] Configurando event listeners para mídia');
       // Restaurar posição anterior
       if (startPosition > 0) {
         mediaElement.currentTime = startPosition;
@@ -174,6 +203,7 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
 
       // Event listeners
       const handleLoadedMetadata = () => {
+        console.log('[OnlineTrainingContentPlayer] Metadata carregado', { duration: mediaElement.duration });
         setDuration(mediaElement.duration);
       };
 
@@ -184,21 +214,49 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
         const percent = duration > 0 ? (current / duration) * 100 : 0;
         setProgressPercent(percent);
 
-        // Atualizar progresso a cada 5 segundos
-        if (Math.floor(current) % 5 === 0) {
-          onProgressUpdate({
-            tempo_assistido_segundos: watchedTime + Math.floor(current),
-            ultima_posicao_segundos: Math.floor(current),
+        // Atualizar progresso a cada 10 segundos, mas com proteção contra chamadas muito frequentes
+        const currentFloor = Math.floor(current);
+        const now = Date.now();
+        const lastUpdate = lastProgressUpdateRef.current;
+        
+        // Só atualizar se:
+        // 1. É múltiplo de 10 segundos
+        // 2. É diferente da última atualização
+        // 3. Passou pelo menos 2 segundos desde a última atualização (proteção extra)
+        if (currentFloor % 10 === 0 && 
+            currentFloor > 0 && 
+            currentFloor !== lastUpdate.time &&
+            (now - lastUpdate.timestamp) > 2000) {
+          
+          lastProgressUpdateRef.current = { time: currentFloor, timestamp: now };
+          
+          console.log('[OnlineTrainingContentPlayer] Chamando onProgressUpdate do timeupdate', {
+            current: currentFloor,
+            percent,
+            watchedTime,
+            timeSinceLastUpdate: now - lastUpdate.timestamp
+          });
+          
+          onProgressUpdateRef.current({
+            tempo_assistido_segundos: watchedTime + currentFloor,
+            ultima_posicao_segundos: currentFloor,
             percentual_concluido: percent
           });
         }
       };
 
       const handleEnded = () => {
+        console.log('[OnlineTrainingContentPlayer] Mídia terminou', {
+          isCompleted,
+          currentTime: mediaElement.currentTime,
+          duration: mediaElement.duration
+        });
         setIsPlaying(false);
-        if (!isCompleted) {
-          onComplete();
-        }
+        
+        // Sempre chamar onComplete quando o vídeo termina, mesmo se já estava marcado como concluído
+        // Isso garante que o progresso seja atualizado no banco
+        console.log('[OnlineTrainingContentPlayer] Chamando onComplete ao terminar vídeo');
+        onCompleteRef.current();
       };
 
       mediaElement.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -206,12 +264,18 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
       mediaElement.addEventListener('ended', handleEnded);
 
       return () => {
+        console.log('[OnlineTrainingContentPlayer] Cleanup: removendo event listeners');
         mediaElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
         mediaElement.removeEventListener('timeupdate', handleTimeUpdate);
         mediaElement.removeEventListener('ended', handleEnded);
+        // Resetar ref no cleanup
+        lastProgressUpdateRef.current = { time: 0, timestamp: 0 };
       };
+    } else {
+      console.log('[OnlineTrainingContentPlayer] Não é mídia ou elemento não encontrado');
     }
-  }, [content, startPosition, watchedTime, duration, isCompleted, onProgressUpdate, onComplete]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content.id, content.tipo_conteudo]); // Remover watchedTime, duration, isCompleted das dependências para evitar re-execuções
 
   const togglePlay = () => {
     const mediaElement = content.tipo_conteudo === 'video' ? videoRef.current : 

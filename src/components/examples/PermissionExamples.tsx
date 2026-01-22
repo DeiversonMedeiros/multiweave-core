@@ -29,8 +29,8 @@ export function ExemploProtecaoPagina() {
   return (
     <RequireAuth 
       requiredPermission={{ 
-        type: 'entity', 
-        name: 'solicitacoes_compra', 
+        type: 'page', 
+        name: '/compras/requisicoes*', 
         action: 'read' 
       }}
       fallback={
@@ -59,7 +59,7 @@ export function ExemploProtecaoPagina() {
 // EXEMPLO 2: Proteção de Botões e Ações
 // =====================================================
 export function ExemploProtecaoBotoes() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
 
   return (
     <Card>
@@ -72,7 +72,7 @@ export function ExemploProtecaoBotoes() {
           
           {/* Método 1: Usando PermissionGuard */}
           <PermissionGuard 
-            entity="solicitacoes_compra" 
+            page="/compras/requisicoes*" 
             action="create"
             fallback={
               <Button disabled variant="outline">
@@ -92,7 +92,7 @@ export function ExemploProtecaoBotoes() {
           <h3 className="font-semibold">Botão de Editar (Cotações):</h3>
           
           {/* Método 2: Usando hook usePermissions */}
-          {canEditEntity('cotacoes') ? (
+          {canEditPage('/compras/cotacoes*') ? (
             <Button variant="outline">
               <Edit className="h-4 w-4 mr-2" />
               Editar Cotação
@@ -109,7 +109,7 @@ export function ExemploProtecaoBotoes() {
           <h3 className="font-semibold">Botão de Excluir (Pedidos):</h3>
           
           {/* Método 3: Renderização condicional */}
-          {canDeleteEntity('pedidos_compra') && (
+          {canDeletePage('/compras/pedidos*') && (
             <Button variant="destructive">
               <Trash2 className="h-4 w-4 mr-2" />
               Excluir Pedido
@@ -181,17 +181,19 @@ export function ExemploProtecaoSecoes() {
 // =====================================================
 // EXEMPLO 4: Verificação de Permissões Dinâmicas
 // =====================================================
+const ENTIDADE_PAGINA: Record<string, string> = {
+  solicitacoes_compra: '/compras/requisicoes*',
+  cotacoes: '/compras/cotacoes*',
+  pedidos_compra: '/compras/pedidos*',
+  fornecedores: '/compras/fornecedores*'
+};
+
 export function ExemploPermissoesDinamicas() {
-  const { 
-    canReadEntity, 
-    canCreateEntity, 
-    canEditEntity, 
-    canDeleteEntity 
-  } = usePermissions();
+  const { canReadPage, canCreatePage, canEditPage, canDeletePage } = usePermissions();
 
   const entidades = [
     'solicitacoes_compra',
-    'cotacoes', 
+    'cotacoes',
     'pedidos_compra',
     'fornecedores'
   ];
@@ -199,35 +201,39 @@ export function ExemploPermissoesDinamicas() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Verificação Dinâmica de Permissões</CardTitle>
+        <CardTitle>Verificação Dinâmica de Permissões (por Página)</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {entidades.map((entidade) => (
-            <div key={entidade} className="border rounded p-4">
-              <h3 className="font-semibold mb-2 capitalize">
-                {entidade.replace('_', ' ')}
-              </h3>
-              <div className="flex gap-2">
-                <Badge variant={canReadEntity(entidade) ? "default" : "secondary"}>
-                  <Eye className="h-3 w-3 mr-1" />
-                  Ler
-                </Badge>
-                <Badge variant={canCreateEntity(entidade) ? "default" : "secondary"}>
-                  <Plus className="h-3 w-3 mr-1" />
-                  Criar
-                </Badge>
-                <Badge variant={canEditEntity(entidade) ? "default" : "secondary"}>
-                  <Edit className="h-3 w-3 mr-1" />
-                  Editar
-                </Badge>
-                <Badge variant={canDeleteEntity(entidade) ? "default" : "secondary"}>
-                  <Trash2 className="h-3 w-3 mr-1" />
-                  Excluir
-                </Badge>
+          {entidades.map((entidade) => {
+            const path = ENTIDADE_PAGINA[entidade] ?? `/${entidade}*`;
+            return (
+              <div key={entidade} className="border rounded p-4">
+                <h3 className="font-semibold mb-2 capitalize">
+                  {entidade.replace('_', ' ')}
+                </h3>
+                <p className="text-xs text-muted-foreground font-mono mb-2">{path}</p>
+                <div className="flex gap-2">
+                  <Badge variant={canReadPage(path) ? "default" : "secondary"}>
+                    <Eye className="h-3 w-3 mr-1" />
+                    Ler
+                  </Badge>
+                  <Badge variant={canCreatePage(path) ? "default" : "secondary"}>
+                    <Plus className="h-3 w-3 mr-1" />
+                    Criar
+                  </Badge>
+                  <Badge variant={canEditPage(path) ? "default" : "secondary"}>
+                    <Edit className="h-3 w-3 mr-1" />
+                    Editar
+                  </Badge>
+                  <Badge variant={canDeletePage(path) ? "default" : "secondary"}>
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Excluir
+                  </Badge>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>

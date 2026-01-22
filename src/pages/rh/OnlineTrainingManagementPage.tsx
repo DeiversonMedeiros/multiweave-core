@@ -30,7 +30,7 @@ import { useCompany } from '@/lib/company-context';
 import { useTraining } from '@/hooks/rh/useTraining';
 import { useOnlineTraining } from '@/hooks/rh/useOnlineTraining';
 import { useToast } from '@/hooks/use-toast';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { OnlineTrainingDashboard } from '@/components/rh/OnlineTrainingDashboard';
 import { ExamEditor } from '@/components/rh/ExamEditor';
 import { TrainingFileUpload } from '@/components/rh/TrainingFileUpload';
@@ -240,7 +240,7 @@ export default function OnlineTrainingManagementPage() {
   };
 
   return (
-    <RequireEntity entityName="trainings" action="read">
+    <RequirePage pagePath="/rh/treinamentos*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -505,7 +505,7 @@ export default function OnlineTrainingManagementPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

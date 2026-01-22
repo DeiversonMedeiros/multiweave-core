@@ -75,6 +75,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
     reprovarContaPagar,
     suspenderContaPagar,
     payContaPagar,
+    estornarContaPagar,
     refresh,
     canCreate,
     canEdit,
@@ -272,6 +273,26 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
   const handlePay = (conta: ContaPagar) => {
     setContaParaPagar(conta);
     setShowPaymentModal(true);
+  };
+
+  const handleEstornar = async (conta: ContaPagar) => {
+    const observacoes = prompt('Observações sobre o estorno (opcional):');
+    const confirmMessage = `Tem certeza que deseja estornar a conta "${conta.numero_titulo}"?\n\n` +
+      `Valor a estornar: ${formatCurrency(conta.valor_pago || conta.valor_atual)}\n\n` +
+      `Esta ação irá:\n` +
+      `- Alterar o status da conta para "Estornado"\n` +
+      `- Criar um lançamento contábil de crédito no financeiro\n\n` +
+      `Confirme que você já verificou o estorno no banco.`;
+    
+    if (window.confirm(confirmMessage)) {
+      try {
+        await estornarContaPagar(conta.id, observacoes || undefined);
+        alert('Conta estornada com sucesso! O lançamento contábil de crédito foi criado.');
+      } catch (error) {
+        console.error('Erro ao estornar conta:', error);
+        alert('Erro ao estornar conta. Verifique o console para mais detalhes.');
+      }
+    }
   };
 
   const handleConfirmPayment = async (data: {
@@ -536,6 +557,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
       pago: { label: 'Pago', variant: 'success' as const, icon: CheckCircle },
       vencido: { label: 'Vencido', variant: 'destructive' as const, icon: XCircle },
       cancelado: { label: 'Cancelado', variant: 'outline' as const, icon: XCircle },
+      estornado: { label: 'Estornado', variant: 'default' as const, icon: RotateCcw },
     };
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pendente;
@@ -1025,6 +1047,17 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
                         <DollarSign className="h-4 w-4" />
                       </Button>
                     )}
+                    {canEdit && conta.status === 'pago' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEstornar(conta)}
+                        className="text-orange-600 hover:text-orange-700"
+                        title="Estornar conta (após verificar no banco)"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                    )}
                     {canDelete && !temPagamento(conta) && (
                       <Button
                         variant="ghost"
@@ -1113,6 +1146,7 @@ export function ContasPagarPage({ className }: ContasPagarPageProps) {
           onReprovar={handleReprovar}
           onSuspender={handleSuspender}
           onPay={handlePay}
+          onEstornar={handleEstornar}
           canEdit={canEdit}
           canDelete={canDelete}
           canApprove={canApprove}

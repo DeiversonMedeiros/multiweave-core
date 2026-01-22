@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useApprovalConfigs, useCreateApprovalConfig, useUpdateApprovalConfig, useDeleteApprovalConfig } from '@/hooks/approvals/useApprovalConfigs';
 import { useCompany } from '@/lib/company-context';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { ApprovalConfig } from '@/services/approvals/approvalService';
 import { ApprovalConfigForm } from '@/components/approvals/ApprovalConfigForm';
@@ -170,7 +170,7 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
   }
 
   return (
-    <RequireEntity entityName="approval_configs" action="read">
+    <RequirePage pagePath="/portal-gestor/aprovacoes*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -181,7 +181,7 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
             </p>
           </div>
           <PermissionButton
-            entityName="approval_configs"
+            page="/configuracoes/aprovacoes*"
             action="create"
             onClick={handleCreateConfig}
             className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-md shadow-sm transition-colors duration-200 whitespace-nowrap flex items-center"
@@ -278,7 +278,7 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
                 {!searchTerm && filterProcesso === 'todos' && filterStatus === 'todos' && (
                   <div className="flex justify-center">
                     <PermissionButton
-                      entityName="approval_configs"
+                      page="/configuracoes/aprovacoes*"
                       action="create"
                       onClick={handleCreateConfig}
                       className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-md shadow-sm transition-colors duration-200 whitespace-nowrap flex items-center"
@@ -317,7 +317,7 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
                         {config.ativo ? 'Ativo' : 'Inativo'}
                       </Badge>
                       <PermissionButton
-                        entityName="approval_configs"
+                        page="/configuracoes/aprovacoes*"
                         action="edit"
                         variant="ghost"
                         size="sm"
@@ -326,7 +326,7 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
                         <Edit className="h-4 w-4" />
                       </PermissionButton>
                       <PermissionButton
-                        entityName="approval_configs"
+                        page="/configuracoes/aprovacoes*"
                         action="delete"
                         variant="ghost"
                         size="sm"
@@ -426,7 +426,7 @@ const ConfiguracoesAprovacaoPage: React.FC = () => {
           />
         )}
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

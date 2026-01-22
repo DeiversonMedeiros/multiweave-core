@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSimpleTest } from '@/hooks/almoxarifado/useSimpleTest';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -12,7 +12,7 @@ const TestPage: React.FC = () => {
   const { data, loading, error, refetch } = useSimpleTest();
 
   return (
-    <RequireEntity entityName="warehouse_test" action="read">
+    <RequirePage pagePath="/almoxarifado/TestPage*" action="read">
       <div className="container mx-auto p-6">
       <Card>
         <CardHeader>
@@ -49,7 +49,7 @@ const TestPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

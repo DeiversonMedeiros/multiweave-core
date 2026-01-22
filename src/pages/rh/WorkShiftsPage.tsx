@@ -6,12 +6,12 @@ import { useEmployees } from '@/hooks/rh/useEmployees';
 import { WorkShift } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
 export default function WorkShiftsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
 
   // Hooks
@@ -127,7 +127,7 @@ export default function WorkShiftsPage() {
   };
 
   return (
-    <RequireEntity entityName="work_shifts" action="read">
+    <RequirePage pagePath="/rh/work-shifts*" action="read">
       <WorkShiftManagement
       workShifts={workShifts}
       employeeShifts={employeeShifts}
@@ -140,7 +140,7 @@ export default function WorkShiftsPage() {
       onEmployeeShiftDelete={handleEmployeeShiftDelete}
       isLoading={isLoading || isLoadingEmployeeShifts || isLoadingEmployees}
     />
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

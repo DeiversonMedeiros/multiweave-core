@@ -39,7 +39,7 @@ import { MaterialExitRequest } from '@/services/approvals/approvalService';
 import { MaterialExitRequestForm } from '@/components/almoxarifado/MaterialExitRequestForm';
 import { toast } from 'sonner';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -202,7 +202,7 @@ const SaidasTransferenciasPage: React.FC = () => {
   const movimentacoesRecentes = getMovimentacoesRecentes(5);
 
   return (
-    <RequireEntity entityName="transferencias" action="read">
+    <RequirePage pagePath="/almoxarifado/saidas*" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
@@ -221,7 +221,7 @@ const SaidasTransferenciasPage: React.FC = () => {
               Nova Transferência
             </Button>
             <PermissionButton
-              entityName="material_exit_requests"
+              page="/almoxarifado/saidas*"
               action="create"
               onClick={() => setIsSaidaModalOpen(true)}
               className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-md shadow-sm transition-colors duration-200 whitespace-nowrap flex items-center"
@@ -589,7 +589,7 @@ const SaidasTransferenciasPage: React.FC = () => {
                       </p>
                       <div className="flex justify-center">
                         <PermissionButton
-                          entityName="material_exit_requests"
+                          page="/almoxarifado/saidas*"
                           action="create"
                           onClick={() => setIsSaidaModalOpen(true)}
                           className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-md shadow-sm transition-colors duration-200 whitespace-nowrap flex items-center"
@@ -619,7 +619,7 @@ const SaidasTransferenciasPage: React.FC = () => {
                           <div className="flex items-center gap-2">
                             {getStatusBadge(saida.status)}
                             <PermissionButton
-                              entityName="material_exit_requests"
+                              page="/almoxarifado/saidas*"
                               action="edit"
                               variant="ghost"
                               size="sm"
@@ -800,7 +800,7 @@ const SaidasTransferenciasPage: React.FC = () => {
         />
       )}
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

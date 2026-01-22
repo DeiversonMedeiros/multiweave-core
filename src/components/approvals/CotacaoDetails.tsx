@@ -29,12 +29,15 @@ interface CotacaoItemFornecedor {
   material_id: string;
   material_nome?: string;
   quantidade_ofertada?: number;
-  quantidade?: number; // Alias para compatibilidade
+  quantidade?: number;
   valor_unitario: number;
   valor_total_calculado?: number;
-  valor_total?: number; // Alias para compatibilidade
+  valor_total?: number;
+  valor_frete?: number;
+  desconto_percentual?: number;
+  desconto_valor?: number;
   prazo_entrega_dias?: number;
-  prazo_entrega?: number; // Alias para compatibilidade
+  prazo_entrega?: number;
   observacoes?: string;
 }
 
@@ -47,6 +50,9 @@ interface CotacaoCiclo {
   workflow_state?: string;
   created_by?: string;
   created_at?: string;
+  valor_frete?: number;
+  desconto_percentual?: number;
+  desconto_valor?: number;
 }
 
 interface CompradorInfo {
@@ -157,9 +163,37 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
         });
 
         console.log('[CotacaoDetails] Fornecedores encontrados:', fornecedoresResult.data?.length || 0);
+        console.log('[CotacaoDetails] Dados brutos dos fornecedores (COMPLETO):', JSON.stringify(fornecedoresResult.data, null, 2));
+        console.log('[CotacaoDetails] Dados brutos dos fornecedores (RESUMO):', fornecedoresResult.data?.map(f => ({
+          id: f.id,
+          cotacao_id: f.cotacao_id,
+          fornecedor_id: f.fornecedor_id,
+          valor_frete: f.valor_frete,
+          valor_frete_type: typeof f.valor_frete,
+          valor_imposto: f.valor_imposto,
+          valor_imposto_type: typeof f.valor_imposto,
+          desconto_percentual: f.desconto_percentual,
+          desconto_percentual_type: typeof f.desconto_percentual,
+          desconto_valor: f.desconto_valor,
+          desconto_valor_type: typeof f.desconto_valor,
+          status: f.status,
+          preco_total: f.preco_total,
+          todas_chaves: Object.keys(f)
+        })));
 
         // Se não houver fornecedores, buscar TODOS (pode ser que ainda não tenha sido finalizada)
         const todosFornecedores = fornecedoresResult.data || [];
+        
+        // Log detalhado dos valores brutos antes do filtro
+        console.log('[CotacaoDetails] Todos os fornecedores ANTES do filtro:', todosFornecedores.map(f => ({
+          id: f.id,
+          valor_frete: f.valor_frete,
+          valor_frete_raw: f.valor_frete,
+          valor_imposto: f.valor_imposto,
+          desconto_percentual: f.desconto_percentual,
+          desconto_valor: f.desconto_valor,
+          status: f.status
+        })));
         
         // Filtrar fornecedores vencedores/selecionados
         // Se não houver critério de seleção, mostrar todos os que têm status 'completa' ou 'aprovada'
@@ -176,6 +210,21 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
           // Se não houver critério, mostrar todos (para o gestor ver todas as opções)
           return true;
         });
+        
+        // Log detalhado dos valores após o filtro
+        console.log('[CotacaoDetails] Fornecedores vencedores APÓS filtro:', fornecedoresVencedores.map(f => ({
+          id: f.id,
+          fornecedor_id: f.fornecedor_id,
+          valor_frete: f.valor_frete,
+          valor_frete_type: typeof f.valor_frete,
+          valor_imposto: f.valor_imposto,
+          valor_imposto_type: typeof f.valor_imposto,
+          desconto_percentual: f.desconto_percentual,
+          desconto_percentual_type: typeof f.desconto_percentual,
+          desconto_valor: f.desconto_valor,
+          desconto_valor_type: typeof f.desconto_valor,
+          todas_chaves: Object.keys(f)
+        })));
 
         // Se não encontrou nenhum com critério, mostrar todos
         if (fornecedoresVencedores.length === 0 && todosFornecedores.length > 0) {
@@ -256,7 +305,14 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
                   valor_unitario: item.valor_unitario,
                   valor_unitario_type: typeof item.valor_unitario,
                   valor_total_calculado: item.valor_total_calculado,
-                  valor_total_calculado_type: typeof item.valor_total_calculado
+                  valor_total_calculado_type: typeof item.valor_total_calculado,
+                  valor_frete: item.valor_frete,
+                  valor_frete_type: typeof item.valor_frete,
+                  desconto_percentual: item.desconto_percentual,
+                  desconto_percentual_type: typeof item.desconto_percentual,
+                  desconto_valor: item.desconto_valor,
+                  desconto_valor_type: typeof item.desconto_valor,
+                  todas_chaves: Object.keys(item)
                 });
 
                 // Mapear campos corretos da tabela: quantidade_ofertada e valor_total_calculado
@@ -288,14 +344,26 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
                 } catch (err) {
                   console.warn('[CotacaoDetails] Erro ao buscar material:', err);
                 }
+                // Garantir conversão dos descontos do item
+                const descontoPercentualItem = item.desconto_percentual != null
+                  ? (typeof item.desconto_percentual === 'string' ? parseFloat(item.desconto_percentual) : Number(item.desconto_percentual)) || 0
+                  : 0;
+                const descontoValorItem = item.desconto_valor != null
+                  ? (typeof item.desconto_valor === 'string' ? parseFloat(item.desconto_valor) : Number(item.desconto_valor)) || 0
+                  : 0;
+                
                 return { 
                   ...item, 
                   material_nome: materialNome,
-                  quantidade: quantidadeOfertada, // Usar quantidade_ofertada
-                  quantidade_ofertada: quantidadeOfertada, // Manter original também
+                  quantidade: quantidadeOfertada,
+                  quantidade_ofertada: quantidadeOfertada,
                   valor_unitario: valorUnitario,
-                  valor_total: valorTotalCalculado, // Usar valor_total_calculado
-                  valor_total_calculado: valorTotalCalculado // Manter original também
+                  valor_total: valorTotalCalculado,
+                  valor_total_calculado: valorTotalCalculado,
+                  valor_frete: item.valor_frete != null ? Number(item.valor_frete) : 0,
+                  desconto_percentual: descontoPercentualItem,
+                  desconto_valor: descontoValorItem,
+                  is_vencedor: item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor'
                 };
               })
             );
@@ -303,14 +371,39 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
             // Log dos itens processados
             console.log(`[CotacaoDetails] Itens processados para fornecedor ${fornecedor.id}:`, itensComNomes);
 
+            // Garantir que os valores numéricos sejam convertidos corretamente
+            const valorFrete = fornecedor.valor_frete != null 
+              ? (typeof fornecedor.valor_frete === 'string' ? parseFloat(fornecedor.valor_frete) : Number(fornecedor.valor_frete)) || 0
+              : 0;
+            const valorImposto = fornecedor.valor_imposto != null
+              ? (typeof fornecedor.valor_imposto === 'string' ? parseFloat(fornecedor.valor_imposto) : Number(fornecedor.valor_imposto)) || 0
+              : 0;
+            const descontoPercentual = fornecedor.desconto_percentual != null
+              ? (typeof fornecedor.desconto_percentual === 'string' ? parseFloat(fornecedor.desconto_percentual) : Number(fornecedor.desconto_percentual)) || 0
+              : 0;
+            const descontoValor = fornecedor.desconto_valor != null
+              ? (typeof fornecedor.desconto_valor === 'string' ? parseFloat(fornecedor.desconto_valor) : Number(fornecedor.desconto_valor)) || 0
+              : 0;
+
+            console.log(`[CotacaoDetails] Fornecedor ${fornecedor.id} valores brutos e convertidos:`, {
+              valor_frete_bruto: fornecedor.valor_frete,
+              valor_frete_convertido: valorFrete,
+              valor_imposto_bruto: fornecedor.valor_imposto,
+              valor_imposto_convertido: valorImposto,
+              desconto_percentual_bruto: fornecedor.desconto_percentual,
+              desconto_percentual_convertido: descontoPercentual,
+              desconto_valor_bruto: fornecedor.desconto_valor,
+              desconto_valor_convertido: descontoValor
+            });
+
             return {
               id: fornecedor.id,
               fornecedor_id: fornecedor.fornecedor_id,
               fornecedor_nome: fornecedorNome,
-              valor_frete: fornecedor.valor_frete || 0,
-              valor_imposto: fornecedor.valor_imposto || 0,
-              desconto_percentual: fornecedor.desconto_percentual || 0,
-              desconto_valor: fornecedor.desconto_valor || 0,
+              valor_frete: valorFrete,
+              valor_imposto: valorImposto,
+              desconto_percentual: descontoPercentual,
+              desconto_valor: descontoValor,
               preco_total: fornecedor.preco_total || 0,
               prazo_entrega: fornecedor.prazo_entrega || 0,
               condicoes_comerciais: fornecedor.condicoes_comerciais,
@@ -342,24 +435,80 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
           })
         );
 
-        console.log('[CotacaoDetails] Fornecedores completos processados:', fornecedoresCompletos.length);
+        // Filtrar fornecedores que têm pelo menos um item vencedor
+        const fornecedoresComItensVencedores = fornecedoresCompletos.filter(f => 
+          f.itens.some(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor')
+        );
 
-        // 5. Calcular totais
-        const valorTotalItens = fornecedoresCompletos.reduce((sum, f) => {
-          const valorItensFornecedor = f.itens.reduce((itemSum, item) => itemSum + (item.valor_total || 0), 0);
+        console.log('[CotacaoDetails] Fornecedores completos processados:', fornecedoresCompletos.length);
+        console.log('[CotacaoDetails] Fornecedores com itens vencedores:', fornecedoresComItensVencedores.length);
+        console.log('[CotacaoDetails] Valores dos fornecedores:', fornecedoresComItensVencedores.map(f => ({
+          id: f.id,
+          nome: f.fornecedor_nome,
+          valor_frete: f.valor_frete,
+          valor_imposto: f.valor_imposto,
+          desconto_percentual: f.desconto_percentual,
+          desconto_valor: f.desconto_valor,
+          itens_vencedores: f.itens.filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor').length
+        })));
+
+        // 5. Calcular totais - APENAS itens vencedores (is_vencedor = true)
+        const valorTotalItens = fornecedoresComItensVencedores.reduce((sum, f) => {
+          const valorItensFornecedor = f.itens
+            .filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor')
+            .reduce((itemSum, item) => itemSum + (item.valor_total || 0), 0);
           return sum + valorItensFornecedor;
         }, 0);
 
-        const valorTotalFrete = fornecedoresCompletos.reduce((sum, f) => sum + (f.valor_frete || 0) + (f.valor_imposto || 0), 0);
-        const valorTotalDesconto = fornecedoresCompletos.reduce((sum, f) => sum + (f.desconto_valor || 0), 0);
-        
-        // Total Final = Itens + Frete - Desconto
+        const freteItens = fornecedoresComItensVencedores.reduce((sum, f) => 
+          sum + (f.itens || [])
+            .filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor')
+            .reduce((s, item) => s + (item.valor_frete || 0), 0), 0);
+        const valorTotalFrete = fornecedoresComItensVencedores.reduce((sum, f) => sum + (f.valor_frete || 0) + (f.valor_imposto || 0), 0) 
+          + freteItens 
+          + (cicloResult.valor_frete != null ? Number(cicloResult.valor_frete) : 0);
+
+        // ✅ CORREÇÃO: Calcular desconto TOTAL = desconto do fornecedor + desconto dos itens
+        const valorTotalDescontoSemGeral = fornecedoresComItensVencedores.reduce((sum, f) => {
+          const itensVencedores = f.itens
+            .filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor');
+          
+          // Subtotal dos itens vencedores
+          const subtotalItensVencedores = itensVencedores.reduce((itemSum, item) => itemSum + (item.valor_total || 0), 0);
+          
+          // Desconto do fornecedor: percentual sobre itens vencedores + valor absoluto
+          const descontoPercentualFornecedor = (subtotalItensVencedores * ((f.desconto_percentual || 0) / 100));
+          const descontoValorFornecedor = f.desconto_valor || 0;
+          const descontoFornecedor = descontoPercentualFornecedor + descontoValorFornecedor;
+          
+          // Desconto dos itens vencedores
+          const descontoItens = itensVencedores.reduce((itemSum, item) => {
+            const valorItem = item.valor_total || 0;
+            const descontoPctItem = item.desconto_percentual || 0;
+            const descontoValorItem = item.desconto_valor || 0;
+            const descontoPctCalculado = valorItem * (descontoPctItem / 100);
+            return itemSum + descontoPctCalculado + descontoValorItem;
+          }, 0);
+          
+          // Total = desconto do fornecedor + desconto dos itens
+          return sum + descontoFornecedor + descontoItens;
+        }, 0);
+        const baseParaDescontoGeral = valorTotalItens + valorTotalFrete - valorTotalDescontoSemGeral;
+        const descontoGeral = baseParaDescontoGeral * ((cicloResult.desconto_percentual != null ? Number(cicloResult.desconto_percentual) : 0) / 100) 
+          + (cicloResult.desconto_valor != null ? Number(cicloResult.desconto_valor) : 0);
+        const valorTotalDesconto = valorTotalDescontoSemGeral + descontoGeral;
+
         const valorTotalFinal = valorTotalItens + valorTotalFrete - valorTotalDesconto;
 
-        // Calcular saving (economia) - comparar com média dos fornecedores
-        const valoresFornecedores = fornecedoresCompletos.map(f => {
-          const valorItens = f.itens.reduce((sum, item) => sum + (item.valor_total || 0), 0);
-          const freteImposto = (f.valor_frete || 0) + (f.valor_imposto || 0);
+        // Calcular saving (economia) - comparar com média dos fornecedores (apenas itens vencedores)
+        const valoresFornecedores = fornecedoresComItensVencedores.map(f => {
+          const valorItens = f.itens
+            .filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor')
+            .reduce((sum, item) => sum + (item.valor_total || 0), 0);
+          const freteItensVencedores = f.itens
+            .filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor')
+            .reduce((sum, item) => sum + (item.valor_frete || 0), 0);
+          const freteImposto = (f.valor_frete || 0) + (f.valor_imposto || 0) + freteItensVencedores;
           const desconto = f.desconto_valor || 0;
           return valorItens + freteImposto - desconto;
         });
@@ -386,7 +535,7 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
         setData({
           ciclo: cicloResult,
           comprador,
-          fornecedores: fornecedoresCompletos,
+          fornecedores: fornecedoresComItensVencedores,
           valorTotalItens,
           valorTotalFrete,
           valorTotalDesconto,
@@ -486,10 +635,12 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
     );
   }
 
-  // Encontrar menor preço de itens para badges
-  const precosItensPorFornecedor = data.fornecedores.map(f => ({
+  // Encontrar menor preço de itens para badges (apenas itens vencedores)
+  const precosItensPorFornecedor = (data.fornecedores || []).map(f => ({
     fornecedor: f.fornecedor_nome || 'Fornecedor',
-    valorItens: (f.itens || []).reduce((sum, item) => sum + (item.valor_total || 0), 0)
+    valorItens: (f.itens || [])
+      .filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor')
+      .reduce((sum, item) => sum + (item.valor_total || 0), 0)
   }));
   const menorPrecoItens = precosItensPorFornecedor.length > 0 && precosItensPorFornecedor.every(p => p.valorItens !== undefined)
     ? Math.min(...precosItensPorFornecedor.map(p => p.valorItens || 0))
@@ -511,6 +662,14 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
             <User className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm text-muted-foreground">Comprador:</span>
             <span className="font-semibold">{data.comprador.nome}</span>
+          </div>
+        )}
+        {((data.ciclo.valor_frete ?? 0) > 0 || (data.ciclo.desconto_percentual ?? 0) > 0 || (data.ciclo.desconto_valor ?? 0) > 0) && (
+          <div className="md:col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            {(data.ciclo.valor_frete ?? 0) > 0 && <span>Frete geral: R$ {Number(data.ciclo.valor_frete).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>}
+            {((data.ciclo.desconto_percentual ?? 0) > 0 || (data.ciclo.desconto_valor ?? 0) > 0) && (
+              <span>Desconto geral: {Number(data.ciclo.desconto_percentual || 0).toLocaleString('pt-BR')}% + R$ {Number(data.ciclo.desconto_valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            )}
           </div>
         )}
       </div>
@@ -617,10 +776,93 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
                 </TableHeader>
                 <TableBody>
                   {data.fornecedores.map((fornecedor) => {
-                    const valorItens = (fornecedor.itens || []).reduce((sum, item) => sum + (item.valor_total || 0), 0);
-                    const valorFrete = (fornecedor.valor_frete || 0) + (fornecedor.valor_imposto || 0);
-                    const desconto = fornecedor.desconto_valor || 0;
+                    // Log dos valores do fornecedor antes do cálculo
+                    console.log(`[CotacaoDetails] Renderizando fornecedor ${fornecedor.fornecedor_nome}:`, {
+                      id: fornecedor.id,
+                      valor_frete_raw: fornecedor.valor_frete,
+                      valor_frete_type: typeof fornecedor.valor_frete,
+                      valor_imposto_raw: fornecedor.valor_imposto,
+                      valor_imposto_type: typeof fornecedor.valor_imposto,
+                      desconto_percentual_raw: fornecedor.desconto_percentual,
+                      desconto_percentual_type: typeof fornecedor.desconto_percentual,
+                      desconto_valor_raw: fornecedor.desconto_valor,
+                      desconto_valor_type: typeof fornecedor.desconto_valor,
+                      itens_count: fornecedor.itens?.length || 0
+                    });
+                    
+                    // Calcular apenas com itens vencedores
+                    const itensVencedores = (fornecedor.itens || [])
+                      .filter(item => item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor');
+                    const valorItens = itensVencedores.reduce((sum, item) => sum + (item.valor_total || 0), 0);
+                    const freteItensVencedores = itensVencedores.reduce((sum, item) => sum + (item.valor_frete || 0), 0);
+                    
+                    // ✅ CORREÇÃO: Calcular desconto dos ITENS vencedores
+                    // O desconto pode estar aplicado nos itens, não apenas no fornecedor
+                    const descontoItensVencedores = itensVencedores.reduce((sum, item) => {
+                      const valorItem = item.valor_total || 0;
+                      const descontoPctItem = item.desconto_percentual || 0;
+                      const descontoValorItem = item.desconto_valor || 0;
+                      // Desconto percentual aplicado sobre o valor do item
+                      const descontoPctCalculado = valorItem * (descontoPctItem / 100);
+                      // Total do desconto do item = percentual + valor absoluto
+                      return sum + descontoPctCalculado + descontoValorItem;
+                    }, 0);
+                    
+                    // Garantir conversão numérica correta dos valores do fornecedor
+                    const freteFornecedor = typeof fornecedor.valor_frete === 'number' 
+                      ? fornecedor.valor_frete 
+                      : (fornecedor.valor_frete != null && fornecedor.valor_frete !== '' ? Number(fornecedor.valor_frete) : 0);
+                    const impostoFornecedor = typeof fornecedor.valor_imposto === 'number'
+                      ? fornecedor.valor_imposto
+                      : (fornecedor.valor_imposto != null && fornecedor.valor_imposto !== '' ? Number(fornecedor.valor_imposto) : 0);
+                    const descontoPctFornecedor = typeof fornecedor.desconto_percentual === 'number'
+                      ? fornecedor.desconto_percentual
+                      : (fornecedor.desconto_percentual != null && fornecedor.desconto_percentual !== '' ? Number(fornecedor.desconto_percentual) : 0);
+                    const descontoValorFornecedor = typeof fornecedor.desconto_valor === 'number'
+                      ? fornecedor.desconto_valor
+                      : (fornecedor.desconto_valor != null && fornecedor.desconto_valor !== '' ? Number(fornecedor.desconto_valor) : 0);
+                    
+                    const valorFrete = freteFornecedor + impostoFornecedor + freteItensVencedores;
+                    // ✅ CORREÇÃO: Calcular desconto TOTAL = desconto do fornecedor + desconto dos itens
+                    // Desconto do fornecedor: percentual sobre valor dos itens vencedores + valor absoluto
+                    const descontoPercentualFornecedor = valorItens * (descontoPctFornecedor / 100);
+                    const descontoFornecedor = descontoPercentualFornecedor + descontoValorFornecedor;
+                    // Desconto total = desconto do fornecedor + desconto dos itens
+                    const desconto = descontoFornecedor + descontoItensVencedores;
                     const totalFinal = valorItens + valorFrete - desconto;
+                    
+                    // Debug log detalhado
+                    console.log(`[CotacaoDetails] Fornecedor ${fornecedor.fornecedor_nome}:`, {
+                      fornecedor_id: fornecedor.id,
+                      valores_brutos: {
+                        valor_frete: fornecedor.valor_frete,
+                        valor_imposto: fornecedor.valor_imposto,
+                        desconto_percentual: fornecedor.desconto_percentual,
+                        desconto_valor: fornecedor.desconto_valor
+                      },
+                      valores_convertidos: {
+                        freteFornecedor,
+                        impostoFornecedor,
+                        descontoPctFornecedor,
+                        descontoValorFornecedor
+                      },
+                      itens_vencedores: itensVencedores.map(item => ({
+                        material: item.material_nome,
+                        valor_total: item.valor_total,
+                        desconto_percentual: item.desconto_percentual,
+                        desconto_valor: item.desconto_valor
+                      })),
+                      calculos: {
+                        valorItens,
+                        freteItensVencedores,
+                        descontoItensVencedores,
+                        descontoPercentualFornecedor,
+                        descontoFornecedor,
+                        valorFrete,
+                        desconto,
+                        totalFinal
+                      }
+                    });
                     const percentualFrete = totalFinal > 0 ? (valorFrete / totalFinal) * 100 : 0;
                     
                     const isMenorPrecoItens = valorItens === menorPrecoItens && menorPrecoItens > 0;
@@ -642,12 +884,46 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
                             style: 'currency',
                             currency: 'BRL'
                           }).format(valorFrete || 0)}
+                          {/* Sempre mostrar detalhes se houver valores, mesmo que zero, para transparência */}
+                          {(freteFornecedor != null || impostoFornecedor != null || freteItensVencedores != null) && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {freteFornecedor != null && freteFornecedor !== 0 && <div>Frete: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freteFornecedor)}</div>}
+                              {impostoFornecedor != null && impostoFornecedor !== 0 && <div>Imposto: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(impostoFornecedor)}</div>}
+                              {freteItensVencedores != null && freteItensVencedores !== 0 && <div>Frete Itens: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freteItensVencedores)}</div>}
+                              {/* Mostrar quando todos os valores são zero para indicar que não há frete */}
+                              {valorFrete === 0 && freteFornecedor === 0 && impostoFornecedor === 0 && freteItensVencedores === 0 && (
+                                <div className="text-muted-foreground italic">Sem frete</div>
+                              )}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {new Intl.NumberFormat('pt-BR', {
                             style: 'currency',
                             currency: 'BRL'
                           }).format(desconto || 0)}
+                          {/* Sempre mostrar detalhes para transparência */}
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {/* Desconto do Fornecedor */}
+                            {descontoFornecedor > 0 && (
+                              <>
+                                {descontoPercentualFornecedor > 0 && (
+                                  <div>Fornecedor ({descontoPctFornecedor}% = {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(descontoPercentualFornecedor)})</div>
+                                )}
+                                {descontoValorFornecedor > 0 && (
+                                  <div>Fornecedor: + R$ {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(descontoValorFornecedor)}</div>
+                                )}
+                              </>
+                            )}
+                            {/* Desconto dos Itens */}
+                            {descontoItensVencedores > 0 && (
+                              <div className="text-blue-600">Itens: R$ {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(descontoItensVencedores)}</div>
+                            )}
+                            {/* Mostrar quando todos os valores são zero para indicar que não há desconto */}
+                            {desconto === 0 && descontoFornecedor === 0 && descontoItensVencedores === 0 && (
+                              <div className="text-muted-foreground italic">Sem desconto</div>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right font-semibold">
                           {new Intl.NumberFormat('pt-BR', {
@@ -690,31 +966,47 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
       )}
 
       {/* Lista de Itens */}
-      {data.fornecedores.length > 0 && data.fornecedores.some(f => f.itens.length > 0) && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              Itens da Cotação
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="max-h-[300px]">
-              <Table>
-                <TableHeader className="sticky top-0 bg-muted z-10">
-                  <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="text-right">Quantidade</TableHead>
-                    <TableHead className="text-right">Valor Unitário</TableHead>
-                    <TableHead className="text-right">Valor Total</TableHead>
-                    <TableHead>Fornecedor</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.fornecedores.flatMap((fornecedor) => {
-                    const itens = fornecedor.itens || [];
-                    console.log(`[CotacaoDetails] Renderizando itens do fornecedor ${fornecedor.id}:`, itens);
-                    return itens.map((item, index) => {
+      {(() => {
+        // Coletar todos os itens de todos os fornecedores com referência ao fornecedor
+        const todosItensComFornecedor = data.fornecedores.flatMap((fornecedor) => {
+          const itens = fornecedor.itens || [];
+          return itens.map(item => ({ item, fornecedor }));
+        });
+        
+        // Ordenar todos os itens alfabeticamente pelo nome do material
+        const itensOrdenados = [...todosItensComFornecedor].sort((a, b) => {
+          const nomeA = (a.item.material_nome || '').toLowerCase();
+          const nomeB = (b.item.material_nome || '').toLowerCase();
+          return nomeA.localeCompare(nomeB, 'pt-BR');
+        });
+        
+        console.log(`[CotacaoDetails] Total de itens ordenados:`, itensOrdenados.length);
+        
+        return data.fornecedores.length > 0 && data.fornecedores.some(f => f.itens.length > 0) && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                Itens da Cotação
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ScrollArea className="max-h-[300px]">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-muted z-10">
+                    <TableRow>
+                      <TableHead>Item</TableHead>
+                      <TableHead className="text-right">Quantidade</TableHead>
+                      <TableHead className="text-right">Valor Unitário</TableHead>
+                      <TableHead className="text-right">Valor Total</TableHead>
+                      <TableHead className="text-right">Frete</TableHead>
+                      <TableHead className="text-right">Desconto</TableHead>
+                      <TableHead className="text-center">Vencedor</TableHead>
+                      <TableHead>Fornecedor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {itensOrdenados.map(({ item, fornecedor }, index) => {
                       // Garantir conversão robusta dos valores
                       const quantidade = item.quantidade != null 
                         ? (typeof item.quantidade === 'string' ? parseFloat(item.quantidade) : Number(item.quantidade)) || 0
@@ -722,19 +1014,50 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
                       const valorUnitario = item.valor_unitario != null
                         ? (typeof item.valor_unitario === 'string' ? parseFloat(item.valor_unitario) : Number(item.valor_unitario)) || 0
                         : 0;
-                      const valorTotal = item.valor_total != null
-                        ? (typeof item.valor_total === 'string' ? parseFloat(item.valor_total) : Number(item.valor_total)) || 0
+                      // Valor base do item (quantidade * valor unitário)
+                      const valorBaseItem = quantidade * valorUnitario;
+                      
+                      // Frete do item
+                      const freteItem = item.valor_frete != null
+                        ? (typeof item.valor_frete === 'string' ? parseFloat(item.valor_frete) : Number(item.valor_frete)) || 0
                         : 0;
+                      
+                      // Verificar se o item é vencedor
+                      const isVencedor = item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor';
+                      
+                      // Calcular desconto do item
+                      const descontoPercentualItem = item.desconto_percentual != null
+                        ? (typeof item.desconto_percentual === 'string' ? parseFloat(item.desconto_percentual) : Number(item.desconto_percentual)) || 0
+                        : 0;
+                      const descontoValorItem = item.desconto_valor != null
+                        ? (typeof item.desconto_valor === 'string' ? parseFloat(item.desconto_valor) : Number(item.desconto_valor)) || 0
+                        : 0;
+                      
+                      // Desconto total do item: percentual sobre valor base + valor absoluto
+                      const descontoPercentualCalculado = valorBaseItem * (descontoPercentualItem / 100);
+                      const descontoTotalItem = descontoPercentualCalculado + descontoValorItem;
+                      
+                      // Valor Total = Valor Base + Frete - Desconto
+                      const valorTotal = valorBaseItem + freteItem - descontoTotalItem;
                       
                       console.log(`[CotacaoDetails] Renderizando item ${index}:`, {
                         material: item.material_nome,
                         quantidade,
                         valorUnitario,
-                        valorTotal
+                        valorBaseItem,
+                        freteItem,
+                        descontoTotalItem,
+                        valorTotal: valorTotal, // Valor Total = Base + Frete - Desconto
+                        isVencedor,
+                        descontoPercentualItem,
+                        descontoValorItem
                       });
                       
+                      // Aplicar cor verde para itens vencedores
+                      const rowClassName = isVencedor ? 'text-green-600 font-medium' : '';
+                      
                       return (
-                        <TableRow key={`${fornecedor.id}-${item.id || index}-${index}`}>
+                        <TableRow key={`${fornecedor.id}-${item.id || index}-${index}`} className={rowClassName}>
                           <TableCell className="font-medium">
                             {item.material_nome || 'Material não encontrado'}
                           </TableCell>
@@ -756,19 +1079,56 @@ export function CotacaoDetails({ cotacaoId }: CotacaoDetailsProps) {
                               currency: 'BRL'
                             }).format(valorTotal || 0)}
                           </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {freteItem > 0 
+                              ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(freteItem)
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {descontoTotalItem > 0 ? (
+                              <div>
+                                <div className="font-medium">
+                                  {new Intl.NumberFormat('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL'
+                                  }).format(descontoTotalItem)}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {descontoPercentualItem > 0 && (
+                                    <div>({descontoPercentualItem}% = {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(descontoPercentualCalculado)})</div>
+                                  )}
+                                  {descontoValorItem > 0 && (
+                                    <div>+ R$ {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(descontoValorItem)}</div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {isVencedor ? (
+                              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Sim
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">Não</span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             {fornecedor.fornecedor_nome || '-'}
                           </TableCell>
                         </TableRow>
                       );
-                    });
-                  })}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      )}
+                    })}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        );
+      })()}
     </div>
   );
 }

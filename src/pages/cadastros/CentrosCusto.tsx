@@ -19,7 +19,7 @@ import { Employee } from "@/integrations/supabase/rh-types";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { useRHData } from "@/hooks/generic/useEntityData";
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -46,7 +46,7 @@ interface CostCenterWithChildren extends CostCenter {
 }
 
 export default function CentrosCusto() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [centros, setCentros] = useState<CostCenter[]>([]);
   const [centrosHierarquicos, setCentrosHierarquicos] = useState<CostCenterWithChildren[]>([]);
   const [loading, setLoading] = useState(true);
@@ -285,7 +285,7 @@ export default function CentrosCusto() {
               </Badge>
             </div>
             <div className="col-span-2 flex gap-2 justify-end">
-              {canEditEntity('cost_centers') && (
+              {canEditPage('/cadastros/centros-custo*') && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -338,7 +338,7 @@ export default function CentrosCusto() {
   if (loading) return <div>Carregando...</div>;
 
   return (
-    <RequireEntity entityName="cost_centers" action="read">
+    <RequirePage pagePath="/cadastros/centros-custo*" action="read">
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <div>
@@ -373,7 +373,7 @@ export default function CentrosCusto() {
                 <div className="col-span-2">Status</div>
                 <div className="col-span-2"></div>
               </div>
-              {canCreateEntity('cost_centers') && (
+              {canCreatePage('/cadastros/centros-custo*') && (
                 <Button onClick={handleNew} className="ml-4">
                   Novo Centro de Custo
                 </Button>
@@ -392,7 +392,7 @@ export default function CentrosCusto() {
           <DataTable
             data={centros}
             columns={columns}
-            onNew={canCreateEntity('cost_centers') ? handleNew : undefined}
+            onNew={canCreatePage('/cadastros/centros-custo*') ? handleNew : undefined}
             onExport={() => toast.info("Exportação em desenvolvimento")}
             searchPlaceholder="Buscar por código ou nome..."
             newButtonLabel="Novo Centro de Custo"
@@ -655,6 +655,6 @@ export default function CentrosCusto() {
           </Dialog>
         </PermissionGuard>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

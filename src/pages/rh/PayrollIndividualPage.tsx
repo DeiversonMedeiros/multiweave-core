@@ -36,7 +36,7 @@ import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/
 import { Payroll, Employee, PayrollEvent } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 import { usePermissions } from '@/hooks/usePermissions';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { toast } from 'sonner';
 import { generatePayslipPDF, generateBatchPayslips, downloadPayslip } from '@/services/rh/payslipService';
 import { FinancialIntegrationService } from '@/services/rh/financialIntegrationService';
@@ -47,7 +47,7 @@ import { EntityService } from '@/services/generic/entityService';
 // =====================================================
 
 export default function PayrollIndividualPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -387,7 +387,7 @@ export default function PayrollIndividualPage() {
   ];
 
   return (
-    <RequireEntity entityName="payroll" action="read">
+    <RequirePage pagePath="/rh/payroll*" action="read">
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -642,7 +642,7 @@ export default function PayrollIndividualPage() {
           />
         </FormModal>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

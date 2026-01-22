@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useGestorDashboard } from '@/hooks/portal-gestor/useGestorDashboard';
@@ -110,7 +110,7 @@ const GestorDashboard: React.FC = () => {
   const activitiesData = activities?.data || [];
 
   return (
-    <RequireEntity entityName="manager_dashboard" action="read">
+    <RequirePage pagePath="/portal-gestor*" action="read">
       <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -333,7 +333,7 @@ const GestorDashboard: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

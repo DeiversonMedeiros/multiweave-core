@@ -31,11 +31,11 @@ import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import XMLUploadModal from '@/components/almoxarifado/XMLUploadModal';
 import { toast } from 'sonner';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 
 const EntradasMateriaisPage: React.FC = () => {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterDataInicio, setFilterDataInicio] = useState<string>('');
@@ -123,7 +123,7 @@ const EntradasMateriaisPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="entradas_materiais" action="read">
+    <RequirePage pagePath="/almoxarifado/entradas*" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
@@ -343,7 +343,7 @@ const EntradasMateriaisPage: React.FC = () => {
         />
       )}
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

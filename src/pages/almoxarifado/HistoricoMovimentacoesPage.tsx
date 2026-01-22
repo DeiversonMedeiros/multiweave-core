@@ -33,11 +33,11 @@ import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquip
 import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { toast } from 'sonner';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 
 const HistoricoMovimentacoesPage: React.FC = () => {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
@@ -141,7 +141,7 @@ const HistoricoMovimentacoesPage: React.FC = () => {
   const movimentacoesRecentes = getMovimentacoesRecentes(10);
 
   return (
-    <RequireEntity entityName="movimentacoes_estoque" action="read">
+    <RequirePage pagePath="/almoxarifado/historico*" action="read">
       <div className="container mx-auto p-6">
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
@@ -459,7 +459,7 @@ const HistoricoMovimentacoesPage: React.FC = () => {
         </div>
       )}
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

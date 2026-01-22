@@ -33,7 +33,7 @@ import { useNavigate } from 'react-router-dom';
 // =====================================================
 
 export default function BenefitsPageNew() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const navigate = useNavigate();
   const [filters, setFilters] = useState<any>({});

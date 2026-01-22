@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
@@ -33,7 +33,7 @@ const localizacaoSchema = z.object({
 type LocalizacaoFormData = z.infer<typeof localizacaoSchema>;
 
 export default function LocalizacoesFisicasPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { data: almoxarifados = [] } = useAlmoxarifados();
   const [selectedAlmoxarifadoId, setSelectedAlmoxarifadoId] = useState<string>("");
   const [localizacoes, setLocalizacoes] = useState<LocalizacaoFisica[]>([]);
@@ -215,7 +215,7 @@ export default function LocalizacoesFisicasPage() {
       header: "Ações",
       accessor: (item: LocalizacaoFisica) => (
         <div className="flex gap-2">
-          {canEditEntity('localizacoes_fisicas') && (
+          {canEditPage('/almoxarifado/localizacoes*') && (
             <Button
               variant="outline"
               size="sm"
@@ -224,7 +224,7 @@ export default function LocalizacoesFisicasPage() {
               <Edit className="h-4 w-4" />
             </Button>
           )}
-          {canDeleteEntity('localizacoes_fisicas') && (
+          {canDeletePage('/almoxarifado/localizacoes*') && (
             <Button
               variant="outline"
               size="sm"
@@ -240,7 +240,7 @@ export default function LocalizacoesFisicasPage() {
   ];
 
   return (
-    <RequireEntity entityName="localizacoes_fisicas" action="read">
+    <RequirePage pagePath="/almoxarifado/localizacoes*" action="read">
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -276,7 +276,7 @@ export default function LocalizacoesFisicasPage() {
           {selectedAlmoxarifadoId && (
             <Button 
               onClick={handleNew}
-              disabled={!canCreateEntity('localizacoes_fisicas')}
+              disabled={!canCreatePage('/almoxarifado/localizacoes*')}
             >
               Nova Localização
             </Button>
@@ -292,7 +292,7 @@ export default function LocalizacoesFisicasPage() {
             <DataTable
               data={localizacoes}
               columns={columns}
-              onNew={canCreateEntity('localizacoes_fisicas') ? handleNew : undefined}
+              onNew={canCreatePage('/almoxarifado/localizacoes*') ? handleNew : undefined}
               onExport={() => toast.info("Exportação em desenvolvimento")}
               searchPlaceholder="Buscar localizações..."
               newButtonLabel="Nova Localização"
@@ -449,7 +449,7 @@ export default function LocalizacoesFisicasPage() {
           </Dialog>
         </PermissionGuard>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

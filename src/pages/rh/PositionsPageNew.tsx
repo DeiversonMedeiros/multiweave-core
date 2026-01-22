@@ -23,7 +23,7 @@ import { TableActions } from '@/components/rh/TableActions';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { Position } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -32,7 +32,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 // =====================================================
 
 export default function PositionsPageNew() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');
@@ -300,7 +300,7 @@ export default function PositionsPageNew() {
   }
 
   return (
-    <RequireEntity entityName="positions" action="read">
+    <RequirePage pagePath="/rh/positions*" action="read">
       <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
@@ -446,6 +446,6 @@ export default function PositionsPageNew() {
         </div>
       </FormModal>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

@@ -26,7 +26,7 @@ import {
 import { usePendingApprovals, useProcessApproval, useTransferApproval } from '@/hooks/approvals/useApprovals';
 import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { ApprovalModal } from '@/components/approvals/ApprovalModal';
 import { TransferApprovalModal } from '@/components/approvals/TransferApprovalModal';
@@ -279,7 +279,7 @@ const CentralAprovacoesExpandida: React.FC = () => {
   }
 
   return (
-    <RequireEntity entityName="approvals" action="read">
+    <RequirePage pagePath="/portal-gestor/aprovacoes*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -295,7 +295,7 @@ const CentralAprovacoesExpandida: React.FC = () => {
               Atualizar
             </Button>
             <PermissionButton
-              entityName="approval_configs"
+              page="/portal-gestor/aprovacoes*"
               action="read"
               href="/configuracoes/aprovacoes"
               className="flex items-center gap-2"
@@ -557,7 +557,7 @@ const CentralAprovacoesExpandida: React.FC = () => {
                       
                       <div className="flex items-center gap-2">
                         <PermissionButton
-                          entityName="approvals"
+                          page="/portal-gestor/aprovacoes*"
                           action="edit"
                           variant="outline"
                           size="sm"
@@ -567,7 +567,7 @@ const CentralAprovacoesExpandida: React.FC = () => {
                           Processar
                         </PermissionButton>
                         <PermissionButton
-                          entityName="approvals"
+                          page="/portal-gestor/aprovacoes*"
                           action="edit"
                           variant="outline"
                           size="sm"
@@ -608,7 +608,7 @@ const CentralAprovacoesExpandida: React.FC = () => {
           isLoading={transferApproval.isPending}
         />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

@@ -50,7 +50,7 @@ interface AnalyticsData {
 }
 
 export default function AnalyticsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { toast } = useToast();
   
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);

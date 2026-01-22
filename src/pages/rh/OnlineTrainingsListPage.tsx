@@ -27,7 +27,7 @@ import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { usePermissions } from '@/hooks/usePermissions';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
@@ -37,7 +37,7 @@ export default function OnlineTrainingsListPage() {
   const { selectedCompany } = useCompany();
   const { user } = useAuth();
   const { data: employeesData } = useEmployees();
-  const { canEditEntity, canCreateEntity } = usePermissions();
+  const { canEditPage, canCreatePage } = usePermissions();
   const { trainings, loading, error, createTraining } = useTraining();
   const { toast } = useToast();
   
@@ -149,7 +149,7 @@ export default function OnlineTrainingsListPage() {
   }
 
   return (
-    <RequireEntity entityName="trainings" action="read">
+    <RequirePage pagePath="/rh/treinamentos*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -162,7 +162,7 @@ export default function OnlineTrainingsListPage() {
               Acesse e gerencie seus treinamentos online
             </p>
           </div>
-          {canCreateEntity('trainings', 'create') && (
+          {canCreatePage('/rh/treinamentos*') && (
             <Button onClick={() => setShowCreateForm(true)}>
               <Plus className="h-4 w-4 mr-2" />
               Novo Treinamento Online
@@ -244,7 +244,7 @@ export default function OnlineTrainingsListPage() {
                         <Play className="h-4 w-4 mr-2" />
                         Acessar
                       </Button>
-                      {canEditEntity('trainings', 'edit') && (
+                      {canEditPage('/rh/treinamentos*') && (
                         <Button
                           onClick={() => handleManageTraining(training.id)}
                           variant="outline"
@@ -269,7 +269,7 @@ export default function OnlineTrainingsListPage() {
           />
         )}
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

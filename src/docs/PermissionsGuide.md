@@ -4,7 +4,7 @@
 
 O sistema de permissões implementado oferece controle granular de acesso baseado em:
 - **Módulos**: Funcionalidades do sistema (dashboard, users, companies, etc.)
-- **Entidades**: Dados específicos (users, companies, profiles, etc.)
+- **Páginas**: Rotas/caminhos (ex.: /cadastros/usuarios*, /rh/employees*)
 - **Ações**: Operações permitidas (read, create, edit, delete)
 
 ## Hooks Disponíveis
@@ -20,10 +20,11 @@ const {
   loading,              // Estado de carregamento
   isAdmin,              // Se é super admin
   checkModulePermission, // Verificar permissão de módulo (assíncrono)
-  checkEntityPermission, // Verificar permissão de entidade (assíncrono)
+  checkPagePermission,   // Verificar permissão de página (assíncrono)
   checkCompanyAccess,   // Verificar acesso a empresa (assíncrono)
   hasModulePermission,  // Verificar permissão de módulo (síncrono)
-  hasAnyModulePermission // Verificar se tem qualquer permissão no módulo
+  hasPagePermission,    // Verificar permissão de página (síncrono)
+  hasAnyModulePermission
 } = useAuthorization();
 ```
 
@@ -40,12 +41,8 @@ const {
   canEditModule,        // Pode editar no módulo
   canDeleteModule,      // Pode deletar no módulo
   hasModuleAccess,      // Tem acesso ao módulo
-  canReadEntity,        // Pode ler entidade
-  canCreateEntity,      // Pode criar entidade
-  canEditEntity,        // Pode editar entidade
-  canDeleteEntity,      // Pode deletar entidade
-  checkPermission,      // Verificar permissão específica
-  hasCompanyAccess      // Verificar acesso a empresa
+  canReadPage, canCreatePage, canEditPage, canDeletePage, hasPagePermission,
+  checkPermission, hasCompanyAccess
 } = usePermissions();
 ```
 
@@ -67,21 +64,21 @@ const { hasPermission, loading, isAdmin } = usePermissionCheck({
 Protege rotas inteiras baseado em permissões.
 
 ```typescript
-import { RequireAuth, RequireModule, RequireEntity } from '@/components/RequireAuth';
+import { RequireAuth, RequireModule, RequirePage } from '@/components/RequireAuth';
 
 // Proteger por módulo
 <RequireModule moduleName="users" action="read">
   <UsersPage />
 </RequireModule>
 
-// Proteger por entidade
-<RequireEntity entityName="users" action="create">
-  <CreateUserForm />
-</RequireEntity>
+// Proteger por página
+<RequirePage pagePath="/cadastros/usuarios*" action="read">
+  <UsersPage />
+</RequirePage>
 
 // Proteger com permissão customizada
 <RequireAuth 
-  requiredPermission={{ type: 'module', name: 'users', action: 'edit' }}
+  requiredPermission={{ type: 'page', name: '/cadastros/usuarios*', action: 'edit' }}
   fallback={<AccessDenied />}
 >
   <EditUserForm />

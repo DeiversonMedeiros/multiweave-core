@@ -20,7 +20,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useVacationRequests, FeriasItem } from '@/hooks/rh/useGestorPortal';
@@ -183,21 +183,21 @@ const AprovacaoFerias: React.FC = () => {
   // Loading state
   if (loading) {
     return (
-      <RequireEntity entityName="vacation_approvals" action="read">
+      <RequirePage pagePath="/portal-gestor/aprovacoes/ferias*" action="read">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="flex items-center space-x-2">
             <Loader2 className="h-6 w-6 animate-spin" />
             <span>Carregando férias...</span>
           </div>
         </div>
-      </RequireEntity>
+      </RequirePage>
     );
   }
 
   // Error state
   if (error) {
     return (
-      <RequireEntity entityName="vacation_approvals" action="read">
+      <RequirePage pagePath="/portal-gestor/aprovacoes/ferias*" action="read">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
@@ -208,12 +208,12 @@ const AprovacaoFerias: React.FC = () => {
             </Button>
           </div>
         </div>
-      </RequireEntity>
+      </RequirePage>
     );
   }
 
   return (
-    <RequireEntity entityName="vacation_approvals" action="read">
+    <RequirePage pagePath="/portal-gestor/aprovacoes/ferias*" action="read">
       <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -583,7 +583,7 @@ const AprovacaoFerias: React.FC = () => {
         </DialogContent>
       </Dialog>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

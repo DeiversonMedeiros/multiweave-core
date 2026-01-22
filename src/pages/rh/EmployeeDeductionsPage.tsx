@@ -290,7 +290,7 @@ const DeductionForm = React.forwardRef<HTMLFormElement, {
 DeductionForm.displayName = 'DeductionForm';
 
 export default function EmployeeDeductionsPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<{

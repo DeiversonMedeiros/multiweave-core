@@ -52,7 +52,7 @@ interface FiltrosCotacoes {
 }
 
 export function CotacoesRealizadas() {
-  const { canEditEntity, canDeleteEntity } = usePermissions();
+  const { canEditPage, canDeletePage } = usePermissions();
   const { data: cotacoes = [], isLoading } = useQuotes();
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
@@ -438,11 +438,11 @@ export function CotacoesRealizadas() {
                       return (
                         <>
                           {isRascunho ? (
-                            <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
+                            <PermissionGuard page="/compras/cotacoes*" action="edit" fallback={null}>
                               <Button 
                                 variant="default" 
                                 size="sm"
-                                disabled={!canEditEntity}
+                                disabled={!canEditPage('/compras/cotacoes*')}
                                 onClick={() => handleEdit(cotacao)}
                                 title="Continuar Cotação"
                               >
@@ -462,11 +462,11 @@ export function CotacoesRealizadas() {
                               </Button>
 
                               {isReprovada && (
-                                <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
+                                <PermissionGuard page="/compras/cotacoes*" action="edit" fallback={null}>
                                   <Button 
                                     variant="outline" 
                                     size="sm" 
-                                    disabled={!canEditEntity}
+                                    disabled={!canEditPage('/compras/cotacoes*')}
                                     onClick={() => handleEdit(cotacao)}
                                     title="Reabrir cotação para ajustes"
                                   >
@@ -476,11 +476,11 @@ export function CotacoesRealizadas() {
                               )}
 
                               {!isReprovada && (
-                                <PermissionGuard entity="cotacoes" action="edit" fallback={null}>
+                                <PermissionGuard page="/compras/cotacoes*" action="edit" fallback={null}>
                                   <Button 
                                     variant="outline" 
                                     size="sm" 
-                                    disabled={!canEditEntity}
+                                    disabled={!canEditPage('/compras/cotacoes*')}
                                     onClick={() => handleEdit(cotacao)}
                                     title="Editar cotação"
                                   >
@@ -491,12 +491,12 @@ export function CotacoesRealizadas() {
                             </>
                           )}
 
-                          <PermissionGuard entity="cotacoes" action="delete" fallback={null}>
+                          <PermissionGuard page="/compras/cotacoes*" action="delete" fallback={null}>
                             <Button
                               variant="outline"
                               size="sm"
                               className="text-red-600 hover:text-red-700"
-                              disabled={!canDeleteEntity}
+                              disabled={!canDeletePage('/compras/cotacoes*')}
                               onClick={() => handleDelete(cotacao)}
                               title="Excluir cotação"
                             >

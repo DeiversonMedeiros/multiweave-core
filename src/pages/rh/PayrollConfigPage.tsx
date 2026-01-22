@@ -12,7 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useCompany } from '@/lib/company-context';
 import { usePayrollConfig } from '@/hooks/rh/usePayrollCalculation';
 import { toast } from 'sonner';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface PayrollConfigFormData {
@@ -50,7 +50,7 @@ interface PayrollConfigFormData {
 
 export default function PayrollConfigPage() {
   const { selectedCompany } = useCompany();
-  const { canEditEntity } = usePermissions();
+  const { canEditPage } = usePermissions();
   const [formData, setFormData] = useState<PayrollConfigFormData>({
     codigo: '',
     descricao: '',
@@ -193,7 +193,7 @@ export default function PayrollConfigPage() {
   }
 
   return (
-    <RequireEntity entityName="payroll_config" action="read">
+    <RequirePage pagePath="/rh/PayrollConfigPage*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -208,7 +208,7 @@ export default function PayrollConfigPage() {
               <RefreshCw className="h-4 w-4 mr-2" />
               Resetar
             </Button>
-            <Button onClick={handleSave} disabled={saving || !canEditEntity}>
+            <Button onClick={handleSave} disabled={saving || !canEditPage('/rh/payroll-config*')}>
               {saving ? (
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
               ) : (
@@ -719,6 +719,6 @@ export default function PayrollConfigPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

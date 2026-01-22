@@ -33,7 +33,7 @@ import { CostCenter } from '@/integrations/supabase/rh-types';
 // =====================================================
 
 export default function UnitsPageNew() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [filters, setFilters] = useState<any>({});
   const [searchTerm, setSearchTerm] = useState('');

@@ -29,7 +29,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useToast } from '@/hooks/use-toast';
@@ -47,7 +47,7 @@ interface BankHoursRecord {
 }
 
 export default function BancoHorasPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
   const { toast } = useToast();

@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
 import { Separator } from "@/components/ui/separator";
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -111,7 +111,7 @@ const partnerSchema = z.object({
 type PartnerFormData = z.infer<typeof partnerSchema>;
 
 export default function Parceiros() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [parceiros, setParceiros] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -387,7 +387,7 @@ export default function Parceiros() {
   if (loading) return <div>Carregando...</div>;
 
   return (
-    <RequireEntity entityName="partners" action="read">
+    <RequirePage pagePath="/cadastros/parceiros*" action="read">
       <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Parceiros</h1>
@@ -422,7 +422,7 @@ export default function Parceiros() {
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por razão social ou CNPJ..."
         newButtonLabel="Novo Parceiro"
-        showNewButton={canCreateEntity('partners')}
+        showNewButton={canCreatePage('/cadastros/parceiros*')}
       />
 
       <PermissionGuard entity="partners" action="create">
@@ -1044,6 +1044,6 @@ export default function Parceiros() {
         </Dialog>
       </PermissionGuard>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }

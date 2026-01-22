@@ -53,12 +53,37 @@ export default function CorrecaoPontoPage() {
   );
 
   // Criar mapa de correções pendentes por data
+  // Normalizar as datas para garantir formato YYYY-MM-DD para comparação
   const pendingCorrectionsByDate = new Map<string, boolean>();
   pendingCorrections?.forEach(correction => {
-    if (correction.status === 'pendente') {
-      pendingCorrectionsByDate.set(correction.data_original, true);
+    if (correction.status === 'pendente' && correction.data_original) {
+      // Normalizar data para formato YYYY-MM-DD
+      let normalizedDate: string;
+      if (typeof correction.data_original === 'string') {
+        // Se já está no formato YYYY-MM-DD, usar diretamente
+        if (correction.data_original.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          normalizedDate = correction.data_original;
+        } else {
+          // Tentar converter de outros formatos
+          const date = new Date(correction.data_original);
+          if (!isNaN(date.getTime())) {
+            normalizedDate = date.toISOString().split('T')[0];
+          } else {
+            console.warn('⚠️ [CorrecaoPontoPage] Data inválida:', correction.data_original);
+            return;
+          }
+        }
+      } else {
+        console.warn('⚠️ [CorrecaoPontoPage] data_original não é string:', correction.data_original);
+        return;
+      }
+      
+      pendingCorrectionsByDate.set(normalizedDate, true);
+      console.log('✅ [CorrecaoPontoPage] Adicionada correção pendente para:', normalizedDate, correction);
     }
   });
+  
+  console.log('📅 [CorrecaoPontoPage] Mapa de correções pendentes:', Array.from(pendingCorrectionsByDate.entries()));
 
   // Desestruturar dados
   const recordsByDate = monthlyRecords?.recordsByDate || {};

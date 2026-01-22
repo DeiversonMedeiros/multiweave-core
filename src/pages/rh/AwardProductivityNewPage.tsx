@@ -13,7 +13,7 @@ import { AwardProductivityCreateData, Employee } from '@/integrations/supabase/r
 import { useRHData } from '@/hooks/generic/useEntityData';
 import { useCompany } from '@/lib/company-context';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -36,7 +36,7 @@ const AwardProductivityNewPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="awards_productivity" action="read">
+    <RequirePage pagePath="/rh/AwardProductivityNewPage*" action="read">
       <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -73,7 +73,7 @@ const AwardProductivityNewPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

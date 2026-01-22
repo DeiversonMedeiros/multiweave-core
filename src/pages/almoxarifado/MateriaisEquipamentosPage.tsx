@@ -28,13 +28,13 @@ import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useLocalizacoesFisicas } from '@/hooks/almoxarifado/useLocalizacoesFisicas';
 import FormModal from '@/components/almoxarifado/FormModal';
 import { toast } from 'sonner';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCompany } from '@/lib/company-context';
 
 const MateriaisEquipamentosPage: React.FC = () => {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
@@ -202,7 +202,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="materials_equipment" action="read">
+    <RequirePage pagePath="/almoxarifado/materiais*" action="read">
       <div className="container mx-auto p-6">
         <div className="mb-8">
           <div className="flex justify-between items-center mb-4">
@@ -731,7 +731,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
         </div>
       )}
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

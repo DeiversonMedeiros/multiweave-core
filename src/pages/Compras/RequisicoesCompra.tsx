@@ -66,7 +66,7 @@ interface RequisicaoItem {
 
 // Componente principal protegido por permissões
 export default function RequisicoesCompraPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const [showNovaSolicitacao, setShowNovaSolicitacao] = useState(false);
 
   return (
@@ -127,7 +127,7 @@ export default function RequisicoesCompraPage() {
 
 // Componente da lista de requisições
 function RequisicoesList() {
-  const { canEditEntity, canDeleteEntity } = usePermissions();
+  const { canEditPage, canDeletePage } = usePermissions();
   const { data: requisicoes = [], isLoading } = usePurchaseRequisitions();
   const { users } = useUsers();
   const { data: costCentersData } = useActiveCostCenters();
@@ -534,11 +534,11 @@ function RequisicoesList() {
                     <Eye className="h-4 w-4" />
                   </Button>
                   
-                    <PermissionGuard entity="solicitacoes_compra" action="edit" fallback={null}>
+                    <PermissionGuard page="/compras/requisicoes*" action="edit" fallback={null}>
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        disabled={!canEditEntity || requisicao.status === 'cancelada'}
+                        disabled={!canEditPage('/compras/requisicoes*') || requisicao.status === 'cancelada'}
                         onClick={() => {
                           setSelectedRequisicao(requisicao);
                           setShowEditDialog(true);
@@ -549,12 +549,12 @@ function RequisicoesList() {
                     </Button>
                   </PermissionGuard>
                   
-                    <PermissionGuard entity="solicitacoes_compra" action="delete" fallback={null}>
+                    <PermissionGuard page="/compras/requisicoes*" action="delete" fallback={null}>
                       <Button
                         variant="outline"
                         size="sm"
                         className="text-red-600 hover:text-red-700"
-                        disabled={!canDeleteEntity}
+                        disabled={!canDeletePage('/compras/requisicoes*')}
                       >
                       <Trash2 className="h-4 w-4" />
                     </Button>

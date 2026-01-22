@@ -11,7 +11,7 @@ import EmployeeUnionMembershipForm from '@/components/rh/EmployeeUnionMembership
 import { useCreateEmployeeUnionMembership } from '@/hooks/rh/useUnions';
 import { EmployeeUnionMembershipCreateData } from '@/integrations/supabase/rh-types';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 
@@ -29,7 +29,7 @@ const EmployeeUnionMembershipNewPage: React.FC = () => {
   };
 
   return (
-    <RequireEntity entityName="employee_union_memberships" action="read">
+    <RequirePage pagePath="/rh/EmployeeUnionMembershipNewPage*" action="read">
       <div className="container mx-auto py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -65,7 +65,7 @@ const EmployeeUnionMembershipNewPage: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

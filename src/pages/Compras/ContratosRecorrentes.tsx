@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -273,7 +273,7 @@ const ContratosRecorrentes: React.FC = () => {
   const stats = calcularEstatisticas();
 
   return (
-    <RequireEntity entityName="contratos_compra" action="read">
+    <RequirePage pagePath="/compras/contratos*" action="read">
       <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
@@ -752,7 +752,7 @@ const ContratosRecorrentes: React.FC = () => {
         </DialogContent>
       </Dialog>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

@@ -405,6 +405,7 @@ DECLARE
     v_correct_answers INTEGER;
     v_total_score DECIMAL;
     v_percent_correct DECIMAL;
+    v_minimum_score DECIMAL;
     v_approved BOOLEAN;
     v_result JSONB;
 BEGIN
@@ -454,11 +455,12 @@ BEGIN
     END IF;
 
     -- Buscar nota mínima de aprovação
-    SELECT nota_minima_aprovacao INTO v_approved
+    SELECT COALESCE(nota_minima_aprovacao, 70.00) INTO v_minimum_score
     FROM rh.training_exams
     WHERE id = v_attempt.exam_id;
 
-    v_approved := v_percent_correct >= v_approved;
+    -- Verificar se foi aprovado
+    v_approved := v_percent_correct >= v_minimum_score;
 
     -- Atualizar tentativa
     UPDATE rh.training_exam_attempts

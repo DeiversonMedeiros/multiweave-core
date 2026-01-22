@@ -28,7 +28,7 @@ import { usePurchaseOrders } from '@/hooks/compras/useComprasData';
 
 // Componente principal protegido por permissões
 export default function PedidosCompraPage() {
-  const { canCreateEntity, canEditEntity, canDeleteEntity } = usePermissions();
+  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
 
   return (
     <RequireAuth 
@@ -58,7 +58,7 @@ export default function PedidosCompraPage() {
 
 // Componente da lista de pedidos
 function PedidosList() {
-  const { canEditEntity, canDeleteEntity } = usePermissions();
+  const { canEditPage, canDeletePage } = usePermissions();
   const { data: pedidos = [], isLoading } = usePurchaseOrders();
   const [search, setSearch] = useState('');
 
@@ -160,18 +160,18 @@ function PedidosList() {
                       <Eye className="h-4 w-4" />
                     </Button>
 
-                    <PermissionGuard entity="pedidos_compra" action="edit" fallback={null}>
-                      <Button variant="outline" size="sm" disabled={!canEditEntity}>
+                    <PermissionGuard page="/compras/pedidos*" action="edit" fallback={null}>
+                      <Button variant="outline" size="sm" disabled={!canEditPage('/compras/pedidos*')}>
                         <Edit className="h-4 w-4" />
                       </Button>
                     </PermissionGuard>
 
-                    <PermissionGuard entity="pedidos_compra" action="delete" fallback={null}>
+                    <PermissionGuard page="/compras/pedidos*" action="delete" fallback={null}>
                       <Button
                         variant="outline"
                         size="sm"
                         className="text-red-600 hover:text-red-700"
-                        disabled={!canDeleteEntity}
+                        disabled={!canDeletePage('/compras/pedidos*')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

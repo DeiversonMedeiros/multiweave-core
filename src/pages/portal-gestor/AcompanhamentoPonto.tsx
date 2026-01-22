@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTimeRecordsPaginated } from '@/hooks/rh/useTimeRecords';
@@ -73,6 +73,21 @@ const AcompanhamentoPonto: React.FC = () => {
   };
 
   const dateRange = getDateRange();
+  
+  // Log detalhado do user antes de passar para o hook
+  useEffect(() => {
+    console.log('[AcompanhamentoPonto] 👤 User context:', {
+      userId: user?.id,
+      userEmail: user?.email,
+      hasUser: !!user,
+      userType: typeof user,
+      selectedCompany: selectedCompany?.id,
+      dateRange,
+      statusFilter,
+      timestamp: new Date().toISOString(),
+    });
+  }, [user?.id, selectedCompany?.id, dateRange, statusFilter]);
+  
   const {
     data,
     fetchNextPage: originalFetchNextPage,
@@ -280,7 +295,7 @@ const AcompanhamentoPonto: React.FC = () => {
   const stats = getEstatisticas();
 
   return (
-    <RequireEntity entityName="time_tracking_management" action="read">
+    <RequirePage pagePath="/portal-gestor/acompanhamento/ponto*" action="read">
       <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -839,7 +854,7 @@ const AcompanhamentoPonto: React.FC = () => {
         </CardContent>
       </Card>
     </div>
-    </RequireEntity>
+    </RequirePage>
   );
 };
 

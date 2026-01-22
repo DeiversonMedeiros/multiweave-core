@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { ConciliacaoBancariaPage as ConciliacaoBancariaComponent } from '@/components/financial/ConciliacaoBancariaPage';
-import { RequireEntity } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 interface ConciliacaoBancariaPageProps {
   className?: string;
@@ -15,7 +15,7 @@ interface ConciliacaoBancariaPageProps {
 
 export default function ConciliacaoBancariaPage({ className }: ConciliacaoBancariaPageProps) {
   return (
-    <RequireEntity entityName="conciliacoes_bancarias" action="read">
+    <RequirePage pagePath="/financeiro/conciliacao-bancaria*" action="read">
       <div className={`space-y-6 ${className}`}>
         <div className="flex items-center justify-between">
           <div>
@@ -27,7 +27,7 @@ export default function ConciliacaoBancariaPage({ className }: ConciliacaoBancar
         </div>
         <ConciliacaoBancariaComponent />
       </div>
-    </RequireEntity>
+    </RequirePage>
   );
 }
 

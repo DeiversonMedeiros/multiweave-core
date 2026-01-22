@@ -140,7 +140,7 @@ export default function ParametrosCombustivel() {
                     </CardDescription>
                   </div>
                   <PermissionButton
-                    entityName="fuel_types"
+                    page="/combustivel/parametros*"
                     action="create"
                     onClick={() => {
                       setEditingFuelType(null);
@@ -177,7 +177,7 @@ export default function ParametrosCombustivel() {
                             )}
                           </Badge>
                           <PermissionButton
-                            entityName="fuel_types"
+                            page="/combustivel/parametros*"
                             action="edit"
                             variant="ghost"
                             size="sm"
@@ -189,7 +189,7 @@ export default function ParametrosCombustivel() {
                             <Edit className="w-4 h-4" />
                           </PermissionButton>
                           <PermissionButton
-                            entityName="fuel_types"
+                            page="/combustivel/parametros*"
                             action="delete"
                             variant="ghost"
                             size="sm"
