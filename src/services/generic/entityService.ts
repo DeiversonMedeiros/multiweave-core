@@ -662,6 +662,17 @@ export const EntityService = {
     
     // Para schemas que não sejam 'public', usar RPC function
     if (schema !== 'public') {
+      // Validar companyId
+      if (!companyId || companyId.trim() === '') {
+        console.error('❌ [DEBUG] EntityService.update - companyId inválido:', {
+          companyId,
+          schema,
+          table,
+          id
+        });
+        throw new Error('companyId é obrigatório e não pode estar vazio');
+      }
+      
       // Remover campos que não devem ser atualizados (para evitar duplicação/erros)
       const dataClean: Record<string, any> = {};
       
@@ -680,7 +691,11 @@ export const EntityService = {
         }
         
         // Converter strings vazias para null
-        if (value === '') {
+        // IMPORTANTE: Campos UUID (_id) nunca devem ser strings vazias
+        if (value === '' || value === null) {
+          dataClean[key] = null;
+        } else if (typeof value === 'string' && key.endsWith('_id') && value.trim() === '') {
+          // Proteção extra: se for um campo _id (UUID) e estiver vazio, garantir null
           dataClean[key] = null;
         } else {
           dataClean[key] = value;
@@ -699,6 +714,23 @@ export const EntityService = {
         throw new Error('Nenhum campo válido para atualizar após filtragem');
       }
       
+      // Log detalhado de todos os campos, especialmente UUIDs
+      const detailedData = Object.entries(dataClean).map(([k, v]) => {
+        const isUuidField = k.endsWith('_id') || k === 'uuid';
+        return {
+          key: k,
+          value: v,
+          type: typeof v,
+          isNull: v === null,
+          isUndefined: v === undefined,
+          isString: typeof v === 'string',
+          stringLength: typeof v === 'string' ? v.length : null,
+          isEmptyString: typeof v === 'string' && v === '',
+          isUuidField: isUuidField,
+          valuePreview: typeof v === 'string' ? (v.length > 50 ? v.substring(0, 50) + '...' : v) : v
+        };
+      });
+
       console.log('🔍 [DEBUG] EntityService.update - chamando RPC update_entity_data:', {
         schema_name: schema,
         table_name: table,
@@ -706,14 +738,7 @@ export const EntityService = {
         id_param: id,
         data_keys: Object.keys(dataClean),
         data_count: Object.keys(dataClean).length,
-        data_sample: Object.entries(dataClean).slice(0, 10).map(([k, v]) => ({ 
-          key: k, 
-          value: v, 
-          type: typeof v,
-          isNull: v === null,
-          isString: typeof v === 'string',
-          stringLength: typeof v === 'string' ? v.length : null
-        })),
+        data_detailed: detailedData,
         full_data: dataClean
       });
 

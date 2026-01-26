@@ -158,11 +158,11 @@ export const useAuthorization = () => {
         console.error('[useAuthorization] Erro ao carregar permissões de página:', pageError);
         setPagePermissions([]);
       } else {
-        console.log('[useAuthorization] Permissões de página carregadas:', pageData);
-        console.log('[useAuthorization] Total de permissões de página:', pageData?.length || 0);
-        if (pageData && pageData.length > 0) {
-          console.log('[useAuthorization] Permissões de página RH:', pageData.filter(p => p.page_path.includes('/rh/')));
-          console.log('[useAuthorization] Permissões de treinamento:', pageData.filter(p => p.page_path.includes('training') || p.page_path.includes('treinamento')));
+        const trainingPerms = pageData?.filter(p => p.page_path.includes('training') || p.page_path.includes('treinamento')) || [];
+        if (trainingPerms.length > 0) {
+          console.log('[useAuthorization] ✅ TREINAMENTO - Permissões carregadas:', trainingPerms);
+        } else {
+          console.log('[useAuthorization] ❌ TREINAMENTO - Nenhuma permissão de treinamento encontrada');
         }
         setPagePermissions(pageData || []);
       }
@@ -337,37 +337,38 @@ export const useAuthorization = () => {
     pagePath: string,
     action: PermissionAction
   ): boolean => {
-    console.log('[useAuthorization] Verificando permissão de página:', {
-      pagePath,
-      action,
-      isAdmin,
-      pagePermissionsCount: pagePermissions.length
-    });
+    const isTrainingPath = pagePath.includes('treinamento') || pagePath.includes('training');
+    
+    if (isTrainingPath) {
+      console.log('[useAuthorization] 🔍 TREINAMENTO - Verificando permissão:', {
+        pagePath,
+        action,
+        isAdmin,
+        pagePermissionsCount: pagePermissions.length,
+        pagePermissions: pagePermissions.filter(p => p.page_path.includes('treinamento') || p.page_path.includes('training'))
+      });
+    }
     
     if (isAdmin) {
-      console.log('[useAuthorization] Usuário é admin - permitindo acesso');
       return true;
     }
     
     if (!pagePermissions.length) {
-      console.log('[useAuthorization] Nenhuma permissão de página carregada - negando acesso');
+      if (isTrainingPath) {
+        console.log('[useAuthorization] ❌ TREINAMENTO - Nenhuma permissão de página carregada');
+      }
       return false;
     }
 
     // Normalizar caminho (remove parâmetros de rota, mas mantém estrutura)
     const normalizePath = (path: string): string => {
       const hasWildcard = path.endsWith('*');
-      // Remove wildcard temporariamente para processar
       let normalized = hasWildcard ? path.slice(0, -1) : path;
       
-      // Remove parâmetros de rota (/:id, /:id/edit, etc) mas mantém estrutura
-      // Exemplo: /rh/training/123 -> /rh/training
-      // Exemplo: /rh/training/123/edit -> /rh/training
-      normalized = normalized.replace(/\/[^/]+\/edit$/, ''); // Remove /:id/edit
-      normalized = normalized.replace(/\/[^/]+\/new$/, ''); // Remove /:id/new
-      normalized = normalized.replace(/\/:[^/]+/g, ''); // Remove parâmetros restantes
+      normalized = normalized.replace(/\/[^/]+\/edit$/, '');
+      normalized = normalized.replace(/\/[^/]+\/new$/, '');
+      normalized = normalized.replace(/\/:[^/]+/g, '');
       
-      // Se o caminho original tinha wildcard, adiciona de volta
       if (hasWildcard) {
         normalized = normalized + '*';
       }
@@ -376,36 +377,42 @@ export const useAuthorization = () => {
     };
 
     const normalizedPath = normalizePath(pagePath);
-    console.log('[useAuthorization] Caminho original:', pagePath);
-    console.log('[useAuthorization] Caminho normalizado:', normalizedPath);
-    console.log('[useAuthorization] Permissões disponíveis:', pagePermissions.map(p => p.page_path));
+    
+    if (isTrainingPath) {
+      console.log('[useAuthorization] 🔍 TREINAMENTO - Normalização:', {
+        original: pagePath,
+        normalized: normalizedPath
+      });
+    }
 
     // Buscar permissão - primeiro exata, depois com wildcard
     let permission = pagePermissions.find(p => {
       // Comparação exata (com ou sem wildcard)
       if (p.page_path === normalizedPath) {
-        console.log('[useAuthorization] Match exato encontrado:', p.page_path);
+        if (isTrainingPath) {
+          console.log('[useAuthorization] ✅ TREINAMENTO - Match exato:', p.page_path);
+        }
         return true;
       }
       
       // Se a permissão tem wildcard, verificar se o caminho normalizado começa com o padrão
       if (p.page_path.endsWith('*')) {
-        const pattern = p.page_path.slice(0, -1); // Remove *
+        const pattern = p.page_path.slice(0, -1);
         const pathWithoutWildcard = normalizedPath.replace(/\*$/, '');
         const matches = pathWithoutWildcard.startsWith(pattern);
-        if (matches) {
-          console.log('[useAuthorization] Match com wildcard (permissão):', p.page_path, 'para caminho:', normalizedPath);
+        if (matches && isTrainingPath) {
+          console.log('[useAuthorization] ✅ TREINAMENTO - Match wildcard (permissão):', p.page_path, 'para:', normalizedPath);
         }
         return matches;
       }
       
       // Se o caminho normalizado tem wildcard, verificar se a permissão começa com o padrão
       if (normalizedPath.endsWith('*')) {
-        const pattern = normalizedPath.slice(0, -1); // Remove *
+        const pattern = normalizedPath.slice(0, -1);
         const permWithoutWildcard = p.page_path.replace(/\*$/, '');
         const matches = permWithoutWildcard.startsWith(pattern);
-        if (matches) {
-          console.log('[useAuthorization] Match com wildcard (caminho):', normalizedPath, 'para permissão:', p.page_path);
+        if (matches && isTrainingPath) {
+          console.log('[useAuthorization] ✅ TREINAMENTO - Match wildcard (caminho):', normalizedPath, 'para:', p.page_path);
         }
         return matches;
       }
@@ -413,14 +420,11 @@ export const useAuthorization = () => {
       return false;
     });
     
-    if (permission) {
-      console.log('[useAuthorization] Permissão encontrada:', permission.page_path);
-    } else {
-      console.log('[useAuthorization] Nenhuma permissão encontrada para:', normalizedPath);
-    }
-
     if (!permission) {
-      console.log('[useAuthorization] Nenhuma permissão encontrada para:', normalizedPath);
+      if (isTrainingPath) {
+        console.log('[useAuthorization] ❌ TREINAMENTO - Nenhuma permissão encontrada para:', normalizedPath);
+        console.log('[useAuthorization] 🔍 TREINAMENTO - Permissões disponíveis:', pagePermissions.map(p => p.page_path));
+      }
       return false;
     }
 
@@ -434,15 +438,14 @@ export const useAuthorization = () => {
       }
     })();
     
-    console.log('[useAuthorization] Resultado da verificação:', {
-      pagePath: permission.page_path,
-      action,
-      canRead: permission.can_read,
-      canCreate: permission.can_create,
-      canEdit: permission.can_edit,
-      canDelete: permission.can_delete,
-      result
-    });
+    if (isTrainingPath) {
+      console.log('[useAuthorization] ✅ TREINAMENTO - Resultado:', {
+        permissionPath: permission.page_path,
+        action,
+        canRead: permission.can_read,
+        result
+      });
+    }
 
     return result;
   }, [isAdmin, pagePermissions]);

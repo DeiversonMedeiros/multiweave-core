@@ -82,32 +82,27 @@ export const useMenu = () => {
   // Verificação de permissões habilitada
   const { isAdmin, hasModulePermission, hasPagePermission, loading } = usePermissions();
   const canReadModule = (moduleName: string) => {
-    console.log('[useMenu] canReadModule chamado:', { moduleName, isAdmin, loading });
     if (isAdmin) {
-      console.log('[useMenu] Usuário é admin - permitindo módulo:', moduleName);
       return true;
     }
     if (loading || typeof hasModulePermission !== 'function') {
-      console.log('[useMenu] Carregando ou função não disponível - permitindo temporariamente:', moduleName);
       return true; // Permitir acesso durante carregamento
     }
-    const result = hasModulePermission(moduleName, 'read');
-    console.log('[useMenu] Resultado canReadModule:', { moduleName, result });
-    return result;
+    return hasModulePermission(moduleName, 'read');
   };
   
   const canReadPage = (pagePath: string) => {
-    console.log('[useMenu] canReadPage chamado:', { pagePath, isAdmin, loading });
     if (isAdmin) {
-      console.log('[useMenu] Usuário é admin - permitindo página:', pagePath);
       return true;
     }
     if (loading || typeof hasPagePermission !== 'function') {
-      console.log('[useMenu] Carregando ou função não disponível - permitindo temporariamente:', pagePath);
       return true; // Permitir acesso durante carregamento
     }
     const result = hasPagePermission(pagePath, 'read');
-    console.log('[useMenu] Resultado canReadPage:', { pagePath, result });
+    // Log apenas para treinamento para debug
+    if (pagePath.includes('treinamento') || pagePath.includes('training')) {
+      console.log('[useMenu] 🔍 Treinamento - canReadPage:', { pagePath, result, loading, isAdmin });
+    }
     return result;
   };
 
@@ -1542,18 +1537,27 @@ export const useMenu = () => {
   // Filtrar menu baseado nas permissões do usuário
   const filteredMenuItems = useMemo(() => {
     const filterItems = (items: MenuItem[]): MenuItem[] => {
-      console.log('[useMenu] Filtrando itens do menu, total:', items.length);
       return items
         .map(item => {
           // Filtrar filhos primeiro para verificar se algum tem permissão
           const filteredChildren = item.children ? filterItems(item.children) : undefined;
           
-          console.log(`[useMenu] Verificando item: ${item.id} (${item.title})`, {
-            url: item.url,
-            requiresPermission: item.requiresPermission,
-            hasChildren: !!item.children,
-            filteredChildrenCount: filteredChildren?.length || 0
-          });
+          // Log detalhado para treinamento e itens relacionados
+          const isTrainingItem = item.id === 'rh-treinamentos' || 
+                                 item.id === 'rh-treinamentos-geral' || 
+                                 item.id === 'rh-treinamentos-online' ||
+                                 item.id === 'rh-gestao-operacional' ||
+                                 item.id === 'rh';
+          
+          if (isTrainingItem) {
+            console.log(`[useMenu] 🔍 TREINAMENTO - Verificando item: ${item.id} (${item.title})`, {
+              url: item.url,
+              requiresPermission: item.requiresPermission,
+              hasChildren: !!item.children,
+              filteredChildrenCount: filteredChildren?.length || 0,
+              childrenIds: filteredChildren?.map(c => c.id) || []
+            });
+          }
           
           // Verificar se o item tem permissão
           if (item.requiresPermission) {
@@ -1561,51 +1565,90 @@ export const useMenu = () => {
             
             if (item.requiresPermission.type === 'module') {
               hasPermission = canReadModule(item.requiresPermission.name);
-              console.log(`[useMenu] Verificação de módulo para ${item.id}:`, {
-                module: item.requiresPermission.name,
-                hasPermission
-              });
               
-              // Para módulos principais, exigir permissão direta do módulo
-              // Não permitir que apareça apenas porque tem filhos com permissão
-              if (!hasPermission) {
-                console.log(`[useMenu] Item ${item.id} (módulo) sem permissão direta - REMOVENDO`);
-                return null;
+              if (isTrainingItem) {
+                console.log(`[useMenu] 🔍 TREINAMENTO - Verificação de módulo para ${item.id}:`, {
+                  module: item.requiresPermission.name,
+                  hasPermission,
+                  hasChildren: !!item.children,
+                  filteredChildrenCount: filteredChildren?.length || 0
+                });
               }
-            } else if (item.requiresPermission.type === 'page') {
-              // Se for página, verificar pelo caminho da URL do item
-              const pagePath = item.url + '*';
-              hasPermission = canReadPage(pagePath);
-              console.log(`[useMenu] Verificação de página para ${item.id}:`, {
-                pagePath,
-                hasPermission
-              });
               
-              // Para páginas, se não tem permissão direta mas tem filhos com permissão, permitir o item
+              // Para módulos principais, se não tem permissão direta, verificar se tem filhos com permissão
               if (!hasPermission) {
                 // Se tem filhos e pelo menos um filho está disponível, manter o item
                 if (item.children && filteredChildren && filteredChildren.length > 0) {
-                  console.log(`[useMenu] Item ${item.id} (página) sem permissão direta, mas tem ${filteredChildren.length} filhos com permissão - MANTENDO`);
+                  if (isTrainingItem) {
+                    console.log(`[useMenu] ✅ TREINAMENTO - Item ${item.id} (módulo) sem permissão direta, mas tem ${filteredChildren.length} filhos com permissão - MANTENDO`);
+                  }
                   return {
                     ...item,
                     children: filteredChildren
                   };
                 }
-                console.log(`[useMenu] Item ${item.id} (página) sem permissão e sem filhos com permissão - REMOVENDO`);
+                if (isTrainingItem) {
+                  console.log(`[useMenu] ❌ TREINAMENTO - Item ${item.id} (módulo) sem permissão e sem filhos com permissão - REMOVENDO`);
+                }
+                return null;
+              }
+            } else if (item.requiresPermission.type === 'page') {
+              // Se for página, usar o name definido em requiresPermission ou construir a partir da URL
+              const pagePath = item.requiresPermission.name || (item.url + '*');
+              hasPermission = canReadPage(pagePath);
+              
+              if (isTrainingItem) {
+                console.log(`[useMenu] 🔍 TREINAMENTO - Verificação de página para ${item.id}:`, {
+                  pagePath,
+                  url: item.url,
+                  permissionName: item.requiresPermission.name,
+                  hasPermission
+                });
+              }
+              
+              // Para páginas, se não tem permissão direta mas tem filhos com permissão, permitir o item
+              if (!hasPermission) {
+                // Se tem filhos e pelo menos um filho está disponível, manter o item
+                if (item.children && filteredChildren && filteredChildren.length > 0) {
+                  if (isTrainingItem) {
+                    console.log(`[useMenu] ✅ TREINAMENTO - Item ${item.id} sem permissão direta, mas tem ${filteredChildren.length} filhos com permissão - MANTENDO`);
+                  }
+                  return {
+                    ...item,
+                    children: filteredChildren
+                  };
+                }
+                if (isTrainingItem) {
+                  console.log(`[useMenu] ❌ TREINAMENTO - Item ${item.id} sem permissão e sem filhos com permissão - REMOVENDO`);
+                }
                 return null;
               }
             }
-            console.log(`[useMenu] Item ${item.id} tem permissão - MANTENDO`);
+            
+            if (isTrainingItem) {
+              console.log(`[useMenu] ✅ TREINAMENTO - Item ${item.id} tem permissão - MANTENDO`);
+            }
           } else {
-            // Se o item não tem requiresPermission definido, não deve aparecer
-            // (itens sem permissão definida não devem ser exibidos por segurança)
-            console.log(`[useMenu] Item ${item.id} sem requiresPermission definido - REMOVENDO por segurança`);
-            return null;
+            // Se o item não tem requiresPermission definido, verificar se tem filhos com permissão
+            if (item.children && filteredChildren && filteredChildren.length > 0) {
+              if (isTrainingItem) {
+                console.log(`[useMenu] ✅ TREINAMENTO - Item ${item.id} sem requiresPermission, mas tem ${filteredChildren.length} filhos com permissão - MANTENDO`);
+              }
+              // Continuar para retornar o item com filhos filtrados
+            } else {
+              // Se não tem requiresPermission e não tem filhos com permissão, remover
+              if (isTrainingItem) {
+                console.log(`[useMenu] ❌ TREINAMENTO - Item ${item.id} sem requiresPermission e sem filhos com permissão - REMOVENDO`);
+              }
+              return null;
+            }
           }
 
           // Se tem filhos, só incluir se pelo menos um filho estiver disponível
           if (item.children && filteredChildren && filteredChildren.length === 0) {
-            console.log(`[useMenu] Item ${item.id} tem filhos mas nenhum está disponível - REMOVENDO`);
+            if (isTrainingItem) {
+              console.log(`[useMenu] ❌ TREINAMENTO - Item ${item.id} tem filhos mas nenhum está disponível - REMOVENDO`);
+            }
             return null;
           }
 
@@ -1618,10 +1661,20 @@ export const useMenu = () => {
     };
 
     const result = filterItems(menuItems);
-    console.log('[useMenu] Resultado final do filtro:', {
-      totalItems: result.length,
-      items: result.map(i => ({ id: i.id, title: i.title, childrenCount: i.children?.length || 0 }))
-    });
+    
+    // Log detalhado apenas para treinamento
+    const trainingItem = result.find(item => item.id === 'rh-treinamentos');
+    if (trainingItem) {
+      console.log('[useMenu] ✅ TREINAMENTO - Item encontrado no menu final:', {
+        id: trainingItem.id,
+        title: trainingItem.title,
+        childrenCount: trainingItem.children?.length || 0,
+        children: trainingItem.children?.map(c => ({ id: c.id, title: c.title })) || []
+      });
+    } else {
+      console.log('[useMenu] ❌ TREINAMENTO - Item NÃO encontrado no menu final');
+    }
+    
     return result;
   }, [menuItems, canReadModule, canReadPage]);
 

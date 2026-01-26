@@ -48,6 +48,7 @@ import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useServicesByProject } from '@/hooks/useServices';
 import { useUsers } from '@/hooks/useUsers';
 import { FluxoAprovacao } from '@/components/Compras/FluxoAprovacao';
+import { formatDateOnly } from '@/lib/utils';
 
 interface RequisicaoItem {
   id: string;
@@ -385,10 +386,10 @@ function RequisicoesList() {
       return {
         'Número': req.numero_requisicao || '',
         'Data Solicitação': req.data_solicitacao 
-          ? new Date(req.data_solicitacao).toLocaleDateString('pt-BR')
+          ? formatDateOnly(req.data_solicitacao)
           : '',
         'Data Necessidade': req.data_necessidade
-          ? new Date(req.data_necessidade).toLocaleDateString('pt-BR')
+          ? formatDateOnly(req.data_necessidade)
           : '',
         'Status': statusLabel,
         'Centro de Custo': costCentersMap.get(req.centro_custo_id) || '',
@@ -501,12 +502,12 @@ function RequisicoesList() {
               <TableCell className="font-medium">{requisicao.numero_requisicao}</TableCell>
               <TableCell>
                   {requisicao.data_solicitacao
-                    ? new Date(requisicao.data_solicitacao).toLocaleDateString('pt-BR')
+                    ? formatDateOnly(requisicao.data_solicitacao)
                     : '--'}
                 </TableCell>
                 <TableCell>
                   {requisicao.data_necessidade
-                    ? new Date(requisicao.data_necessidade).toLocaleDateString('pt-BR')
+                    ? formatDateOnly(requisicao.data_necessidade)
                     : '--'}
                 </TableCell>
                 <TableCell>{getStatusBadge(requisicao.status || requisicao.workflow_state)}</TableCell>
@@ -589,11 +590,11 @@ function RequisicoesList() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Data Solicitação</Label>
-                  <p>{selectedRequisicao.data_solicitacao ? new Date(selectedRequisicao.data_solicitacao).toLocaleDateString('pt-BR') : '--'}</p>
+                  <p>{selectedRequisicao.data_solicitacao ? formatDateOnly(selectedRequisicao.data_solicitacao) : '--'}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Data Necessidade</Label>
-                  <p>{selectedRequisicao.data_necessidade ? new Date(selectedRequisicao.data_necessidade).toLocaleDateString('pt-BR') : '--'}</p>
+                  <p>{selectedRequisicao.data_necessidade ? formatDateOnly(selectedRequisicao.data_necessidade) : '--'}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Solicitante</Label>
@@ -1887,6 +1888,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
   // Estados para busca nos selects
   const [costCenterSearch, setCostCenterSearch] = useState('');
   const [projectSearch, setProjectSearch] = useState('');
+  const [almoxarifadoSearch, setAlmoxarifadoSearch] = useState('');
   
   // Filtrar centros de custo pela busca
   const filteredCostCenters = useMemo(() => {
@@ -1940,6 +1942,29 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
       proj.nome?.toLowerCase().includes(searchLower)
     );
   }, [projects, projectSearch]);
+  
+  // Filtrar almoxarifados pelo centro de custo selecionado
+  const filteredAlmoxarifadosByCostCenter = useMemo(() => {
+    if (!formData.centro_custo_id) return [];
+    
+    const filtered = almoxarifados.filter((alm: any) => {
+      const almCostCenter = alm.cost_center_id?.toString();
+      const selectedCostCenter = formData.centro_custo_id?.toString();
+      return almCostCenter === selectedCostCenter;
+    });
+    
+    return filtered;
+  }, [almoxarifados, formData.centro_custo_id]);
+  
+  // Filtrar almoxarifados pela busca
+  const filteredAlmoxarifados = useMemo(() => {
+    if (!almoxarifadoSearch) return filteredAlmoxarifadosByCostCenter;
+    const searchLower = almoxarifadoSearch.toLowerCase();
+    return filteredAlmoxarifadosByCostCenter.filter((alm: any) => 
+      alm.codigo?.toLowerCase().includes(searchLower) || 
+      alm.nome?.toLowerCase().includes(searchLower)
+    );
+  }, [filteredAlmoxarifadosByCostCenter, almoxarifadoSearch]);
   
   // Buscar serviços do projeto selecionado
   const { data: servicesData } = useServicesByProject(formData.projeto_id || undefined);
@@ -2206,19 +2231,20 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Segunda linha: Centro de Custo, Projeto, Serviço */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Segunda linha: Centro de Custo, Almoxarifado, Projeto, Serviço */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label htmlFor="centro_custo">Centro de Custo *</Label>
               <Select
                 value={formData.centro_custo_id || ''}
                 onValueChange={(value) => {
-                  // Limpar projeto e serviço quando mudar o centro de custo
+                  // Limpar projeto, serviço e almoxarifado quando mudar o centro de custo
                   setFormData(prev => ({ 
                     ...prev, 
                     centro_custo_id: value,
                     projeto_id: '',
-                    service_id: ''
+                    service_id: '',
+                    destino_almoxarifado_id: ''
                   }));
                   setCostCenterSearch(''); // Limpar busca ao selecionar
                 }}
@@ -2255,6 +2281,55 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                       filteredCostCenters.map((cc) => (
                         <SelectItem key={cc.id} value={cc.id || 'unknown'}>
                           {cc.codigo} - {cc.nome}
+                        </SelectItem>
+                      ))
+                    )}
+                  </div>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="almoxarifado_id">Almoxarifado</Label>
+              <Select
+                value={formData.destino_almoxarifado_id || ''}
+                onValueChange={(value) => setFormData(prev => ({ ...prev, destino_almoxarifado_id: value }))}
+                onOpenChange={(open) => {
+                  if (!open) {
+                    setAlmoxarifadoSearch(''); // Limpar busca ao fechar
+                  }
+                }}
+                disabled={!formData.centro_custo_id}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={formData.centro_custo_id ? "Selecione o almoxarifado" : "Selecione primeiro o centro de custo"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <div className="px-2 py-1.5 border-b">
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar almoxarifado..."
+                        value={almoxarifadoSearch}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          setAlmoxarifadoSearch(e.target.value);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="pl-8 h-9"
+                        disabled={!formData.centro_custo_id}
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-[200px] overflow-y-auto">
+                    {filteredAlmoxarifados.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        {formData.centro_custo_id ? "Nenhum almoxarifado encontrado para este centro de custo" : "Selecione primeiro o centro de custo"}
+                      </div>
+                    ) : (
+                      filteredAlmoxarifados.map((alm: any) => (
+                        <SelectItem key={alm.id} value={alm.id || 'unknown'}>
+                          {alm.codigo} - {alm.nome}
                         </SelectItem>
                       ))
                     )}

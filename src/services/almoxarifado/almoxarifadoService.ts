@@ -12,6 +12,7 @@ export interface Almoxarifado {
   codigo: string;
   endereco?: string;
   responsavel_id?: string;
+  cost_center_id?: string;
   ativo: boolean;
   created_at: string;
   updated_at: string;
@@ -95,11 +96,11 @@ export const AlmoxarifadoService = {
   /**
    * Atualiza um almoxarifado
    */
-  updateAlmoxarifado: async (id: string, data: Partial<Almoxarifado>) => {
+  updateAlmoxarifado: async (id: string, data: Partial<Almoxarifado>, companyId: string) => {
     return await EntityService.update<Almoxarifado>({
       schema: 'almoxarifado',
       table: 'almoxarifados',
-      companyId: data.company_id || '',
+      companyId: companyId,
       id: id,
       data: data
     });

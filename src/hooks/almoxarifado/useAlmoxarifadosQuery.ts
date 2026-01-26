@@ -63,10 +63,12 @@ export function useCreateAlmoxarifado() {
  */
 export function useUpdateAlmoxarifado() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Almoxarifado> }) => {
-      return await AlmoxarifadoService.updateAlmoxarifado(id, data);
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      return await AlmoxarifadoService.updateAlmoxarifado(id, data, selectedCompany.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['almoxarifado', 'almoxarifados'] });

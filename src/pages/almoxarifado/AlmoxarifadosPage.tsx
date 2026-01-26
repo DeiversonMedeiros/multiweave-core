@@ -24,13 +24,15 @@ import {
   useDeleteAlmoxarifado 
 } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import type { Almoxarifado } from '@/services/almoxarifado/almoxarifadoService';
-import { Building2, MapPin, User, Edit, Trash2 } from "lucide-react";
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
+import { Building2, MapPin, User, Edit, Trash2, DollarSign } from "lucide-react";
 
 const almoxarifadoSchema = z.object({
   nome: z.string().min(3, "Nome deve ter no mínimo 3 caracteres").max(255),
   codigo: z.string().min(1, "Código é obrigatório").max(50),
   endereco: z.string().optional(),
   responsavel_id: z.string().optional(),
+  cost_center_id: z.string().min(1, "Centro de Custo é obrigatório"),
   ativo: z.boolean().default(true),
 });
 
@@ -43,6 +45,8 @@ export default function AlmoxarifadosPage() {
   const [editingAlmoxarifado, setEditingAlmoxarifado] = useState<Almoxarifado | null>(null);
   const [usuarios, setUsuarios] = useState<Array<{ id: string; nome: string }>>([]);
   const { selectedCompany } = useCompany();
+  const { data: costCentersData } = useActiveCostCenters();
+  const costCenters = costCentersData?.data || [];
 
   const createMutation = useCreateAlmoxarifado();
   const updateMutation = useUpdateAlmoxarifado();
@@ -55,6 +59,7 @@ export default function AlmoxarifadosPage() {
       codigo: "",
       endereco: "",
       responsavel_id: "",
+      cost_center_id: "",
       ativo: true,
     },
   });
@@ -87,6 +92,7 @@ export default function AlmoxarifadosPage() {
       codigo: "",
       endereco: "",
       responsavel_id: "",
+      cost_center_id: "",
       ativo: true,
     });
     setIsDialogOpen(true);
@@ -99,6 +105,7 @@ export default function AlmoxarifadosPage() {
       codigo: almoxarifado.codigo,
       endereco: almoxarifado.endereco || "",
       responsavel_id: almoxarifado.responsavel_id || "",
+      cost_center_id: almoxarifado.cost_center_id || "",
       ativo: almoxarifado.ativo,
     });
     setIsDialogOpen(true);
@@ -125,7 +132,8 @@ export default function AlmoxarifadosPage() {
         nome: data.nome,
         codigo: data.codigo,
         endereco: data.endereco || null,
-        responsavel_id: data.responsavel_id || null,
+        responsavel_id: data.responsavel_id && data.responsavel_id !== "" ? data.responsavel_id : null,
+        cost_center_id: data.cost_center_id && data.cost_center_id !== "" ? data.cost_center_id : null,
         ativo: data.ativo,
       };
 
@@ -146,9 +154,21 @@ export default function AlmoxarifadosPage() {
     }
   };
 
+  // Criar mapa de centros de custo para exibição
+  const costCentersMap = new Map(
+    costCenters.map((cc) => [cc.id, `${cc.codigo} - ${cc.nome}`])
+  );
+
   const columns = [
     { header: "Código", accessor: "codigo" as keyof Almoxarifado },
     { header: "Nome", accessor: "nome" as keyof Almoxarifado },
+    {
+      header: "Centro de Custo",
+      accessor: (item: Almoxarifado) => 
+        item.cost_center_id 
+          ? costCentersMap.get(item.cost_center_id) || "-"
+          : "-",
+    },
     {
       header: "Endereço",
       accessor: (item: Almoxarifado) => item.endereco || "-",
@@ -275,6 +295,43 @@ export default function AlmoxarifadosPage() {
                             rows={3}
                           />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="cost_center_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-2">
+                          <DollarSign className="h-4 w-4" />
+                          Centro de Custo *
+                        </FormLabel>
+                        <Select 
+                          onValueChange={field.onChange} 
+                          value={field.value || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o centro de custo..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {costCenters.length === 0 ? (
+                              <SelectItem value="no-data" disabled>
+                                Nenhum centro de custo disponível
+                              </SelectItem>
+                            ) : (
+                              costCenters.map((centro) => (
+                                <SelectItem key={centro.id} value={centro.id}>
+                                  {centro.codigo} - {centro.nome}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
