@@ -81,7 +81,7 @@ export default function Empresas() {
         showNewButton={canCreatePage('/cadastros/empresas*')}
       />
 
-      <PermissionGuard entity="companies" action="create">
+      <PermissionGuard page="/cadastros/empresas*" action="create">
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>

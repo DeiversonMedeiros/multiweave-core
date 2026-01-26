@@ -44,8 +44,8 @@ export default function CotacoesPage() {
   return (
     <RequireAuth 
       requiredPermission={{ 
-        type: 'entity', 
-        name: 'cotacoes', 
+        type: 'page', 
+        name: '/compras/cotacoes*', 
         action: 'read' 
       }}
     >

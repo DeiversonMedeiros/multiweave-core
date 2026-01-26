@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/lib/company-context';
+import { EntityService } from '@/services/generic/entityService';
 
 export interface ChecklistItem {
   id: string;
@@ -87,24 +88,62 @@ export const useChecklistRecebimento = (entradaId?: string) => {
   ];
 
   const fetchChecklist = async () => {
-    if (!entradaId) return;
+    if (!entradaId || !selectedCompany?.id) return;
 
     try {
       setLoading(true);
       setError(null);
 
-      const { data, error: fetchError } = await supabase
-        .from('almoxarifado.checklist_recebimento')
-        .select(`
-          *,
-          usuario:users!usuario_id(id, nome, email)
-        `)
-        .eq('entrada_id', entradaId)
-        .order('criterio');
+      // Verificar se a entrada pertence à empresa usando EntityService
+      const entradaResult = await EntityService.getById<{ id: string; company_id: string }>({
+        schema: 'almoxarifado',
+        table: 'entradas_materiais',
+        id: entradaId,
+        companyId: selectedCompany.id
+      });
 
-      if (fetchError) throw fetchError;
+      if (!entradaResult) {
+        throw new Error('Entrada não encontrada');
+      }
 
-      setChecklistItems(data || []);
+      if (entradaResult.company_id !== selectedCompany.id) {
+        throw new Error('Entrada não pertence à empresa selecionada');
+      }
+
+      // A tabela tem company_id, então não precisamos usar skipCompanyFilter
+      const result = await EntityService.list<ChecklistItem>({
+        schema: 'almoxarifado',
+        table: 'checklist_recebimento',
+        companyId: selectedCompany.id,
+        filters: { entrada_id: entradaId },
+        orderBy: 'criterio',
+        orderDirection: 'ASC',
+        skipCompanyFilter: false // A tabela TEM company_id
+      });
+
+      const items = result.data || [];
+      
+      // Buscar dados do usuário para cada item
+      const itemsComUsuario = await Promise.all(
+        items.map(async (item) => {
+          try {
+            const { data: usuario } = await supabase
+              .from('users')
+              .select('id, nome, email')
+              .eq('id', item.usuario_id)
+              .single();
+            
+            return {
+              ...item,
+              usuario: usuario || undefined
+            };
+          } catch {
+            return item;
+          }
+        })
+      );
+
+      setChecklistItems(itemsComUsuario);
       setCriterios(criteriosPadrao);
     } catch (err) {
       console.error('Erro ao buscar checklist:', err);
@@ -115,23 +154,71 @@ export const useChecklistRecebimento = (entradaId?: string) => {
   };
 
   const createChecklistItem = async (data: Omit<ChecklistItem, 'id' | 'data_verificacao'>) => {
+    if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+
     try {
-      const { data: newItem, error } = await supabase
-        .from('almoxarifado.checklist_recebimento')
-        .insert([{
-          ...data,
-          data_verificacao: new Date().toISOString()
-        }])
-        .select(`
-          *,
-          usuario:users!usuario_id(id, nome, email)
-        `)
-        .single();
+      // Verificar se a entrada pertence à empresa usando EntityService
+      const entradaResult = await EntityService.getById<{ id: string; company_id: string }>({
+        schema: 'almoxarifado',
+        table: 'entradas_materiais',
+        id: data.entrada_id,
+        companyId: selectedCompany.id
+      });
 
-      if (error) throw error;
+      if (!entradaResult) {
+        throw new Error('Entrada não encontrada');
+      }
 
-      setChecklistItems(prev => [...prev, newItem]);
-      return newItem;
+      if (entradaResult.company_id !== selectedCompany.id) {
+        throw new Error('Entrada não pertence à empresa selecionada');
+      }
+
+      // Construir itemData com todos os campos obrigatórios
+      const itemData: any = {
+        entrada_id: data.entrada_id,
+        item_id: data.item_id,
+        criterio: data.criterio,
+        aprovado: data.aprovado,
+        usuario_id: data.usuario_id,
+        data_verificacao: new Date().toISOString(),
+        company_id: selectedCompany.id
+      };
+
+      // Adicionar observações se existirem
+      if (data.observacoes) {
+        itemData.observacoes = data.observacoes;
+      }
+
+      console.log('🔍 [createChecklistItem] Dados a serem enviados:', itemData);
+
+      // A tabela tem company_id, então não precisamos usar skipCompanyFilter
+      const newItem = await EntityService.create<ChecklistItem>({
+        schema: 'almoxarifado',
+        table: 'checklist_recebimento',
+        companyId: selectedCompany.id,
+        data: itemData,
+        skipCompanyFilter: false // A tabela TEM company_id
+      });
+
+      // Buscar dados do usuário
+      try {
+        const { data: usuario } = await supabase
+          .from('users')
+          .select('id, nome, email')
+          .eq('id', newItem.usuario_id)
+          .single();
+        
+        const itemComUsuario = {
+          ...newItem,
+          usuario: usuario || undefined
+        };
+
+        setChecklistItems(prev => [...prev, itemComUsuario]);
+        return itemComUsuario;
+      } catch {
+        setChecklistItems(prev => [...prev, newItem]);
+        return newItem;
+      }
     } catch (err) {
       console.error('Erro ao criar item do checklist:', err);
       throw err;
@@ -139,25 +226,67 @@ export const useChecklistRecebimento = (entradaId?: string) => {
   };
 
   const updateChecklistItem = async (id: string, data: Partial<ChecklistItem>) => {
+    if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+
     try {
-      const { data: updatedItem, error } = await supabase
-        .from('almoxarifado.checklist_recebimento')
-        .update(data)
-        .eq('id', id)
-        .select(`
-          *,
-          usuario:users!usuario_id(id, nome, email)
-        `)
-        .single();
+      // Buscar o item atual para validar entrada_id
+      const itemAtual = checklistItems.find(item => item.id === id);
+      if (!itemAtual) {
+        throw new Error('Item do checklist não encontrado');
+      }
 
-      if (error) throw error;
+      // Verificar se a entrada pertence à empresa usando EntityService
+      const entradaResult = await EntityService.getById<{ id: string; company_id: string }>({
+        schema: 'almoxarifado',
+        table: 'entradas_materiais',
+        id: itemAtual.entrada_id,
+        companyId: selectedCompany.id
+      });
 
-      setChecklistItems(prev => 
-        prev.map(item => 
-          item.id === id ? updatedItem : item
-        )
-      );
-      return updatedItem;
+      if (!entradaResult) {
+        throw new Error('Entrada não encontrada');
+      }
+
+      if (entradaResult.company_id !== selectedCompany.id) {
+        throw new Error('Entrada não pertence à empresa selecionada');
+      }
+
+      const updatedItem = await EntityService.update<ChecklistItem>({
+        schema: 'almoxarifado',
+        table: 'checklist_recebimento',
+        companyId: selectedCompany.id,
+        id: id,
+        data: data,
+        skipCompanyFilter: false // A tabela TEM company_id
+      });
+
+      // Buscar dados do usuário
+      try {
+        const { data: usuario } = await supabase
+          .from('users')
+          .select('id, nome, email')
+          .eq('id', updatedItem.usuario_id)
+          .single();
+        
+        const itemComUsuario = {
+          ...updatedItem,
+          usuario: usuario || undefined
+        };
+
+        setChecklistItems(prev => 
+          prev.map(item => 
+            item.id === id ? itemComUsuario : item
+          )
+        );
+        return itemComUsuario;
+      } catch {
+        setChecklistItems(prev => 
+          prev.map(item => 
+            item.id === id ? updatedItem : item
+          )
+        );
+        return updatedItem;
+      }
     } catch (err) {
       console.error('Erro ao atualizar item do checklist:', err);
       throw err;
@@ -165,13 +294,38 @@ export const useChecklistRecebimento = (entradaId?: string) => {
   };
 
   const deleteChecklistItem = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('almoxarifado.checklist_recebimento')
-        .delete()
-        .eq('id', id);
+    if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
-      if (error) throw error;
+    try {
+      // Buscar o item atual para validar entrada_id
+      const itemAtual = checklistItems.find(item => item.id === id);
+      if (!itemAtual) {
+        throw new Error('Item do checklist não encontrado');
+      }
+
+      // Verificar se a entrada pertence à empresa usando EntityService
+      const entradaResult = await EntityService.getById<{ id: string; company_id: string }>({
+        schema: 'almoxarifado',
+        table: 'entradas_materiais',
+        id: itemAtual.entrada_id,
+        companyId: selectedCompany.id
+      });
+
+      if (!entradaResult) {
+        throw new Error('Entrada não encontrada');
+      }
+
+      if (entradaResult.company_id !== selectedCompany.id) {
+        throw new Error('Entrada não pertence à empresa selecionada');
+      }
+
+      await EntityService.delete({
+        schema: 'almoxarifado',
+        table: 'checklist_recebimento',
+        companyId: selectedCompany.id,
+        id: id,
+        skipCompanyFilter: false // A tabela TEM company_id
+      });
 
       setChecklistItems(prev => prev.filter(item => item.id !== id));
     } catch (err) {

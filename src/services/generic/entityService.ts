@@ -582,6 +582,18 @@ export const EntityService = {
       });
 
 
+      // Log detalhado antes de enviar
+      console.log('🔍 [EntityService.create] Enviando dados:', {
+        schema,
+        table,
+        companyId,
+        skipCompanyFilter,
+        dataOriginal: data,
+        dataWithoutCompany,
+        dataKeys: Object.keys(dataWithoutCompany),
+        dataValues: Object.values(dataWithoutCompany)
+      });
+
       const { data: result, error } = await (supabase as any).rpc('create_entity_data', {
         schema_name: schema,
         table_name: table,
@@ -595,7 +607,9 @@ export const EntityService = {
           message: error.message,
           details: error.details,
           hint: error.hint,
-          code: error.code
+          code: error.code,
+          dataEnviado: dataWithoutCompany,
+          dataKeys: Object.keys(dataWithoutCompany)
         });
         throw new Error(error.message || `Erro ao criar item em ${schema}.${table}: ${JSON.stringify(error)}`);
       }

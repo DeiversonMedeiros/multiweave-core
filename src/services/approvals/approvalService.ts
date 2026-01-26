@@ -240,7 +240,7 @@ export class ApprovalService {
       // VERIFICAÇÃO CRÍTICA: Filtrar explicitamente por status 'pendente' após a query
       // Isso garante que mesmo se houver algum problema de cache ou timing, apenas itens pendentes serão retornados
       const rawCount = approvals?.length || 0;
-      const filteredApprovals = (approvals || []).filter(a => {
+      let filteredApprovals = (approvals || []).filter(a => {
         const isPending = a.status === 'pendente';
         if (!isPending) {
           console.warn('⚠️ [ApprovalService] Item com status não-pendente encontrado na query:', {
@@ -289,10 +289,64 @@ export class ApprovalService {
       
       let requisicoesMap = new Map<string, { numero_requisicao: string; solicitante_id: string }>();
       let usuariosMap = new Map<string, string>();
+      let requisicoesStatus: Array<{ id: string; status: string }> | null = null;
       
       if (requisicaoIds.length > 0) {
         try {
+          // FILTRO CRÍTICO: Primeiro buscar status das requisições para filtrar as já aprovadas
+          // Isso evita buscar dados desnecessários de requisições já aprovadas
+          try {
+            // Usar EntityService para buscar status das requisições (acessa schema compras corretamente)
+            const statusPromises = requisicaoIds.map(reqId => 
+              EntityService.getById<{ id: string; status: string }>({
+                schema: 'compras',
+                table: 'requisicoes_compra',
+                id: reqId,
+                companyId
+              })
+            );
+            
+            const statusResults = await Promise.all(statusPromises);
+            const statusData = statusResults.filter(r => r !== null) as Array<{ id: string; status: string }>;
+            
+            if (statusData && statusData.length > 0) {
+              requisicoesStatus = statusData;
+              const aprovadasIds = new Set(
+                statusData
+                  .filter(r => r.status === 'aprovada')
+                  .map(r => r.id)
+              );
+              
+              // Remover aprovações de requisições já aprovadas ANTES de buscar os dados
+              if (aprovadasIds.size > 0) {
+                const filteredBefore = filteredApprovals.length;
+                filteredApprovals = filteredApprovals.filter(a => {
+                  if (a.processo_tipo === 'requisicao_compra' && aprovadasIds.has(a.processo_id)) {
+                    console.log('🚫 [ApprovalService] Removendo aprovação de requisição já aprovada:', {
+                      aprovacao_id: a.id,
+                      requisicao_id: a.processo_id
+                    });
+                    return false;
+                  }
+                  return true;
+                });
+                
+                console.log('✅ [ApprovalService] Aprovações filtradas (requisições aprovadas removidas):', {
+                  antes: filteredBefore,
+                  depois: filteredApprovals.length,
+                  removidas: filteredBefore - filteredApprovals.length
+                });
+                
+                // Atualizar lista de IDs para buscar apenas requisições não aprovadas
+                requisicaoIds.splice(0, requisicaoIds.length, ...requisicaoIds.filter(id => !aprovadasIds.has(id)));
+              }
+            }
+          } catch (statusErr) {
+            console.warn('⚠️ [ApprovalService] Erro ao verificar status das requisições:', statusErr);
+          }
+
           // Buscar requisições individualmente usando Promise.all para paralelismo
+          // Agora só busca requisições que não foram aprovadas
           const requisicoesPromises = requisicaoIds.map(reqId => 
             EntityService.getById<{
               id: string;
@@ -311,11 +365,12 @@ export class ApprovalService {
             id: string;
             numero_requisicao: string;
             solicitante_id: string;
+            status?: string;
           }>;
 
           if (requisicoes.length > 0) {
-            // Criar mapa de requisições
-            requisicoes.forEach((req) => {
+            // Criar mapa de requisições (apenas as não aprovadas)
+            requisicoesParaMapa.forEach((req) => {
               requisicoesMap.set(req.id, {
                 numero_requisicao: req.numero_requisicao,
                 solicitante_id: req.solicitante_id
@@ -323,7 +378,7 @@ export class ApprovalService {
             });
             
             // Buscar nomes dos solicitantes únicos
-            const solicitanteIds = [...new Set(requisicoes.map(r => r.solicitante_id).filter(Boolean))];
+            const solicitanteIds = [...new Set(requisicoesParaMapa.map(r => r.solicitante_id).filter(Boolean))];
             if (solicitanteIds.length > 0) {
               // Buscar usuários usando RPC diretamente do Supabase
               // pois a tabela users está no schema public e pode não ter company_id
@@ -375,19 +430,102 @@ export class ApprovalService {
       
       // Mapear aprovações com detalhes
       // Usar filteredApprovals em vez de approvals para garantir que só retornamos itens pendentes
-      const approvalsWithDetails = filteredApprovals.map((approval) => {
-        if (approval.processo_tipo === 'requisicao_compra') {
-          const reqData = requisicoesMap.get(approval.processo_id);
-          if (reqData) {
-            return {
-              ...approval,
-              numero_requisicao: reqData.numero_requisicao,
-              solicitante_nome: usuariosMap.get(reqData.solicitante_id) || 'N/A'
-            };
+      // FILTRO FINAL: Remover aprovações de requisições de compra que não estão no mapa
+      // (isso significa que foram filtradas por estarem aprovadas)
+      const approvalsWithDetails = filteredApprovals
+        .filter((approval) => {
+          // Se é requisição de compra e não está no mapa, foi filtrada (já aprovada)
+          if (approval.processo_tipo === 'requisicao_compra') {
+            const reqData = requisicoesMap.get(approval.processo_id);
+            if (!reqData) {
+              console.log('🚫 [ApprovalService] Removendo aprovação final de requisição já aprovada:', {
+                aprovacao_id: approval.id,
+                requisicao_id: approval.processo_id
+              });
+              return false;
+            }
           }
+          return true;
+        })
+        .map((approval) => {
+          if (approval.processo_tipo === 'requisicao_compra') {
+            const reqData = requisicoesMap.get(approval.processo_id);
+            if (reqData) {
+              return {
+                ...approval,
+                numero_requisicao: reqData.numero_requisicao,
+                solicitante_nome: usuariosMap.get(reqData.solicitante_id) || 'N/A'
+              };
+            }
+          }
+          return approval;
+        });
+      
+      // VERIFICAÇÃO FINAL DE SEGURANÇA: Garantir que nenhuma aprovação de requisição aprovada seja retornada
+      // Buscar status de todas as requisições que ainda estão na lista final
+      const requisicoesFinaisIds = approvalsWithDetails
+        .filter(a => a.processo_tipo === 'requisicao_compra')
+        .map(a => a.processo_id);
+      
+      if (requisicoesFinaisIds.length > 0) {
+        try {
+          // Usar EntityService para buscar status final das requisições
+          const statusFinalPromises = requisicoesFinaisIds.map(reqId => 
+            EntityService.getById<{ id: string; status: string }>({
+              schema: 'compras',
+              table: 'requisicoes_compra',
+              id: reqId,
+              companyId
+            })
+          );
+          
+          const statusFinalResults = await Promise.all(statusFinalPromises);
+          const statusFinal = statusFinalResults.filter(r => r !== null) as Array<{ id: string; status: string }>;
+          
+          if (statusFinal && statusFinal.length > 0) {
+            const aprovadasFinaisIds = new Set(
+              statusFinal
+                .filter(r => r.status === 'aprovada')
+                .map(r => r.id)
+            );
+            
+            if (aprovadasFinaisIds.size > 0) {
+              const antesFinal = approvalsWithDetails.length;
+              const approvalsFinal = approvalsWithDetails.filter(a => {
+                if (a.processo_tipo === 'requisicao_compra' && aprovadasFinaisIds.has(a.processo_id)) {
+                  console.log('🚫 [ApprovalService] VERIFICAÇÃO FINAL: Removendo aprovação de requisição aprovada:', {
+                    aprovacao_id: a.id,
+                    requisicao_id: a.processo_id
+                  });
+                  return false;
+                }
+                return true;
+              });
+              
+              console.log('✅ [ApprovalService] Verificação final concluída:', {
+                antes: antesFinal,
+                depois: approvalsFinal.length,
+                removidas: antesFinal - approvalsFinal.length
+              });
+              
+              console.log('✅ [ApprovalService] Aprovações encontradas (final):', { 
+                count: approvalsFinal?.length || 0, 
+                processos: approvalsFinal?.map(a => ({ 
+                  tipo: a.processo_tipo, 
+                  id: a.processo_id, 
+                  nivel: a.nivel_aprovacao,
+                  numero: a.numero_requisicao,
+                  solicitante: a.solicitante_nome
+                }))
+              });
+              
+              return approvalsFinal || [];
+            }
+          }
+        } catch (finalErr) {
+          console.warn('⚠️ [ApprovalService] Erro na verificação final:', finalErr);
         }
-        return approval;
-      });
+      }
       
       console.log('✅ [ApprovalService] Aprovações encontradas:', { 
         count: approvalsWithDetails?.length || 0, 

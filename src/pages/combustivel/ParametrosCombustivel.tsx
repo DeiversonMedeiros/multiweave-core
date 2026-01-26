@@ -226,7 +226,7 @@ export default function ParametrosCombustivel() {
                     </CardDescription>
                   </div>
                   <PermissionButton
-                    entityName="approved_gas_stations"
+                    page="/combustivel/parametros*"
                     action="create"
                     onClick={() => {
                       setEditingGasStation(null);
@@ -269,7 +269,7 @@ export default function ParametrosCombustivel() {
                               {station.ativo ? 'Ativo' : 'Inativo'}
                             </Badge>
                             <PermissionButton
-                              entityName="approved_gas_stations"
+                              page="/combustivel/parametros*"
                               action="edit"
                               variant="ghost"
                               size="sm"
@@ -281,7 +281,7 @@ export default function ParametrosCombustivel() {
                               <Edit className="w-4 h-4" />
                             </PermissionButton>
                             <PermissionButton
-                              entityName="approved_gas_stations"
+                              page="/combustivel/parametros*"
                               action="delete"
                               variant="ghost"
                               size="sm"
@@ -319,7 +319,7 @@ export default function ParametrosCombustivel() {
                     </CardDescription>
                   </div>
                   <PermissionButton
-                    entityName="refuel_limits"
+                    page="/combustivel/parametros*"
                     action="create"
                     onClick={() => {
                       setEditingLimit(null);
@@ -356,7 +356,7 @@ export default function ParametrosCombustivel() {
                             {limit.ativo ? 'Ativo' : 'Inativo'}
                           </Badge>
                           <PermissionButton
-                            entityName="refuel_limits"
+                            page="/combustivel/parametros*"
                             action="edit"
                             variant="ghost"
                             size="sm"
@@ -368,7 +368,7 @@ export default function ParametrosCombustivel() {
                             <Edit className="w-4 h-4" />
                           </PermissionButton>
                           <PermissionButton
-                            entityName="refuel_limits"
+                            page="/combustivel/parametros*"
                             action="delete"
                             variant="ghost"
                             size="sm"

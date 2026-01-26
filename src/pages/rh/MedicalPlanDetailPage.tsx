@@ -92,7 +92,7 @@ const MedicalPlanDetailPage: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <PermissionGuard entity="medical_plans" action="update">
+            <PermissionGuard page="/rh/medical-plans*" action="edit">
               <Button
                 variant="outline"
                 onClick={() => navigate(`/rh/medical-plans/${plan.id}/edit`)}
@@ -102,7 +102,7 @@ const MedicalPlanDetailPage: React.FC = () => {
                 Editar
               </Button>
             </PermissionGuard>
-            <PermissionGuard entity="medical_plans" action="delete">
+            <PermissionGuard page="/rh/medical-plans*" action="delete">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" className="flex items-center gap-2">

@@ -129,7 +129,7 @@ const LotesPage: React.FC = () => {
           </div>
           
           <PermissionButton
-            entity="lotes"
+            page="/metalurgica/lotes*"
             action="create"
             onClick={() => setIsModalOpen(true)}
           >
@@ -220,7 +220,7 @@ const LotesPage: React.FC = () => {
                         <TableCell>
                           <div className="flex gap-2">
                             <PermissionButton
-                              entity="lotes"
+                              page="/metalurgica/lotes*"
                               action="read"
                               variant="ghost"
                               size="sm"

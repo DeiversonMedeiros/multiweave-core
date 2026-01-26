@@ -425,7 +425,7 @@ export default function Parceiros() {
         showNewButton={canCreatePage('/cadastros/parceiros*')}
       />
 
-      <PermissionGuard entity="partners" action="create">
+      <PermissionGuard page="/cadastros/parceiros*" action="create">
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>

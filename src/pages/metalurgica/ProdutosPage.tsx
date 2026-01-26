@@ -166,7 +166,7 @@ const ProdutosPage: React.FC = () => {
           </div>
           
           <PermissionButton
-            entity="produtos"
+            page="/metalurgica/produtos*"
             action="create"
             onClick={() => {
               resetForm();
@@ -254,7 +254,7 @@ const ProdutosPage: React.FC = () => {
                       <TableCell>
                         <div className="flex gap-2">
                           <PermissionButton
-                            entity="produtos"
+                            page="/metalurgica/produtos*"
                             action="edit"
                             variant="ghost"
                             size="sm"
@@ -263,7 +263,7 @@ const ProdutosPage: React.FC = () => {
                             <Edit className="h-4 w-4" />
                           </PermissionButton>
                           <PermissionButton
-                            entity="produtos"
+                            page="/metalurgica/produtos*"
                             action="delete"
                             variant="ghost"
                             size="sm"

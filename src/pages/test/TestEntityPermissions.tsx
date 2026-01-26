@@ -86,10 +86,10 @@ export default function TestEntityPermissions() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <AlertCircle className="h-5 w-5" />
-            Teste de Permissões por Entidade
+            Teste de Permissões por Página
           </CardTitle>
           <CardDescription>
-            Página de teste para validar o funcionamento das permissões por entidade
+            Página de teste para validar o funcionamento das permissões por página
           </CardDescription>
         </CardHeader>
         <CardContent>

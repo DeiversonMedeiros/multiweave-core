@@ -176,7 +176,7 @@ const NaoConformidadesPage: React.FC = () => {
           </div>
           
           <PermissionButton
-            entity="nao_conformidades"
+            page="/metalurgica/nao-conformidades*"
             action="create"
             onClick={() => {
               resetForm();
@@ -277,7 +277,7 @@ const NaoConformidadesPage: React.FC = () => {
                       <TableCell>
                         <div className="flex gap-2">
                           <PermissionButton
-                            entity="nao_conformidades"
+                            page="/metalurgica/nao-conformidades*"
                             action="read"
                             variant="ghost"
                             size="sm"
@@ -285,7 +285,7 @@ const NaoConformidadesPage: React.FC = () => {
                             <Eye className="h-4 w-4" />
                           </PermissionButton>
                           <PermissionButton
-                            entity="nao_conformidades"
+                            page="/metalurgica/nao-conformidades*"
                             action="edit"
                             variant="ghost"
                             size="sm"

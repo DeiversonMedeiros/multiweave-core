@@ -56,21 +56,21 @@ export async function testPermissionFunctions() {
 
     console.log('✅ check_module_permission funcionando:', modulePerm);
 
-    // 4. Testar função check_entity_permission
-    console.log('4. Testando check_entity_permission...');
-    const { data: entityPerm, error: entityError } = await supabase
-      .rpc('check_entity_permission', {
+    // 4. Testar função check_page_permission (permissões por página)
+    console.log('4. Testando check_page_permission...');
+    const { data: pagePerm, error: pageError } = await supabase
+      .rpc('check_page_permission', {
         p_user_id: user.user.id,
-        p_entity_name: 'users',
+        p_page_path: '/cadastros/usuarios',
         p_action: 'read'
       });
 
-    if (entityError) {
-      console.error('❌ Erro ao verificar permissão de entidade:', entityError);
+    if (pageError) {
+      console.error('❌ Erro ao verificar permissão de página:', pageError);
       return false;
     }
 
-    console.log('✅ check_entity_permission funcionando:', entityPerm);
+    console.log('✅ check_page_permission funcionando:', pagePerm);
 
     console.log('🎉 Todas as funções de permissão estão funcionando!');
     return true;

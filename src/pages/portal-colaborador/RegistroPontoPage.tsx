@@ -50,6 +50,14 @@ interface TimeRecord {
   foto_url?: string;
   localizacao_type?: string;
   outside_zone?: boolean;
+  // Campos adicionais para datas reais quando diferentes de base_date
+  base_date?: string;
+  window_hours?: number;
+  saida_date?: string;
+  entrada_almoco_date?: string;
+  saida_almoco_date?: string;
+  entrada_extra1_date?: string;
+  saida_extra1_date?: string;
 }
 
 // Função auxiliar para obter data local no formato YYYY-MM-DD
@@ -132,195 +140,62 @@ export default function RegistroPontoPage() {
   const { data: timeRecordSettings } = useTimeRecordSettings();
   const windowHours = timeRecordSettings?.janela_tempo_marcacoes ?? 24;
 
-  // Buscar registro de hoje (apenas quando online)
+  // Buscar registro de hoje usando função RPC consolidada (apenas quando online)
   const { data: todayRecord, isLoading: recordLoading } = useQuery({
-    queryKey: ['today-time-record', employee?.id, selectedCompany?.id, windowHours],
+    queryKey: ['today-time-record-consolidated', employee?.id, selectedCompany?.id, windowHours],
     queryFn: async () => {
       if (!employee?.id || !selectedCompany?.id) return null;
       
       // Usar data local ao invés de UTC para evitar problemas de timezone
       const now = new Date();
       const today = getLocalDateString(now);
-      const isRecordWithinWindow = (record: any, source: string) => {
-        if (!record) return false;
-        const recordDate = record.data_registro || record.dataRegistro;
-        if (!recordDate) return false;
-        if (recordDate === today) return true;
-
-        const firstMark =
-          record.entrada ||
-          record.entrada_almoco ||
-          record.saida_almoco ||
-          record.saida ||
-          record.entrada_extra1 ||
-          record.saida_extra1;
-
-        if (!firstMark) return false;
-
-        const firstMarkDate = new Date(`${recordDate}T${firstMark}`);
-        if (Number.isNaN(firstMarkDate.getTime())) {
-          console.warn('[PONTO][WINDOW] Primeira marcação inválida para registro', {
-            source,
-            recordId: record.id,
-            recordDate,
-            firstMark
-          });
-          return false;
-        }
-
-        const hoursElapsed = (now.getTime() - firstMarkDate.getTime()) / (1000 * 60 * 60);
-        const isWithin = hoursElapsed <= windowHours;
-
-        console.log('[PONTO][WINDOW] Validação de janela', {
-          source,
-          recordId: record.id,
-          recordDate,
-          firstMark,
-          hoursElapsed: Number(hoursElapsed.toFixed(4)),
-          windowHours,
-          isWithin
-        });
-
-        return isWithin;
-      };
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       
-      console.log('🔍 Buscando registros de ponto para:', {
+      console.log('🔍 Buscando registro consolidado de ponto para:', {
         employeeId: employee.id,
         companyId: selectedCompany.id,
-        dataRegistro: today,
-        currentTime: now.toISOString(),
-        localDate: now.toLocaleDateString('pt-BR'),
-        localDateISO: today,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        utcDate: new Date().toISOString().split('T')[0],
-        timezoneOffset: now.getTimezoneOffset()
+        targetDate: today,
+        timezone,
+        windowHours
       });
       
       try {
-        const result = await EntityService.list({
-          schema: 'rh',
-          table: 'time_records',
-          companyId: selectedCompany.id,
-          filters: {
-            employee_id: employee.id,
-            data_registro: today
-          },
-          pageSize: 100 // Aumentar para garantir que pegue o registro mesmo se houver algum problema com pageSize: 1
+        // Usar a nova função RPC que consolida registros considerando a janela de tempo
+        const { data, error } = await supabase.rpc('get_consolidated_time_record_by_window', {
+          p_employee_id: employee.id,
+          p_company_id: selectedCompany.id,
+          p_target_date: today,
+          p_timezone: timezone
         });
-        
-        console.log('📊 Resultado da consulta:', result);
-        console.log('📊 Total de registros retornados:', result.data?.length || 0);
-        console.log('📊 Resultado completo:', JSON.stringify(result, null, 2));
-        
-        // Filtrar para pegar apenas o registro de hoje
-        const todayRecords = (result.data || []).filter((record: any) => {
-          const recordDate = record.data_registro || record.dataRegistro;
-          return recordDate === today;
-        });
-        
-        console.log('📅 Registros filtrados para hoje:', todayRecords.length);
-        
-        const foundRecord = todayRecords[0] || result.data?.[0] || null;
-        
-        console.log('📅 Registro encontrado:', foundRecord || 'Nenhum registro encontrado');
-        
-        // Log detalhado quando registro for encontrado
-        if (foundRecord) {
-          const todasMarcacoes = !!(foundRecord.entrada && foundRecord.entrada_almoco && foundRecord.saida_almoco && foundRecord.saida && foundRecord.entrada_extra1 && foundRecord.saida_extra1);
-          console.log('✅ Registro encontrado com marcações:', {
-            id: foundRecord.id,
-            entrada: foundRecord.entrada,
-            entrada_almoco: foundRecord.entrada_almoco,
-            saida_almoco: foundRecord.saida_almoco,
-            saida: foundRecord.saida,
-            entrada_extra1: foundRecord.entrada_extra1,
-            saida_extra1: foundRecord.saida_extra1,
-            status: foundRecord.status,
-            todasMarcacoes,
-            data_registro: foundRecord.data_registro || foundRecord.dataRegistro
-          });
 
-          if (!isRecordWithinWindow(foundRecord, 'primary-query')) {
-            console.log('[PONTO][WINDOW] Registro descartado - fora da janela', {
-              recordId: foundRecord.id,
-              recordDate: foundRecord.data_registro || foundRecord.dataRegistro,
-              windowHours
-            });
-          } else {
-            return foundRecord;
-          }
-        } else {
-          console.warn('⚠️ Nenhum registro encontrado para hoje. Tentando buscar registros próximos (dia anterior/próximo) devido a possível diferença de timezone...');
-          console.warn('⚠️ Filtros usados:', {
-            employee_id: employee.id,
-            data_registro: today,
-            companyId: selectedCompany.id
-          });
-          
-          // Tentar buscar registros do dia anterior e próximo (para cobrir problemas de timezone)
-          const yesterday = new Date(now);
-          yesterday.setDate(yesterday.getDate() - 1);
-          const tomorrow = new Date(now);
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          
-          const yesterdayStr = getLocalDateString(yesterday);
-          const tomorrowStr = getLocalDateString(tomorrow);
-          
-          console.log('🔍 Tentando buscar registros próximos:', { yesterday: yesterdayStr, today, tomorrow: tomorrowStr });
-          
-          try {
-            // Buscar registros do dia anterior, hoje e próximo dia
-            const nearbyResult = await EntityService.list({
-              schema: 'rh',
-              table: 'time_records',
-              companyId: selectedCompany.id,
-              filters: {
-                employee_id: employee.id,
-                data_registro_gte: yesterdayStr,
-                data_registro_lte: tomorrowStr
-              },
-              pageSize: 100,
-              orderBy: 'data_registro',
-              orderDirection: 'DESC'
-            });
-            
-            console.log('📊 Registros próximos encontrados:', nearbyResult.data?.length || 0);
-            
-            if (nearbyResult.data && nearbyResult.data.length > 0) {
-              // Encontrar o registro mais próximo de hoje
-              const todayRecords = nearbyResult.data.filter((record: any) => {
-                const recordDate = record.data_registro || record.dataRegistro;
-                return recordDate === today || recordDate === yesterdayStr || recordDate === tomorrowStr;
-              });
-              
-              if (todayRecords.length > 0) {
-                // Priorizar registro de hoje, depois de ontem, depois de amanhã
-                const todayRecord = todayRecords.find((r: any) => (r.data_registro || r.dataRegistro) === today);
-                const yesterdayRecord = todayRecords.find((r: any) => (r.data_registro || r.dataRegistro) === yesterdayStr);
-                const bestMatch = todayRecord || yesterdayRecord || todayRecords[0];
-                
-                console.log('✅ Registro encontrado em data próxima:', {
-                  encontrado: bestMatch.data_registro || bestMatch.dataRegistro,
-                  esperado: today,
-                  todasMarcacoes: !!(bestMatch.entrada && bestMatch.entrada_almoco && bestMatch.saida_almoco && bestMatch.saida && bestMatch.entrada_extra1 && bestMatch.saida_extra1)
-                });
-                
-                if (isRecordWithinWindow(bestMatch, 'nearby-query')) {
-                  return bestMatch;
-                }
-
-                console.log('⏭️ Registro ignorado - janela de tempo expirou para data anterior');
-                return null;
-              }
-            }
-          } catch (nearbyError) {
-            console.error('❌ Erro ao buscar registros próximos:', nearbyError);
-          }
+        if (error) {
+          console.error('❌ Erro ao buscar registro consolidado:', error);
+          return null;
         }
-        
-        return null;
+
+        if (!data) {
+          console.log('📅 Nenhum registro encontrado para hoje');
+          return null;
+        }
+
+        console.log('✅ Registro consolidado encontrado:', {
+          id: data.id,
+          base_date: data.base_date,
+          entrada: data.entrada,
+          entrada_almoco: data.entrada_almoco,
+          saida_almoco: data.saida_almoco,
+          saida: data.saida,
+          saida_date: data.saida_date,
+          entrada_extra1: data.entrada_extra1,
+          entrada_extra1_date: data.entrada_extra1_date,
+          saida_extra1: data.saida_extra1,
+          saida_extra1_date: data.saida_extra1_date,
+          window_hours: data.window_hours
+        });
+
+        return data as TimeRecord;
       } catch (error) {
-        console.error('❌ Erro ao buscar registro de ponto:', error);
+        console.error('❌ Erro ao buscar registro consolidado:', error);
         return null;
       }
     },
@@ -1172,13 +1047,13 @@ export default function RegistroPontoPage() {
       console.log('[PONTO][MUTATION][SUCCESS] 🌐 Registro online - invalidando queries');
       
       // Invalidar e refetch a query para garantir que os dados mais recentes sejam carregados
-      await queryClient.invalidateQueries({ queryKey: ['today-time-record', currentEmployee?.id] });
+      await queryClient.invalidateQueries({ queryKey: ['today-time-record-consolidated', currentEmployee?.id] });
       console.log('[PONTO][MUTATION][SUCCESS] 🔄 Queries invalidadas');
       
       // Aguardar um pouco para garantir que a query seja refetch
       setTimeout(() => {
         console.log('[PONTO][MUTATION][SUCCESS] 🔄 Refazendo fetch das queries');
-        queryClient.refetchQueries({ queryKey: ['today-time-record', currentEmployee?.id] });
+        queryClient.refetchQueries({ queryKey: ['today-time-record-consolidated', currentEmployee?.id] });
       }, 500);
       
       const typeLabels = {
@@ -1377,6 +1252,34 @@ export default function RegistroPontoPage() {
   const formatTime = (timeString?: string) => {
     if (!timeString) return '--:--';
     return timeString.substring(0, 5);
+  };
+
+  // Função para formatar data e hora - sempre mostra a data
+  const formatTimeWithDate = (timeString?: string, dateString?: string, baseDate?: string) => {
+    if (!timeString) return '--:--';
+    const time = timeString.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (dateString) {
+      // Se tem data específica da marcação, usar ela
+      dateToUse = dateString;
+    } else if (baseDate) {
+      // Se não tem data específica, usar a data base
+      dateToUse = baseDate;
+    } else {
+      // Se não tem nenhuma data, retornar apenas o horário
+      return time;
+    }
+    
+    // Formatar data
+    const date = new Date(dateToUse);
+    const formattedDate = date.toLocaleDateString('pt-BR', { 
+      day: '2-digit', 
+      month: '2-digit' 
+    });
+    
+    return `${time} (${formattedDate})`;
   };
 
   if (recordLoading && isOnline) {
@@ -1579,19 +1482,48 @@ export default function RegistroPontoPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {[
-                { key: 'entrada', label: 'Entrada', time: displayTodayRecord?.entrada },
-                { key: 'entrada_almoco', label: 'Início Almoço', time: displayTodayRecord?.entrada_almoco },
-                { key: 'saida_almoco', label: 'Fim Almoço', time: displayTodayRecord?.saida_almoco },
-                { key: 'saida', label: 'Saída', time: displayTodayRecord?.saida },
-                { key: 'entrada_extra1', label: 'Entrada Extra', time: displayTodayRecord?.entrada_extra1 },
-                { key: 'saida_extra1', label: 'Saída Extra', time: displayTodayRecord?.saida_extra1 }
+                { 
+                  key: 'entrada', 
+                  label: 'Entrada', 
+                  time: displayTodayRecord?.entrada,
+                  date: displayTodayRecord?.base_date || displayTodayRecord?.data_registro // Entrada sempre usa a data base
+                },
+                { 
+                  key: 'entrada_almoco', 
+                  label: 'Início Almoço', 
+                  time: displayTodayRecord?.entrada_almoco,
+                  date: displayTodayRecord?.entrada_almoco_date || displayTodayRecord?.base_date || displayTodayRecord?.data_registro
+                },
+                { 
+                  key: 'saida_almoco', 
+                  label: 'Fim Almoço', 
+                  time: displayTodayRecord?.saida_almoco,
+                  date: displayTodayRecord?.saida_almoco_date || displayTodayRecord?.base_date || displayTodayRecord?.data_registro
+                },
+                { 
+                  key: 'saida', 
+                  label: 'Saída', 
+                  time: displayTodayRecord?.saida,
+                  date: displayTodayRecord?.saida_date || displayTodayRecord?.base_date || displayTodayRecord?.data_registro
+                },
+                { 
+                  key: 'entrada_extra1', 
+                  label: 'Entrada Extra', 
+                  time: displayTodayRecord?.entrada_extra1,
+                  date: displayTodayRecord?.entrada_extra1_date || displayTodayRecord?.base_date || displayTodayRecord?.data_registro
+                },
+                { 
+                  key: 'saida_extra1', 
+                  label: 'Saída Extra', 
+                  time: displayTodayRecord?.saida_extra1,
+                  date: displayTodayRecord?.saida_extra1_date || displayTodayRecord?.base_date || displayTodayRecord?.data_registro
+                }
               ].map((record) => {
                 const isCompleted = !!record.time;
                 const isNext = nextRecordType === record.key;
                 
                 return (
-                  
-      <div
+                  <div
                     key={record.key}
                     className={`p-4 rounded-lg border-2 ${
                       isCompleted 
@@ -1612,7 +1544,11 @@ export default function RegistroPontoPage() {
                       ) : null}
                     </div>
                     <div className="text-2xl font-bold text-gray-900">
-                      {formatTime(record.time)}
+                      {formatTimeWithDate(
+                        record.time, 
+                        record.date, 
+                        displayTodayRecord?.base_date || displayTodayRecord?.data_registro
+                      )}
                     </div>
                   </div>
                 );
@@ -1737,7 +1673,7 @@ export default function RegistroPontoPage() {
             // Usar a mesma estrutura da query key definida na linha 137
             const employeeId = currentEmployee?.id || employee?.id;
             if (employeeId && selectedCompany?.id) {
-              const queryKey = ['today-time-record', employeeId, selectedCompany.id, windowHours];
+              const queryKey = ['today-time-record-consolidated', employeeId, selectedCompany.id, windowHours];
               
               console.log('[RegistroPontoPage] 🔄 Invalidando query após registro:', {
                 queryKey,

@@ -129,7 +129,7 @@ const MaquinasPage: React.FC = () => {
           </div>
           
           <PermissionButton
-            entity="maquinas"
+            page="/metalurgica/maquinas*"
             action="create"
             onClick={() => {
               resetForm();
@@ -199,7 +199,7 @@ const MaquinasPage: React.FC = () => {
                       <TableCell>
                         <div className="flex gap-2">
                           <PermissionButton
-                            entity="maquinas"
+                            page="/metalurgica/maquinas*"
                             action="edit"
                             variant="ghost"
                             size="sm"

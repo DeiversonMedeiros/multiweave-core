@@ -79,6 +79,9 @@ BEGIN
         v_data_vencimento := CURRENT_DATE + (v_intervalo_parcelas::INTEGER || ' days')::INTERVAL;
     END IF;
     
+    -- ✅ FIX: Gerar número do título para a conta principal
+    SELECT financeiro.generate_titulo_number(p_company_id, 'PAGAR') INTO v_numero_titulo;
+    
     -- ✅ NOVO: Criar conta a pagar com condições de pagamento e pedido_id
     INSERT INTO financeiro.contas_pagar (
         id, 
@@ -97,7 +100,8 @@ BEGIN
         is_parcelada,
         numero_parcelas,
         intervalo_parcelas,
-        pedido_id
+        pedido_id,
+        numero_titulo
     ) VALUES (
         gen_random_uuid(), 
         p_company_id, 
@@ -115,7 +119,8 @@ BEGIN
         v_is_parcelada,
         v_numero_parcelas,
         v_intervalo_parcelas,
-        p_pedido_id
+        p_pedido_id,
+        v_numero_titulo
     ) RETURNING id INTO v_conta_id;
     
     RAISE NOTICE '[criar_conta_pagar] ✅ Conta criada: conta_id=%, pedido_id=%, forma_pagamento=%, is_parcelada=%, numero_parcelas=%', 

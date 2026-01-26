@@ -1,0 +1,92 @@
+-- =====================================================
+-- CORREÇÃO: update_page_permission_production
+-- =====================================================
+-- Corrigir função update_page_permission_production para usar funções de admin que existem no banco
+-- O problema era que a função usava is_admin_by_permissions_flexible que não existe no banco de produção
+-- Agora usa a mesma lógica das outras funções: is_admin_simple OU is_admin_all_production
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION public.update_page_permission_production(
+  p_profile_id UUID,
+  p_page_path TEXT,
+  p_action TEXT,
+  p_value BOOLEAN
+)
+RETURNS TABLE(
+  id UUID,
+  profile_id UUID,
+  page_path TEXT,
+  can_read BOOLEAN,
+  can_create BOOLEAN,
+  can_edit BOOLEAN,
+  can_delete BOOLEAN,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  permission_id UUID;
+BEGIN
+  -- Verificar se o usuário tem permissão para gerenciar permissões
+  -- Aceita Super Admin (is_admin_simple) OU usuários com todas as permissões de produção
+  IF auth.uid() IS NOT NULL AND NOT (is_admin_simple(auth.uid()) OR is_admin_all_production(auth.uid())) THEN
+    RAISE EXCEPTION 'Acesso negado: apenas usuários com permissões administrativas podem gerenciar permissões';
+  END IF;
+  
+  -- Buscar permissão existente
+  SELECT pp.id INTO permission_id
+  FROM page_permissions pp
+  WHERE pp.profile_id = p_profile_id AND pp.page_path = p_page_path;
+  
+  IF permission_id IS NOT NULL THEN
+    -- Atualizar permissão existente
+    UPDATE page_permissions
+    SET 
+      can_read = CASE WHEN p_action = 'can_read' THEN p_value ELSE page_permissions.can_read END,
+      can_create = CASE WHEN p_action = 'can_create' THEN p_value ELSE page_permissions.can_create END,
+      can_edit = CASE WHEN p_action = 'can_edit' THEN p_value ELSE page_permissions.can_edit END,
+      can_delete = CASE WHEN p_action = 'can_delete' THEN p_value ELSE page_permissions.can_delete END,
+      updated_at = NOW()
+    WHERE page_permissions.id = permission_id;
+  ELSE
+    -- Criar nova permissão
+    INSERT INTO page_permissions (
+      profile_id,
+      page_path,
+      can_read,
+      can_create,
+      can_edit,
+      can_delete,
+      created_at,
+      updated_at
+    ) VALUES (
+      p_profile_id,
+      p_page_path,
+      CASE WHEN p_action = 'can_read' THEN p_value ELSE FALSE END,
+      CASE WHEN p_action = 'can_create' THEN p_value ELSE FALSE END,
+      CASE WHEN p_action = 'can_edit' THEN p_value ELSE FALSE END,
+      CASE WHEN p_action = 'can_delete' THEN p_value ELSE FALSE END,
+      NOW(),
+      NOW()
+    )
+    RETURNING page_permissions.id INTO permission_id;
+  END IF;
+  
+  -- Retornar permissão atualizada
+  RETURN QUERY
+  SELECT 
+    pp.id,
+    pp.profile_id,
+    pp.page_path,
+    pp.can_read,
+    pp.can_create,
+    pp.can_edit,
+    pp.can_delete,
+    pp.created_at,
+    pp.updated_at
+  FROM page_permissions pp
+  WHERE pp.id = permission_id;
+END;
+$$;

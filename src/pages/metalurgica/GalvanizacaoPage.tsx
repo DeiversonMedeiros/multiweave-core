@@ -168,7 +168,7 @@ const GalvanizacaoPage: React.FC = () => {
           </div>
           
           <PermissionButton
-            entity="galvanizacoes"
+            page="/metalurgica/galvanizacao*"
             action="create"
             onClick={() => setIsModalOpen(true)}
           >
@@ -266,7 +266,7 @@ const GalvanizacaoPage: React.FC = () => {
                         <TableCell>{galv.peso_total_kg?.toFixed(2) || '-'}</TableCell>
                         <TableCell>
                           <PermissionButton
-                            entity="galvanizacoes"
+                            page="/metalurgica/galvanizacao*"
                             action="read"
                             variant="ghost"
                             size="sm"

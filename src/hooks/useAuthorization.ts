@@ -82,30 +82,89 @@ export const useAuthorization = () => {
         setIsAdmin(adminData || false);
       }
 
-      // Carregar permissões de módulo
-      const { data: permissionsData, error: permissionsError } = await supabase
-        .rpc('get_user_permissions_simple', { p_user_id: user.id });
+      // Carregar permissões de módulo (filtradas por empresa selecionada)
+      console.log('[useAuthorization] Carregando permissões de módulo para usuário:', user.id, 'empresa:', currentCompanyId);
+      
+      // Tentar usar a nova função que filtra por empresa
+      let permissionsData = null;
+      let permissionsError = null;
+      
+      if (currentCompanyId) {
+        const result = await supabase
+          .rpc('get_user_permissions_by_company', { 
+            p_user_id: user.id,
+            p_company_id: currentCompanyId
+          });
+        permissionsData = result.data;
+        permissionsError = result.error;
+        
+        // Se a nova função não existir ainda, usar a função antiga como fallback
+        if (permissionsError && permissionsError.code === 'PGRST202') {
+          console.warn('[useAuthorization] Função get_user_permissions_by_company não encontrada, usando fallback');
+          const fallbackResult = await supabase
+            .rpc('get_user_permissions_simple', { p_user_id: user.id });
+          permissionsData = fallbackResult.data;
+          permissionsError = fallbackResult.error;
+        }
+      } else {
+        // Se não há empresa selecionada, usar a função antiga
+        const result = await supabase
+          .rpc('get_user_permissions_simple', { p_user_id: user.id });
+        permissionsData = result.data;
+        permissionsError = result.error;
+      }
 
       if (permissionsError) {
-        console.error('Erro ao carregar permissões de módulo:', permissionsError);
+        console.error('[useAuthorization] Erro ao carregar permissões de módulo:', permissionsError);
         setPermissions([]);
       } else {
+        console.log('[useAuthorization] Permissões de módulo carregadas:', permissionsData);
         setPermissions(permissionsData || []);
       }
 
-      // Carregar permissões de página
-      if (selectedCompany?.id) {
-        const { data: pageData, error: pageError } = await supabase
-          .rpc('get_user_page_permissions_simple', { p_user_id: user.id });
-
-        if (pageError) {
-          console.error('Erro ao carregar permissões de página:', pageError);
-          setPagePermissions([]);
-        } else {
-          setPagePermissions(pageData || []);
+      // Carregar permissões de página (filtradas por empresa selecionada)
+      console.log('[useAuthorization] Carregando permissões de página para usuário:', user.id, 'empresa:', currentCompanyId);
+      
+      // Tentar usar a nova função que filtra por empresa
+      let pageData = null;
+      let pageError = null;
+      
+      if (currentCompanyId) {
+        const result = await supabase
+          .rpc('get_user_page_permissions_by_company', { 
+            p_user_id: user.id,
+            p_company_id: currentCompanyId
+          });
+        pageData = result.data;
+        pageError = result.error;
+        
+        // Se a nova função não existir ainda, usar a função antiga como fallback
+        if (pageError && pageError.code === 'PGRST202') {
+          console.warn('[useAuthorization] Função get_user_page_permissions_by_company não encontrada, usando fallback');
+          const fallbackResult = await supabase
+            .rpc('get_user_page_permissions_simple', { p_user_id: user.id });
+          pageData = fallbackResult.data;
+          pageError = fallbackResult.error;
         }
       } else {
+        // Se não há empresa selecionada, usar a função antiga
+        const result = await supabase
+          .rpc('get_user_page_permissions_simple', { p_user_id: user.id });
+        pageData = result.data;
+        pageError = result.error;
+      }
+
+      if (pageError) {
+        console.error('[useAuthorization] Erro ao carregar permissões de página:', pageError);
         setPagePermissions([]);
+      } else {
+        console.log('[useAuthorization] Permissões de página carregadas:', pageData);
+        console.log('[useAuthorization] Total de permissões de página:', pageData?.length || 0);
+        if (pageData && pageData.length > 0) {
+          console.log('[useAuthorization] Permissões de página RH:', pageData.filter(p => p.page_path.includes('/rh/')));
+          console.log('[useAuthorization] Permissões de treinamento:', pageData.filter(p => p.page_path.includes('training') || p.page_path.includes('treinamento')));
+        }
+        setPagePermissions(pageData || []);
       }
     } catch (error) {
       console.error('Erro ao carregar permissões:', error);
@@ -181,19 +240,54 @@ export const useAuthorization = () => {
     moduleName: string, 
     action: PermissionAction
   ): boolean => {
-    if (isAdmin) return true;
-    if (!permissions.length) return false;
-
-    const permission = permissions.find(p => p.module_name === moduleName);
-    if (!permission) return false;
-
-    switch (action) {
-      case 'read': return permission.can_read;
-      case 'create': return permission.can_create;
-      case 'edit': return permission.can_edit;
-      case 'delete': return permission.can_delete;
-      default: return false;
+    console.log('[useAuthorization] hasModulePermission chamado:', {
+      moduleName,
+      action,
+      isAdmin,
+      permissionsCount: permissions.length
+    });
+    
+    if (isAdmin) {
+      console.log('[useAuthorization] Usuário é admin - permitindo módulo:', moduleName);
+      return true;
     }
+    
+    if (!permissions.length) {
+      console.log('[useAuthorization] Nenhuma permissão de módulo carregada - negando acesso');
+      return false;
+    }
+
+    console.log('[useAuthorization] Permissões de módulo disponíveis:', permissions.map(p => p.module_name));
+    const permission = permissions.find(p => p.module_name === moduleName);
+    
+    if (!permission) {
+      console.log('[useAuthorization] Permissão não encontrada para módulo:', moduleName);
+      return false;
+    }
+
+    const result = (() => {
+      switch (action) {
+        case 'read': return permission.can_read;
+        case 'create': return permission.can_create;
+        case 'edit': return permission.can_edit;
+        case 'delete': return permission.can_delete;
+        default: return false;
+      }
+    })();
+    
+    console.log('[useAuthorization] Resultado hasModulePermission:', {
+      moduleName,
+      action,
+      permission: {
+        can_read: permission.can_read,
+        can_create: permission.can_create,
+        can_edit: permission.can_edit,
+        can_delete: permission.can_delete
+      },
+      result
+    });
+
+    return result;
   }, [isAdmin, permissions]);
 
   // Verificar se tem permissão para qualquer ação do módulo
@@ -243,44 +337,114 @@ export const useAuthorization = () => {
     pagePath: string,
     action: PermissionAction
   ): boolean => {
-    if (isAdmin) return true;
-    if (!pagePermissions.length) return false;
+    console.log('[useAuthorization] Verificando permissão de página:', {
+      pagePath,
+      action,
+      isAdmin,
+      pagePermissionsCount: pagePermissions.length
+    });
+    
+    if (isAdmin) {
+      console.log('[useAuthorization] Usuário é admin - permitindo acesso');
+      return true;
+    }
+    
+    if (!pagePermissions.length) {
+      console.log('[useAuthorization] Nenhuma permissão de página carregada - negando acesso');
+      return false;
+    }
 
-    // Normalizar caminho (remove parâmetros)
+    // Normalizar caminho (remove parâmetros de rota, mas mantém estrutura)
     const normalizePath = (path: string): string => {
-      // Remove parâmetros de rota (/:id, /:id/edit, etc)
-      let normalized = path.replace(/\/[^/]+$/, ''); // Remove último segmento
+      const hasWildcard = path.endsWith('*');
+      // Remove wildcard temporariamente para processar
+      let normalized = hasWildcard ? path.slice(0, -1) : path;
+      
+      // Remove parâmetros de rota (/:id, /:id/edit, etc) mas mantém estrutura
+      // Exemplo: /rh/training/123 -> /rh/training
+      // Exemplo: /rh/training/123/edit -> /rh/training
       normalized = normalized.replace(/\/[^/]+\/edit$/, ''); // Remove /:id/edit
       normalized = normalized.replace(/\/[^/]+\/new$/, ''); // Remove /:id/new
       normalized = normalized.replace(/\/:[^/]+/g, ''); // Remove parâmetros restantes
+      
+      // Se o caminho original tinha wildcard, adiciona de volta
+      if (hasWildcard) {
+        normalized = normalized + '*';
+      }
+      
       return normalized;
     };
 
     const normalizedPath = normalizePath(pagePath);
+    console.log('[useAuthorization] Caminho original:', pagePath);
+    console.log('[useAuthorization] Caminho normalizado:', normalizedPath);
+    console.log('[useAuthorization] Permissões disponíveis:', pagePermissions.map(p => p.page_path));
 
-    // Buscar permissão exata primeiro
-    let permission = pagePermissions.find(p => p.page_path === normalizedPath);
-
-    // Se não encontrou, buscar com wildcard
-    if (!permission) {
-      permission = pagePermissions.find(p => {
-        if (p.page_path.endsWith('*')) {
-          const pattern = p.page_path.replace('*', '');
-          return normalizedPath.startsWith(pattern);
+    // Buscar permissão - primeiro exata, depois com wildcard
+    let permission = pagePermissions.find(p => {
+      // Comparação exata (com ou sem wildcard)
+      if (p.page_path === normalizedPath) {
+        console.log('[useAuthorization] Match exato encontrado:', p.page_path);
+        return true;
+      }
+      
+      // Se a permissão tem wildcard, verificar se o caminho normalizado começa com o padrão
+      if (p.page_path.endsWith('*')) {
+        const pattern = p.page_path.slice(0, -1); // Remove *
+        const pathWithoutWildcard = normalizedPath.replace(/\*$/, '');
+        const matches = pathWithoutWildcard.startsWith(pattern);
+        if (matches) {
+          console.log('[useAuthorization] Match com wildcard (permissão):', p.page_path, 'para caminho:', normalizedPath);
         }
-        return false;
-      });
+        return matches;
+      }
+      
+      // Se o caminho normalizado tem wildcard, verificar se a permissão começa com o padrão
+      if (normalizedPath.endsWith('*')) {
+        const pattern = normalizedPath.slice(0, -1); // Remove *
+        const permWithoutWildcard = p.page_path.replace(/\*$/, '');
+        const matches = permWithoutWildcard.startsWith(pattern);
+        if (matches) {
+          console.log('[useAuthorization] Match com wildcard (caminho):', normalizedPath, 'para permissão:', p.page_path);
+        }
+        return matches;
+      }
+      
+      return false;
+    });
+    
+    if (permission) {
+      console.log('[useAuthorization] Permissão encontrada:', permission.page_path);
+    } else {
+      console.log('[useAuthorization] Nenhuma permissão encontrada para:', normalizedPath);
     }
 
-    if (!permission) return false;
-
-    switch (action) {
-      case 'read': return permission.can_read;
-      case 'create': return permission.can_create;
-      case 'edit': return permission.can_edit;
-      case 'delete': return permission.can_delete;
-      default: return false;
+    if (!permission) {
+      console.log('[useAuthorization] Nenhuma permissão encontrada para:', normalizedPath);
+      return false;
     }
+
+    const result = (() => {
+      switch (action) {
+        case 'read': return permission.can_read;
+        case 'create': return permission.can_create;
+        case 'edit': return permission.can_edit;
+        case 'delete': return permission.can_delete;
+        default: return false;
+      }
+    })();
+    
+    console.log('[useAuthorization] Resultado da verificação:', {
+      pagePath: permission.page_path,
+      action,
+      canRead: permission.can_read,
+      canCreate: permission.can_create,
+      canEdit: permission.can_edit,
+      canDelete: permission.can_delete,
+      result
+    });
+
+    return result;
   }, [isAdmin, pagePermissions]);
 
   return {

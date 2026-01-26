@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useCompany } from '@/lib/company-context';
-import { useAuthorization } from '@/hooks/useAuthorization';
+import { usePermissions } from '@/hooks/usePermissions';
 import { ContaReceber, ContaReceberFormData, ContaReceberFilters } from '@/integrations/supabase/financial-types';
 import { useFinanceiroData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { EntityService } from '@/services/generic/entityService';
@@ -32,15 +32,14 @@ interface UseContasReceberReturn {
 
 export function useContasReceber(): UseContasReceberReturn {
   const { selectedCompany } = useCompany();
-  const { checkModulePermission, checkEntityPermission } = useAuthorization();
+  const { canCreateModule, canEditModule, canDeleteModule, canCreatePage, canEditPage, canDeletePage } = usePermissions();
   
   const [filters, setFilters] = useState<ContaReceberFilters>({});
 
-  // Verificar permissões
-  const canCreate = checkModulePermission('financeiro', 'create') && checkEntityPermission('contas_receber', 'create');
-  const canEdit = checkModulePermission('financeiro', 'edit') && checkEntityPermission('contas_receber', 'edit');
-  const canDelete = checkModulePermission('financeiro', 'delete') && checkEntityPermission('contas_receber', 'delete');
-  const canConfirm = checkModulePermission('financeiro', 'edit') && checkEntityPermission('contas_receber', 'edit');
+  const canCreate = canCreateModule('financeiro') && canCreatePage('/financeiro/contas-receber*');
+  const canEdit = canEditModule('financeiro') && canEditPage('/financeiro/contas-receber*');
+  const canDelete = canDeleteModule('financeiro') && canDeletePage('/financeiro/contas-receber*');
+  const canConfirm = canEditModule('financeiro') && canEditPage('/financeiro/contas-receber*');
 
   // Carregar dados usando EntityService
   const entityFilters: any = {};

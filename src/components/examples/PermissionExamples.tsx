@@ -133,7 +133,7 @@ export function ExemploProtecaoSecoes() {
         </CardHeader>
         <CardContent>
           <PermissionGuard 
-            entity="solicitacoes_compra" 
+            page="/compras/requisicoes*" 
             action="read"
             fallback={
               <div className="text-center p-4 bg-gray-50 rounded">
@@ -157,7 +157,7 @@ export function ExemploProtecaoSecoes() {
         </CardHeader>
         <CardContent>
           <PermissionGuard 
-            entity="cotacoes" 
+            page="/compras/cotacoes*" 
             action="read"
             fallback={
               <div className="text-center p-4 bg-gray-50 rounded">
@@ -247,8 +247,8 @@ export function ExemploPaginaCompleta() {
   return (
     <RequireAuth 
       requiredPermission={{ 
-        type: 'entity', 
-        name: 'solicitacoes_compra', 
+        type: 'page', 
+        name: '/compras/requisicoes*', 
         action: 'read' 
       }}
     >
@@ -258,7 +258,7 @@ export function ExemploPaginaCompleta() {
           
           <div className="flex gap-2">
             <PermissionGuard 
-              entity="solicitacoes_compra" 
+              page="/compras/requisicoes*" 
               action="create"
               fallback={null}
             >
@@ -269,7 +269,7 @@ export function ExemploPaginaCompleta() {
             </PermissionGuard>
             
             <PermissionGuard 
-              entity="cotacoes" 
+              page="/compras/cotacoes*" 
               action="create"
               fallback={null}
             >

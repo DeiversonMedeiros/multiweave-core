@@ -7,7 +7,7 @@
 
 import { useState } from 'react';
 import { useCompany } from '@/lib/company-context';
-import { useAuthorization } from '@/hooks/useAuthorization';
+import { usePermissions } from '@/hooks/usePermissions';
 import { 
   PlanoContas, 
   LancamentoContabil, 
@@ -70,7 +70,7 @@ interface UseContabilidadeReturn {
 
 export function useContabilidade(): UseContabilidadeReturn {
   const { selectedCompany } = useCompany();
-  const { checkModulePermission, checkEntityPermission } = useAuthorization();
+  const { canCreateModule, canEditModule, canDeleteModule, canReadModule, canCreatePage, canEditPage, canDeletePage, canReadPage } = usePermissions();
   
   // Carregar dados usando EntityService
   const { data: planoContasData, isLoading: loadingPlano } = useFinanceiroData<PlanoContas>(
@@ -102,11 +102,10 @@ export function useContabilidade(): UseContabilidadeReturn {
   const loading = loadingPlano || loadingLancamentos || loadingRateios;
   const error = null; // Erros são tratados pelo React Query
 
-  // Verificar permissões
-  const canCreate = checkModulePermission('financeiro', 'create') && checkEntityPermission('lancamentos_contabeis', 'create');
-  const canEdit = checkModulePermission('financeiro', 'edit') && checkEntityPermission('lancamentos_contabeis', 'edit');
-  const canDelete = checkModulePermission('financeiro', 'delete') && checkEntityPermission('lancamentos_contabeis', 'delete');
-  const canGenerate = checkModulePermission('financeiro', 'read') && checkEntityPermission('lancamentos_contabeis', 'read');
+  const canCreate = canCreateModule('financeiro') && canCreatePage('/financeiro/contabilidade*');
+  const canEdit = canEditModule('financeiro') && canEditPage('/financeiro/contabilidade*');
+  const canDelete = canDeleteModule('financeiro') && canDeletePage('/financeiro/contabilidade*');
+  const canGenerate = canReadModule('financeiro') && canReadPage('/financeiro/contabilidade*');
 
   // Mutations
   const createPlanoMutation = useCreateEntity<Partial<PlanoContas>>('financeiro', 'plano_contas', selectedCompany?.id || '');

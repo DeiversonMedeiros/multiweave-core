@@ -174,7 +174,7 @@ const PCPPage: React.FC = () => {
           </div>
           
           <PermissionButton
-            entity="planejamento_producao"
+            page="/metalurgica/planejamento*"
             action="create"
             onClick={() => setIsModalOpen(true)}
           >

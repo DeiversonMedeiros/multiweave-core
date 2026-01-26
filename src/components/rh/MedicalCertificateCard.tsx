@@ -154,14 +154,29 @@ export const MedicalCertificateCard: React.FC<MedicalCertificateCardProps> = ({
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/* Informações do Colaborador */}
+        {certificate.employee && (
+          <div className="space-y-2 pb-3 border-b">
+            <div className="flex items-center gap-2 text-sm">
+              <User className="h-4 w-4 text-blue-600" />
+              <span className="font-semibold text-base">{certificate.employee.nome}</span>
+            </div>
+            {certificate.employee.matricula && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
+                <span>Matrícula: {certificate.employee.matricula}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Informações do Médico */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm">
             <User className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{certificate.medico_nome}</span>
+            <span className="font-medium">{certificate.medico_nome || 'Não informado'}</span>
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>CRM/CRMO: {certificate.crm_crmo}</span>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
+            <span>CRM/CRMO: {certificate.crm_crmo || 'Não informado'}</span>
             {certificate.especialidade && (
               <>
                 <span>•</span>
@@ -251,58 +266,62 @@ export const MedicalCertificateCard: React.FC<MedicalCertificateCardProps> = ({
         )}
 
         {/* Ações */}
-        {showActions && (
-          <div className="flex justify-end gap-2 pt-4 border-t">
-            {onView && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onView(certificate)}
-              >
-                <Eye className="h-4 w-4 mr-1" />
-                Visualizar
-              </Button>
-            )}
+        <div className="flex justify-end gap-2 pt-4 border-t">
+          {/* Botão Visualizar - sempre visível */}
+          {onView && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onView(certificate)}
+            >
+              <Eye className="h-4 w-4 mr-1" />
+              Visualizar
+            </Button>
+          )}
 
-            {onDownload && certificate.anexo_url && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onDownload(certificate)}
-              >
-                <Download className="h-4 w-4 mr-1" />
-                Download
-              </Button>
-            )}
+          {/* Outras ações - apenas quando showActions é true */}
+          {showActions && (
+            <>
+              {onDownload && certificate.anexo_url && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onDownload(certificate)}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Download
+                </Button>
+              )}
 
-            {/* Ações de gestor */}
-            {isManager && certificate.status === 'pendente' && (
-              <>
-                {onApprove && (
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={() => onApprove(certificate)}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    Aprovar
-                  </Button>
-                )}
-                {onReject && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => onReject(certificate)}
-                  >
-                    <XCircle className="h-4 w-4 mr-1" />
-                    Rejeitar
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        )}
+              {/* Ações de gestor */}
+              {isManager && certificate.status === 'pendente' && (
+                <>
+                  {onApprove && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => onApprove(certificate)}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                      Aprovar
+                    </Button>
+                  )}
+                  {onReject && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => onReject(certificate)}
+                    >
+                      <XCircle className="h-4 w-4 mr-1" />
+                      Rejeitar
+                    </Button>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
 
         {/* Data de Criação */}
         <div className="text-xs text-muted-foreground pt-2 border-t">

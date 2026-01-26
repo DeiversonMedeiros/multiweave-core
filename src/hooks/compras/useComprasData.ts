@@ -376,16 +376,89 @@ export function useNFComparison(nfEntradaId?: string) {
   });
 }
 
-export function useFollowUpPipeline() {
+export interface FollowUpComprasFilters {
+  dataInicio?: string;
+  dataFim?: string;
+  statusRequisicao?: string;
+  statusCotacao?: string;
+  statusPedido?: string;
+  statusConta?: string;
+  fornecedorId?: string;
+  solicitanteId?: string;
+}
+
+export interface FollowUpComprasItem {
+  // Requisição
+  requisicao_id: string;
+  numero_requisicao: string;
+  data_solicitacao: string;
+  data_necessidade: string;
+  requisicao_status: string;
+  requisicao_workflow_state: string;
+  valor_total_estimado: number;
+  solicitante_nome: string;
+  solicitante_email: string;
+  requisicao_created_at: string;
+  requisicao_updated_at: string;
+  
+  // Cotação
+  cotacao_id?: string;
+  numero_cotacao?: string;
+  data_cotacao?: string;
+  cotacao_status?: string;
+  cotacao_workflow_state?: string;
+  prazo_resposta?: string | null;
+  cotacao_created_at?: string;
+  cotacao_updated_at?: string;
+  
+  // Pedido
+  pedido_id?: string;
+  numero_pedido?: string;
+  data_pedido?: string;
+  data_entrega_prevista?: string;
+  data_entrega_real?: string;
+  pedido_status?: string;
+  pedido_workflow_state?: string;
+  pedido_valor_total?: number;
+  pedido_valor_final?: number;
+  fornecedor_nome?: string;
+  pedido_created_at?: string;
+  pedido_updated_at?: string;
+  
+  // Conta a Pagar
+  conta_id?: string;
+  conta_descricao?: string;
+  conta_valor_original?: number;
+  conta_valor_atual?: number;
+  data_vencimento?: string;
+  conta_status?: string;
+  numero_nota_fiscal?: string;
+  conta_created_at?: string;
+  conta_updated_at?: string;
+  
+  // Entrada em Estoque
+  entrada_id?: string;
+  entrada_numero_documento?: string;
+  data_entrada?: string;
+  entrada_status?: string;
+  entrada_created_at?: string;
+}
+
+export function useFollowUp(filters?: FollowUpComprasFilters) {
   const { selectedCompany } = useCompany();
   return useQuery({
-    queryKey: ['compras', 'follow-up', selectedCompany?.id],
+    queryKey: ['compras', 'follow-up', selectedCompany?.id, filters],
     queryFn: async () => {
       if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
-      const result = await purchaseService.listFollowUp(selectedCompany.id);
-      return result.data;
+      const result = await purchaseService.listFollowUp({
+        companyId: selectedCompany.id,
+        ...filters,
+      });
+      return (result || []) as FollowUpComprasItem[];
     },
     enabled: !!selectedCompany?.id,
+    refetchInterval: 30000, // Atualizar a cada 30 segundos
+    refetchOnWindowFocus: true,
   });
 }
 

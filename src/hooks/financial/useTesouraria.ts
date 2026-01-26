@@ -6,7 +6,7 @@
 // Autor: Sistema MultiWeave Core
 
 import { useCompany } from '@/lib/company-context';
-import { useAuthorization } from '@/hooks/useAuthorization';
+import { usePermissions } from '@/hooks/usePermissions';
 import { ContaBancaria, FluxoCaixa, ConciliacaoBancaria } from '@/integrations/supabase/financial-types';
 import { useFinanceiroData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { EntityService } from '@/services/generic/entityService';
@@ -35,13 +35,12 @@ interface UseTesourariaReturn {
 
 export function useTesouraria(): UseTesourariaReturn {
   const { selectedCompany } = useCompany();
-  const { checkModulePermission, checkEntityPermission } = useAuthorization();
+  const { canCreateModule, canEditModule, canDeleteModule, canCreatePage, canEditPage, canDeletePage } = usePermissions();
 
-  // Verificar permissões
-  const canCreate = checkModulePermission('financeiro', 'create') && checkEntityPermission('contas_bancarias', 'create');
-  const canEdit = checkModulePermission('financeiro', 'edit') && checkEntityPermission('contas_bancarias', 'edit');
-  const canDelete = checkModulePermission('financeiro', 'delete') && checkEntityPermission('contas_bancarias', 'delete');
-  const canProcess = checkModulePermission('financeiro', 'edit') && checkEntityPermission('conciliacoes_bancarias', 'create');
+  const canCreate = canCreateModule('financeiro') && canCreatePage('/financeiro/tesouraria*');
+  const canEdit = canEditModule('financeiro') && canEditPage('/financeiro/tesouraria*');
+  const canDelete = canDeleteModule('financeiro') && canDeletePage('/financeiro/bancaria*');
+  const canProcess = canEditModule('financeiro') && canEditPage('/financeiro/conciliacao-bancaria*');
 
   // Carregar dados usando EntityService
   const { data: contasBancariasData, isLoading: loadingContas, error: errorContas } = useFinanceiroData<ContaBancaria>(

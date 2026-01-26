@@ -213,7 +213,7 @@ export default function AlmoxarifadosPage() {
           newButtonLabel="Novo Almoxarifado"
         />
 
-        <PermissionGuard entity="almoxarifados" action="create">
+        <PermissionGuard page="/almoxarifado/almoxarifados*" action="create">
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>

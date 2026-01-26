@@ -176,6 +176,9 @@ const CentralAprovacoesExpandida: React.FC = () => {
         processo_tipo: selectedApproval.processo_tipo,
         is_requisicao_compra: isRequisicaoCompra
       });
+      
+      // A mensagem de erro já é exibida pelo toast no hook useProcessApproval
+      // Não precisamos exibir novamente aqui para evitar duplicação
     }
   };
 

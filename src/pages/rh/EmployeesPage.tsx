@@ -247,7 +247,7 @@ export default function EmployeesPage() {
             Gerencie os funcionários da empresa
           </p>
         </div>
-        <PermissionButton entity="employees" action="create">
+        <PermissionButton page="/rh/employees*" action="create">
           <Button onClick={handleCreate}>
             <Plus className="h-4 w-4 mr-2" />
             Novo Funcionário
@@ -285,7 +285,7 @@ export default function EmployeesPage() {
           </SelectContent>
         </Select>
 
-        <PermissionButton entity="employees" action="read">
+        <PermissionButton page="/rh/employees*" action="read">
           <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Exportar

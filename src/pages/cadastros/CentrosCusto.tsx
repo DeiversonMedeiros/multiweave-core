@@ -399,7 +399,7 @@ export default function CentrosCusto() {
           />
         )}
 
-        <PermissionGuard entity="cost_centers" action="create">
+        <PermissionGuard page="/cadastros/centros-custo*" action="create">
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>

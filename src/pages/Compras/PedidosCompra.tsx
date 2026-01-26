@@ -33,8 +33,8 @@ export default function PedidosCompraPage() {
   return (
     <RequireAuth 
       requiredPermission={{ 
-        type: 'entity', 
-        name: 'pedidos_compra', 
+        type: 'page', 
+        name: '/compras/pedidos*', 
         action: 'read' 
       }}
     >

@@ -1557,13 +1557,352 @@ export const purchaseService = {
     return data;
   },
 
-  async listFollowUp(companyId: string) {
-    return EntityService.list({
+  async listFollowUp(params: {
+    companyId: string;
+    dataInicio?: string;
+    dataFim?: string;
+    statusRequisicao?: string;
+    statusCotacao?: string;
+    statusPedido?: string;
+    statusConta?: string;
+    fornecedorId?: string;
+    solicitanteId?: string;
+  }) {
+    console.log('[purchaseService.listFollowUp] Parâmetros:', {
+      p_company_id: params.companyId,
+      p_data_inicio: params.dataInicio || null,
+      p_data_fim: params.dataFim || null,
+      p_status_requisicao: params.statusRequisicao || null,
+      p_status_cotacao: params.statusCotacao || null,
+      p_status_pedido: params.statusPedido || null,
+      p_status_conta: params.statusConta || null,
+      p_fornecedor_id: params.fornecedorId || null,
+      p_solicitante_id: params.solicitanteId || null,
+    });
+    
+    // Função wrapper no schema public permite chamada direta via RPC
+    const { data, error } = await (supabase as any).rpc('get_followup_compras', {
+      p_company_id: params.companyId,
+      p_data_inicio: params.dataInicio || null,
+      p_data_fim: params.dataFim || null,
+      p_status_requisicao: params.statusRequisicao || null,
+      p_status_cotacao: params.statusCotacao || null,
+      p_status_pedido: params.statusPedido || null,
+      p_status_conta: params.statusConta || null,
+      p_fornecedor_id: params.fornecedorId || null,
+      p_solicitante_id: params.solicitanteId || null,
+    });
+
+    if (error) {
+      console.error('[purchaseService.listFollowUp] Erro ao buscar follow-up:', error);
+      console.error('[purchaseService.listFollowUp] Detalhes do erro:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      throw error;
+    }
+
+    console.log('[purchaseService.listFollowUp] Sucesso! Retornando', data?.length || 0, 'itens');
+    return data || [];
+  },
+
+  async getRequisitionItems(requisicaoId: string, companyId: string) {
+    // Usar EntityService para acessar tabela do schema compras
+    // Nota: requisicao_itens não tem company_id, então usamos skipCompanyFilter
+    const result = await EntityService.list({
       schema: 'compras',
-      table: 'follow_up_view',
+      table: 'requisicao_itens',
       companyId,
+      filters: {
+        requisicao_id: requisicaoId,
+      },
+      page: 1,
+      pageSize: 1000,
+      orderBy: 'created_at',
+      orderDirection: 'asc',
+      skipCompanyFilter: true, // Tabela não tem company_id diretamente
+    });
+
+    const items = result.data || [];
+
+    // Buscar informações dos materiais separadamente
+    if (items.length > 0) {
+      const materialIds = items.map((item: any) => item.material_id).filter(Boolean);
+      if (materialIds.length > 0) {
+        // Buscar materiais de almoxarifado.materiais_equipamentos
+        const materiaisResult = await EntityService.list({
+          schema: 'almoxarifado',
+          table: 'materiais_equipamentos',
+          companyId,
+          filters: {},
+          page: 1,
+          pageSize: 1000,
+        });
+
+        const materialsMap = new Map<string, any>();
+        if (materiaisResult.data) {
+          materiaisResult.data.forEach((material: any) => {
+            const materialIdStr = String(material.id);
+            if (materialIds.some(id => String(id) === materialIdStr)) {
+              materialsMap.set(materialIdStr, {
+                id: material.id,
+                nome: material.nome || material.descricao || 'Material sem nome',
+                codigo: material.codigo || material.codigo_interno || '',
+                unidade_medida: material.unidade_medida || 'UN',
+              });
+            }
+          });
+        }
+        
+        return items.map((item: any) => ({
+          ...item,
+          material: materialsMap.get(String(item.material_id)) || null,
+        }));
+      }
+    }
+
+    return items;
+  },
+
+  async getCotacaoItems(cotacaoId: string, companyId: string) {
+    console.log('[purchaseService.getCotacaoItems] Buscando itens da cotação:', cotacaoId);
+    
+    // 1. Buscar fornecedores da cotação
+    const fornecedoresResult = await EntityService.list({
+      schema: 'compras',
+      table: 'cotacao_fornecedores',
+      companyId,
+      filters: {
+        cotacao_id: cotacaoId,
+      },
+      page: 1,
+      pageSize: 100,
       skipCompanyFilter: true,
     });
+
+    const fornecedoresCotacao = fornecedoresResult.data || [];
+    const cotacaoFornecedoresIds = fornecedoresCotacao.map((fc: any) => fc.id);
+
+    console.log('[purchaseService.getCotacaoItems] Fornecedores encontrados:', cotacaoFornecedoresIds.length);
+
+    if (cotacaoFornecedoresIds.length === 0) {
+      console.log('[purchaseService.getCotacaoItems] Nenhum fornecedor encontrado, retornando array vazio');
+      return [];
+    }
+
+    // 2. Buscar itens cotados (cotacao_item_fornecedor)
+    const cotacaoItensResult = await EntityService.list({
+      schema: 'compras',
+      table: 'cotacao_item_fornecedor',
+      companyId,
+      filters: {},
+      page: 1,
+      pageSize: 1000,
+      skipCompanyFilter: true,
+    });
+
+    // Filtrar apenas os itens dos fornecedores desta cotação
+    const items = (cotacaoItensResult.data || []).filter((item: any) =>
+      cotacaoFornecedoresIds.includes(item.cotacao_fornecedor_id)
+    );
+
+    console.log('[purchaseService.getCotacaoItems] Itens encontrados:', items.length);
+
+    // 3. Buscar informações dos materiais e itens de requisição separadamente
+    if (items.length > 0) {
+      const materialIds = items.map((item: any) => item.material_id).filter(Boolean);
+      const requisicaoItemIds = items.map((item: any) => item.requisicao_item_id).filter(Boolean);
+
+      const [materialsResult, requisicaoItemsResult] = await Promise.all([
+        materialIds.length > 0
+          ? EntityService.list({
+              schema: 'almoxarifado',
+              table: 'materiais_equipamentos',
+              companyId,
+              filters: {},
+              page: 1,
+              pageSize: 1000,
+            }).then((result) => {
+              // Filtrar apenas os materiais que estão nos IDs solicitados
+              return (result.data || []).filter((m: any) =>
+                materialIds.some(id => String(id) === String(m.id))
+              );
+            })
+          : Promise.resolve([]),
+        requisicaoItemIds.length > 0
+          ? Promise.all(
+              requisicaoItemIds.map((itemId) =>
+                EntityService.getById({
+                  schema: 'compras',
+                  table: 'requisicao_itens',
+                  id: itemId,
+                  companyId,
+                }).catch(() => null)
+              )
+            ).then((results) => results.filter(Boolean))
+          : Promise.resolve([]),
+      ]);
+
+      const materialsMap = new Map(
+        (Array.isArray(materialsResult) ? materialsResult : []).map((m: any) => [
+          String(m.id),
+          {
+            id: m.id,
+            nome: m.nome || m.descricao || 'Material sem nome',
+            codigo: m.codigo || m.codigo_interno || '',
+            unidade_medida: m.unidade_medida || 'UN',
+          },
+        ])
+      );
+      const requisicaoItemsMap = new Map((Array.isArray(requisicaoItemsResult) ? requisicaoItemsResult : []).map((r: any) => [r.id, r]));
+
+      // Mapear itens com informações completas
+      // Agrupar por requisicao_item_id para mostrar apenas uma linha por item (melhor oferta)
+      const itemsByRequisicaoItem = new Map<string, any>();
+      
+      items.forEach((item: any) => {
+        const key = String(item.requisicao_item_id);
+        const existing = itemsByRequisicaoItem.get(key);
+        
+        // Se não existe ou se este item é vencedor, usar este
+        if (!existing || item.is_vencedor) {
+          itemsByRequisicaoItem.set(key, {
+            id: item.id,
+            requisicao_item_id: item.requisicao_item_id,
+            material_id: item.material_id,
+            quantidade: item.quantidade_ofertada || 0,
+            valor_unitario: item.valor_unitario || 0,
+            valor_total: item.valor_total_calculado || item.valor_unitario * (item.quantidade_ofertada || 0),
+            prazo_entrega: item.prazo_entrega_dias,
+            observacoes: item.observacoes,
+            material: materialsMap.get(String(item.material_id)) || null,
+            requisicao_item: requisicaoItemsMap.get(item.requisicao_item_id) || null,
+          });
+        }
+      });
+
+      const finalItems = Array.from(itemsByRequisicaoItem.values());
+      console.log('[purchaseService.getCotacaoItems] Itens finais após agrupamento:', finalItems.length);
+      return finalItems;
+    }
+
+    return [];
+  },
+
+  async getPedidoItems(pedidoId: string, companyId: string) {
+    // Usar EntityService para acessar tabela do schema compras
+    // Nota: pedido_itens não tem company_id, então usamos skipCompanyFilter
+    const result = await EntityService.list({
+      schema: 'compras',
+      table: 'pedido_itens',
+      companyId,
+      filters: {
+        pedido_id: pedidoId,
+      },
+      page: 1,
+      pageSize: 1000,
+      orderBy: 'created_at',
+      orderDirection: 'asc',
+      skipCompanyFilter: true, // Tabela não tem company_id diretamente
+    });
+
+    const items = result.data || [];
+
+    // Buscar informações dos materiais e itens de cotação separadamente
+    if (items.length > 0) {
+      const materialIds = items.map((item: any) => item.material_id).filter(Boolean);
+      const cotacaoItemIds = items.map((item: any) => item.cotacao_item_id).filter(Boolean);
+
+      const [materialsResult, cotacaoItemsResult] = await Promise.all([
+        materialIds.length > 0
+          ? EntityService.list({
+              schema: 'almoxarifado',
+              table: 'materiais_equipamentos',
+              companyId,
+              filters: {},
+              page: 1,
+              pageSize: 1000,
+            }).then((result) => {
+              // Filtrar apenas os materiais que estão nos IDs solicitados
+              return (result.data || []).filter((m: any) =>
+                materialIds.some(id => String(id) === String(m.id))
+              );
+            })
+          : Promise.resolve([]),
+        cotacaoItemIds.length > 0
+          ? Promise.all(
+              cotacaoItemIds.map((itemId) =>
+                EntityService.getById({
+                  schema: 'compras',
+                  table: 'cotacao_itens',
+                  id: itemId,
+                  companyId,
+                }).catch(() => null)
+              )
+            ).then((results) => results.filter(Boolean))
+          : Promise.resolve([]),
+      ]);
+
+      const materialsMap = new Map(
+        (Array.isArray(materialsResult) ? materialsResult : []).map((m: any) => [
+          String(m.id),
+          {
+            id: m.id,
+            nome: m.nome || m.descricao || 'Material sem nome',
+            codigo: m.codigo || m.codigo_interno || '',
+            unidade_medida: m.unidade_medida || 'UN',
+          },
+        ])
+      );
+      const cotacaoItemsMap = new Map((Array.isArray(cotacaoItemsResult) ? cotacaoItemsResult : []).map((c: any) => [c.id, c]));
+
+      return items.map((item: any) => ({
+        ...item,
+        material: materialsMap.get(String(item.material_id)) || null,
+        cotacao_item: cotacaoItemsMap.get(item.cotacao_item_id) || null,
+      }));
+    }
+
+    return items;
+  },
+
+  async getApprovals(processo_tipo: string, processo_id: string, companyId: string) {
+    const { data: approvals, error: approvalsError } = await supabase
+      .from('aprovacoes_unificada')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('processo_tipo', processo_tipo)
+      .eq('processo_id', processo_id)
+      .order('nivel_aprovacao', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (approvalsError) {
+      console.error('[purchaseService.getApprovals] Erro ao buscar aprovações:', approvalsError);
+      // Não lançar erro, apenas retornar array vazio se não houver aprovações
+      return [];
+    }
+
+    // Buscar informações dos aprovadores separadamente
+    if (approvals && approvals.length > 0) {
+      const aprovadorIds = approvals.map((a: any) => a.aprovador_id).filter(Boolean);
+      if (aprovadorIds.length > 0) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('id, nome, email')
+          .in('id', aprovadorIds);
+
+        const usersMap = new Map((users || []).map((u: any) => [u.id, u]));
+
+        return approvals.map((approval: any) => ({
+          ...approval,
+          aprovador: usersMap.get(approval.aprovador_id) || null,
+        }));
+      }
+    }
+
+    return approvals || [];
   },
 };
 

@@ -3,6 +3,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { 
   ArrowDownToLine, 
   Plus, 
@@ -25,17 +31,26 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useEntradasMateriais, EntradaMaterial } from '@/hooks/almoxarifado/useEntradasMateriaisQuery';
+import { useEntradasMateriais as useEntradasMateriaisHook } from '@/hooks/almoxarifado/useEntradasMateriais';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
+import { useChecklistRecebimento } from '@/hooks/almoxarifado/useChecklistRecebimento';
 import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
+import { useActivePartners } from '@/hooks/usePartners';
+import { EntityService } from '@/services/generic/entityService';
+import { useCompany } from '@/lib/company-context';
 import XMLUploadModal from '@/components/almoxarifado/XMLUploadModal';
+import NovaEntradaModal from '@/components/almoxarifado/NovaEntradaModal';
 import { toast } from 'sonner';
 import { RequirePage } from '@/components/RequireAuth';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useAuth } from '@/lib/auth-context';
 
 const EntradasMateriaisPage: React.FC = () => {
   const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
+  const { user } = useAuth();
+  const { aprovarEntrada, rejeitarEntrada } = useEntradasMateriaisHook();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterDataInicio, setFilterDataInicio] = useState<string>('');
@@ -43,6 +58,8 @@ const EntradasMateriaisPage: React.FC = () => {
   const [selectedEntrada, setSelectedEntrada] = useState<EntradaMaterial | null>(null);
   const [showChecklist, setShowChecklist] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showNovaEntradaModal, setShowNovaEntradaModal] = useState(false);
+  const [entradaParaEditar, setEntradaParaEditar] = useState<EntradaMaterial | null>(null);
 
   // Hooks para dados
   const { 
@@ -69,10 +86,13 @@ const EntradasMateriaisPage: React.FC = () => {
 
   const handleAprovarEntrada = async (entradaId: string) => {
     try {
-      // Aqui seria necessário obter o ID do usuário atual
-      const usuarioId = 'current-user-id'; // TODO: Implementar obtenção do usuário atual
-      await aprovarEntrada(entradaId, usuarioId);
+      if (!user?.id) {
+        toast.error('Usuário não identificado');
+        return;
+      }
+      await aprovarEntrada(entradaId, user.id);
       toast.success('Entrada aprovada com sucesso!');
+      refetch();
     } catch (error) {
       toast.error('Erro ao aprovar entrada');
       console.error(error);
@@ -86,6 +106,7 @@ const EntradasMateriaisPage: React.FC = () => {
     try {
       await rejeitarEntrada(entradaId, motivo);
       toast.success('Entrada rejeitada');
+      refetch();
     } catch (error) {
       toast.error('Erro ao rejeitar entrada');
       console.error(error);
@@ -141,7 +162,10 @@ const EntradasMateriaisPage: React.FC = () => {
               <Upload className="h-4 w-4 mr-2" />
               Upload XML
             </Button>
-            <Button className="bg-primary hover:bg-primary/90">
+            <Button 
+              className="bg-primary hover:bg-primary/90"
+              onClick={() => setShowNovaEntradaModal(true)}
+            >
               <Plus className="h-4 w-4 mr-2" />
               Nova Entrada
             </Button>
@@ -232,7 +256,7 @@ const EntradasMateriaisPage: React.FC = () => {
                 <p className="text-gray-600 mb-4">
                   Comece fazendo upload de uma NF-e ou criando uma entrada manual
                 </p>
-                <Button>
+                <Button onClick={() => setShowNovaEntradaModal(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Nova Entrada
                 </Button>
@@ -246,7 +270,7 @@ const EntradasMateriaisPage: React.FC = () => {
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
                         <h3 className="text-lg font-semibold text-gray-900">
-                          Entrada #{entrada.numero_nota || entrada.id.slice(-8)}
+                          {entrada.numero_nota || `ENT-${entrada.id.slice(0, 8).toUpperCase()}`}
                         </h3>
                         {getStatusBadge(entrada.status)}
                       </div>
@@ -275,43 +299,89 @@ const EntradasMateriaisPage: React.FC = () => {
 
                       {entrada.observacoes && (
                         <div className="mt-2 text-sm text-gray-600">
-                          <span className="font-medium">Observações:</span> {entrada.observacoes}
+                          <span className="font-medium">Observações:</span> {entrada.observacoes.replace(/cota\?+\?+/gi, 'cotação')}
                         </div>
                       )}
                     </div>
 
                     <div className="flex space-x-2 ml-4">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => {
-                          setSelectedEntrada(entrada);
-                          setShowChecklist(true);
-                        }}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      
-                      {entrada.status === 'pendente' && (
-                        <>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            className="text-green-600 hover:text-green-700"
-                            onClick={() => handleAprovarEntrada(entrada.id)}
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            className="text-red-600 hover:text-red-700"
-                            onClick={() => handleRejeitarEntrada(entrada.id)}
-                          >
-                            <XCircle className="h-4 w-4" />
-                          </Button>
-                        </>
-                      )}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => {
+                                setSelectedEntrada(entrada);
+                                setShowChecklist(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Ver Checklist de Recebimento</p>
+                          </TooltipContent>
+                        </Tooltip>
+                        
+                        {/* Botão para confirmar pré-entrada (quando tem pedido_id e status pendente) */}
+                        {(entrada as any).pedido_id && entrada.status === 'pendente' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                className="text-blue-600 hover:text-blue-700"
+                                onClick={() => {
+                                  setEntradaParaEditar(entrada);
+                                  setShowNovaEntradaModal(true);
+                                }}
+                              >
+                                Confirmar Recebimento
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Confirmar recebimento dos materiais e preencher dados da entrada</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        
+                        {entrada.status === 'pendente' && (
+                          <>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  className="text-green-600 hover:text-green-700"
+                                  onClick={() => handleAprovarEntrada(entrada.id)}
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Aprovar Entrada</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  className="text-red-600 hover:text-red-700"
+                                  onClick={() => handleRejeitarEntrada(entrada.id)}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Rejeitar Entrada</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </>
+                        )}
+                      </TooltipProvider>
                     </div>
                   </div>
                 </CardContent>
@@ -328,6 +398,22 @@ const EntradasMateriaisPage: React.FC = () => {
         onSuccess={(entradaId) => {
           toast.success('Entrada criada com sucesso!');
           refetch();
+        }}
+      />
+
+      {/* Modal de Nova Entrada Manual / Confirmar Pré-entrada */}
+      <NovaEntradaModal
+        isOpen={showNovaEntradaModal}
+        onClose={() => {
+          setShowNovaEntradaModal(false);
+          setEntradaParaEditar(null);
+        }}
+        entradaParaEditar={entradaParaEditar}
+        onSuccess={(entradaId) => {
+          toast.success(entradaParaEditar ? 'Entrada confirmada com sucesso!' : 'Entrada criada com sucesso!');
+          refetch();
+          setShowNovaEntradaModal(false);
+          setEntradaParaEditar(null);
         }}
       />
 
@@ -355,13 +441,150 @@ interface ChecklistModalProps {
 }
 
 const ChecklistModal: React.FC<ChecklistModalProps> = ({ entrada, isOpen, onClose }) => {
-  const { checklistItems, criterios, loading, createChecklistItem, updateChecklistItem } = useChecklistRecebimento(entrada.id);
+  const { selectedCompany } = useCompany();
+  const { user } = useAuth();
+  const { checklistItems, criterios, loading: checklistLoading, createChecklistItem, updateChecklistItem } = useChecklistRecebimento(entrada.id);
+  const [entradaCompleta, setEntradaCompleta] = useState<any>(null);
+  const [loadingEntrada, setLoadingEntrada] = useState(true);
+  const { data: fornecedoresData } = useActivePartners();
+
+  const fornecedores = fornecedoresData?.data || [];
+  const fornecedor = entrada.fornecedor_id 
+    ? fornecedores.find((f: any) => f.id === entrada.fornecedor_id)
+    : null;
+
+  const loadEntradaCompleta = async () => {
+    if (!selectedCompany?.id) return;
+
+    try {
+      setLoadingEntrada(true);
+      
+      // Buscar entrada completa com itens usando EntityService
+      const entradaResult = await EntityService.getById<any>({
+        schema: 'almoxarifado',
+        table: 'entradas_materiais',
+        id: entrada.id,
+        companyId: selectedCompany.id
+      });
+
+      if (!entradaResult) {
+        setEntradaCompleta(null);
+        return;
+      }
+
+      // Buscar itens da entrada
+      const itensResult = await EntityService.list<any>({
+        schema: 'almoxarifado',
+        table: 'entrada_itens',
+        companyId: selectedCompany.id,
+        filters: { entrada_id: entrada.id },
+        orderBy: 'created_at',
+        orderDirection: 'ASC',
+        skipCompanyFilter: true
+      });
+
+      // Buscar dados dos materiais para cada item
+      const itensComMaterial = await Promise.all(
+        (itensResult.data || []).map(async (item: any) => {
+          try {
+            const materialResult = await EntityService.getById<any>({
+              schema: 'almoxarifado',
+              table: 'materiais_equipamentos',
+              id: item.material_equipamento_id,
+              companyId: selectedCompany.id
+            });
+
+            if (materialResult) {
+              // Priorizar nome sobre descricao quando descricao estiver vazia ou inválida
+              // Descrição inválida: vazia, apenas pontos, ou apenas espaços
+              const descricaoTrim = materialResult.descricao?.trim() || '';
+              const descricaoValida = descricaoTrim !== '' && 
+                                     descricaoTrim !== '.' &&
+                                     !/^\.+$/.test(descricaoTrim) && // Não apenas pontos repetidos
+                                     descricaoTrim.length > 1; // Mais de 1 caractere
+              
+              // Se nome existe e é válido, priorizar nome. Caso contrário, usar descrição válida ou nome como fallback
+              const nomeMaterial = materialResult.nome && materialResult.nome.trim() !== ''
+                ? materialResult.nome
+                : (descricaoValida 
+                    ? materialResult.descricao 
+                    : (materialResult.nome || 'Material sem nome'));
+              
+              console.log('✅ Material encontrado:', {
+                id: materialResult.id,
+                codigo_interno: materialResult.codigo_interno,
+                descricao: materialResult.descricao,
+                nome: materialResult.nome,
+                descricaoValida,
+                nomeFinal: nomeMaterial
+              });
+              
+              return {
+                ...item,
+                material: {
+                  id: materialResult.id,
+                  codigo_interno: materialResult.codigo_interno || '',
+                  descricao: nomeMaterial,
+                  nome: materialResult.nome || nomeMaterial,
+                  tipo: materialResult.tipo || 'material',
+                  unidade_medida: materialResult.unidade_medida || 'UN'
+                }
+              };
+            } else {
+              console.warn('⚠️ Material não encontrado para material_equipamento_id:', item.material_equipamento_id);
+              return {
+                ...item,
+                material: null
+              };
+            }
+          } catch (err) {
+            console.error('❌ Erro ao buscar material:', err, 'material_equipamento_id:', item.material_equipamento_id);
+            return {
+              ...item,
+              material: null
+            };
+          }
+        })
+      );
+
+      console.log('✅ Entrada completa carregada:', {
+        entradaId: entrada.id,
+        itensCount: itensComMaterial.length,
+        entradaResult: entradaResult ? 'OK' : 'NULL',
+        itensResult: itensResult.data?.length || 0
+      });
+
+      setEntradaCompleta({
+        ...entradaResult,
+        itens: itensComMaterial
+      });
+    } catch (err) {
+      console.error('❌ Erro ao carregar entrada completa:', err);
+      toast.error('Erro ao carregar dados da entrada');
+      setEntradaCompleta(null);
+    } finally {
+      setLoadingEntrada(false);
+    }
+  };
+
+  // Buscar dados completos da entrada quando o modal abrir
+  useEffect(() => {
+    if (isOpen && entrada.id && selectedCompany?.id) {
+      loadEntradaCompleta();
+    } else if (!isOpen) {
+      // Resetar quando fechar
+      setEntradaCompleta(null);
+      setLoadingEntrada(true);
+    }
+  }, [isOpen, entrada.id, selectedCompany?.id]);
 
   if (!isOpen) return null;
 
+  const isLoading = checklistLoading || loadingEntrada;
+  const itens = entradaCompleta?.itens || [];
+
   return (
-    
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 max-w-4xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-bold">Checklist de Recebimento</h2>
@@ -371,52 +594,104 @@ const ChecklistModal: React.FC<ChecklistModalProps> = ({ entrada, isOpen, onClos
         </div>
         
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Entrada #{entrada.numero_nota || entrada.id.slice(-8)} - {entrada.fornecedor?.nome}
-          </p>
+          <div className="text-sm text-gray-600 space-y-1 border-b pb-2 mb-2">
+            <p>
+              <span className="font-semibold">Código da Entrada:</span> {entrada.numero_nota || `ENT-${entrada.id.slice(0, 8).toUpperCase()}`}
+            </p>
+            <p>
+              <span className="font-semibold">Fornecedor:</span> {fornecedor ? (fornecedor.nome_fantasia || fornecedor.razao_social) : 'N/A'}
+            </p>
+          </div>
           
-          {loading ? (
+          {isLoading ? (
             <div className="text-center py-8">
               <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-              <p>Carregando checklist...</p>
+              <p>Carregando dados...</p>
             </div>
+          ) : itens.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-8">
+                <p className="text-gray-500">Nenhum item encontrado nesta entrada.</p>
+              </CardContent>
+            </Card>
           ) : (
             <div className="space-y-4">
-              {entrada.itens?.map((item) => (
-                <Card key={item.id}>
-                  <CardHeader>
-                    <CardTitle className="text-sm">
-                      {item.material?.descricao} ({item.material?.codigo_interno})
-                    </CardTitle>
-                    <CardDescription>
-                      Quantidade: {item.quantidade_recebida} {item.material?.unidade_medida}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {criterios.map((criterio) => (
-                        <div key={criterio.id} className="flex items-center space-x-2">
-                          <input
-                            type="checkbox"
-                            id={`${item.id}-${criterio.id}`}
-                            className="rounded"
-                          />
-                          <label htmlFor={`${item.id}-${criterio.id}`} className="text-sm">
-                            {criterio.nome}
-                            {criterio.obrigatorio && <span className="text-red-500 ml-1">*</span>}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              {itens.map((item: any) => {
+                const itemChecklist = checklistItems.filter(ci => ci.item_id === item.id);
+                
+                return (
+                  <Card key={item.id}>
+                    <CardHeader>
+                      <CardTitle className="text-sm font-semibold">
+                        {item.material 
+                          ? `${item.material.nome || item.material.descricao || 'Material sem nome'}${item.material.codigo_interno ? ` (Código: ${item.material.codigo_interno})` : ''}`
+                          : `Material ID: ${item.material_equipamento_id?.slice(0, 8)}...`
+                        }
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        <span className="font-medium">Quantidade Recebida:</span> {item.quantidade_recebida} {item.material?.unidade_medida || 'UN'}
+                        {item.quantidade_aprovada > 0 && (
+                          <span className="ml-2">| <span className="font-medium">Aprovada:</span> {item.quantidade_aprovada}</span>
+                        )}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {criterios.map((criterio) => {
+                          const checklistItem = itemChecklist.find(ci => ci.criterio === criterio.nome);
+                          const isChecked = checklistItem?.aprovado || false;
+                          
+                          return (
+                            <div key={criterio.id} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id={`${item.id}-${criterio.id}`}
+                                className="rounded"
+                                checked={isChecked}
+                                onChange={async (e) => {
+                                  try {
+                                    if (checklistItem) {
+                                      // Atualizar item existente
+                                      await updateChecklistItem(checklistItem.id, {
+                                        aprovado: e.target.checked
+                                      });
+                                    } else {
+                                      // Criar novo item
+                                      if (!user?.id) {
+                                        toast.error('Usuário não identificado');
+                                        return;
+                                      }
+                                      await createChecklistItem({
+                                        entrada_id: entrada.id,
+                                        item_id: item.id,
+                                        criterio: criterio.nome,
+                                        aprovado: e.target.checked,
+                                        usuario_id: user.id
+                                      });
+                                    }
+                                  } catch (err) {
+                                    console.error('Erro ao atualizar checklist:', err);
+                                  }
+                                }}
+                              />
+                              <label htmlFor={`${item.id}-${criterio.id}`} className="text-sm">
+                                {criterio.nome}
+                                {criterio.obrigatorio && <span className="text-red-500 ml-1">*</span>}
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
       </div>
     </div>
-    );
+  );
 };
 
 export default EntradasMateriaisPage;

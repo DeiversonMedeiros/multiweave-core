@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useCompany } from '@/lib/company-context';
-import { useAuthorization } from '@/hooks/useAuthorization';
+import { usePermissions } from '@/hooks/usePermissions';
 import { ContaPagar, ContaPagarFormData, ContaPagarFilters } from '@/integrations/supabase/financial-types';
 import { supabase } from '@/integrations/supabase/client';
 import { calculateDueDateStatus } from '@/utils/financial/dueDateUtils';
@@ -37,18 +37,17 @@ interface UseContasPagarReturn {
 
 export function useContasPagar(): UseContasPagarReturn {
   const { selectedCompany } = useCompany();
-  const { checkModulePermission, checkEntityPermission } = useAuthorization();
+  const { canCreateModule, canEditModule, canDeleteModule, canCreatePage, canEditPage, canDeletePage } = usePermissions();
   
   const [contasPagar, setContasPagar] = useState<ContaPagar[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ContaPagarFilters>({});
 
-  // Verificar permissões
-  const canCreate = checkModulePermission('financeiro', 'create') && checkEntityPermission('contas_pagar', 'create');
-  const canEdit = checkModulePermission('financeiro', 'edit') && checkEntityPermission('contas_pagar', 'edit');
-  const canDelete = checkModulePermission('financeiro', 'delete') && checkEntityPermission('contas_pagar', 'delete');
-  const canApprove = checkModulePermission('financeiro', 'edit') && checkEntityPermission('aprovacoes', 'edit');
+  const canCreate = canCreateModule('financeiro') && canCreatePage('/financeiro/contas-pagar*');
+  const canEdit = canEditModule('financeiro') && canEditPage('/financeiro/contas-pagar*');
+  const canDelete = canDeleteModule('financeiro') && canDeletePage('/financeiro/contas-pagar*');
+  const canApprove = canEditModule('financeiro') && canEditPage('/portal-gestor/aprovacoes*');
 
   // Carregar contas a pagar
   const loadContasPagar = async () => {

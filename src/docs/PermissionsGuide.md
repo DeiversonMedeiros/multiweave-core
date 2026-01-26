@@ -161,7 +161,7 @@ export default function UserForm() {
       <input name="email" placeholder="Email" />
       
       {/* Campo só aparece se tiver permissão */}
-      <PermissionGuard entity="users" action="edit">
+      <PermissionGuard page="/cadastros/usuarios*" action="edit">
         <select name="role">
           <option value="user">Usuário</option>
           <option value="admin">Admin</option>

@@ -64,6 +64,7 @@ import PedidosCompra from "./pages/Compras/PedidosCompra";
 import AvaliacaoFornecedores from "./pages/Compras/AvaliacaoFornecedores";
 import ContratosRecorrentes from "./pages/Compras/ContratosRecorrentes";
 import HistoricoCompras from "./pages/Compras/HistoricoCompras";
+import FollowUpCompras from "./pages/Compras/FollowUpCompras";
 // Imports das páginas de Frota
 import FrotaRoutes from "./pages/frota/FrotaRoutes";
 import LogisticaRoutes from "./pages/logistica/LogisticaRoutes";
@@ -320,6 +321,7 @@ function App() {
                 <Route path="/compras/requisicoes" element={<RequisicoesCompra />} />
                 <Route path="/compras/cotacoes" element={<Cotacoes />} />
                 <Route path="/compras/pedidos" element={<PedidosCompra />} />
+                <Route path="/compras/follow-up" element={<FollowUpCompras />} />
                 <Route path="/compras/fornecedores" element={<AvaliacaoFornecedores />} />
                 <Route path="/compras/contratos" element={<ContratosRecorrentes />} />
                 <Route path="/compras/historico" element={<HistoricoCompras />} />

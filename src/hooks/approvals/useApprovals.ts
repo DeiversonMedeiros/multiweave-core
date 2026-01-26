@@ -115,7 +115,27 @@ export function useProcessApproval() {
         hint: error?.hint,
         stack: error?.stack
       });
-      toast.error('Erro ao processar aprovação');
+      
+      // Mensagem de erro mais informativa
+      let errorMessage = 'Erro ao processar aprovação';
+      
+      if (error?.message) {
+        const message = error.message;
+        
+        // Verificar se é erro de ordem hierárquica
+        if (message.includes('aprovações pendentes') || message.includes('ordem hierárquica')) {
+          errorMessage = message;
+        } else if (error?.code === 'P0001') {
+          // Erro PostgreSQL customizado
+          errorMessage = message;
+        } else {
+          errorMessage = `Erro ao processar aprovação: ${message}`;
+        }
+      }
+      
+      toast.error(errorMessage, {
+        duration: 6000, // Mostrar por mais tempo para mensagens longas
+      });
     }
   });
 }

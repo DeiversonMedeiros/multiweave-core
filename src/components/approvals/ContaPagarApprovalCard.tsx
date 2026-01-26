@@ -135,7 +135,7 @@ export function ContaPagarApprovalCard({
           
           <div className="flex items-center gap-2">
             <PermissionButton
-              entityName="approvals"
+              page="/portal-gestor/aprovacoes*"
               action="edit"
               variant="outline"
               size="sm"
@@ -145,7 +145,7 @@ export function ContaPagarApprovalCard({
               Processar
             </PermissionButton>
             <PermissionButton
-              entityName="approvals"
+              page="/portal-gestor/aprovacoes*"
               action="edit"
               variant="outline"
               size="sm"

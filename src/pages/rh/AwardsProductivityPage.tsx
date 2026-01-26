@@ -186,7 +186,7 @@ const AwardsProductivityPage: React.FC = () => {
             onChange={handleFileUpload}
             className="hidden"
           />
-          <PermissionButton entity="awards_productivity" action="create">
+          <PermissionButton page="/rh/awards-productivity*" action="create">
             <Button asChild>
               <Link to="/rh/awards-productivity/new">
                 <PlusCircle className="mr-2" size={20} />

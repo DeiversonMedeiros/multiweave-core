@@ -6,7 +6,7 @@
 // Autor: Sistema MultiWeave Core
 
 import { useCompany } from '@/lib/company-context';
-import { useAuthorization } from '@/hooks/useAuthorization';
+import { usePermissions } from '@/hooks/usePermissions';
 import { NFe, NFSe, SefazStatus, EventoFiscal } from '@/integrations/supabase/financial-types';
 import { useFinanceiroData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { EntityService } from '@/services/generic/entityService';
@@ -43,13 +43,12 @@ interface UseFiscalReturn {
 
 export function useFiscal(): UseFiscalReturn {
   const { selectedCompany } = useCompany();
-  const { checkModulePermission, checkEntityPermission } = useAuthorization();
+  const { canCreateModule, canEditModule, canDeleteModule, canCreatePage, canEditPage, canDeletePage } = usePermissions();
 
-  // Verificar permissões
-  const canCreate = checkModulePermission('financeiro', 'create') && checkEntityPermission('nfe', 'create');
-  const canEdit = checkModulePermission('financeiro', 'edit') && checkEntityPermission('nfe', 'edit');
-  const canDelete = checkModulePermission('financeiro', 'delete') && checkEntityPermission('nfe', 'delete');
-  const canEmit = checkModulePermission('financeiro', 'edit') && checkEntityPermission('nfe', 'edit');
+  const canCreate = canCreateModule('financeiro') && canCreatePage('/financeiro/fiscal*');
+  const canEdit = canEditModule('financeiro') && canEditPage('/financeiro/fiscal*');
+  const canDelete = canDeleteModule('financeiro') && canDeletePage('/financeiro/fiscal*');
+  const canEmit = canEditModule('financeiro') && canEditPage('/financeiro/fiscal*');
 
   // Carregar dados usando EntityService
   const { data: nfesData, isLoading: loadingNfes, error: errorNfes } = useFinanceiroData<NFe>(

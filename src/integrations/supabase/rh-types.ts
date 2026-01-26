@@ -1188,7 +1188,7 @@ export interface MedicalCertificate {
   updated_at: string;
   // Relacionamentos
   employee?: Employee;
-  aprovador?: any; // Profile
+  aprovador?: { nome: string; email?: string }; // User (não Profile)
   attachments?: MedicalCertificateAttachment[];
 }
 

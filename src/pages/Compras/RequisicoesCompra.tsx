@@ -72,8 +72,8 @@ export default function RequisicoesCompraPage() {
   return (
     <RequireAuth 
       requiredPermission={{ 
-        type: 'entity', 
-        name: 'solicitacoes_compra', 
+        type: 'page', 
+        name: '/compras/requisicoes*', 
         action: 'read' 
       }}
     >
@@ -83,7 +83,7 @@ export default function RequisicoesCompraPage() {
           
           {/* Botão de criar protegido por permissão */}
           <PermissionGuard 
-            entity="solicitacoes_compra" 
+            page="/compras/requisicoes*" 
             action="create"
             fallback={
               <Button disabled variant="outline">

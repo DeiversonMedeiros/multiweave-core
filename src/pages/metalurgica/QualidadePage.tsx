@@ -144,7 +144,7 @@ const QualidadePage: React.FC = () => {
           
           {lotesAguardandoInspecao.length > 0 && (
             <PermissionButton
-              entity="inspecoes"
+              page="/metalurgica/qualidade*"
               action="create"
               onClick={() => {
                 setSelectedLote(lotesAguardandoInspecao[0].id);

@@ -160,7 +160,7 @@ const OrdensProducaoPage: React.FC = () => {
           </div>
           
           <PermissionButton
-            entity="ordens_producao"
+            page="/metalurgica/ordens-producao*"
             action="create"
             onClick={() => setIsModalOpen(true)}
           >
@@ -250,7 +250,7 @@ const OrdensProducaoPage: React.FC = () => {
                         <TableCell>
                           <div className="flex gap-2">
                             <PermissionButton
-                              entity="ordens_producao"
+                              page="/metalurgica/ordens-producao*"
                               action="read"
                               variant="ghost"
                               size="sm"
@@ -260,7 +260,7 @@ const OrdensProducaoPage: React.FC = () => {
                             </PermissionButton>
                             {op.status === 'rascunho' && (
                               <PermissionButton
-                                entity="ordens_producao"
+                                page="/metalurgica/ordens-producao*"
                                 action="edit"
                                 variant="ghost"
                                 size="sm"

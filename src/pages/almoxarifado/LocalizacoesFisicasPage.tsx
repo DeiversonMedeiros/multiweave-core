@@ -306,7 +306,7 @@ export default function LocalizacoesFisicasPage() {
           </div>
         )}
 
-        <PermissionGuard entity="localizacoes_fisicas" action="create">
+        <PermissionGuard page="/almoxarifado/localizacoes*" action="create">
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogContent className="max-w-2xl">
               <DialogHeader>

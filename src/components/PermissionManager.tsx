@@ -143,6 +143,7 @@ export const PermissionManager: React.FC = () => {
       '/compras/requisicoes*',
       '/compras/cotacoes*',
       '/compras/pedidos*',
+      '/compras/follow-up*',
       '/compras/fornecedores*',
       '/compras/contratos*',
       '/compras/historico*'

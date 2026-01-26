@@ -89,7 +89,8 @@ export default function ConfiguracaoCorrecaoPontoPage() {
         companyId: selectedCompany.id,
         filters: { company_id: selectedCompany.id, status: 'ativo' },
         orderBy: 'nome',
-        orderDirection: 'ASC'
+        orderDirection: 'ASC',
+        pageSize: 10000 // Aumentar limite para buscar todos os funcionários
       });
 
       return result.data || [];

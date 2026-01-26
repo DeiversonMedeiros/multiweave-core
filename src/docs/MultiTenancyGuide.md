@@ -22,7 +22,7 @@ projects (company_id)
 companies
 profiles
 module_permissions
-entity_permissions
+page_permissions
 user_companies
 ```
 

@@ -336,7 +336,7 @@ export default function Servicos() {
         newButtonLabel="Novo Serviço"
       />
 
-      <PermissionGuard entity="services" action="create">
+      <PermissionGuard page="/cadastros/servicos*" action="create">
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>

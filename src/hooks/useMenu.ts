@@ -82,19 +82,33 @@ export const useMenu = () => {
   // Verificação de permissões habilitada
   const { isAdmin, hasModulePermission, hasPagePermission, loading } = usePermissions();
   const canReadModule = (moduleName: string) => {
-    if (isAdmin) return true;
+    console.log('[useMenu] canReadModule chamado:', { moduleName, isAdmin, loading });
+    if (isAdmin) {
+      console.log('[useMenu] Usuário é admin - permitindo módulo:', moduleName);
+      return true;
+    }
     if (loading || typeof hasModulePermission !== 'function') {
+      console.log('[useMenu] Carregando ou função não disponível - permitindo temporariamente:', moduleName);
       return true; // Permitir acesso durante carregamento
     }
-    return hasModulePermission(moduleName, 'read');
+    const result = hasModulePermission(moduleName, 'read');
+    console.log('[useMenu] Resultado canReadModule:', { moduleName, result });
+    return result;
   };
   
   const canReadPage = (pagePath: string) => {
-    if (isAdmin) return true;
+    console.log('[useMenu] canReadPage chamado:', { pagePath, isAdmin, loading });
+    if (isAdmin) {
+      console.log('[useMenu] Usuário é admin - permitindo página:', pagePath);
+      return true;
+    }
     if (loading || typeof hasPagePermission !== 'function') {
+      console.log('[useMenu] Carregando ou função não disponível - permitindo temporariamente:', pagePath);
       return true; // Permitir acesso durante carregamento
     }
-    return hasPagePermission(pagePath, 'read');
+    const result = hasPagePermission(pagePath, 'read');
+    console.log('[useMenu] Resultado canReadPage:', { pagePath, result });
+    return result;
   };
 
   const menuItems: MenuItem[] = useMemo(() => [
@@ -573,6 +587,14 @@ export const useMenu = () => {
           icon: ShoppingCart,
           description: 'Gestão de pedidos de compra',
           requiresPermission: { type: 'module', name: 'compras', action: 'read' }
+        },
+        {
+          id: 'compras-follow-up',
+          title: 'Follow-up de Compras',
+          url: '/compras/follow-up',
+          icon: TrendingUp,
+          description: 'Acompanhamento completo do processo de compras',
+          requiresPermission: { type: 'page', name: '/compras/follow-up*', action: 'read' }
         },
         {
           id: 'compras-fornecedores',
@@ -1243,7 +1265,7 @@ export const useMenu = () => {
           url: '#',
           icon: Users,
           description: 'Gestão operacional de RH',
-          requiresPermission: { type: 'module', name: 'rh', action: 'read' },
+          // Não requer permissão de módulo - será exibido se algum filho tiver permissão
           children: [
             {
               id: 'rh-ferias',
@@ -1275,7 +1297,7 @@ export const useMenu = () => {
               url: '#',
               icon: GraduationCap,
               description: 'Gestão de treinamentos',
-              requiresPermission: { type: 'module', name: 'rh', action: 'read' },
+              // Não requer permissão de módulo - será exibido se algum filho tiver permissão
               children: [
                 {
                   id: 'rh-treinamentos-geral',
@@ -1283,7 +1305,7 @@ export const useMenu = () => {
                   url: '/rh/training',
                   icon: GraduationCap,
                   description: 'Gestão de treinamentos presenciais e híbridos',
-                  requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+                  requiresPermission: { type: 'page', name: '/rh/training*', action: 'read' }
                 },
                 {
                   id: 'rh-treinamentos-online',
@@ -1520,29 +1542,70 @@ export const useMenu = () => {
   // Filtrar menu baseado nas permissões do usuário
   const filteredMenuItems = useMemo(() => {
     const filterItems = (items: MenuItem[]): MenuItem[] => {
+      console.log('[useMenu] Filtrando itens do menu, total:', items.length);
       return items
         .map(item => {
+          // Filtrar filhos primeiro para verificar se algum tem permissão
+          const filteredChildren = item.children ? filterItems(item.children) : undefined;
+          
+          console.log(`[useMenu] Verificando item: ${item.id} (${item.title})`, {
+            url: item.url,
+            requiresPermission: item.requiresPermission,
+            hasChildren: !!item.children,
+            filteredChildrenCount: filteredChildren?.length || 0
+          });
+          
           // Verificar se o item tem permissão
           if (item.requiresPermission) {
             let hasPermission = false;
             
             if (item.requiresPermission.type === 'module') {
               hasPermission = canReadModule(item.requiresPermission.name);
+              console.log(`[useMenu] Verificação de módulo para ${item.id}:`, {
+                module: item.requiresPermission.name,
+                hasPermission
+              });
+              
+              // Para módulos principais, exigir permissão direta do módulo
+              // Não permitir que apareça apenas porque tem filhos com permissão
+              if (!hasPermission) {
+                console.log(`[useMenu] Item ${item.id} (módulo) sem permissão direta - REMOVENDO`);
+                return null;
+              }
             } else if (item.requiresPermission.type === 'page') {
               // Se for página, verificar pelo caminho da URL do item
-              hasPermission = canReadPage(item.url + '*');
+              const pagePath = item.url + '*';
+              hasPermission = canReadPage(pagePath);
+              console.log(`[useMenu] Verificação de página para ${item.id}:`, {
+                pagePath,
+                hasPermission
+              });
+              
+              // Para páginas, se não tem permissão direta mas tem filhos com permissão, permitir o item
+              if (!hasPermission) {
+                // Se tem filhos e pelo menos um filho está disponível, manter o item
+                if (item.children && filteredChildren && filteredChildren.length > 0) {
+                  console.log(`[useMenu] Item ${item.id} (página) sem permissão direta, mas tem ${filteredChildren.length} filhos com permissão - MANTENDO`);
+                  return {
+                    ...item,
+                    children: filteredChildren
+                  };
+                }
+                console.log(`[useMenu] Item ${item.id} (página) sem permissão e sem filhos com permissão - REMOVENDO`);
+                return null;
+              }
             }
-            
-            if (!hasPermission) {
-              return null;
-            }
+            console.log(`[useMenu] Item ${item.id} tem permissão - MANTENDO`);
+          } else {
+            // Se o item não tem requiresPermission definido, não deve aparecer
+            // (itens sem permissão definida não devem ser exibidos por segurança)
+            console.log(`[useMenu] Item ${item.id} sem requiresPermission definido - REMOVENDO por segurança`);
+            return null;
           }
 
-          // Filtrar filhos se existirem
-          const filteredChildren = item.children ? filterItems(item.children) : undefined;
-          
           // Se tem filhos, só incluir se pelo menos um filho estiver disponível
           if (item.children && filteredChildren && filteredChildren.length === 0) {
+            console.log(`[useMenu] Item ${item.id} tem filhos mas nenhum está disponível - REMOVENDO`);
             return null;
           }
 
@@ -1554,7 +1617,12 @@ export const useMenu = () => {
         .filter((item): item is MenuItem => item !== null);
     };
 
-    return filterItems(menuItems);
+    const result = filterItems(menuItems);
+    console.log('[useMenu] Resultado final do filtro:', {
+      totalItems: result.length,
+      items: result.map(i => ({ id: i.id, title: i.title, childrenCount: i.children?.length || 0 }))
+    });
+    return result;
   }, [menuItems, canReadModule, canReadPage]);
 
   // Obter itens de menu para o sidebar

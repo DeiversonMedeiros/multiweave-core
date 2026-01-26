@@ -29,7 +29,8 @@ DECLARE
   permission_id UUID;
 BEGIN
   -- Verificar se o usuário tem permissão para gerenciar permissões
-  IF auth.uid() IS NOT NULL AND NOT is_admin_by_permissions_flexible(auth.uid()) THEN
+  -- Aceita Super Admin (is_admin_simple) OU usuários com todas as permissões de produção
+  IF auth.uid() IS NOT NULL AND NOT (is_admin_simple(auth.uid()) OR is_admin_all_production(auth.uid())) THEN
     RAISE EXCEPTION 'Acesso negado: apenas usuários com permissões administrativas podem gerenciar permissões';
   END IF;
   
@@ -42,10 +43,10 @@ BEGIN
     -- Atualizar permissão existente
     UPDATE page_permissions
     SET 
-      can_read = CASE WHEN p_action = 'can_read' THEN p_value ELSE can_read END,
-      can_create = CASE WHEN p_action = 'can_create' THEN p_value ELSE can_create END,
-      can_edit = CASE WHEN p_action = 'can_edit' THEN p_value ELSE can_edit END,
-      can_delete = CASE WHEN p_action = 'can_delete' THEN p_value ELSE can_delete END,
+      can_read = CASE WHEN p_action = 'can_read' THEN p_value ELSE page_permissions.can_read END,
+      can_create = CASE WHEN p_action = 'can_create' THEN p_value ELSE page_permissions.can_create END,
+      can_edit = CASE WHEN p_action = 'can_edit' THEN p_value ELSE page_permissions.can_edit END,
+      can_delete = CASE WHEN p_action = 'can_delete' THEN p_value ELSE page_permissions.can_delete END,
       updated_at = NOW()
     WHERE page_permissions.id = permission_id;
   ELSE
