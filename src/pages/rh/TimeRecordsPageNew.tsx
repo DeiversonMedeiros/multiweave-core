@@ -1478,6 +1478,30 @@ export default function TimeRecordsPageNew() {
     return time;
   };
 
+  // Função para formatar horário com data - sempre mostra a data quando disponível
+  const formatTimeWithDate = (time?: string, date?: string, baseDate?: string) => {
+    if (!time) return '--:--';
+    const timeOnly = time.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (date) {
+      dateToUse = date;
+    } else if (baseDate) {
+      dateToUse = baseDate;
+    } else {
+      return timeOnly;
+    }
+    
+    // SEMPRE mostrar a data quando disponível
+    const [year, month, day] = dateToUse.split('-');
+    if (year && month && day) {
+      return `${timeOnly} (${day.padStart(2, '0')}/${month.padStart(2, '0')})`;
+    }
+    
+    return timeOnly;
+  };
+
   const calculateTotalHours = (record: TimeRecord) => {
     if (!record.entrada || !record.saida) return '--:--';
     
@@ -1876,7 +1900,7 @@ export default function TimeRecordsPageNew() {
                           <span className="text-sm font-medium text-gray-700">Entrada</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.entrada)}
+                          {formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -1886,7 +1910,7 @@ export default function TimeRecordsPageNew() {
                           <span className="text-sm font-medium text-gray-700">Início Almoço</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.entrada_almoco)}
+                          {formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -1896,7 +1920,7 @@ export default function TimeRecordsPageNew() {
                           <span className="text-sm font-medium text-gray-700">Fim Almoço</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.saida_almoco)}
+                          {formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -1906,7 +1930,7 @@ export default function TimeRecordsPageNew() {
                           <span className="text-sm font-medium text-gray-700">Saída</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.saida)}
+                          {formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -1916,7 +1940,7 @@ export default function TimeRecordsPageNew() {
                           <span className="text-sm font-medium text-gray-700">Entrada Extra</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.entrada_extra1)}
+                          {formatTimeWithDate(record.entrada_extra1, record.entrada_extra1_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -1926,7 +1950,7 @@ export default function TimeRecordsPageNew() {
                           <span className="text-sm font-medium text-gray-700">Saída Extra</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.saida_extra1)}
+                          {formatTimeWithDate(record.saida_extra1, record.saida_extra1_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                     </div>
@@ -2341,6 +2365,13 @@ export default function TimeRecordsPageNew() {
                 <div className="space-y-4">
                   {employeeSummary.map((summary) => {
                     const isExpanded = expandedEmployees.has(summary.employeeId);
+                    // Usar completeRecords quando disponível para incluir faltas virtuais (dias úteis sem registro) nos totais
+                    const recordsForTotals = completeRecordsByEmployee.get(summary.employeeId) || summary.records;
+                    const totalHorasTrabalhadas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_trabalhadas) || 0), 0);
+                    const totalHorasNegativas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_negativas) || 0), 0);
+                    const totalHorasExtras50 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_50) || 0), 0);
+                    const totalHorasExtras100 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_100) || 0), 0);
+                    const totalHorasNoturnas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_noturnas) || 0), 0);
                     return (
                       <Card key={summary.employeeId} className="overflow-hidden">
                         <CardHeader className="pb-3">
@@ -2396,31 +2427,31 @@ export default function TimeRecordsPageNew() {
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Trabalhadas</p>
                               <p className="text-2xl font-bold text-blue-600">
-                                {summary.totalHorasTrabalhadas.toFixed(2)}h
+                                {totalHorasTrabalhadas.toFixed(2)}h
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Negativas</p>
                               <p className="text-2xl font-bold text-red-600">
-                                {summary.totalHorasNegativas > 0 ? '-' : ''}{summary.totalHorasNegativas.toFixed(2)}h
+                                {totalHorasNegativas > 0 ? '-' : ''}{totalHorasNegativas.toFixed(2)}h
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Extras 50%</p>
                               <p className="text-2xl font-bold text-orange-600">
-                                {summary.totalHorasExtras50.toFixed(2)}h
+                                {totalHorasExtras50.toFixed(2)}h
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Extras 100%</p>
                               <p className="text-2xl font-bold text-purple-600">
-                                {summary.totalHorasExtras100.toFixed(2)}h
+                                {totalHorasExtras100.toFixed(2)}h
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Noturnas</p>
                               <p className="text-2xl font-bold text-indigo-600">
-                                {summary.totalHorasNoturnas.toFixed(2)}h
+                                {totalHorasNoturnas.toFixed(2)}h
                               </p>
                             </div>
                             <EmployeeBankHoursBalanceInline 
@@ -2464,6 +2495,7 @@ export default function TimeRecordsPageNew() {
                                         const isVacation = isVirtual && record.id.includes('-ferias');
                                         const isMedicalCertificate = isVirtual && record.id.includes('-atestado');
                                         const isCompensation = isVirtual && record.id.includes('-compensacao');
+                                        const isFalta = isVirtual && record.id.includes('-falta');
                                         
                                         // Determinar label e cor
                                         let displayLabel = '';
@@ -2477,6 +2509,9 @@ export default function TimeRecordsPageNew() {
                                         } else if (isCompensation) {
                                           displayLabel = record.observacoes || 'Compensação';
                                           rowBgColor = 'bg-purple-50';
+                                        } else if (isFalta) {
+                                          displayLabel = 'Falta';
+                                          rowBgColor = 'bg-red-50';
                                         } else if (isRestDay && !record.entrada) {
                                           displayLabel = 'DSR';
                                           rowBgColor = 'bg-blue-50';
@@ -2502,7 +2537,11 @@ export default function TimeRecordsPageNew() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            {displayLabel ? (
+                                            {isFalta ? (
+                                              <span className="text-red-600 font-medium">
+                                                -{(record.horas_negativas || 0).toFixed(2)}h
+                                              </span>
+                                            ) : displayLabel ? (
                                               <span className="text-muted-foreground">-</span>
                                             ) : record.horas_negativas && record.horas_negativas > 0 ? (
                                               <span className="text-red-600 font-medium">
@@ -2545,12 +2584,13 @@ export default function TimeRecordsPageNew() {
                                               <span className="text-muted-foreground">0.00h</span>
                                             )}
                                           </TableCell>
-                                          <TableCell>
+                                            <TableCell>
                                             {isVirtual ? (
                                               <Badge className={
                                                 isVacation ? 'bg-green-100 text-green-800' :
                                                 isMedicalCertificate ? 'bg-yellow-100 text-yellow-800' :
                                                 isCompensation ? 'bg-purple-100 text-purple-800' :
+                                                isFalta ? 'bg-red-100 text-red-800' :
                                                 'bg-blue-100 text-blue-800'
                                               }>
                                                 {displayLabel}

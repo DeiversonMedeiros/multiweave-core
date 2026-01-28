@@ -174,7 +174,31 @@ const AcompanhamentoPonto: React.FC = () => {
 
   const formatTime = (time?: string) => {
     if (!time) return '--:--';
-    return time;
+    return time.substring(0, 5); // HH:MM
+  };
+
+  // Função para formatar horário com data - sempre mostra a data quando disponível
+  const formatTimeWithDate = (time?: string, date?: string, baseDate?: string) => {
+    if (!time) return '--:--';
+    const timeOnly = time.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (date) {
+      dateToUse = date;
+    } else if (baseDate) {
+      dateToUse = baseDate;
+    } else {
+      return timeOnly;
+    }
+    
+    // SEMPRE mostrar a data quando disponível
+    const [year, month, day] = dateToUse.split('-');
+    if (year && month && day) {
+      return `${timeOnly} (${day.padStart(2, '0')}/${month.padStart(2, '0')})`;
+    }
+    
+    return timeOnly;
   };
 
   const calculateTotalHours = (record: TimeRecord) => {
@@ -523,7 +547,7 @@ const AcompanhamentoPonto: React.FC = () => {
                           <span className="text-sm font-medium text-gray-700">Entrada</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(ponto.entrada)}
+                          {formatTimeWithDate(ponto.entrada, ponto.entrada_date, ponto.base_date || ponto.data_registro)}
                         </div>
                       </div>
                       
@@ -533,7 +557,7 @@ const AcompanhamentoPonto: React.FC = () => {
                           <span className="text-sm font-medium text-gray-700">Início Almoço</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(ponto.entrada_almoco)}
+                          {formatTimeWithDate(ponto.entrada_almoco, ponto.entrada_almoco_date, ponto.base_date || ponto.data_registro)}
                         </div>
                       </div>
                       
@@ -543,7 +567,7 @@ const AcompanhamentoPonto: React.FC = () => {
                           <span className="text-sm font-medium text-gray-700">Fim Almoço</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(ponto.saida_almoco)}
+                          {formatTimeWithDate(ponto.saida_almoco, ponto.saida_almoco_date, ponto.base_date || ponto.data_registro)}
                         </div>
                       </div>
                       
@@ -553,7 +577,7 @@ const AcompanhamentoPonto: React.FC = () => {
                           <span className="text-sm font-medium text-gray-700">Saída</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(ponto.saida)}
+                          {formatTimeWithDate(ponto.saida, ponto.saida_date, ponto.base_date || ponto.data_registro)}
                         </div>
                       </div>
                       
@@ -563,7 +587,7 @@ const AcompanhamentoPonto: React.FC = () => {
                           <span className="text-sm font-medium text-gray-700">Entrada Extra</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(ponto.entrada_extra1)}
+                          {formatTimeWithDate(ponto.entrada_extra1, ponto.entrada_extra1_date, ponto.base_date || ponto.data_registro)}
                         </div>
                       </div>
                       
@@ -573,7 +597,7 @@ const AcompanhamentoPonto: React.FC = () => {
                           <span className="text-sm font-medium text-gray-700">Saída Extra</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(ponto.saida_extra1)}
+                          {formatTimeWithDate(ponto.saida_extra1, ponto.saida_extra1_date, ponto.base_date || ponto.data_registro)}
                         </div>
                       </div>
                     </div>

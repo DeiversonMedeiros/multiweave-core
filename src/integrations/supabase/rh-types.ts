@@ -965,6 +965,15 @@ export interface TimeRecord {
   entrada_endereco?: string;
   saida_latitude?: number;
   saida_longitude?: number;
+  // Campos de data real de cada marcação (quando diferente de data_registro)
+  entrada_date?: string;
+  entrada_almoco_date?: string;
+  saida_almoco_date?: string;
+  saida_date?: string;
+  entrada_extra1_date?: string;
+  saida_extra1_date?: string;
+  base_date?: string; // Data base do registro (geralmente igual a data_registro)
+  window_hours?: number; // Janela de tempo configurada
   // Arrays agregados com todas as fotos e localizações do dia
   all_photos?: Array<{
     id?: string;
@@ -1071,6 +1080,33 @@ export interface EmployeeShift {
   turno?: WorkShift;
   funcionario_nome?: string;
   turno_nome?: string;
+}
+
+/** Escala de sobreaviso: regime de espera remunerado com 1/3 da hora normal (Súmula 428 TST). Máx. 24h por escala. */
+export interface SobreavisoEscala {
+  id: string;
+  company_id: string;
+  employee_id: string;
+  data_escala: string;
+  hora_inicio: string;
+  hora_fim: string;
+  duracao_horas: number;
+  valor_hora_normal: number;
+  valor_pago: number;
+  mes_referencia: number;
+  ano_referencia: number;
+  folha_processada: boolean;
+  payroll_event_id?: string | null;
+  incidencia_ferias: boolean;
+  incidencia_13_salario: boolean;
+  incidencia_fgts: boolean;
+  incidencia_dsr: boolean;
+  observacoes?: string | null;
+  created_at: string;
+  updated_at: string;
+  // Relacionamentos
+  employee?: Employee;
+  employee_nome?: string;
 }
 
 // =====================================================
@@ -1184,6 +1220,10 @@ export interface MedicalCertificate {
   aprovado_por?: string;
   aprovado_em?: string;
   data_aprovacao?: string;
+  /** Indica se o atestado é de comparecimento (ex.: consulta). Usado no banco de horas. */
+  atestado_comparecimento?: boolean;
+  /** Quantidade de horas em decimal para atestado de comparecimento. Usado no cálculo do banco de horas. */
+  horas_comparecimento?: number;
   created_at: string;
   updated_at: string;
   // Relacionamentos

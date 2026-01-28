@@ -27,7 +27,7 @@ import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { useToast } from '@/hooks/use-toast';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { useTraining } from '@/hooks/rh/useTraining';
 
 export default function TreinamentoDetalhesPage() {
@@ -738,7 +738,7 @@ export default function TreinamentoDetalhesPage() {
   };
 
   return (
-    <RequireModule module="portal_colaborador" action="read">
+    <RequirePage pagePath="/portal-colaborador/treinamentos*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -974,6 +974,6 @@ export default function TreinamentoDetalhesPage() {
           </div>
         )}
       </div>
-    </RequireModule>
+    </RequirePage>
   );
 }

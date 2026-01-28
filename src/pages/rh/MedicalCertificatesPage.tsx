@@ -39,6 +39,7 @@ import { useToast } from '@/hooks/use-toast';
 import { MedicalCertificate } from '@/integrations/supabase/rh-types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateOnly } from '@/lib/utils';
 
 import { RequireModule } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -521,7 +522,7 @@ export default function MedicalCertificatesPage() {
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Data de Emissão</label>
-                        <p className="font-semibold">{viewingCertificate.data_emissao ? formatDate(viewingCertificate.data_emissao) : 'Não informado'}</p>
+                        <p className="font-semibold">{viewingCertificate.data_emissao ? formatDateOnly(viewingCertificate.data_emissao) : 'Não informado'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Status</label>
@@ -599,16 +600,43 @@ export default function MedicalCertificatesPage() {
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Data de Início</label>
-                        <p className="font-semibold">{formatDate(viewingCertificate.data_inicio)}</p>
+                        <p className="font-semibold">{formatDateOnly(viewingCertificate.data_inicio)}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Data de Fim</label>
-                        <p className="font-semibold">{formatDate(viewingCertificate.data_fim)}</p>
+                        <p className="font-semibold">{formatDateOnly(viewingCertificate.data_fim)}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Duração</label>
                         <p className="font-semibold text-blue-600">{viewingCertificate.dias_afastamento} dias</p>
                       </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Atestado de Comparecimento */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Clock className="h-5 w-5 text-amber-600" />
+                      Atestado de Comparecimento
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">É atestado de comparecimento?</label>
+                        <p className="font-semibold">{viewingCertificate.atestado_comparecimento ? 'Sim' : 'Não'}</p>
+                      </div>
+                      {viewingCertificate.atestado_comparecimento && viewingCertificate.horas_comparecimento != null && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Quantidade de horas</label>
+                          <p className="font-semibold text-amber-600">
+                            {Number(viewingCertificate.horas_comparecimento).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} h
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Utilizado no cálculo do banco de horas</p>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

@@ -50,6 +50,7 @@ interface Employee {
   email: string;
   cargo?: string;
   departamento?: string;
+  company_id?: string;
 }
 
 const EnrollmentForm: React.FC<EnrollmentFormProps> = ({ trainingId, onEnroll, onCancel }) => {
@@ -106,7 +107,8 @@ const EnrollmentForm: React.FC<EnrollmentFormProps> = ({ trainingId, onEnroll, o
       const enrollmentData = {
         training_id: trainingId,
         employee_id: selectedEmployee!.id,
-        observacoes: observacoes || undefined
+        observacoes: observacoes || undefined,
+        company_id: selectedEmployee!.company_id
       };
 
       createEnrollment(enrollmentData);

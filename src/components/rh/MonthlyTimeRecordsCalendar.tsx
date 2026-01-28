@@ -212,6 +212,30 @@ export function MonthlyTimeRecordsCalendar({
     }
   };
 
+  // Função para formatar horário com data - sempre mostra a data quando disponível
+  const formatTimeWithDate = (time?: string, date?: string, baseDate?: string) => {
+    if (!time) return '--:--';
+    const timeOnly = time.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (date) {
+      dateToUse = date;
+    } else if (baseDate) {
+      dateToUse = baseDate;
+    } else {
+      return timeOnly;
+    }
+    
+    // SEMPRE mostrar a data quando disponível
+    const [year, month, day] = dateToUse.split('-');
+    if (year && month && day) {
+      return `${timeOnly} (${day.padStart(2, '0')}/${month.padStart(2, '0')})`;
+    }
+    
+    return timeOnly;
+  };
+
   const formatTime = (time?: string) => {
     if (!time) return '';
     return time.substring(0, 5); // HH:MM
@@ -305,13 +329,13 @@ export function MonthlyTimeRecordsCalendar({
                       {record.entrada && (
                         <div className="flex items-center gap-1">
                           <Clock className="w-2 h-2" />
-                          <span>{formatTime(record.entrada)}</span>
+                          <span>{formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)}</span>
                         </div>
                       )}
                       {record.saida && (
                         <div className="flex items-center gap-1">
                           <Clock className="w-2 h-2" />
-                          <span>{formatTime(record.saida)}</span>
+                          <span>{formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)}</span>
                         </div>
                       )}
                     </div>

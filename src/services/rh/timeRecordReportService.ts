@@ -487,7 +487,7 @@ export async function completeRecordsWithRestDays(
   
   // Processar cada dia do mês
   let virtualRecordsCreated = 0;
-  let virtualRecordsByType: Record<string, number> = { dsr: 0, ferias: 0, atestado: 0, compensacao: 0 };
+  let virtualRecordsByType: Record<string, number> = { dsr: 0, ferias: 0, atestado: 0, compensacao: 0, falta: 0 };
   
   for (let i = 0; i < allDates.length; i++) {
     const dateStr = allDates[i];
@@ -506,12 +506,15 @@ export async function completeRecordsWithRestDays(
       continue;
     }
     
-    // Verificar se precisa criar registro virtual para férias, atestado ou compensação
+    // Verificar se precisa criar registro virtual para férias, atestado, compensação, DSR ou falta
     let shouldCreateVirtualRecord = false;
-    let virtualRecordType: 'dsr' | 'ferias' | 'atestado' | 'compensacao' | null = null;
+    let virtualRecordType: 'dsr' | 'ferias' | 'atestado' | 'compensacao' | 'falta' | null = null;
     let virtualRecordLabel = '';
     
-    // Prioridade: Férias > Atestado > Compensação > DSR
+    // Horas diárias esperadas para cálculo de horas negativas em falta (padrão 8h; pode ser refinado pelo turno)
+    const horasDiariasFalta = 8;
+    
+    // Prioridade: Férias > Atestado > Compensação > DSR > Falta (dia útil sem registro)
     if (dayInfo.isVacation) {
       shouldCreateVirtualRecord = true;
       virtualRecordType = 'ferias';
@@ -567,26 +570,31 @@ export async function completeRecordsWithRestDays(
           }
         }
       } else {
-        // LÓGICA PARA ESCALAS FIXAS (mantém comportamento original)
+        // LÓGICA PARA ESCALAS FIXAS
         if (dayInfo.isRestDay) {
           shouldCreateDSR = true;
-          // Log apenas para debug (comentado para reduzir ruído)
-          // console.log(`[completeRecordsWithRestDays] 🔵 DSR (escala fixa) para ${dateStr}`);
+        } else if (!dayInfo.isVacation && !dayInfo.isMedicalCertificate && !dayInfo.compensationType) {
+          // Dia útil sem registro e sem atestado/férias/compensação → Falta (horas negativas)
+          shouldCreateVirtualRecord = true;
+          virtualRecordType = 'falta';
+          virtualRecordLabel = 'Falta';
         }
-        // Nota: Se isRestDay=false, pode ser porque:
-        // 1. O turno do funcionário ainda não estava ativo naquela data
-        // 2. A escala do funcionário não considera aquele dia como folga
-        // Isso é comportamento esperado e não é um erro
       }
       
       if (shouldCreateDSR) {
         shouldCreateVirtualRecord = true;
         virtualRecordType = 'dsr';
         virtualRecordLabel = 'DSR';
+      } else if (!shouldCreateVirtualRecord && !dayInfo.isRestDay && !dayInfo.isVacation && !dayInfo.isMedicalCertificate && !dayInfo.compensationType) {
+        // Escala flexível: não foi DSR (ex.: posição excedeu dias_folga) → Falta
+        shouldCreateVirtualRecord = true;
+        virtualRecordType = 'falta';
+        virtualRecordLabel = 'Falta';
       }
     }
     
     if (shouldCreateVirtualRecord && virtualRecordType) {
+      const isFalta = virtualRecordType === 'falta';
       // Criar registro virtual
       const virtualRecord: TimeRecord = {
         id: `virtual-${dateStr}-${virtualRecordType}`,
@@ -601,9 +609,9 @@ export async function completeRecordsWithRestDays(
         horas_extras: 0,
         horas_extras_50: 0,
         horas_extras_100: 0,
-        horas_negativas: 0,
+        horas_negativas: isFalta ? horasDiariasFalta : 0,
         horas_noturnas: 0,
-        horas_faltas: 0,
+        horas_faltas: isFalta ? horasDiariasFalta : 0,
         status: 'aprovado' as const,
         is_feriado: dayInfo.isHoliday,
         is_domingo: dayInfo.isSunday,
@@ -642,7 +650,7 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
     }
   }
   
-  // Completar registros com dias de folga
+  // Completar registros com dias de folga, DSR, atestado, férias e faltas (dias úteis sem registro)
   const completeRecords = await completeRecordsWithRestDays(records, month, year, daysInfo, employeeId!, companyId!);
   
   const monthNames = [
@@ -652,12 +660,12 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
   
   const monthName = monthNames[month - 1];
   
-  // Calcular totais
-  const totalHorasTrabalhadas = records.reduce((sum, r) => sum + (r.horas_trabalhadas || 0), 0);
-  const totalHorasNegativas = records.reduce((sum, r) => sum + (r.horas_negativas || 0), 0);
-  const totalExtras50 = records.reduce((sum, r) => sum + (r.horas_extras_50 || 0), 0);
-  const totalExtras100 = records.reduce((sum, r) => sum + (r.horas_extras_100 || 0), 0);
-  const totalNoturnas = records.reduce((sum, r) => sum + (r.horas_noturnas || 0), 0);
+  // Calcular totais a partir dos registros completos (inclui faltas virtuais = dias úteis sem registro)
+  const totalHorasTrabalhadas = completeRecords.reduce((sum, r) => sum + (r.horas_trabalhadas || 0), 0);
+  const totalHorasNegativas = completeRecords.reduce((sum, r) => sum + (r.horas_negativas || 0), 0);
+  const totalExtras50 = completeRecords.reduce((sum, r) => sum + (r.horas_extras_50 || 0), 0);
+  const totalExtras100 = completeRecords.reduce((sum, r) => sum + (r.horas_extras_100 || 0), 0);
+  const totalNoturnas = completeRecords.reduce((sum, r) => sum + (r.horas_noturnas || 0), 0);
   
   // Formatar horas
   const formatHours = (hours: number) => {
@@ -683,6 +691,30 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
   const formatTime = (time?: string) => {
     if (!time) return '--:--';
     return time;
+  };
+
+  // Função para formatar horário com data - sempre mostra a data quando disponível
+  const formatTimeWithDate = (time?: string, date?: string, baseDate?: string) => {
+    if (!time) return '--:--';
+    const timeOnly = time.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (date) {
+      dateToUse = date;
+    } else if (baseDate) {
+      dateToUse = baseDate;
+    } else {
+      return timeOnly;
+    }
+    
+    // SEMPRE mostrar a data quando disponível
+    const [year, month, day] = dateToUse.split('-');
+    if (year && month && day) {
+      return `${timeOnly} (${day.padStart(2, '0')}/${month.padStart(2, '0')})`;
+    }
+    
+    return timeOnly;
   };
   
   return `
@@ -859,6 +891,7 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
             const isVacation = isVirtual && record.id.includes('-ferias');
             const isMedicalCertificate = isVirtual && record.id.includes('-atestado');
             const isCompensation = isVirtual && record.id.includes('-compensacao');
+            const isFalta = isVirtual && record.id.includes('-falta');
             
             // Determinar o label a exibir
             let displayLabel = '';
@@ -868,22 +901,26 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
               displayLabel = 'Atestado';
             } else if (isCompensation) {
               displayLabel = record.observacoes || 'Compensação';
+            } else if (isFalta) {
+              displayLabel = 'Falta';
             } else if (isRestDay && !record.entrada) {
               displayLabel = 'DSR';
             }
             
+            const showHorasNegativasFalta = isFalta ? `-${formatHours(record.horas_negativas || 0)}h` : (displayLabel ? '-' : `${formatHours(record.horas_negativas || 0)}h`);
+            
             return `
           <tr>
             <td>${formatDate(record.data_registro)}</td>
-            <td class="time">${displayLabel || formatTime(record.entrada)}</td>
-            <td class="time">${displayLabel ? '-' : formatTime(record.entrada_almoco)}</td>
-            <td class="time">${displayLabel ? '-' : formatTime(record.saida_almoco)}</td>
-            <td class="time">${displayLabel ? '-' : formatTime(record.saida)}</td>
+            <td class="time">${displayLabel || formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${displayLabel ? '-' : formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${displayLabel ? '-' : formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${displayLabel ? '-' : formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)}</td>
             <td class="number">${displayLabel ? displayLabel : formatHours(record.horas_trabalhadas || 0)}h</td>
             <td class="number">${displayLabel ? '-' : formatHours(record.horas_extras_50 || 0)}h</td>
             <td class="number">${displayLabel ? '-' : formatHours(record.horas_extras_100 || 0)}h</td>
             <td class="number">${displayLabel ? '-' : formatHours(record.horas_noturnas || 0)}h</td>
-            <td class="number">${displayLabel ? '-' : formatHours(record.horas_negativas || 0)}h</td>
+            <td class="number">${showHorasNegativasFalta}</td>
             <td>${displayLabel || (record.status || 'pendente')}</td>
           </tr>
         `;
@@ -1001,6 +1038,7 @@ export async function generateTimeRecordReportCSV(data: TimeRecordReportData): P
       const isVacation = isVirtual && record.id.includes('-ferias');
       const isMedicalCertificate = isVirtual && record.id.includes('-atestado');
       const isCompensation = isVirtual && record.id.includes('-compensacao');
+      const isFalta = isVirtual && record.id.includes('-falta');
       
       // Determinar o label a exibir
       let displayLabel = '';
@@ -1010,6 +1048,8 @@ export async function generateTimeRecordReportCSV(data: TimeRecordReportData): P
         displayLabel = 'Atestado Médico';
       } else if (isCompensation) {
         displayLabel = record.observacoes || 'Compensação';
+      } else if (isFalta) {
+        displayLabel = 'Falta';
       } else if (isRestDay && !record.entrada) {
         displayLabel = 'DSR';
       }

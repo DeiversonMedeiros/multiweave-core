@@ -148,6 +148,7 @@ export const useTraining = () => {
         schema: 'rh',
         table: 'trainings',
         companyId: selectedCompany.id,
+        skipCompanyFilter: true,
         filters: {
           is_active: true,
           ...filters
@@ -181,6 +182,7 @@ export const useTraining = () => {
         schema: 'rh',
         table: 'training_enrollments',
         companyId: selectedCompany.id,
+        skipCompanyFilter: true,
         filters: {
           is_active: true,
           ...filters
@@ -244,6 +246,7 @@ export const useTraining = () => {
         schema: 'rh',
         table: 'training_certificates',
         companyId: selectedCompany.id,
+        skipCompanyFilter: true,
         filters: {
           ...filters
         },
@@ -275,6 +278,7 @@ export const useTraining = () => {
         schema: 'rh',
         table: 'trainings',
         companyId: selectedCompany.id,
+        skipCompanyFilter: true,
         filters: { is_active: true }
       });
 
@@ -282,19 +286,22 @@ export const useTraining = () => {
         schema: 'rh',
         table: 'training_enrollments',
         companyId: selectedCompany.id,
+        skipCompanyFilter: true,
         filters: { is_active: true }
       });
 
       const attendanceResult = await EntityService.list<TrainingAttendance>({
         schema: 'rh',
         table: 'training_attendance',
-        companyId: selectedCompany.id
+        companyId: selectedCompany.id,
+        skipCompanyFilter: true
       });
 
       const certificatesResult = await EntityService.list<TrainingCertificate>({
         schema: 'rh',
         table: 'training_certificates',
-        companyId: selectedCompany.id
+        companyId: selectedCompany.id,
+        skipCompanyFilter: true
       });
 
       const trainings = trainingsResult.data;

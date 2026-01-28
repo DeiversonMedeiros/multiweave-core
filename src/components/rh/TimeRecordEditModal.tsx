@@ -38,6 +38,13 @@ const baseTimeRecordSchema = z.object({
   saida_almoco: z.string().optional(),
   entrada_extra1: z.string().optional(),
   saida_extra1: z.string().optional(),
+  // Campos de data para horários corrigidos (quando diferente de data_original)
+  entrada_date: z.string().optional(),
+  saida_date: z.string().optional(),
+  entrada_almoco_date: z.string().optional(),
+  saida_almoco_date: z.string().optional(),
+  entrada_extra1_date: z.string().optional(),
+  saida_extra1_date: z.string().optional(),
   justificativa: z.string().optional(),
   motivo_id: z.string().optional(),
   observacoes: z.string().optional(),
@@ -134,41 +141,112 @@ export function TimeRecordEditModal({
     return time;
   };
 
+  // Função para converter datetime-local para time e date separados
+  const parseDateTimeLocal = (datetimeLocal: string | undefined): { time: string | null; date: string | null } => {
+    if (!datetimeLocal) return { time: null, date: null };
+    
+    // Formato: YYYY-MM-DDTHH:MM
+    const [datePart, timePart] = datetimeLocal.split('T');
+    if (!datePart || !timePart) {
+      // Se não tem T, pode ser apenas time (HH:MM)
+      if (datetimeLocal.match(/^\d{2}:\d{2}$/)) {
+        return { time: datetimeLocal, date: null };
+      }
+      return { time: null, date: null };
+    }
+    
+    return { time: timePart, date: datePart };
+  };
+
+  // Função para criar valor datetime-local a partir de time e date
+  const createDateTimeLocal = (time: string | null | undefined, date: string | null | undefined, baseDate: string): string | undefined => {
+    if (!time) return undefined;
+    
+    // Se tem data específica e é diferente da base, usar ela
+    const dateToUse = date && date !== baseDate ? date : baseDate;
+    
+    // Formato datetime-local: YYYY-MM-DDTHH:MM
+    return `${dateToUse}T${time}`;
+  };
+
   // Preencher formulário com dados existentes
   useEffect(() => {
     if (existingRecord && !isCreating) {
       console.log('📝 [TimeRecordEditModal] Preenchendo formulário com dados existentes:', existingRecord);
       
+      // Preencher com datetime-local (data+hora) quando disponível
       if (existingRecord.entrada) {
         const entradaFormatted = formatTimeForInput(existingRecord.entrada);
-        if (entradaFormatted) setValue('entrada', entradaFormatted);
+        const entradaDate = existingRecord.entrada_date || date;
+        if (entradaFormatted) {
+          const datetimeLocal = createDateTimeLocal(entradaFormatted, entradaDate, date);
+          setValue('entrada', datetimeLocal || entradaFormatted);
+          if (entradaDate && entradaDate !== date) {
+            setValue('entrada_date', entradaDate);
+          }
+        }
       }
       if (existingRecord.saida) {
         const saidaFormatted = formatTimeForInput(existingRecord.saida);
-        if (saidaFormatted) setValue('saida', saidaFormatted);
+        const saidaDate = existingRecord.saida_date || date;
+        if (saidaFormatted) {
+          const datetimeLocal = createDateTimeLocal(saidaFormatted, saidaDate, date);
+          setValue('saida', datetimeLocal || saidaFormatted);
+          if (saidaDate && saidaDate !== date) {
+            setValue('saida_date', saidaDate);
+          }
+        }
       }
       if (existingRecord.entrada_almoco) {
         const entradaAlmocoFormatted = formatTimeForInput(existingRecord.entrada_almoco);
-        if (entradaAlmocoFormatted) setValue('entrada_almoco', entradaAlmocoFormatted);
+        const entradaAlmocoDate = existingRecord.entrada_almoco_date || date;
+        if (entradaAlmocoFormatted) {
+          const datetimeLocal = createDateTimeLocal(entradaAlmocoFormatted, entradaAlmocoDate, date);
+          setValue('entrada_almoco', datetimeLocal || entradaAlmocoFormatted);
+          if (entradaAlmocoDate && entradaAlmocoDate !== date) {
+            setValue('entrada_almoco_date', entradaAlmocoDate);
+          }
+        }
       }
       if (existingRecord.saida_almoco) {
         const saidaAlmocoFormatted = formatTimeForInput(existingRecord.saida_almoco);
-        if (saidaAlmocoFormatted) setValue('saida_almoco', saidaAlmocoFormatted);
+        const saidaAlmocoDate = existingRecord.saida_almoco_date || date;
+        if (saidaAlmocoFormatted) {
+          const datetimeLocal = createDateTimeLocal(saidaAlmocoFormatted, saidaAlmocoDate, date);
+          setValue('saida_almoco', datetimeLocal || saidaAlmocoFormatted);
+          if (saidaAlmocoDate && saidaAlmocoDate !== date) {
+            setValue('saida_almoco_date', saidaAlmocoDate);
+          }
+        }
       }
       if (existingRecord.entrada_extra1) {
         const entradaExtraFormatted = formatTimeForInput(existingRecord.entrada_extra1);
-        if (entradaExtraFormatted) setValue('entrada_extra1', entradaExtraFormatted);
+        const entradaExtraDate = existingRecord.entrada_extra1_date || date;
+        if (entradaExtraFormatted) {
+          const datetimeLocal = createDateTimeLocal(entradaExtraFormatted, entradaExtraDate, date);
+          setValue('entrada_extra1', datetimeLocal || entradaExtraFormatted);
+          if (entradaExtraDate && entradaExtraDate !== date) {
+            setValue('entrada_extra1_date', entradaExtraDate);
+          }
+        }
       }
       if (existingRecord.saida_extra1) {
         const saidaExtraFormatted = formatTimeForInput(existingRecord.saida_extra1);
-        if (saidaExtraFormatted) setValue('saida_extra1', saidaExtraFormatted);
+        const saidaExtraDate = existingRecord.saida_extra1_date || date;
+        if (saidaExtraFormatted) {
+          const datetimeLocal = createDateTimeLocal(saidaExtraFormatted, saidaExtraDate, date);
+          setValue('saida_extra1', datetimeLocal || saidaExtraFormatted);
+          if (saidaExtraDate && saidaExtraDate !== date) {
+            setValue('saida_extra1_date', saidaExtraDate);
+          }
+        }
       }
       
       console.log('✅ [TimeRecordEditModal] Formulário preenchido');
     } else if (isCreating) {
       reset();
     }
-  }, [existingRecord, isCreating, setValue, reset]);
+  }, [existingRecord, isCreating, setValue, reset, date]);
 
   // Bloquear scroll do body quando o modal está aberto (especialmente importante para mobile)
   useEffect(() => {
@@ -244,11 +322,21 @@ export function TimeRecordEditModal({
       setIsCalculating(true);
       
       try {
+        // Extrair apenas o time (HH:MM) se for datetime-local
+        const entradaTime = entrada.includes('T') ? entrada.split('T')[1] : entrada;
+        const saidaTime = saida.includes('T') ? saida.split('T')[1] : saida;
+        const entradaAlmocoTime = entrada_almoco && entrada_almoco.includes('T') 
+          ? entrada_almoco.split('T')[1] 
+          : entrada_almoco || null;
+        const saidaAlmocoTime = saida_almoco && saida_almoco.includes('T') 
+          ? saida_almoco.split('T')[1] 
+          : saida_almoco || null;
+
         const { data, error } = await supabase.rpc('calculate_work_hours', {
-          p_entrada: entrada,
-          p_saida: saida,
-          p_entrada_almoco: entrada_almoco || null,
-          p_saida_almoco: saida_almoco || null
+          p_entrada: entradaTime,
+          p_saida: saidaTime,
+          p_entrada_almoco: entradaAlmocoTime,
+          p_saida_almoco: saidaAlmocoTime
         });
 
         if (error) {
@@ -351,6 +439,26 @@ export function TimeRecordEditModal({
 
         const originalRecord = originalRecordResult.data?.[0];
 
+        // Processar horários corrigidos (pode vir como datetime-local ou apenas time)
+        const processTimeField = (datetimeOrTime: string | undefined): { time: string | null; date: string | null } => {
+          if (!datetimeOrTime) return { time: null, date: null };
+          
+          // Se é datetime-local (YYYY-MM-DDTHH:MM)
+          if (datetimeOrTime.includes('T')) {
+            return parseDateTimeLocal(datetimeOrTime);
+          }
+          
+          // Se é apenas time (HH:MM), usar data_original
+          return { time: datetimeOrTime, date: null };
+        };
+
+        const entradaProcessed = processTimeField(data.entrada);
+        const saidaProcessed = processTimeField(data.saida);
+        const entradaAlmocoProcessed = processTimeField(data.entrada_almoco);
+        const saidaAlmocoProcessed = processTimeField(data.saida_almoco);
+        const entradaExtra1Processed = processTimeField(data.entrada_extra1);
+        const saidaExtra1Processed = processTimeField(data.saida_extra1);
+
         // Preparar dados para a correção
         const correctionData = {
           employee_id: employeeId,
@@ -358,16 +466,22 @@ export function TimeRecordEditModal({
           data_original: date,
           entrada_original: originalRecord?.entrada || null,
           saida_original: originalRecord?.saida || null,
-          entrada_corrigida: data.entrada || null,
-          saida_corrigida: data.saida || null,
+          entrada_corrigida: entradaProcessed.time,
+          entrada_corrigida_date: entradaProcessed.date && entradaProcessed.date !== date ? entradaProcessed.date : null,
+          saida_corrigida: saidaProcessed.time,
+          saida_corrigida_date: saidaProcessed.date && saidaProcessed.date !== date ? saidaProcessed.date : null,
           entrada_almoco_original: originalRecord?.entrada_almoco || null,
           saida_almoco_original: originalRecord?.saida_almoco || null,
-          entrada_almoco_corrigida: data.entrada_almoco || null,
-          saida_almoco_corrigida: data.saida_almoco || null,
+          entrada_almoco_corrigida: entradaAlmocoProcessed.time,
+          entrada_almoco_corrigida_date: entradaAlmocoProcessed.date && entradaAlmocoProcessed.date !== date ? entradaAlmocoProcessed.date : null,
+          saida_almoco_corrigida: saidaAlmocoProcessed.time,
+          saida_almoco_corrigida_date: saidaAlmocoProcessed.date && saidaAlmocoProcessed.date !== date ? saidaAlmocoProcessed.date : null,
           entrada_extra1_original: originalRecord?.entrada_extra1 || null,
           saida_extra1_original: originalRecord?.saida_extra1 || null,
-          entrada_extra1_corrigida: data.entrada_extra1 || null,
-          saida_extra1_corrigida: data.saida_extra1 || null,
+          entrada_extra1_corrigida: entradaExtra1Processed.time,
+          entrada_extra1_corrigida_date: entradaExtra1Processed.date && entradaExtra1Processed.date !== date ? entradaExtra1Processed.date : null,
+          saida_extra1_corrigida: saidaExtra1Processed.time,
+          saida_extra1_corrigida_date: saidaExtra1Processed.date && saidaExtra1Processed.date !== date ? saidaExtra1Processed.date : null,
           justificativa: data.justificativa || 'Correção solicitada',
           status: 'pendente',
           solicitado_por: user.id,
@@ -489,17 +603,31 @@ export function TimeRecordEditModal({
     
     if (!entrada || !saida) return true;
     
-    const entradaTime = new Date(`2000-01-01T${entrada}`);
-    const saidaTime = new Date(`2000-01-01T${saida}`);
+    // Se for datetime-local, usar diretamente; se for apenas time, criar data fictícia
+    const entradaDateTime = entrada.includes('T') ? new Date(entrada) : new Date(`2000-01-01T${entrada}`);
+    const saidaDateTime = saida.includes('T') ? new Date(saida) : new Date(`2000-01-01T${saida}`);
     
-    if (entradaTime >= saidaTime) return false;
+    // Se entrada e saída têm datas diferentes, considerar a diferença de dias
+    if (entradaDateTime >= saidaDateTime && entradaDateTime.getDate() === saidaDateTime.getDate()) {
+      return false;
+    }
     
     if (entrada_almoco && saida_almoco) {
-      const entradaAlmocoTime = new Date(`2000-01-01T${entrada_almoco}`);
-      const saidaAlmocoTime = new Date(`2000-01-01T${saida_almoco}`);
+      const entradaAlmocoDateTime = entrada_almoco.includes('T') ? new Date(entrada_almoco) : new Date(`2000-01-01T${entrada_almoco}`);
+      const saidaAlmocoDateTime = saida_almoco.includes('T') ? new Date(saida_almoco) : new Date(`2000-01-01T${saida_almoco}`);
       
-      if (entradaAlmocoTime >= saidaAlmocoTime) return false;
-      if (entradaAlmocoTime <= entradaTime || saidaAlmocoTime >= saidaTime) return false;
+      if (entradaAlmocoDateTime >= saidaAlmocoDateTime && entradaAlmocoDateTime.getDate() === saidaAlmocoDateTime.getDate()) {
+        return false;
+      }
+      
+      // Verificar se o almoço está dentro do período de trabalho
+      if (entradaAlmocoDateTime <= entradaDateTime || saidaAlmocoDateTime >= saidaDateTime) {
+        // Permitir se as datas são diferentes (trabalho noturno)
+        if (entradaAlmocoDateTime.getDate() === entradaDateTime.getDate() && 
+            saidaAlmocoDateTime.getDate() === saidaDateTime.getDate()) {
+          return false;
+        }
+      }
     }
     
     return true;
@@ -605,10 +733,16 @@ export function TimeRecordEditModal({
                 </Label>
                 <Input
                   id="entrada"
-                  type="time"
+                  type={isCreating ? 'time' : 'datetime-local'}
                   {...register('entrada')}
                   className={errors.entrada ? 'border-red-500' : ''}
+                  step={isCreating ? undefined : '60'}
                 />
+                {!isCreating && (
+                  <p className="text-xs text-gray-500">
+                    Selecione data e hora. Se a data for diferente de {new Date(date).toLocaleDateString('pt-BR')}, especifique a data correta.
+                  </p>
+                )}
                 {errors.entrada && (
                   <p className="text-sm text-red-500">{errors.entrada.message}</p>
                 )}
@@ -620,11 +754,17 @@ export function TimeRecordEditModal({
                 </Label>
                 <Input
                   id="saida"
-                  type="time"
+                  type={isCreating ? 'time' : 'datetime-local'}
                   {...register('saida')}
                   className={errors.saida ? 'border-red-500' : ''}
                   placeholder={isCreating ? 'Obrigatório' : 'Opcional'}
+                  step={isCreating ? undefined : '60'}
                 />
+                {!isCreating && (
+                  <p className="text-xs text-gray-500">
+                    Selecione data e hora. Se a data for diferente de {new Date(date).toLocaleDateString('pt-BR')}, especifique a data correta.
+                  </p>
+                )}
                 {errors.saida && (
                   <p className="text-sm text-red-500">{errors.saida.message}</p>
                 )}
@@ -637,18 +777,26 @@ export function TimeRecordEditModal({
                 <Label htmlFor="entrada_almoco">Início do Almoço</Label>
                 <Input
                   id="entrada_almoco"
-                  type="time"
+                  type={isCreating ? 'time' : 'datetime-local'}
                   {...register('entrada_almoco')}
+                  step={isCreating ? undefined : '60'}
                 />
+                {!isCreating && (
+                  <p className="text-xs text-gray-500">Data e hora</p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="saida_almoco">Fim do Almoço</Label>
                 <Input
                   id="saida_almoco"
-                  type="time"
+                  type={isCreating ? 'time' : 'datetime-local'}
                   {...register('saida_almoco')}
+                  step={isCreating ? undefined : '60'}
                 />
+                {!isCreating && (
+                  <p className="text-xs text-gray-500">Data e hora</p>
+                )}
               </div>
             </div>
 
@@ -658,18 +806,26 @@ export function TimeRecordEditModal({
                 <Label htmlFor="entrada_extra1">Entrada Extra</Label>
                 <Input
                   id="entrada_extra1"
-                  type="time"
+                  type={isCreating ? 'time' : 'datetime-local'}
                   {...register('entrada_extra1')}
+                  step={isCreating ? undefined : '60'}
                 />
+                {!isCreating && (
+                  <p className="text-xs text-gray-500">Data e hora</p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="saida_extra1">Saída Extra</Label>
                 <Input
                   id="saida_extra1"
-                  type="time"
+                  type={isCreating ? 'time' : 'datetime-local'}
                   {...register('saida_extra1')}
+                  step={isCreating ? undefined : '60'}
                 />
+                {!isCreating && (
+                  <p className="text-xs text-gray-500">Data e hora</p>
+                )}
               </div>
             </div>
 

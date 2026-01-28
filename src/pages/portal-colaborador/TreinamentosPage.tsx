@@ -29,7 +29,7 @@ import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { useToast } from '@/hooks/use-toast';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 import { cn } from '@/lib/utils';
 import { EntityService } from '@/services/generic/entityService';
 import { downloadCertificate, CertificateData } from '@/services/rh/certificateService';
@@ -386,7 +386,7 @@ export default function TreinamentosPage() {
   const totalCount = assignedCount + positionCount + publicCount;
 
   return (
-    <RequireModule module="portal_colaborador" action="read">
+    <RequirePage pagePath="/portal-colaborador/treinamentos*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -830,6 +830,6 @@ export default function TreinamentosPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </RequireModule>
+    </RequirePage>
   );
 }

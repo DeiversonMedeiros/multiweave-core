@@ -4,6 +4,7 @@ import { toast } from '@/components/ui/use-toast';
 
 interface TrainingEnrollment {
   id: string;
+  company_id?: string;
   training_id: string;
   employee_id: string;
   data_inscricao: string;
@@ -35,6 +36,8 @@ interface EnrollmentPayload {
   training_id: string;
   employee_id: string;
   observacoes?: string;
+  /** company_id do funcionário (empresa de lotação) - obrigatório ao atribuir de outra empresa */
+  company_id?: string;
 }
 
 interface EnrollmentUpdatePayload {
@@ -53,7 +56,8 @@ export function useEnrollment(companyId: string) {
       const result = await EntityService.list<TrainingEnrollment>({
         schema: 'rh',
         table: 'training_enrollments',
-        companyId
+        companyId,
+        skipCompanyFilter: true,
       });
       return result.data;
     },
@@ -72,12 +76,15 @@ export function useEnrollment(companyId: string) {
   // Create a new enrollment
   const createEnrollmentMutation = useMutation<TrainingEnrollment, Error, EnrollmentPayload>({
     mutationFn: async (newEnrollment) => {
+      const enrollmentCompanyId = (newEnrollment as EnrollmentPayload & { company_id?: string }).company_id ?? companyId;
       const data = await EntityService.create<TrainingEnrollment>({
         schema: 'rh',
         table: 'training_enrollments',
-        companyId,
+        companyId: enrollmentCompanyId,
         data: {
-          ...newEnrollment,
+          training_id: newEnrollment.training_id,
+          employee_id: newEnrollment.employee_id,
+          observacoes: newEnrollment.observacoes,
           data_inscricao: new Date().toISOString().split('T')[0],
           status: 'inscrito'
         }
@@ -128,13 +135,14 @@ export function useEnrollment(companyId: string) {
     },
   });
 
-  // Delete an enrollment
-  const deleteEnrollmentMutation = useMutation<void, Error, string>({
-    mutationFn: async (id) => {
+  // Delete an enrollment (companyId opcional: use enrollment.company_id para inscrições de outras empresas)
+  const deleteEnrollmentMutation = useMutation<void, Error, { id: string; companyId?: string }>({
+    mutationFn: async ({ id, companyId: rowCompanyId }) => {
+      const effectiveCompanyId = rowCompanyId ?? companyId;
       await EntityService.delete({
         schema: 'rh',
         table: 'training_enrollments',
-        companyId,
+        companyId: effectiveCompanyId,
         id
       });
     },
@@ -154,31 +162,37 @@ export function useEnrollment(companyId: string) {
     },
   });
 
-  // Approve enrollment
-  const approveEnrollment = (id: string) => {
-    updateEnrollmentMutation.mutate({ id, updates: { status: 'aprovado' } });
+  // Approve enrollment (companyId opcional para inscrições de outras empresas)
+  const approveEnrollment = (id: string, companyId?: string) => {
+    updateEnrollmentMutation.mutate({ id, updates: { status: 'aprovado' }, companyId });
   };
 
   // Reject enrollment
-  const rejectEnrollment = (id: string, reason: string) => {
+  const rejectEnrollment = (id: string, reason: string, companyId?: string) => {
     updateEnrollmentMutation.mutate({ 
       id, 
       updates: { 
         status: 'rejeitado', 
         justificativa_cancelamento: reason 
-      } 
+      },
+      companyId 
     });
   };
 
   // Cancel enrollment
-  const cancelEnrollment = (id: string, reason: string) => {
+  const cancelEnrollment = (id: string, reason: string, companyId?: string) => {
     updateEnrollmentMutation.mutate({ 
       id, 
       updates: { 
         status: 'cancelado', 
         justificativa_cancelamento: reason 
-      } 
+      },
+      companyId 
     });
+  };
+
+  const deleteEnrollment = (id: string, companyId?: string) => {
+    deleteEnrollmentMutation.mutate({ id, companyId });
   };
 
   return {
@@ -189,7 +203,7 @@ export function useEnrollment(companyId: string) {
     error,
     createEnrollment: createEnrollmentMutation.mutate,
     updateEnrollment: updateEnrollmentMutation.mutate,
-    deleteEnrollment: deleteEnrollmentMutation.mutate,
+    deleteEnrollment,
     approveEnrollment,
     rejectEnrollment,
     cancelEnrollment,
@@ -201,11 +215,12 @@ export function useAvailableEmployees(companyId: string, trainingId?: string) {
   const { data: employees, isLoading, error } = useQuery({
     queryKey: ['employees', companyId, 'available', trainingId],
     queryFn: async () => {
-      // Buscar funcionários da empresa
+      // Buscar funcionários de todas as empresas (para atribuição cross-company)
       const employeesResult = await EntityService.list({
         schema: 'rh',
         table: 'employees',
-        companyId
+        companyId,
+        skipCompanyFilter: true,
       });
 
       const allEmployees = employeesResult.data;
@@ -216,14 +231,14 @@ export function useAvailableEmployees(companyId: string, trainingId?: string) {
           schema: 'rh',
           table: 'training_enrollments',
           companyId,
-          filters: { 
-            training_id: trainingId,
-            status: ['inscrito', 'aprovado']
-          }
+          skipCompanyFilter: true,
+          filters: { training_id: trainingId },
         });
 
-        const enrolledIds = enrolledResult.data.map(e => e.employee_id);
-        return allEmployees.filter(emp => !enrolledIds.includes(emp.id));
+        const enrolledIds = enrolledResult.data
+          .filter((e: { status?: string }) => ['inscrito', 'aprovado', 'confirmado', 'presente'].includes(e.status || ''))
+          .map((e: { employee_id: string }) => e.employee_id);
+        return allEmployees.filter((emp: { id: string }) => !enrolledIds.includes(emp.id));
       }
 
       return allEmployees;

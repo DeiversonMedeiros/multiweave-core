@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Dialog,
   DialogContent,
@@ -42,6 +43,53 @@ import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard'
 import { usePermissions } from '@/hooks/usePermissions';
 import { useToast } from '@/hooks/use-toast';
 
+// Especialidades por tipo de atestado (médico, odontológico, psicológico)
+const ESPECIALIDADES_MEDICAS = [
+  'Acupuntura', 'Alergia e Imunologia', 'Anestesiologia', 'Angiologia', 'Cancerologia',
+  'Cardiologia', 'Cirurgia Cardiovascular', 'Cirurgia da Mão', 'Cirurgia de Cabeça e Pescoço',
+  'Cirurgia do Aparelho Digestivo', 'Cirurgia Geral', 'Cirurgia Pediátrica', 'Cirurgia Plástica',
+  'Cirurgia Torácica', 'Cirurgia Vascular', 'Clínica Médica', 'Coloproctologia', 'Dermatologia',
+  'Endocrinologia e Metabologia', 'Endoscopia', 'Gastroenterologia', 'Genética Médica', 'Geriatria',
+  'Ginecologia e Obstetrícia', 'Hematologia e Hemoterapia', 'Homeopatia', 'Infectologia',
+  'Mastologia', 'Medicina de Família e Comunidade', 'Medicina do Trabalho', 'Medicina de Tráfego',
+  'Medicina Esportiva', 'Medicina Física e Reabilitação', 'Medicina Intensiva',
+  'Medicina Legal e Perícia Médica', 'Medicina Nuclear', 'Medicina Preventiva e Social',
+  'Nefrologia', 'Neurocirurgia', 'Neurologia', 'Nutrologia', 'Oftalmologia', 'Oncologia Clínica',
+  'Ortopedia e Traumatologia', 'Otorrinolaringologia', 'Patologia', 'Patologia Clínica',
+  'Pediatria', 'Pneumologia', 'Psiquiatria', 'Radiologia e Diagnóstico por Imagem', 'Radioterapia',
+  'Reumatologia', 'Urologia',
+];
+
+const ESPECIALIDADES_ODONTOLOGICAS = [
+  'Cirurgia e Traumatologia Bucomaxilofacial', 'Dentística', 'Endodontia', 'Estomatologia',
+  'Implantodontia', 'Odontologia Legal', 'Odontologia para Pacientes com Necessidades Especiais',
+  'Odontopediatria', 'Ortodontia', 'Ortopedia Funcional dos Maxilares', 'Patologia Bucal',
+  'Periodontia', 'Prótese Dentária', 'Prótese Bucomaxilofacial', 'Radiologia Odontológica e Imaginologia',
+  'Saúde Coletiva', 'Odontogeriatria', 'Disfunção Temporomandibular e Dor Orofacial',
+  'Odontologia do Trabalho', 'Odontologia em Saúde Coletiva', 'Odontologia Estética',
+  'Odontologia Hospitalar', 'Odontologia em Pacientes Especiais', 'Harmonização Orofacial',
+];
+
+const ESPECIALIDADES_PSICOLOGICAS = [
+  'Psicologia Clínica', 'Psicologia Organizacional e do Trabalho', 'Psicologia Escolar e Educacional',
+  'Psicologia do Desenvolvimento', 'Neuropsicologia', 'Psicologia Social', 'Psicologia do Esporte',
+  'Psicopedagogia', 'Psicologia Jurídica', 'Psicologia da Saúde', 'Psicologia Hospitalar',
+  'Psicologia Infantil', 'Psicologia Analítica', 'Psicologia Cognitiva', 'Psicologia Comportamental',
+  'Psicologia Humanista', 'Psicologia Existencial', 'Psicologia Fenomenológica', 'Psicanálise',
+  'Psicologia do Trânsito', 'Psicologia Forense', 'Avaliação Psicológica', 'Psicogerontologia',
+  'Psicologia Comunitária', 'Psicologia da Reabilitação', 'Terapia de Casal e Família',
+  'Psicologia da Personalidade', 'Psicologia Experimental', 'Psicologia do Consumidor',
+  'Psicologia Ambiental', 'Psicologia do Envelhecimento', 'Psicologia de Emergências e Desastres',
+  'Psicologia da Educação', 'Psicologia Médica', 'Psicologia da Motivação e Emoção',
+  'Psicologia Positiva', 'Neuropsicologia Clínica', 'Terapia Cognitivo-Comportamental',
+];
+
+const ESPECIALIDADES_POR_TIPO: Record<string, string[]> = {
+  medico: ESPECIALIDADES_MEDICAS,
+  odontologico: ESPECIALIDADES_ODONTOLOGICAS,
+  psicologico: ESPECIALIDADES_PSICOLOGICAS,
+};
+
 export default function AtestadosPage() {
   const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { user } = useAuth();
@@ -52,6 +100,11 @@ export default function AtestadosPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [type, setType] = useState('');
+  const [medicoNome, setMedicoNome] = useState('');
+  const [crmCrmo, setCrmCrmo] = useState('');
+  const [especialidade, setEspecialidade] = useState('');
+  const [atestadoComparecimento, setAtestadoComparecimento] = useState(false);
+  const [horasComparecimento, setHorasComparecimento] = useState('');
   const [cidCode, setCidCode] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
@@ -84,7 +137,14 @@ export default function AtestadosPage() {
         data_fim: endDate,
         tipo_atestado: type as 'medico' | 'odontologico' | 'psicologico',
         valor_beneficio: 0,
-        status: 'pendente'
+        status: 'pendente',
+        medico_nome: medicoNome || undefined,
+        crm_crmo: crmCrmo || undefined,
+        especialidade: especialidade || undefined,
+        atestado_comparecimento: atestadoComparecimento,
+        ...(atestadoComparecimento && horasComparecimento !== '' && {
+          horas_comparecimento: parseFloat(horasComparecimento.replace(',', '.')) || undefined
+        })
       };
       
       // Adicionar campos opcionais apenas se tiverem valor
@@ -110,6 +170,11 @@ export default function AtestadosPage() {
       setStartDate('');
       setEndDate('');
       setType('');
+      setMedicoNome('');
+      setCrmCrmo('');
+      setEspecialidade('');
+      setAtestadoComparecimento(false);
+      setHorasComparecimento('');
       setCidCode('');
       setFile(null);
       
@@ -128,10 +193,28 @@ export default function AtestadosPage() {
   });
 
   const handleSubmit = () => {
-    if (!startDate || !endDate || !type || !file) {
+    const faltando: string[] = [];
+    if (!type) faltando.push('Tipo de Atestado');
+    if (!medicoNome?.trim()) faltando.push('Nome do Médico');
+    if (!crmCrmo?.trim()) faltando.push('CRM/CRMO');
+    if (!especialidade) faltando.push('Especialidade');
+    if (!startDate) faltando.push('Data de Início');
+    if (!endDate) faltando.push('Data de Fim');
+    if (!cidCode) faltando.push('Código CID');
+    if (!file) faltando.push('Arquivo do Atestado');
+
+    if (faltando.length > 0) {
       toast({
         title: "Campos obrigatórios",
-        description: "Preencha todos os campos obrigatórios.",
+        description: `Preencha: ${faltando.join(', ')}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (atestadoComparecimento && (!horasComparecimento || parseFloat(horasComparecimento.replace(',', '.')) <= 0)) {
+      toast({
+        title: "Horas de comparecimento",
+        description: "Informe a quantidade de horas (número decimal) quando o atestado for de comparecimento.",
         variant: "destructive",
       });
       return;
@@ -204,7 +287,13 @@ export default function AtestadosPage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="type">Tipo de Atestado</Label>
-                <Select value={type} onValueChange={setType}>
+                <Select
+                  value={type}
+                  onValueChange={(v) => {
+                    setType(v);
+                    setEspecialidade(''); // limpa ao trocar tipo para não manter especialidade incompatível
+                  }}
+                >
                   <SelectTrigger id="type">
                     <SelectValue placeholder="Selecione o tipo" />
                   </SelectTrigger>
@@ -216,7 +305,52 @@ export default function AtestadosPage() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="start">Data de Início</Label>
+                <Label htmlFor="medicoNome">Nome do Médico <span className="text-destructive">*</span></Label>
+                <Input
+                  id="medicoNome"
+                  type="text"
+                  placeholder="Nome do médico que emitiu o atestado"
+                  value={medicoNome}
+                  onChange={(e) => setMedicoNome(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="crmCrmo">CRM/CRMO <span className="text-destructive">*</span></Label>
+                <Input
+                  id="crmCrmo"
+                  type="text"
+                  placeholder="Número do CRM ou CRMO"
+                  value={crmCrmo}
+                  onChange={(e) => setCrmCrmo(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="especialidade">Especialidade <span className="text-destructive">*</span></Label>
+                <Select
+                  value={especialidade || undefined}
+                  onValueChange={setEspecialidade}
+                  disabled={!type}
+                >
+                  <SelectTrigger id="especialidade">
+                    <SelectValue
+                      placeholder={
+                        type
+                          ? 'Selecione a especialidade'
+                          : 'Selecione o tipo de atestado primeiro'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    {(ESPECIALIDADES_POR_TIPO[type] ?? []).map((esp) => (
+                      <SelectItem key={esp} value={esp}>
+                        {esp}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="start">Data de Início <span className="text-destructive">*</span></Label>
                 <Input
                   id="start"
                   type="date"
@@ -225,7 +359,7 @@ export default function AtestadosPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="end">Data de Fim</Label>
+                <Label htmlFor="end">Data de Fim <span className="text-destructive">*</span></Label>
                 <Input
                   id="end"
                   type="date"
@@ -233,11 +367,44 @@ export default function AtestadosPage() {
                   onChange={(e) => setEndDate(e.target.value)}
                 />
               </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="atestadoComparecimento"
+                  checked={atestadoComparecimento}
+                  onCheckedChange={(checked) => {
+                    setAtestadoComparecimento(checked === true);
+                    if (checked !== true) setHorasComparecimento('');
+                  }}
+                />
+                <Label
+                  htmlFor="atestadoComparecimento"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  Atestado de comparecimento
+                </Label>
+              </div>
+              {atestadoComparecimento && (
+                <div className="grid gap-2">
+                  <Label htmlFor="horasComparecimento">Quantidade de horas <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="horasComparecimento"
+                    type="number"
+                    min={0.01}
+                    step={0.01}
+                    placeholder="Ex.: 1,5 ou 2"
+                    value={horasComparecimento}
+                    onChange={(e) => setHorasComparecimento(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Informe em número decimal (ex.: 1,5 para 1h30; 2 para 2h). Será usado no cálculo do banco de horas.
+                  </p>
+                </div>
+              )}
               <div className="grid gap-2">
-                <Label htmlFor="cid">Código CID (opcional)</Label>
+                <Label htmlFor="cid">Código CID <span className="text-destructive">*</span></Label>
                 <Select value={cidCode || undefined} onValueChange={(value) => setCidCode(value || '')}>
                   <SelectTrigger id="cid">
-                    <SelectValue placeholder="Selecione um CID (opcional)" />
+                    <SelectValue placeholder="Selecione um CID" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[200px]">
                     {cidCodes?.map((cid) => (
@@ -249,7 +416,7 @@ export default function AtestadosPage() {
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="file">Arquivo do Atestado (PDF, JPG, PNG)</Label>
+                <Label htmlFor="file">Arquivo do Atestado (PDF, JPG, PNG) <span className="text-destructive">*</span></Label>
                 <Input
                   id="file"
                   type="file"

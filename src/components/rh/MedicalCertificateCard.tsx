@@ -17,6 +17,7 @@ import {
 import { MedicalCertificate } from '@/integrations/supabase/rh-types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { formatDateOnly } from '@/lib/utils';
 
 // =====================================================
 // INTERFACE DO COMPONENTE
@@ -193,8 +194,8 @@ export const MedicalCertificateCard: React.FC<MedicalCertificateCardProps> = ({
             <span className="font-medium">Período de Afastamento</span>
           </div>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>Início: {formatDate(certificate.data_inicio)}</span>
-            <span>Fim: {formatDate(certificate.data_fim)}</span>
+            <span>Início: {formatDateOnly(certificate.data_inicio)}</span>
+            <span>Fim: {formatDateOnly(certificate.data_fim)}</span>
             <span className="font-medium text-blue-600">
               {certificate.dias_afastamento} dias
             </span>

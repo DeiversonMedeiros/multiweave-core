@@ -18,7 +18,7 @@ import { useCompany } from '@/lib/company-context';
 import { useAuth } from '@/lib/auth-context';
 import { useEmployees } from '@/hooks/rh/useEmployees';
 import { useToast } from '@/hooks/use-toast';
-import { RequireModule } from '@/components/RequireAuth';
+import { RequirePage } from '@/components/RequireAuth';
 
 export default function TrainingExamResultPage() {
   const { trainingId, examId, attemptId } = useParams<{ trainingId: string; examId: string; attemptId: string }>();
@@ -145,7 +145,7 @@ export default function TrainingExamResultPage() {
   const minimumScore = exam.nota_minima_aprovacao || 70;
 
   return (
-    <RequireModule module="portal_colaborador" action="read">
+    <RequirePage pagePath="/portal-colaborador/treinamentos*" action="read">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -256,6 +256,6 @@ export default function TrainingExamResultPage() {
           </CardContent>
         </Card>
       </div>
-    </RequireModule>
+    </RequirePage>
   );
 }

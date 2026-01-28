@@ -183,7 +183,9 @@ export default function RegistroPontoPage() {
           base_date: data.base_date,
           entrada: data.entrada,
           entrada_almoco: data.entrada_almoco,
+          entrada_almoco_date: data.entrada_almoco_date,
           saida_almoco: data.saida_almoco,
+          saida_almoco_date: data.saida_almoco_date, // IMPORTANTE: Verificar se está vindo
           saida: data.saida,
           saida_date: data.saida_date,
           entrada_extra1: data.entrada_extra1,
@@ -192,6 +194,17 @@ export default function RegistroPontoPage() {
           saida_extra1_date: data.saida_extra1_date,
           window_hours: data.window_hours
         });
+        
+        // Log específico para debug da data do fim almoço
+        if (data.saida_almoco) {
+          console.log('🔍 DEBUG saida_almoco:', {
+            time: data.saida_almoco,
+            date: data.saida_almoco_date,
+            base_date: data.base_date,
+            data_registro: data.data_registro,
+            will_show_date: data.saida_almoco_date || data.base_date || data.data_registro
+          });
+        }
 
         return data as TimeRecord;
       } catch (error) {
@@ -1272,12 +1285,14 @@ export default function RegistroPontoPage() {
       return time;
     }
     
-    // Formatar data
-    const date = new Date(dateToUse);
-    const formattedDate = date.toLocaleDateString('pt-BR', { 
-      day: '2-digit', 
-      month: '2-digit' 
-    });
+    // Formatar data manualmente para evitar problemas de timezone
+    // Espera-se que dateToUse esteja no formato 'YYYY-MM-DD'
+    const [year, month, day] = dateToUse.split('-');
+    if (!year || !month || !day) {
+      // Se o formato for inesperado, retorna apenas o horário
+      return time;
+    }
+    const formattedDate = `${day.padStart(2, '0')}/${month.padStart(2, '0')}`;
     
     return `${time} (${formattedDate})`;
   };

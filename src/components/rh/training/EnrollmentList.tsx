@@ -49,6 +49,7 @@ interface EnrollmentListProps {
 
 interface TrainingEnrollment {
   id: string;
+  company_id?: string;
   training_id: string;
   employee_id: string;
   data_inscricao: string;
@@ -113,7 +114,7 @@ const EnrollmentList: React.FC<EnrollmentListProps> = ({ trainingId, onEnroll, o
   };
 
   const handleApprove = (enrollment: TrainingEnrollment) => {
-    approveEnrollment(enrollment.id);
+    approveEnrollment(enrollment.id, enrollment.company_id);
   };
 
   const handleReject = (enrollment: TrainingEnrollment) => {
@@ -129,9 +130,9 @@ const EnrollmentList: React.FC<EnrollmentListProps> = ({ trainingId, onEnroll, o
   const handleActionConfirm = (action: 'reject' | 'cancel', reason: string) => {
     if (selectedEnrollment) {
       if (action === 'reject') {
-        rejectEnrollment(selectedEnrollment.id, reason);
+        rejectEnrollment(selectedEnrollment.id, reason, selectedEnrollment.company_id);
       } else {
-        cancelEnrollment(selectedEnrollment.id, reason);
+        cancelEnrollment(selectedEnrollment.id, reason, selectedEnrollment.company_id);
       }
     }
     setShowActions(false);

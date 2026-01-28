@@ -26,6 +26,7 @@ import FgtsConfigPage from './FgtsConfigPage';
 // Importar páginas - FASE 4: CONFIGURAÇÕES
 import PayrollConfigPage from './PayrollConfigPage';
 import BankHoursPage from './BankHours';
+import SobreavisoPage from './SobreavisoPage';
 import HolidaysPage from './HolidaysPage';
 import PeriodicExamsPage from './PeriodicExamsPage';
 import DisciplinaryActionsPage from './DisciplinaryActionsPage';
@@ -282,6 +283,12 @@ export function RHRoutesNew() {
       <Route path="/bank-hours" element={<BankHoursPage />} />
       <Route path="/bank-hours/config" element={<BankHoursPage />} />
       <Route path="/bank-hours/dashboard" element={<BankHoursPage />} />
+
+      {/* Sobreaviso - escalas de espera remuneradas (1/3 hora normal, máx. 24h) */}
+      <Route path="/sobreaviso" element={<SobreavisoPage />} />
+      <Route path="/sobreaviso/new" element={<SobreavisoPage />} />
+      <Route path="/sobreaviso/:id" element={<SobreavisoPage />} />
+      <Route path="/sobreaviso/:id/edit" element={<SobreavisoPage />} />
       
       <Route path="/holidays" element={<HolidaysPage />} />
       <Route path="/holidays/new" element={<HolidaysPage />} />

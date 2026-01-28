@@ -24,6 +24,15 @@ export interface TimeRecord {
   observacoes?: string;
   created_at: string;
   updated_at: string;
+  // Campos de data real de cada marcação (quando diferente de data_registro)
+  entrada_date?: string;
+  entrada_almoco_date?: string;
+  saida_almoco_date?: string;
+  saida_date?: string;
+  entrada_extra1_date?: string;
+  saida_extra1_date?: string;
+  base_date?: string; // Data base do registro (geralmente igual a data_registro)
+  window_hours?: number; // Janela de tempo configurada
 }
 
 export interface MonthlyTimeRecords {

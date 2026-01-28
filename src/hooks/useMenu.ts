@@ -943,6 +943,14 @@ export const useMenu = () => {
               requiresPermission: { type: 'module', name: 'rh', action: 'read' }
             },
             {
+              id: 'rh-sobreaviso',
+              title: 'Sobreaviso',
+              url: '/rh/sobreaviso',
+              icon: Clock,
+              description: 'Escalas de sobreaviso: regime de espera remunerado (1/3 da hora normal, máx. 24h)',
+              requiresPermission: { type: 'page', name: '/rh/sobreaviso*', action: 'read' }
+            },
+            {
               id: 'rh-feriados',
               title: 'Feriados',
               url: '/rh/holidays',

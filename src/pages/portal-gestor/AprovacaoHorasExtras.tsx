@@ -94,6 +94,30 @@ export default function AprovacaoHorasExtras() {
     return time.substring(0, 5); // HH:MM
   };
 
+  // Função para formatar horário com data - sempre mostra a data quando disponível
+  const formatTimeWithDate = (time?: string, date?: string, baseDate?: string) => {
+    if (!time) return '-';
+    const timeOnly = time.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (date) {
+      dateToUse = date;
+    } else if (baseDate) {
+      dateToUse = baseDate;
+    } else {
+      return timeOnly;
+    }
+    
+    // SEMPRE mostrar a data quando disponível
+    const [year, month, day] = dateToUse.split('-');
+    if (year && month && day) {
+      return `${timeOnly} (${day.padStart(2, '0')}/${month.padStart(2, '0')})`;
+    }
+    
+    return timeOnly;
+  };
+
   const formatDate = (dateString: string) => {
     try {
       return format(new Date(dateString), 'dd/MM/yyyy', { locale: ptBR });
@@ -324,11 +348,11 @@ export default function AprovacaoHorasExtras() {
                       <TableCell>{formatDate(record.data_registro)}</TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <p>Entrada: {formatTime(record.entrada)}</p>
-                          <p>Saída: {formatTime(record.saida)}</p>
+                          <p>Entrada: {formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)}</p>
+                          <p>Saída: {formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)}</p>
                           {record.entrada_almoco && record.saida_almoco && (
                             <p className="text-xs text-gray-500">
-                              Almoço: {formatTime(record.entrada_almoco)} - {formatTime(record.saida_almoco)}
+                              Almoço: {formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)} - {formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)}
                             </p>
                           )}
                         </div>
@@ -336,8 +360,8 @@ export default function AprovacaoHorasExtras() {
                       <TableCell>
                         {record.entrada_extra1 && record.saida_extra1 ? (
                           <div className="text-sm">
-                            <p>Extra Início: {formatTime(record.entrada_extra1)}</p>
-                            <p>Extra Fim: {formatTime(record.saida_extra1)}</p>
+                            <p>Extra Início: {formatTimeWithDate(record.entrada_extra1, record.entrada_extra1_date, record.base_date || record.data_registro)}</p>
+                            <p>Extra Fim: {formatTimeWithDate(record.saida_extra1, record.saida_extra1_date, record.base_date || record.data_registro)}</p>
                           </div>
                         ) : (
                           <span className="text-sm text-gray-400">-</span>

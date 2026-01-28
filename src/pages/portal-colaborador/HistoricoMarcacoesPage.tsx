@@ -216,6 +216,30 @@ export default function HistoricoMarcacoesPage() {
     return time;
   };
 
+  // Função para formatar horário com data - sempre mostra a data quando disponível
+  const formatTimeWithDate = (time?: string, date?: string, baseDate?: string) => {
+    if (!time) return '--:--';
+    const timeOnly = time.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (date) {
+      dateToUse = date;
+    } else if (baseDate) {
+      dateToUse = baseDate;
+    } else {
+      return timeOnly;
+    }
+    
+    // SEMPRE mostrar a data quando disponível
+    const [year, month, day] = dateToUse.split('-');
+    if (year && month && day) {
+      return `${timeOnly} (${day.padStart(2, '0')}/${month.padStart(2, '0')})`;
+    }
+    
+    return timeOnly;
+  };
+
   const formatDate = (dateString: string) => {
     // Parse a data manualmente para evitar problemas de timezone
     // dateString vem no formato 'YYYY-MM-DD'
@@ -536,7 +560,7 @@ export default function HistoricoMarcacoesPage() {
                             <span className="text-sm font-medium text-gray-700">Entrada</span>
                           </div>
                           <div className="text-lg font-bold text-gray-900">
-                            {isRestDay && !record.entrada ? 'DSR' : formatTime(record.entrada)}
+                            {isRestDay && !record.entrada ? 'DSR' : formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)}
                           </div>
                         </div>
                       
@@ -546,7 +570,7 @@ export default function HistoricoMarcacoesPage() {
                           <span className="text-sm font-medium text-gray-700">Início Almoço</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.entrada_almoco)}
+                          {formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -556,7 +580,7 @@ export default function HistoricoMarcacoesPage() {
                           <span className="text-sm font-medium text-gray-700">Fim Almoço</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.saida_almoco)}
+                          {formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -566,7 +590,7 @@ export default function HistoricoMarcacoesPage() {
                           <span className="text-sm font-medium text-gray-700">Saída</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.saida)}
+                          {formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -576,7 +600,7 @@ export default function HistoricoMarcacoesPage() {
                           <span className="text-sm font-medium text-gray-700">Entrada Extra</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.entrada_extra1)}
+                          {formatTimeWithDate(record.entrada_extra1, record.entrada_extra1_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                       
@@ -586,7 +610,7 @@ export default function HistoricoMarcacoesPage() {
                           <span className="text-sm font-medium text-gray-700">Saída Extra</span>
                         </div>
                         <div className="text-lg font-bold text-gray-900">
-                          {formatTime(record.saida_extra1)}
+                          {formatTimeWithDate(record.saida_extra1, record.saida_extra1_date, record.base_date || record.data_registro)}
                         </div>
                       </div>
                     </div>

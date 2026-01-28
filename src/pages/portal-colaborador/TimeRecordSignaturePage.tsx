@@ -508,6 +508,30 @@ function SignatureCardWithRecords({
     refetchOnWindowFocus: false
   });
 
+  // Função para formatar horário com data - sempre mostra a data quando disponível
+  const formatTimeWithDate = (time?: string, date?: string, baseDate?: string) => {
+    if (!time) return '-';
+    const timeOnly = time.substring(0, 5);
+    
+    // Determinar qual data usar
+    let dateToUse: string | undefined;
+    if (date) {
+      dateToUse = date;
+    } else if (baseDate) {
+      dateToUse = baseDate;
+    } else {
+      return timeOnly;
+    }
+    
+    // SEMPRE mostrar a data quando disponível
+    const [year, month, day] = dateToUse.split('-');
+    if (year && month && day) {
+      return `${timeOnly} (${day.padStart(2, '0')}/${month.padStart(2, '0')})`;
+    }
+    
+    return timeOnly;
+  };
+
   const formatTime = (time?: string) => {
     if (!time) return '-';
     try {
@@ -823,28 +847,28 @@ function SignatureCardWithRecords({
                             {isVirtual && !record.entrada ? (
                               <span className="text-muted-foreground text-sm">-</span>
                             ) : (
-                              formatTime(record.entrada)
+                              formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)
                             )}
                           </TableCell>
                           <TableCell>
                             {isVirtual && !record.saida_almoco ? (
                               <span className="text-muted-foreground text-sm">-</span>
                             ) : (
-                              formatTime(record.saida_almoco)
+                              formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)
                             )}
                           </TableCell>
                           <TableCell>
                             {isVirtual && !record.entrada_almoco ? (
                               <span className="text-muted-foreground text-sm">-</span>
                             ) : (
-                              formatTime(record.entrada_almoco)
+                              formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)
                             )}
                           </TableCell>
                           <TableCell>
                             {isVirtual && !record.saida ? (
                               <span className="text-muted-foreground text-sm">-</span>
                             ) : (
-                              formatTime(record.saida)
+                              formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)
                             )}
                           </TableCell>
                           <TableCell>
