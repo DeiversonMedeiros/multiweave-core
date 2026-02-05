@@ -56,9 +56,9 @@ export default function AprovacaoHorasExtras() {
   const [isRejeicaoDialogOpen, setIsRejeicaoDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
 
-  // Hooks de dados
-  const { data: pendingRecords, isLoading: pendingLoading, error: pendingError } = usePendingOvertimeRecords();
-  const { data: stats, isLoading: statsLoading } = useOvertimeApprovalsStats();
+  // Hooks de dados (apenas subordinados do gestor logado)
+  const { data: pendingRecords, isLoading: pendingLoading, error: pendingError } = usePendingOvertimeRecords(true);
+  const { data: stats, isLoading: statsLoading } = useOvertimeApprovalsStats(true);
   
   // Mutations
   const approveMutation = useApproveOvertimeRecord();
@@ -126,6 +126,19 @@ export default function AprovacaoHorasExtras() {
     }
   };
 
+  /** Converte horas em decimal para formato "Xh Ymin" (ex: 8.5 → "8h 30min") */
+  const formatDecimalHours = (decimalHours: number): string => {
+    const value = Number(decimalHours);
+    if (Number.isNaN(value) || value === 0) return '0h';
+    const abs = Math.abs(value);
+    const h = Math.floor(abs);
+    const min = Math.round((abs % 1) * 60);
+    const sign = value < 0 ? '− ' : '';
+    if (h === 0) return `${sign}${min}min`;
+    if (min === 0) return `${sign}${h}h`;
+    return `${sign}${h}h ${min}min`;
+  };
+
   const handleApprove = async () => {
     if (!selectedRecord) return;
 
@@ -136,9 +149,9 @@ export default function AprovacaoHorasExtras() {
       });
 
       const totalExtras = (selectedRecord.horas_extras_50 || 0) + (selectedRecord.horas_extras_100 || 0) || selectedRecord.horas_extras;
-      const extras50 = selectedRecord.horas_extras_50 ? `${selectedRecord.horas_extras_50.toFixed(1)}h (50%)` : '';
-      const extras100 = selectedRecord.horas_extras_100 ? `${selectedRecord.horas_extras_100.toFixed(1)}h (100%)` : '';
-      const extrasDesc = extras50 && extras100 ? `${extras50} e ${extras100}` : extras50 || extras100 || `${selectedRecord.horas_extras.toFixed(1)}h`;
+      const extras50 = selectedRecord.horas_extras_50 ? `${formatDecimalHours(selectedRecord.horas_extras_50)} (50%)` : '';
+      const extras100 = selectedRecord.horas_extras_100 ? `${formatDecimalHours(selectedRecord.horas_extras_100)} (100%)` : '';
+      const extrasDesc = extras50 && extras100 ? `${extras50} e ${extras100}` : extras50 || extras100 || formatDecimalHours(selectedRecord.horas_extras);
       
       toast({
         title: "Hora extra aprovada!",
@@ -259,7 +272,7 @@ export default function AprovacaoHorasExtras() {
                 <TrendingUp className="w-5 h-5 text-blue-600" />
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total de Horas Extras</p>
-                  <p className="text-2xl font-bold text-blue-600">{stats.total_horas_extras.toFixed(2)}h</p>
+                  <p className="text-2xl font-bold text-blue-600">{formatDecimalHours(stats.total_horas_extras)}</p>
                 </div>
               </div>
             </CardContent>
@@ -368,7 +381,7 @@ export default function AprovacaoHorasExtras() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="font-medium">{record.horas_trabalhadas.toFixed(2)}h</span>
+                        <span className="font-medium">{formatDecimalHours(record.horas_trabalhadas)}</span>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-1">
@@ -379,13 +392,13 @@ export default function AprovacaoHorasExtras() {
                               {record.horas_extras_50 && record.horas_extras_50 > 0 && (
                                 <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-xs">
                                   <TrendingUp className="w-3 h-3 mr-1" />
-                                  {record.horas_extras_50.toFixed(2)}h (50% - Banco)
+                                  {formatDecimalHours(record.horas_extras_50)} (50% - Banco)
                                 </Badge>
                               )}
                               {record.horas_extras_100 && record.horas_extras_100 > 0 && (
                                 <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-xs">
                                   <TrendingUp className="w-3 h-3 mr-1" />
-                                  {record.horas_extras_100.toFixed(2)}h (100% - Pagamento)
+                                  {formatDecimalHours(record.horas_extras_100)} (100% - Pagamento)
                                 </Badge>
                               )}
                             </>
@@ -393,7 +406,7 @@ export default function AprovacaoHorasExtras() {
                             // Fallback para registros antigos
                             <Badge className="bg-orange-100 text-orange-800 border-orange-200">
                               <TrendingUp className="w-3 h-3 mr-1" />
-                              {record.horas_extras.toFixed(2)}h
+                              {formatDecimalHours(record.horas_extras)}
                             </Badge>
                           )}
                         </div>
@@ -455,7 +468,7 @@ export default function AprovacaoHorasExtras() {
               Aprovar Hora Extra
             </DialogTitle>
             <DialogDescription>
-              Confirme a aprovação do registro de ponto com {selectedRecord?.horas_extras.toFixed(2)}h de hora extra
+              Confirme a aprovação do registro de ponto com {selectedRecord && formatDecimalHours((selectedRecord.horas_extras_50 || 0) + (selectedRecord.horas_extras_100 || 0) || selectedRecord.horas_extras)} de hora extra
               para {selectedRecord?.funcionario_nome}
             </DialogDescription>
           </DialogHeader>
@@ -600,7 +613,7 @@ export default function AprovacaoHorasExtras() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Horas Trabalhadas</Label>
-                  <p className="text-sm font-bold text-blue-600">{selectedRecord.horas_trabalhadas.toFixed(2)}h</p>
+                  <p className="text-sm font-bold text-blue-600">{formatDecimalHours(selectedRecord.horas_trabalhadas)}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Horas Extras</Label>
@@ -611,27 +624,27 @@ export default function AprovacaoHorasExtras() {
                       <>
                         {selectedRecord.horas_extras_50 && selectedRecord.horas_extras_50 > 0 && (
                           <p className="text-xs text-blue-600">
-                            {selectedRecord.horas_extras_50.toFixed(2)}h (50% - Banco)
+                            {formatDecimalHours(selectedRecord.horas_extras_50)} (50% - Banco)
                           </p>
                         )}
                         {selectedRecord.horas_extras_100 && selectedRecord.horas_extras_100 > 0 && (
                           <p className="text-xs text-orange-600">
-                            {selectedRecord.horas_extras_100.toFixed(2)}h (100% - Pagamento)
+                            {formatDecimalHours(selectedRecord.horas_extras_100)} (100% - Pagamento)
                           </p>
                         )}
                         <p className="text-sm font-bold text-orange-700 pt-1 border-t">
-                          Total: {((selectedRecord.horas_extras_50 || 0) + (selectedRecord.horas_extras_100 || 0)).toFixed(2)}h
+                          Total: {formatDecimalHours((selectedRecord.horas_extras_50 || 0) + (selectedRecord.horas_extras_100 || 0))}
                         </p>
                       </>
                     ) : (
                       // Fallback para registros antigos
-                      <p className="text-sm font-bold text-orange-600">{selectedRecord.horas_extras.toFixed(2)}h</p>
+                      <p className="text-sm font-bold text-orange-600">{formatDecimalHours(selectedRecord.horas_extras)}</p>
                     )}
                   </div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Horas Faltas</Label>
-                  <p className="text-sm font-bold text-red-600">{selectedRecord.horas_faltas.toFixed(2)}h</p>
+                  <p className="text-sm font-bold text-red-600">{formatDecimalHours(selectedRecord.horas_faltas)}</p>
                 </div>
               </div>
 

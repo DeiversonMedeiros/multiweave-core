@@ -1,10 +1,32 @@
 import { TimeRecord } from '@/integrations/supabase/rh-types';
 import { supabase } from '@/integrations/supabase/client';
 import { EntityService } from '@/services/generic/entityService';
+import { formatDecimalHoursToHhMm } from '@/lib/utils';
 
 // =====================================================
 // SERVIÇO DE GERAÇÃO DE RELATÓRIOS DE PONTO
 // =====================================================
+
+export interface CompanyData {
+  id: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+  cnpj?: string;
+  inscricao_estadual?: string;
+  logo_url?: string | null;
+  endereco?: any;
+  contato?: any;
+  numero_empresa?: string;
+}
+
+export interface EmployeeData {
+  id: string;
+  nome: string;
+  matricula?: string;
+  cpf?: string;
+  cargo?: { nome?: string } | null;
+  estado?: string;
+}
 
 export interface TimeRecordReportData {
   employeeId: string;
@@ -16,6 +38,72 @@ export interface TimeRecordReportData {
   bankHoursBalance: number;
   dsr: number;
   companyId?: string; // Adicionar companyId para buscar informações de dias
+  company?: CompanyData; // Dados da empresa
+  employee?: EmployeeData; // Dados completos do funcionário
+  /** Mapa data (YYYY-MM-DD) -> natureza do dia (override manual) para o relatório PDF/CSV */
+  dayNatureOverrides?: Record<string, string>;
+}
+
+/** Opções de Natureza do Dia para exibição e edição */
+export const DAY_NATURE_OPTIONS = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'dsr', label: 'DSR' },
+  { value: 'folga', label: 'Folga' },
+  { value: 'feriado', label: 'Feriado' },
+  { value: 'ferias', label: 'Férias' },
+  { value: 'atestado', label: 'Atestado' },
+  { value: 'compensacao', label: 'Compensação' },
+  { value: 'falta', label: 'Falta' },
+  { value: 'outros', label: 'Outros' },
+] as const;
+
+export type DayNatureValue = typeof DAY_NATURE_OPTIONS[number]['value'];
+
+/** Labels por valor interno (para exibição) */
+const DAY_NATURE_LABELS: Record<string, string> = {
+  normal: 'Normal',
+  dsr: 'DSR',
+  folga: 'Folga',
+  feriado: 'Feriado',
+  ferias: 'Férias',
+  atestado: 'Atestado',
+  compensacao: 'Compensação',
+  falta: 'Falta',
+  outros: 'Outros',
+};
+
+/**
+ * Obtém a natureza do dia a partir do registro (detecção automática).
+ * Considera registro virtual (id virtual-*), is_dia_folga, is_feriado, etc.
+ */
+export function getDayNatureFromRecord(record: TimeRecord): string {
+  const isVirtual = record.id.startsWith('virtual-');
+  const isRestDay = (record as any).is_dia_folga || (isVirtual && record.id.includes('-dsr'));
+  const isVacation = isVirtual && record.id.includes('-ferias');
+  const isMedicalCertificate = isVirtual && record.id.includes('-atestado');
+  const isCompensation = isVirtual && record.id.includes('-compensacao');
+  const isFalta = isVirtual && record.id.includes('-falta');
+  const isFeriado = (record as any).is_feriado === true;
+
+  if (isVacation) return 'ferias';
+  if (isMedicalCertificate) return 'atestado';
+  if (isCompensation) return 'compensacao';
+  if (isFalta) return 'falta';
+  if (isRestDay && !record.entrada) return 'dsr';
+  if (isFeriado) return 'feriado';
+  return 'normal';
+}
+
+/** Retorna o label de exibição da natureza do dia (valor interno -> texto) */
+export function getDayNatureLabel(value: string): string {
+  return DAY_NATURE_LABELS[value] ?? value;
+}
+
+/** Naturezas em que não se contabilizam horas negativas (feriado, compensação, folga) */
+const DAY_NATURE_NO_NEGATIVE_HOURS = ['feriado', 'compensacao', 'folga'] as const;
+
+export function isDayNatureNoNegativeHours(natureValue: string | null | undefined): boolean {
+  return !!natureValue && (DAY_NATURE_NO_NEGATIVE_HOURS as readonly string[]).includes(natureValue);
 }
 
 /**
@@ -113,6 +201,9 @@ export interface DayInfo {
   hasAbsence: boolean; // Indica se tem falta registrada (horas_faltas > 0)
   compensationType?: string; // Tipo de compensação se houver
   compensationDescription?: string; // Descrição da compensação
+  // Informações de atestado de comparecimento
+  medicalCertificateHours?: number; // Horas de comparecimento do atestado (se for atestado de comparecimento)
+  isMedicalCertificateAttendance?: boolean; // Indica se é atestado de comparecimento
 }
 
 export async function getMonthDaysInfo(
@@ -142,24 +233,20 @@ export async function getMonthDaysInfo(
     // Buscar atestados médicos, férias e compensações do mês de uma vez (mais eficiente)
     // Buscar todos que podem se sobrepor ao período do mês
     // NOTA: Tabelas estão no schema 'rh', então usamos EntityService ou acesso direto com schema
+    // CORREÇÃO: get_entity_data não suporta filtro com array (status vira string e não retorna nada).
+    // Buscar atestados apenas por employee_id e filtrar status no frontend.
     const [medicalCertificatesResult, vacationsResult, compensationsResult] = await Promise.all([
       EntityService.list({
         schema: 'rh',
         table: 'medical_certificates',
         companyId: companyId,
-        filters: {
-          employee_id: employeeId,
-          status: ['aprovado', 'em_andamento', 'concluido']
-        }
+        filters: { employee_id: employeeId }
       }).catch(() => ({ data: [], totalCount: 0, hasMore: false })),
       EntityService.list({
         schema: 'rh',
         table: 'vacations',
         companyId: companyId,
-        filters: {
-          employee_id: employeeId,
-          status: ['aprovado', 'em_andamento', 'concluido']
-        }
+        filters: { employee_id: employeeId }
       }).catch(() => ({ data: [], totalCount: 0, hasMore: false })),
       EntityService.list({
         schema: 'rh',
@@ -176,24 +263,59 @@ export async function getMonthDaysInfo(
     const firstDate = dates[0];
     const lastDate = dates[dates.length - 1];
     
+    // Filtrar atestados: apenas aprovado, em_andamento, concluido ou pendente (excluir rejeitado)
+    const medicalCertificatesStatusOk = ['aprovado', 'em_andamento', 'concluido', 'pendente'];
     const medicalCertificates = (medicalCertificatesResult.data || []).filter((mc: any) => {
-      return mc.data_inicio <= lastDate && mc.data_fim >= firstDate;
+      return medicalCertificatesStatusOk.includes(mc.status) && mc.data_inicio <= lastDate && mc.data_fim >= firstDate;
     });
+    const vacationsStatusOk = ['aprovado', 'em_andamento', 'concluido'];
     const vacations = (vacationsResult.data || []).filter((v: any) => {
-      return v.data_inicio <= lastDate && v.data_fim >= firstDate;
+      return vacationsStatusOk.includes(v.status) && v.data_inicio <= lastDate && v.data_fim >= firstDate;
     });
     const compensations = (compensationsResult.data || []).filter((comp: any) => {
       return comp.data_inicio <= lastDate && (comp.data_fim === null || comp.data_fim >= firstDate);
     });
     
     // Criar maps para verificação rápida e armazenar informações adicionais
+    // Map para armazenar informações completas do atestado por data
+    const medicalCertificateInfoByDate = new Map<string, { 
+      isAttendance: boolean; 
+      hours: number | null;
+      status: string;
+    }>();
     const medicalCertificateDates = new Set<string>();
     medicalCertificates.forEach((mc: any) => {
       const start = new Date(mc.data_inicio);
       const end = new Date(mc.data_fim);
       const current = new Date(start);
       while (current <= end) {
-        medicalCertificateDates.add(current.toISOString().split('T')[0]);
+        const dateStr = current.toISOString().split('T')[0];
+        // CORREÇÃO: Sempre adicionar à lista de datas de atestado, mesmo se pendente
+        medicalCertificateDates.add(dateStr);
+        // Armazenar informações do atestado (se for de comparecimento, armazenar horas)
+        if (mc.atestado_comparecimento && mc.horas_comparecimento) {
+          // Se já existe informação para esta data, manter a que tem mais horas (ou aprovada)
+          const existing = medicalCertificateInfoByDate.get(dateStr);
+          if (!existing || 
+              (mc.status === 'aprovado' && existing.status !== 'aprovado') ||
+              (mc.horas_comparecimento > (existing.hours || 0))) {
+            medicalCertificateInfoByDate.set(dateStr, {
+              isAttendance: true,
+              hours: mc.horas_comparecimento,
+              status: mc.status
+            });
+          }
+        } else {
+          // Atestado normal (não de comparecimento)
+          // CORREÇÃO: Sempre armazenar informações do atestado, mesmo se pendente
+          if (!medicalCertificateInfoByDate.has(dateStr)) {
+            medicalCertificateInfoByDate.set(dateStr, {
+              isAttendance: false,
+              hours: null,
+              status: mc.status
+            });
+          }
+        }
         current.setDate(current.getDate() + 1);
       }
     });
@@ -282,6 +404,7 @@ export async function getMonthDaysInfo(
         const isMedicalCertificate = medicalCertificateDates.has(dateStr);
         const isVacation = vacationDates.has(dateStr);
         const compensationsForDay = compensationDates.get(dateStr) || [];
+        const medicalCertInfo = medicalCertificateInfoByDate.get(dateStr);
         
         // Se houver compensação, usar a primeira (ou concatenar todas)
         const compensationType = compensationsForDay.length > 0 
@@ -301,7 +424,10 @@ export async function getMonthDaysInfo(
             isVacation,
             hasAbsence: false, // Será preenchido depois ao verificar registros
             compensationType,
-            compensationDescription
+            compensationDescription,
+            // Informações de atestado de comparecimento
+            medicalCertificateHours: medicalCertInfo?.hours || undefined,
+            isMedicalCertificateAttendance: medicalCertInfo?.isAttendance || false
           }
         };
       } catch (err) {
@@ -318,7 +444,9 @@ export async function getMonthDaysInfo(
             isVacation: false,
             hasAbsence: false,
             compensationType: undefined,
-            compensationDescription: undefined
+            compensationDescription: undefined,
+            medicalCertificateHours: undefined,
+            isMedicalCertificateAttendance: false
           }
         };
       }
@@ -494,9 +622,22 @@ export async function completeRecordsWithRestDays(
     const dayInfo = daysInfo.get(dateStr);
     const existingRecord = recordsByDate.get(dateStr);
     
-    // Se já existe registro, usar ele
+    // Se já existe registro, ajustar horas negativas se houver atestado de comparecimento
     if (existingRecord) {
-      allDays.push(existingRecord);
+      // CORREÇÃO: Se há registro com horas negativas e existe atestado de comparecimento, reduzir horas negativas
+      if (dayInfo.isMedicalCertificateAttendance && 
+          dayInfo.medicalCertificateHours && 
+          existingRecord.horas_negativas && 
+          existingRecord.horas_negativas > 0) {
+        const horasNegativasAjustadas = Math.max(0, existingRecord.horas_negativas - dayInfo.medicalCertificateHours);
+        allDays.push({
+          ...existingRecord,
+          horas_negativas: horasNegativasAjustadas,
+          horas_faltas: horasNegativasAjustadas > 0 ? horasNegativasAjustadas : 0
+        });
+      } else {
+        allDays.push(existingRecord);
+      }
       continue;
     }
     
@@ -511,18 +652,35 @@ export async function completeRecordsWithRestDays(
     let virtualRecordType: 'dsr' | 'ferias' | 'atestado' | 'compensacao' | 'falta' | null = null;
     let virtualRecordLabel = '';
     
+    // CORREÇÃO: Verificar se a data é futura (não deve criar faltas para dias futuros)
+    const recordDate = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Zerar horas para comparação apenas de data
+    const isFutureDate = recordDate > today;
+    
     // Horas diárias esperadas para cálculo de horas negativas em falta (padrão 8h; pode ser refinado pelo turno)
     const horasDiariasFalta = 8;
     
+    // CORREÇÃO: Calcular horas negativas ajustadas se houver atestado de comparecimento
+    let horasNegativasAjustadas = horasDiariasFalta;
+    if (dayInfo.isMedicalCertificateAttendance && dayInfo.medicalCertificateHours) {
+      // Se há atestado de comparecimento, reduzir horas negativas
+      horasNegativasAjustadas = Math.max(0, horasDiariasFalta - dayInfo.medicalCertificateHours);
+    }
+    
     // Prioridade: Férias > Atestado > Compensação > DSR > Falta (dia útil sem registro)
+    // CORREÇÃO: Verificar atestado de comparecimento pendente mesmo quando isMedicalCertificate pode não estar setado
     if (dayInfo.isVacation) {
       shouldCreateVirtualRecord = true;
       virtualRecordType = 'ferias';
       virtualRecordLabel = 'Férias';
-    } else if (dayInfo.isMedicalCertificate) {
+    } else if (dayInfo.isMedicalCertificate || (dayInfo.isMedicalCertificateAttendance && dayInfo.medicalCertificateHours)) {
+      // CORREÇÃO: Verificar tanto isMedicalCertificate quanto isMedicalCertificateAttendance
       shouldCreateVirtualRecord = true;
       virtualRecordType = 'atestado';
-      virtualRecordLabel = 'Atestado Médico';
+      virtualRecordLabel = dayInfo.isMedicalCertificateAttendance 
+        ? `Atestado Médico (Comparecimento - ${dayInfo.medicalCertificateHours}h)`
+        : 'Atestado Médico';
     } else if (dayInfo.compensationType) {
       shouldCreateVirtualRecord = true;
       virtualRecordType = 'compensacao';
@@ -573,11 +731,20 @@ export async function completeRecordsWithRestDays(
         // LÓGICA PARA ESCALAS FIXAS
         if (dayInfo.isRestDay) {
           shouldCreateDSR = true;
-        } else if (!dayInfo.isVacation && !dayInfo.isMedicalCertificate && !dayInfo.compensationType) {
-          // Dia útil sem registro e sem atestado/férias/compensação → Falta (horas negativas)
-          shouldCreateVirtualRecord = true;
-          virtualRecordType = 'falta';
-          virtualRecordLabel = 'Falta';
+        } else if (!dayInfo.isVacation && !dayInfo.isMedicalCertificate && !dayInfo.compensationType && !isFutureDate) {
+          // CORREÇÃO: Dia útil sem registro e sem atestado/férias/compensação E não é data futura → Falta (horas negativas)
+          // Mas se há atestado de comparecimento pendente, criar registro virtual de atestado sem horas negativas
+          if (dayInfo.isMedicalCertificateAttendance && dayInfo.medicalCertificateHours) {
+            // Há atestado de comparecimento: criar registro virtual de atestado (sem horas negativas, pois não há registro de ponto)
+            shouldCreateVirtualRecord = true;
+            virtualRecordType = 'atestado';
+            virtualRecordLabel = `Atestado Médico (Comparecimento - ${dayInfo.medicalCertificateHours}h)`;
+            horasNegativasAjustadas = 0; // Sem registro de ponto = sem horas negativas
+          } else {
+            shouldCreateVirtualRecord = true;
+            virtualRecordType = 'falta';
+            virtualRecordLabel = 'Falta';
+          }
         }
       }
       
@@ -585,16 +752,40 @@ export async function completeRecordsWithRestDays(
         shouldCreateVirtualRecord = true;
         virtualRecordType = 'dsr';
         virtualRecordLabel = 'DSR';
-      } else if (!shouldCreateVirtualRecord && !dayInfo.isRestDay && !dayInfo.isVacation && !dayInfo.isMedicalCertificate && !dayInfo.compensationType) {
-        // Escala flexível: não foi DSR (ex.: posição excedeu dias_folga) → Falta
-        shouldCreateVirtualRecord = true;
-        virtualRecordType = 'falta';
-        virtualRecordLabel = 'Falta';
+      } else if (!shouldCreateVirtualRecord && !dayInfo.isRestDay && !dayInfo.isVacation && !dayInfo.isMedicalCertificate && !dayInfo.compensationType && !isFutureDate) {
+        // CORREÇÃO: Escala flexível: não foi DSR (ex.: posição excedeu dias_folga) E não é data futura → Falta
+        // Mas se há atestado de comparecimento pendente, criar registro virtual de atestado sem horas negativas
+        // CORREÇÃO: Verificar também isMedicalCertificateAttendance antes de criar falta
+        if (dayInfo.isMedicalCertificate || (dayInfo.isMedicalCertificateAttendance && dayInfo.medicalCertificateHours)) {
+          // Há atestado (normal ou de comparecimento): criar registro virtual de atestado
+          shouldCreateVirtualRecord = true;
+          virtualRecordType = 'atestado';
+          virtualRecordLabel = dayInfo.isMedicalCertificateAttendance 
+            ? `Atestado Médico (Comparecimento - ${dayInfo.medicalCertificateHours}h)`
+            : 'Atestado Médico';
+          horasNegativasAjustadas = 0; // Sem registro de ponto = sem horas negativas
+        } else {
+          shouldCreateVirtualRecord = true;
+          virtualRecordType = 'falta';
+          virtualRecordLabel = 'Falta';
+        }
       }
     }
     
     if (shouldCreateVirtualRecord && virtualRecordType) {
       const isFalta = virtualRecordType === 'falta';
+      const isAtestadoComparecimento = virtualRecordType === 'atestado' && dayInfo.isMedicalCertificateAttendance;
+      
+      // CORREÇÃO: Para atestado de comparecimento sem registro, calcular horas negativas reduzidas
+      let horasNegativasFinais = 0;
+      if (isFalta) {
+        horasNegativasFinais = horasDiariasFalta;
+      } else if (isAtestadoComparecimento && dayInfo.medicalCertificateHours) {
+        // Se há atestado de comparecimento e não há registro, pode haver horas negativas reduzidas
+        // (exemplo: deveria trabalhar 8h, mas só compareceu 3.35h → 4.65h negativas)
+        horasNegativasFinais = horasNegativasAjustadas;
+      }
+      
       // Criar registro virtual
       const virtualRecord: TimeRecord = {
         id: `virtual-${dateStr}-${virtualRecordType}`,
@@ -609,9 +800,9 @@ export async function completeRecordsWithRestDays(
         horas_extras: 0,
         horas_extras_50: 0,
         horas_extras_100: 0,
-        horas_negativas: isFalta ? horasDiariasFalta : 0,
+        horas_negativas: horasNegativasFinais,
         horas_noturnas: 0,
-        horas_faltas: isFalta ? horasDiariasFalta : 0,
+        horas_faltas: isFalta ? horasDiariasFalta : (horasNegativasFinais > 0 ? horasNegativasFinais : 0),
         status: 'aprovado' as const,
         is_feriado: dayInfo.isHoliday,
         is_domingo: dayInfo.isSunday,
@@ -638,7 +829,7 @@ export async function completeRecordsWithRestDays(
  * Gera folha de ponto em HTML (pode ser convertido para PDF)
  */
 export async function generateTimeRecordReportHTML(data: TimeRecordReportData): Promise<string> {
-  const { employeeName, employeeMatricula, month, year, records, bankHoursBalance, dsr, employeeId, companyId } = data;
+  const { employeeName, employeeMatricula, month, year, records, bankHoursBalance, dsr, employeeId, companyId, company, employee } = data;
   
   // Buscar informações sobre todos os dias do mês (incluindo dias passados - retroativo)
   let daysInfo = new Map<string, DayInfo>();
@@ -661,17 +852,21 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
   const monthName = monthNames[month - 1];
   
   // Calcular totais a partir dos registros completos (inclui faltas virtuais = dias úteis sem registro)
+  // Horas negativas: não incluir dias com natureza Feriado, Compensação ou Folga
   const totalHorasTrabalhadas = completeRecords.reduce((sum, r) => sum + (r.horas_trabalhadas || 0), 0);
-  const totalHorasNegativas = completeRecords.reduce((sum, r) => sum + (r.horas_negativas || 0), 0);
+  const totalHorasNegativas = completeRecords.reduce((sum, r) => {
+    const dateStr = r.data_registro.split('T')[0];
+    const natureValue = data.dayNatureOverrides?.[dateStr] ?? (r as any).natureza_dia ?? getDayNatureFromRecord(r);
+    if (isDayNatureNoNegativeHours(natureValue)) return sum;
+    return sum + (r.horas_negativas || 0);
+  }, 0);
   const totalExtras50 = completeRecords.reduce((sum, r) => sum + (r.horas_extras_50 || 0), 0);
   const totalExtras100 = completeRecords.reduce((sum, r) => sum + (r.horas_extras_100 || 0), 0);
   const totalNoturnas = completeRecords.reduce((sum, r) => sum + (r.horas_noturnas || 0), 0);
   
-  // Formatar horas
-  const formatHours = (hours: number) => {
-    return hours.toFixed(2).replace('.', ',');
-  };
-  
+  // Formatar horas em decimal para formato legível (ex: 8.5 → "8h30")
+  const formatHours = (hours: number) => formatDecimalHoursToHhMm(hours);
+
   // Formatar data (sem conversão de timezone para evitar problema de um dia a menos)
   const formatDate = (dateStr: string) => {
     // Se a data já está no formato YYYY-MM-DD, extrair diretamente
@@ -717,12 +912,52 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
     return timeOnly;
   };
   
+  // Funções auxiliares para formatar dados
+  const formatCNPJ = (cnpj?: string) => {
+    if (!cnpj) return '-';
+    const cleaned = cnpj.replace(/\D/g, '');
+    if (cleaned.length === 14) {
+      return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+    }
+    return cnpj;
+  };
+
+  const formatCPF = (cpf?: string) => {
+    if (!cpf) return '-';
+    const cleaned = cpf.replace(/\D/g, '');
+    if (cleaned.length === 11) {
+      return cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+    }
+    return cpf;
+  };
+
+  const formatEndereco = (endereco?: any) => {
+    if (!endereco) return '-';
+    const parts: string[] = [];
+    if (endereco.logradouro) parts.push(endereco.logradouro);
+    if (endereco.numero) parts.push(endereco.numero);
+    if (endereco.complemento) parts.push(endereco.complemento);
+    if (endereco.bairro) parts.push(endereco.bairro);
+    if (endereco.cidade) parts.push(endereco.cidade);
+    if (endereco.uf) parts.push(endereco.uf);
+    if (endereco.cep) parts.push(`CEP: ${endereco.cep}`);
+    return parts.length > 0 ? parts.join(', ') : '-';
+  };
+
+  const logoUrl = company?.logo_url || '';
+  const empresaNome = company?.nome_fantasia || company?.razao_social || 'Empresa';
+  const empresaCNPJ = formatCNPJ(company?.cnpj);
+  const empresaEndereco = formatEndereco(company?.endereco);
+  const funcionarioCPF = formatCPF(employee?.cpf);
+  const funcionarioCargo = employee?.cargo?.nome || '-';
+  const funcionarioEstado = employee?.estado || '-';
+
   return `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Folha de Ponto - ${employeeName}</title>
+  <title>Cartão Ponto - ${employeeName}</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -738,21 +973,62 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
       box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     .header {
-      text-align: center;
       border-bottom: 3px solid #000;
       padding-bottom: 20px;
       margin-bottom: 30px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .header-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      flex: 1;
+    }
+    .logo-container {
+      flex-shrink: 0;
+    }
+    .logo-container img {
+      max-width: 120px;
+      max-height: 120px;
+      object-fit: contain;
+    }
+    .header-title {
+      flex: 1;
     }
     .header h1 {
       margin: 0;
       font-size: 24px;
       font-weight: bold;
+      text-align: left;
     }
     .period-info {
       text-align: right;
       font-size: 16px;
       font-weight: bold;
-      margin-top: 10px;
+      margin-top: 0;
+    }
+    .company-info {
+      margin-bottom: 20px;
+      padding: 15px;
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+    }
+    .company-info table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .company-info td {
+      padding: 5px 10px;
+      border: 1px solid #ddd;
+      font-size: 12px;
+    }
+    .company-info td.label {
+      font-weight: bold;
+      background-color: #e9e9e9;
+      width: 150px;
     }
     .employee-info {
       margin-bottom: 20px;
@@ -844,18 +1120,62 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
 <body>
   <div class="container">
     <div class="header">
-      <h1>FOLHA DE PONTO</h1>
-      <div class="period-info">${monthName}/${year}</div>
+      <div class="header-left">
+        ${logoUrl ? `<div class="logo-container"><img src="${logoUrl}" alt="Logo da Empresa" /></div>` : ''}
+        <div class="header-title">
+          <h1>CARTÃO PONTO</h1>
+        </div>
+      </div>
+      <div class="period-info">
+        <div>Período: 01/${String(month).padStart(2, '0')}/${year} a ${String(new Date(year, month, 0).getDate()).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}</div>
+        <div style="margin-top: 5px;">Pág.: 1</div>
+      </div>
     </div>
+    
+    <!-- Informações da Empresa -->
+    ${company ? `
+    <div class="company-info">
+      <table>
+        <tr>
+          <td class="label">Empregador</td>
+          <td>${company.numero_empresa || '-'}</td>
+          <td class="label">Nome da Empresa</td>
+          <td>${empresaNome}</td>
+        </tr>
+        <tr>
+          <td class="label">CNPJ</td>
+          <td>${empresaCNPJ}</td>
+          <td class="label">Inscrição Estadual</td>
+          <td>${company.inscricao_estadual || '-'}</td>
+        </tr>
+        <tr>
+          <td class="label">Endereço</td>
+          <td colspan="3">${empresaEndereco}</td>
+        </tr>
+      </table>
+    </div>
+    ` : ''}
     
     <!-- Informações do Funcionário -->
     <div class="employee-info">
       <table>
         <tr>
+          <td class="label">Empregado</td>
+          <td>${employeeMatricula || '-'}</td>
           <td class="label">Nome do Funcionário</td>
           <td>${employeeName}</td>
-          <td class="label">Matrícula</td>
-          <td>${employeeMatricula || '-'}</td>
+        </tr>
+        <tr>
+          <td class="label">CPF</td>
+          <td>${funcionarioCPF}</td>
+          <td class="label">Estado</td>
+          <td>${funcionarioEstado}</td>
+        </tr>
+        <tr>
+          <td class="label">Cargo</td>
+          <td>${funcionarioCargo}</td>
+          <td class="label">Categoria</td>
+          <td>Mensalista</td>
         </tr>
       </table>
     </div>
@@ -866,16 +1186,19 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
       <thead>
         <tr>
           <th style="width: 8%;">Data</th>
-          <th style="width: 8%;">Entrada</th>
-          <th style="width: 8%;">Início Almoço</th>
-          <th style="width: 8%;">Fim Almoço</th>
-          <th style="width: 8%;">Saída</th>
-          <th style="width: 8%;">Horas Trabalhadas</th>
-          <th style="width: 8%;">Extras 50%</th>
-          <th style="width: 8%;">Extras 100%</th>
-          <th style="width: 8%;">Adicional Noturno</th>
-          <th style="width: 8%;">Horas Negativas</th>
-          <th style="width: 10%;">Status</th>
+          <th style="width: 10%;">Natureza do Dia</th>
+          <th style="width: 7%;">Entrada</th>
+          <th style="width: 7%;">Início Almoço</th>
+          <th style="width: 7%;">Fim Almoço</th>
+          <th style="width: 7%;">Saída</th>
+          <th style="width: 7%;">Início Hora Extra</th>
+          <th style="width: 7%;">Fim Hora Extra</th>
+          <th style="width: 7%;">Horas Trabalhadas</th>
+          <th style="width: 7%;">Extras 50%</th>
+          <th style="width: 7%;">Extras 100%</th>
+          <th style="width: 7%;">Adicional Noturno</th>
+          <th style="width: 7%;">Horas Negativas</th>
+          <th style="width: 8%;">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -886,6 +1209,9 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
             return dateA.localeCompare(dateB);
           })
           .map(record => {
+            const dateStr = record.data_registro.split('T')[0];
+            const natureValue = data.dayNatureOverrides?.[dateStr] ?? (record as any).natureza_dia ?? getDayNatureFromRecord(record);
+            const natureLabel = getDayNatureLabel(natureValue);
             const isVirtual = record.id.startsWith('virtual-');
             const isRestDay = record.is_dia_folga || (isVirtual && record.id.includes('-dsr'));
             const isVacation = isVirtual && record.id.includes('-ferias');
@@ -893,7 +1219,7 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
             const isCompensation = isVirtual && record.id.includes('-compensacao');
             const isFalta = isVirtual && record.id.includes('-falta');
             
-            // Determinar o label a exibir
+            // Determinar o label a exibir (para horários) a partir do tipo de registro virtual
             let displayLabel = '';
             if (isVacation) {
               displayLabel = 'Férias';
@@ -906,32 +1232,46 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
             } else if (isRestDay && !record.entrada) {
               displayLabel = 'DSR';
             }
+            // No PDF, colunas de horário e status devem refletir a Natureza do dia (incluindo alteração do usuário)
+            const isDayWithoutTimes = !!displayLabel || isDayNatureNoNegativeHours(natureValue) || natureValue === 'dsr' || natureValue === 'ferias' || natureValue === 'atestado' || natureValue === 'falta';
+            const timeColumnLabel = isDayWithoutTimes ? natureLabel : '';
             
-            const showHorasNegativasFalta = isFalta ? `-${formatHours(record.horas_negativas || 0)}h` : (displayLabel ? '-' : `${formatHours(record.horas_negativas || 0)}h`);
+            // Feriado, Compensação e Folga não exibem nem contam horas negativas. Atestado de comparecimento pode ter horas negativas líquidas.
+            const hasAtestadoLiquidNegativas = isMedicalCertificate && (record.horas_negativas || 0) > 0;
+            const showHorasNegativasFalta = isDayNatureNoNegativeHours(natureValue)
+              ? '-'
+              : isFalta
+                ? formatDecimalHoursToHhMm(-(record.horas_negativas || 0))
+                : hasAtestadoLiquidNegativas
+                  ? formatDecimalHoursToHhMm(-(record.horas_negativas || 0))
+                  : (displayLabel ? '-' : formatHours(record.horas_negativas || 0));
             
             return `
           <tr>
             <td>${formatDate(record.data_registro)}</td>
-            <td class="time">${displayLabel || formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)}</td>
-            <td class="time">${displayLabel ? '-' : formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)}</td>
-            <td class="time">${displayLabel ? '-' : formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)}</td>
-            <td class="time">${displayLabel ? '-' : formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)}</td>
-            <td class="number">${displayLabel ? displayLabel : formatHours(record.horas_trabalhadas || 0)}h</td>
-            <td class="number">${displayLabel ? '-' : formatHours(record.horas_extras_50 || 0)}h</td>
-            <td class="number">${displayLabel ? '-' : formatHours(record.horas_extras_100 || 0)}h</td>
-            <td class="number">${displayLabel ? '-' : formatHours(record.horas_noturnas || 0)}h</td>
+            <td>${natureLabel}</td>
+            <td class="time">${timeColumnLabel || formatTimeWithDate(record.entrada, record.entrada_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${timeColumnLabel ? '-' : formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${timeColumnLabel ? '-' : formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${timeColumnLabel ? '-' : formatTimeWithDate(record.saida, record.saida_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${timeColumnLabel ? '-' : formatTimeWithDate(record.entrada_extra1, record.entrada_extra1_date, record.base_date || record.data_registro)}</td>
+            <td class="time">${timeColumnLabel ? '-' : formatTimeWithDate(record.saida_extra1, record.saida_extra1_date, record.base_date || record.data_registro)}</td>
+            <td class="number">${timeColumnLabel ? natureLabel : formatHours(record.horas_trabalhadas || 0)}</td>
+            <td class="number">${timeColumnLabel ? '-' : formatHours(record.horas_extras_50 || 0)}</td>
+            <td class="number">${timeColumnLabel ? '-' : formatHours(record.horas_extras_100 || 0)}</td>
+            <td class="number">${timeColumnLabel ? '-' : formatHours(record.horas_noturnas || 0)}</td>
             <td class="number">${showHorasNegativasFalta}</td>
-            <td>${displayLabel || (record.status || 'pendente')}</td>
+            <td>${timeColumnLabel ? natureLabel : (record.status || 'pendente')}</td>
           </tr>
         `;
           }).join('')}
         <tr style="font-weight: bold; background-color: #f0f0f0;">
-          <td colspan="5"><strong>TOTAIS</strong></td>
-          <td class="number"><strong>${formatHours(totalHorasTrabalhadas)}h</strong></td>
-          <td class="number"><strong>${formatHours(totalExtras50)}h</strong></td>
-          <td class="number"><strong>${formatHours(totalExtras100)}h</strong></td>
-          <td class="number"><strong>${formatHours(totalNoturnas)}h</strong></td>
-          <td class="number"><strong>${formatHours(totalHorasNegativas)}h</strong></td>
+          <td colspan="8"><strong>TOTAIS</strong></td>
+          <td class="number"><strong>${formatHours(totalHorasTrabalhadas)}</strong></td>
+          <td class="number"><strong>${formatHours(totalExtras50)}</strong></td>
+          <td class="number"><strong>${formatHours(totalExtras100)}</strong></td>
+          <td class="number"><strong>${formatHours(totalNoturnas)}</strong></td>
+          <td class="number"><strong>${formatHours(totalHorasNegativas)}</strong></td>
           <td></td>
         </tr>
       </tbody>
@@ -943,27 +1283,23 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
         <h4>RESUMO DE HORAS</h4>
         <div class="summary-item">
           <span>Total de Horas Trabalhadas</span>
-          <span>${formatHours(totalHorasTrabalhadas)}h</span>
+          <span>${formatHours(totalHorasTrabalhadas)}</span>
         </div>
         <div class="summary-item">
           <span>Horas Extras 50%</span>
-          <span>${formatHours(totalExtras50)}h</span>
+          <span>${formatHours(totalExtras50)}</span>
         </div>
         <div class="summary-item">
           <span>Horas Extras 100%</span>
-          <span>${formatHours(totalExtras100)}h</span>
+          <span>${formatHours(totalExtras100)}</span>
         </div>
         <div class="summary-item">
           <span>Adicional Noturno</span>
-          <span>${formatHours(totalNoturnas)}h</span>
+          <span>${formatHours(totalNoturnas)}</span>
         </div>
         <div class="summary-item">
           <span>Horas Negativas</span>
-          <span>${formatHours(totalHorasNegativas)}h</span>
-        </div>
-        <div class="summary-item">
-          <span>DSR (Descanso Semanal Remunerado)</span>
-          <span>${formatHours(dsr)}h</span>
+          <span>${formatHours(totalHorasNegativas)}</span>
         </div>
       </div>
       
@@ -971,7 +1307,7 @@ export async function generateTimeRecordReportHTML(data: TimeRecordReportData): 
         <h4>BANCO DE HORAS</h4>
         <div class="summary-item">
           <span>Saldo até ${monthName}/${year}</span>
-          <span>${formatHours(bankHoursBalance)}h</span>
+          <span>${formatHours(bankHoursBalance)}</span>
         </div>
       </div>
     </div>
@@ -1005,9 +1341,9 @@ export async function generateTimeRecordReportCSV(data: TimeRecordReportData): P
   // Completar registros com dias de folga
   const completeRecords = await completeRecordsWithRestDays(records, month, year, daysInfo, employeeId!, companyId!);
   
-  // Cabeçalho da tabela
+  // Cabeçalho da tabela (incluindo Natureza do Dia)
   const lines: string[] = [];
-  lines.push('Funcionário,Data,Entrada,Início Almoço,Fim Almoço,Saída');
+  lines.push('Funcionário,Data,Natureza do Dia,Entrada,Início Almoço,Fim Almoço,Saída');
   
   // Função auxiliar para formatar data sem problemas de timezone
   const formatDateForCSV = (dateStr: string): string => {
@@ -1033,6 +1369,9 @@ export async function generateTimeRecordReportCSV(data: TimeRecordReportData): P
       return dateA.localeCompare(dateB);
     })
     .forEach(record => {
+      const dateStr = record.data_registro.split('T')[0];
+      const natureValue = data.dayNatureOverrides?.[dateStr] ?? (record as any).natureza_dia ?? getDayNatureFromRecord(record);
+      const natureLabel = getDayNatureLabel(natureValue);
       const isVirtual = record.id.startsWith('virtual-');
       const isRestDay = record.is_dia_folga || (isVirtual && record.id.includes('-dsr'));
       const isVacation = isVirtual && record.id.includes('-ferias');
@@ -1060,7 +1399,9 @@ export async function generateTimeRecordReportCSV(data: TimeRecordReportData): P
       const saidaAlmoco = displayLabel ? '' : (record.saida_almoco ? record.saida_almoco.substring(0, 5) : '');
       const saida = displayLabel ? '' : (record.saida ? record.saida.substring(0, 5) : '');
       
-      lines.push(`${employeeName},${date},${entrada},${entradaAlmoco},${saidaAlmoco},${saida}`);
+      // Escapar vírgulas no CSV (natureLabel e displayLabel podem conter vírgulas)
+      const escapeCsv = (s: string) => (s && s.includes(',')) ? `"${s.replace(/"/g, '""')}"` : (s || '');
+      lines.push(`${escapeCsv(employeeName)},${date},${escapeCsv(natureLabel)},${entrada},${entradaAlmoco},${saidaAlmoco},${saida}`);
     });
   
   return lines.join('\n');

@@ -863,42 +863,52 @@ export function TimeRecordEditModal({
                 name="motivo_id"
                 control={control}
                 render={({ field }) => (
-                  <Select 
-                    onValueChange={(value) => {
-                      field.onChange(value);
-                      setValue('motivo_id', value, { shouldValidate: true, shouldDirty: true });
-                    }}
-                    value={field.value || ''}
-                    onOpenChange={(open) => {
-                      // Quando o Select fecha, garantir que o modal continue responsivo
-                      if (!open) {
-                        // Pequeno delay para garantir que o Select fechou completamente
-                        // e o modal está pronto para receber interações
-                        setTimeout(() => {
-                          // Não forçar foco, apenas garantir que o modal está ativo
-                          const dialog = document.querySelector('[role="dialog"]');
-                          if (dialog) {
-                            (dialog as HTMLElement).focus();
-                          }
-                        }, 50);
-                      }
-                    }}
-                  >
-                    <SelectTrigger 
-                      className={errors.motivo_id ? 'border-red-500' : ''}
-                    >
-                      <SelectValue placeholder="Selecione um motivo" />
-                    </SelectTrigger>
-                    <SelectContent 
-                      position="popper"
-                    >
-                      {delayReasons.map((reason) => (
-                        <SelectItem key={reason.id} value={reason.id}>
-                          {reason.nome}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <>
+                    {/* Desktop: Radix Select */}
+                    <div className="hidden [@media(pointer:fine)]:block">
+                      <Select
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          setValue('motivo_id', value, { shouldValidate: true, shouldDirty: true });
+                        }}
+                        value={field.value || ''}
+                      >
+                        <SelectTrigger
+                          className={errors.motivo_id ? 'border-red-500' : ''}
+                        >
+                          <SelectValue placeholder="Selecione um motivo" />
+                        </SelectTrigger>
+                        <SelectContent position="popper">
+                          {delayReasons.map((reason) => (
+                            <SelectItem key={reason.id} value={reason.id}>
+                              {reason.nome}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Mobile/touch: select nativo - evita travamento do modal em smartphones (Radix Select + Dialog) */}
+                    <div className="block [@media(pointer:fine)]:hidden">
+                      <select
+                        id="motivo_id"
+                        value={field.value || ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          field.onChange(value);
+                          setValue('motivo_id', value, { shouldValidate: true, shouldDirty: true });
+                        }}
+                        onBlur={field.onBlur}
+                        className={`flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${errors.motivo_id ? 'border-red-500' : ''}`}
+                      >
+                        <option value="">Selecione um motivo</option>
+                        {delayReasons.map((reason) => (
+                          <option key={reason.id} value={reason.id}>
+                            {reason.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
                 )}
               />
               {errors.motivo_id && (

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +15,7 @@ interface ImageUploadProps {
   maxSize?: number; // em MB
   acceptedTypes?: string[];
   className?: string;
+  bucket?: string; // bucket do Supabase Storage
 }
 
 export function ImageUpload({
@@ -25,13 +26,19 @@ export function ImageUpload({
   description = "Clique para fazer upload de uma imagem",
   maxSize = 5, // 5MB por padrão
   acceptedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
-  className = ""
+  className = "",
+  bucket = STORAGE_BUCKETS.EMPLOYEE_PHOTOS
 }: ImageUploadProps) {
   const [preview, setPreview] = useState<string | null>(value || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Sincronizar preview com value quando mudar externamente
+  useEffect(() => {
+    setPreview(value || null);
+  }, [value]);
+  
   const { uploadImage, isUploading } = useImageUpload({
-    bucket: STORAGE_BUCKETS.EMPLOYEE_PHOTOS,
+    bucket: bucket,
     maxSize: maxSize || IMAGE_UPLOAD_CONFIG.MAX_SIZE_MB,
     acceptedTypes: acceptedTypes || IMAGE_UPLOAD_CONFIG.ACCEPTED_TYPES,
     onSuccess: (url) => {

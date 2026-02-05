@@ -182,24 +182,30 @@ export const AttendanceCorrectionsService = {
     console.log('📊 [AttendanceCorrectionsService.approve] Resposta RPC:', { data, error });
 
     if (error) {
+      const msg = error.message || '';
+      const details = (error as { details?: string }).details ?? '';
+      const fullMessage = details ? `${msg}. ${details}` : msg;
       console.error('[AttendanceCorrectionsService.approve] Erro na RPC:', {
         code: error.code,
-        message: error.message,
-        details: error.details,
+        message: msg,
+        details,
         hint: error.hint
       });
 
       // Tratar erro 409 (Conflict) especificamente
-      if (error.code === '23505' || error.message?.includes('já foi aprovada') || error.message?.includes('já foi processada') || error.message?.includes('já foi rejeitada')) {
+      if (error.code === '23505' || msg.includes('já foi aprovada') || msg.includes('já foi processada') || msg.includes('já foi rejeitada')) {
         throw new Error('Esta correção já foi aprovada ou processada anteriormente.');
       }
-      if (error.message?.includes('não está pendente')) {
+      if (msg.includes('não está pendente')) {
         throw new Error('Esta correção não está mais pendente e não pode ser aprovada.');
       }
-      if (error.code === '42501' || error.message?.includes('não tem acesso')) {
+      if (error.code === '42501' || msg.includes('não tem acesso')) {
         throw new Error('Você não tem permissão para aprovar esta correção.');
       }
-      throw new Error(`Erro ao aprovar correção: ${error.message}${error.hint ? ' (' + error.hint + ')' : ''}`);
+      if (msg.includes('numeric field overflow') || msg.includes('overflow')) {
+        throw new Error('Erro interno ao calcular horas. As migrações de correção (20260203000001/20260203000002) podem não estar aplicadas no banco. Contate o suporte.');
+      }
+      throw new Error(fullMessage || `Erro ao aprovar correção (${error.code || 'RPC'}).`);
     }
 
     console.log('[AttendanceCorrectionsService.approve] Aprovacao bem-sucedida:', data);

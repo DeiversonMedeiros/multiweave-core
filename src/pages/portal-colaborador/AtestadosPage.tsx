@@ -200,7 +200,6 @@ export default function AtestadosPage() {
     if (!especialidade) faltando.push('Especialidade');
     if (!startDate) faltando.push('Data de Início');
     if (!endDate) faltando.push('Data de Fim');
-    if (!cidCode) faltando.push('Código CID');
     if (!file) faltando.push('Arquivo do Atestado');
 
     if (faltando.length > 0) {
@@ -401,7 +400,7 @@ export default function AtestadosPage() {
                 </div>
               )}
               <div className="grid gap-2">
-                <Label htmlFor="cid">Código CID <span className="text-destructive">*</span></Label>
+                <Label htmlFor="cid">Código CID</Label>
                 <Select value={cidCode || undefined} onValueChange={(value) => setCidCode(value || '')}>
                   <SelectTrigger id="cid">
                     <SelectValue placeholder="Selecione um CID" />

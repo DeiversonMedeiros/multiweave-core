@@ -161,7 +161,7 @@ export async function approveRequest(payload: { tipo: AprovacaoItem['tipo']; id:
         break;
       case 'correcao_ponto':
         rpcFunction = 'approve_attendance_correction';
-        rpcParams = { correction_id: id, approved_by: user.id, observacoes };
+        rpcParams = { p_correction_id: id, p_approved_by: user.id, p_observacoes: observacoes };
         break;
       case 'registro_ponto':
         rpcFunction = 'approve_time_record';

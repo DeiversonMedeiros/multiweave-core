@@ -666,7 +666,8 @@ export const TimeRecordsService = {
   },
 
   /**
-   * Busca registros de ponto com hora extra pendentes
+   * Busca registros de ponto com hora extra pendentes (todos da empresa).
+   * Uso: módulo RH / visão geral.
    */
   getPendingOvertimeRecords: async (companyId: string): Promise<any[]> => {
     const { data, error } = await supabase.rpc('get_pending_overtime_records', {
@@ -675,6 +676,24 @@ export const TimeRecordsService = {
 
     if (error) {
       console.error('Erro ao buscar registros de hora extra pendentes:', error);
+      throw error;
+    }
+
+    return data || [];
+  },
+
+  /**
+   * Busca registros de ponto com hora extra pendentes apenas dos funcionários
+   * subordinados ao gestor (portal gestor).
+   */
+  getPendingOvertimeRecordsForManager: async (companyId: string, userId: string): Promise<any[]> => {
+    const { data, error } = await supabase.rpc('get_pending_overtime_records_for_manager', {
+      p_company_id: companyId,
+      p_user_id: userId
+    });
+
+    if (error) {
+      console.error('Erro ao buscar registros de hora extra pendentes do gestor:', error);
       throw error;
     }
 

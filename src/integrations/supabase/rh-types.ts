@@ -941,6 +941,8 @@ export interface TimeRecord {
   is_feriado?: boolean; // Indica se o dia é feriado
   is_domingo?: boolean; // Indica se o dia é domingo
   is_dia_folga?: boolean; // Indica se é dia de folga do funcionário
+  /** Natureza do dia (classificação): normal, dsr, folga, feriado, ferias, atestado, compensacao, falta, outros. NULL = detecção automática. */
+  natureza_dia?: string | null;
   status: 'pendente' | 'aprovado' | 'rejeitado' | 'corrigido';
   observacoes?: string;
   aprovado_por?: string;

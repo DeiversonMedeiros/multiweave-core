@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Plus, 
   Search, 
@@ -32,6 +33,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   useCreatePurchaseRequisition,
+  useDuplicatePurchaseRequisition,
   usePurchaseRequisitions,
   useUpdatePurchaseRequisition,
 } from '@/hooks/compras/useComprasData';
@@ -130,6 +132,7 @@ export default function RequisicoesCompraPage() {
 function RequisicoesList() {
   const { canEditPage, canDeletePage } = usePermissions();
   const { data: requisicoes = [], isLoading } = usePurchaseRequisitions();
+  const duplicateRequisition = useDuplicatePurchaseRequisition();
   const { users } = useUsers();
   const { data: costCentersData } = useActiveCostCenters();
   const { data: projectsData } = useActiveProjects();
@@ -549,6 +552,18 @@ function RequisicoesList() {
                       <Edit className="h-4 w-4" />
                     </Button>
                   </PermissionGuard>
+
+                    <PermissionGuard page="/compras/requisicoes*" action="edit" fallback={null}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title="Duplicar requisição"
+                        disabled={!canEditPage('/compras/requisicoes*') || requisicao.status === 'cancelada' || duplicateRequisition.isPending}
+                        onClick={() => duplicateRequisition.mutate(requisicao.id)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </PermissionGuard>
                   
                     <PermissionGuard page="/compras/requisicoes*" action="delete" fallback={null}>
                       <Button
@@ -999,7 +1014,7 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
     centro_custo_id: '',
     projeto_id: '',
     service_id: '',
-    tipo_requisicao: '' as '' | 'reposicao' | 'compra_direta' | 'emergencial',
+    tipo_requisicao: '' as '' | 'reposicao' | 'compra_direta',
     destino_almoxarifado_id: '',
     local_entrega: '',
     observacoes: '',
@@ -1071,13 +1086,23 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
           ? new Date(requisicao.data_necessidade).toISOString().split('T')[0]
           : '';
 
+        // Se tipo_requisicao for 'emergencial' (dados antigos), converter para 'reposicao' e marcar is_emergencial
+        let tipoRequisicao = requisicao.tipo_requisicao || '';
+        let isEmergencial = requisicao.is_emergencial || false;
+        
+        if (tipoRequisicao === 'emergencial') {
+          tipoRequisicao = 'reposicao';
+          isEmergencial = true;
+        }
+
         setFormData({
           data_necessidade: dataNecessidade,
           prioridade: requisicao.prioridade || 'normal',
           centro_custo_id: requisicao.centro_custo_id || '',
           projeto_id: requisicao.projeto_id || '',
           service_id: requisicao.service_id || '',
-          tipo_requisicao: requisicao.tipo_requisicao || '',
+          tipo_requisicao: tipoRequisicao as 'reposicao' | 'compra_direta',
+          is_emergencial: isEmergencial,
           destino_almoxarifado_id: requisicao.destino_almoxarifado_id || '',
           local_entrega: requisicao.local_entrega || '',
           observacoes: requisicao.observacoes || requisicao.justificativa || '',
@@ -1146,6 +1171,17 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
       proj.nome?.toLowerCase().includes(searchLower)
     );
   }, [projects, projectSearch]);
+
+  // Filtrar almoxarifados pelo centro de custo selecionado
+  const filteredAlmoxarifadosByCostCenter = useMemo(() => {
+    if (!formData.centro_custo_id) return [];
+    
+    return almoxarifados.filter((alm: any) => {
+      const almCostCenter = alm.cost_center_id?.toString();
+      const selectedCostCenter = formData.centro_custo_id?.toString();
+      return almCostCenter === selectedCostCenter;
+    });
+  }, [almoxarifados, formData.centro_custo_id]);
   
   // Buscar serviços do projeto selecionado
   const { data: servicesData } = useServicesByProject(formData.projeto_id || undefined);
@@ -1234,7 +1270,8 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
           centro_custo_id: formData.centro_custo_id,
           projeto_id: formData.projeto_id,
           service_id: formData.service_id || undefined,
-          tipo_requisicao: formData.tipo_requisicao as 'reposicao' | 'compra_direta' | 'emergencial',
+          tipo_requisicao: formData.tipo_requisicao as 'reposicao' | 'compra_direta',
+          is_emergencial: formData.is_emergencial,
           destino_almoxarifado_id:
             formData.tipo_requisicao === 'reposicao' ? formData.destino_almoxarifado_id : undefined,
           local_entrega: formData.tipo_requisicao === 'compra_direta' ? formData.local_entrega : undefined,
@@ -1247,7 +1284,7 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
             unidade_medida: item.unidade,
             valor_unitario_estimado: item.valor_medio || item.valor_unitario || 0,
             observacoes: item.observacoes,
-            almoxarifado_id: formData.destino_almoxarifado_id || undefined,
+            almoxarifado_id: formData.tipo_requisicao === 'reposicao' ? formData.destino_almoxarifado_id || undefined : undefined,
           })),
         },
     });
@@ -1401,7 +1438,7 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
               <Label htmlFor="tipo_requisicao">Tipo da Requisição *</Label>
               <Select
                 value={formData.tipo_requisicao || ''}
-                onValueChange={(value: 'reposicao' | 'compra_direta' | 'emergencial') =>
+                onValueChange={(value: 'reposicao' | 'compra_direta') =>
                   setFormData(prev => ({ ...prev, tipo_requisicao: value }))
                 }
                 required
@@ -1422,16 +1459,31 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                       Compra direta
                     </div>
                   </SelectItem>
-                  <SelectItem value="emergencial">
-                    <div className="flex items-center gap-2">
-                      <Zap className="h-3 w-3" />
-                      Emergencial
-                    </div>
-                  </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="is_emergencial_edit"
+                  checked={formData.is_emergencial}
+                  onCheckedChange={(checked) =>
+                    setFormData(prev => ({ ...prev, is_emergencial: checked === true }))
+                  }
+                />
+                <Label htmlFor="is_emergencial_edit" className="flex items-center gap-2 cursor-pointer">
+                  <Zap className="h-4 w-4 text-orange-500" />
+                  Emergencial
+                </Label>
+              </div>
+              {formData.is_emergencial && (
+                <p className="text-xs text-muted-foreground ml-6">
+                  Requisição emergencial permite apenas 1 fornecedor na cotação
+                </p>
+              )}
+            </div>
+          </div>
 
           {/* Segunda linha: Centro de Custo, Projeto, Serviço */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1444,7 +1496,8 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                     ...prev, 
                     centro_custo_id: value,
                     projeto_id: '',
-                    service_id: ''
+                    service_id: '',
+                    destino_almoxarifado_id: ''
                   }));
                   setCostCenterSearch('');
                 }}
@@ -1579,16 +1632,19 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                 <Select
                   value={formData.destino_almoxarifado_id || ''}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, destino_almoxarifado_id: value }))}
+                  disabled={!formData.centro_custo_id}
                   required
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o almoxarifado" />
+                    <SelectValue placeholder={formData.centro_custo_id ? "Selecione o almoxarifado" : "Selecione primeiro o centro de custo"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {almoxarifados.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum almoxarifado disponível</div>
+                    {!formData.centro_custo_id ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">Selecione primeiro o centro de custo</div>
+                    ) : filteredAlmoxarifadosByCostCenter.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum almoxarifado disponível para este centro de custo</div>
                     ) : (
-                      almoxarifados.map((alm) => (
+                      filteredAlmoxarifadosByCostCenter.map((alm) => (
                         <SelectItem key={alm.id} value={alm.id || 'unknown'}>
                           {alm.nome}
                         </SelectItem>
@@ -1637,20 +1693,6 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
               </div>
             )}
 
-            {formData.tipo_requisicao === 'emergencial' && (
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <div className="flex items-center gap-3 rounded-md border p-3 bg-yellow-50 dark:bg-yellow-950">
-                  <Zap className="h-4 w-4 text-yellow-600" />
-                  <div>
-                    <p className="text-sm font-medium">Flag de emergência ativo</p>
-                    <p className="text-xs text-muted-foreground">
-                      Fornecedor único e SLA dedicado
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Observações */}
@@ -1878,7 +1920,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
     centro_custo_id: '',
     projeto_id: '',
     service_id: '',
-    tipo_requisicao: '' as '' | 'reposicao' | 'compra_direta' | 'emergencial',
+    tipo_requisicao: '' as '' | 'reposicao' | 'compra_direta',
     destino_almoxarifado_id: '',
     local_entrega: '',
     observacoes: '',
@@ -1888,7 +1930,6 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
   // Estados para busca nos selects
   const [costCenterSearch, setCostCenterSearch] = useState('');
   const [projectSearch, setProjectSearch] = useState('');
-  const [almoxarifadoSearch, setAlmoxarifadoSearch] = useState('');
   
   // Filtrar centros de custo pela busca
   const filteredCostCenters = useMemo(() => {
@@ -1942,29 +1983,17 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
       proj.nome?.toLowerCase().includes(searchLower)
     );
   }, [projects, projectSearch]);
-  
+
   // Filtrar almoxarifados pelo centro de custo selecionado
   const filteredAlmoxarifadosByCostCenter = useMemo(() => {
     if (!formData.centro_custo_id) return [];
     
-    const filtered = almoxarifados.filter((alm: any) => {
+    return almoxarifados.filter((alm: any) => {
       const almCostCenter = alm.cost_center_id?.toString();
       const selectedCostCenter = formData.centro_custo_id?.toString();
       return almCostCenter === selectedCostCenter;
     });
-    
-    return filtered;
   }, [almoxarifados, formData.centro_custo_id]);
-  
-  // Filtrar almoxarifados pela busca
-  const filteredAlmoxarifados = useMemo(() => {
-    if (!almoxarifadoSearch) return filteredAlmoxarifadosByCostCenter;
-    const searchLower = almoxarifadoSearch.toLowerCase();
-    return filteredAlmoxarifadosByCostCenter.filter((alm: any) => 
-      alm.codigo?.toLowerCase().includes(searchLower) || 
-      alm.nome?.toLowerCase().includes(searchLower)
-    );
-  }, [filteredAlmoxarifadosByCostCenter, almoxarifadoSearch]);
   
   // Buscar serviços do projeto selecionado
   const { data: servicesData } = useServicesByProject(formData.projeto_id || undefined);
@@ -2071,7 +2100,8 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
         centro_custo_id: formData.centro_custo_id,
         projeto_id: formData.projeto_id,
         service_id: formData.service_id || undefined,
-        tipo_requisicao: formData.tipo_requisicao as 'reposicao' | 'compra_direta' | 'emergencial',
+        tipo_requisicao: formData.tipo_requisicao as 'reposicao' | 'compra_direta',
+        is_emergencial: formData.is_emergencial,
         destino_almoxarifado_id:
           formData.tipo_requisicao === 'reposicao' ? formData.destino_almoxarifado_id : undefined,
         local_entrega: formData.tipo_requisicao === 'compra_direta' ? formData.local_entrega : undefined,
@@ -2199,7 +2229,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
               <Label htmlFor="tipo_requisicao">Tipo da Requisição *</Label>
               <Select
                 value={formData.tipo_requisicao || ''}
-                onValueChange={(value: 'reposicao' | 'compra_direta' | 'emergencial') =>
+                onValueChange={(value: 'reposicao' | 'compra_direta') =>
                   setFormData(prev => ({ ...prev, tipo_requisicao: value }))
                 }
                 required
@@ -2220,19 +2250,34 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                       Compra direta
                     </div>
                   </SelectItem>
-                  <SelectItem value="emergencial">
-                    <div className="flex items-center gap-2">
-                      <Zap className="h-3 w-3" />
-                      Emergencial
-                    </div>
-                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="is_emergencial"
+                  checked={formData.is_emergencial}
+                  onCheckedChange={(checked) =>
+                    setFormData(prev => ({ ...prev, is_emergencial: checked === true }))
+                  }
+                />
+                <Label htmlFor="is_emergencial" className="flex items-center gap-2 cursor-pointer">
+                  <Zap className="h-4 w-4 text-orange-500" />
+                  Emergencial
+                </Label>
+              </div>
+              {formData.is_emergencial && (
+                <p className="text-xs text-muted-foreground ml-6">
+                  Requisição emergencial permite apenas 1 fornecedor na cotação
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Segunda linha: Centro de Custo, Almoxarifado, Projeto, Serviço */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Segunda linha: Centro de Custo, Projeto, Serviço */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="centro_custo">Centro de Custo *</Label>
               <Select
@@ -2281,55 +2326,6 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                       filteredCostCenters.map((cc) => (
                         <SelectItem key={cc.id} value={cc.id || 'unknown'}>
                           {cc.codigo} - {cc.nome}
-                        </SelectItem>
-                      ))
-                    )}
-                  </div>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="almoxarifado_id">Almoxarifado</Label>
-              <Select
-                value={formData.destino_almoxarifado_id || ''}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, destino_almoxarifado_id: value }))}
-                onOpenChange={(open) => {
-                  if (!open) {
-                    setAlmoxarifadoSearch(''); // Limpar busca ao fechar
-                  }
-                }}
-                disabled={!formData.centro_custo_id}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={formData.centro_custo_id ? "Selecione o almoxarifado" : "Selecione primeiro o centro de custo"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <div className="px-2 py-1.5 border-b">
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar almoxarifado..."
-                        value={almoxarifadoSearch}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          setAlmoxarifadoSearch(e.target.value);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="pl-8 h-9"
-                        disabled={!formData.centro_custo_id}
-                      />
-                    </div>
-                  </div>
-                  <div className="max-h-[200px] overflow-y-auto">
-                    {filteredAlmoxarifados.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                        {formData.centro_custo_id ? "Nenhum almoxarifado encontrado para este centro de custo" : "Selecione primeiro o centro de custo"}
-                      </div>
-                    ) : (
-                      filteredAlmoxarifados.map((alm: any) => (
-                        <SelectItem key={alm.id} value={alm.id || 'unknown'}>
-                          {alm.codigo} - {alm.nome}
                         </SelectItem>
                       ))
                     )}
@@ -2429,16 +2425,19 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                 <Select
                   value={formData.destino_almoxarifado_id || ''}
                   onValueChange={(value) => setFormData(prev => ({ ...prev, destino_almoxarifado_id: value }))}
+                  disabled={!formData.centro_custo_id}
                   required
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o almoxarifado" />
+                    <SelectValue placeholder={formData.centro_custo_id ? "Selecione o almoxarifado" : "Selecione primeiro o centro de custo"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {almoxarifados.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum almoxarifado disponível</div>
+                    {!formData.centro_custo_id ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">Selecione primeiro o centro de custo</div>
+                    ) : filteredAlmoxarifadosByCostCenter.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">Nenhum almoxarifado disponível para este centro de custo</div>
                     ) : (
-                      almoxarifados.map((alm) => (
+                      filteredAlmoxarifadosByCostCenter.map((alm) => (
                         <SelectItem key={alm.id} value={alm.id || 'unknown'}>
                           {alm.nome}
                         </SelectItem>
@@ -2492,20 +2491,6 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
               </div>
             )}
 
-            {formData.tipo_requisicao === 'emergencial' && (
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <div className="flex items-center gap-3 rounded-md border p-3 bg-yellow-50 dark:bg-yellow-950">
-                  <Zap className="h-4 w-4 text-yellow-600" />
-                  <div>
-                    <p className="text-sm font-medium">Flag de emergência ativo</p>
-                    <p className="text-xs text-muted-foreground">
-                      Fornecedor único e SLA dedicado
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
             </div>
             
           {/* Observações */}

@@ -4,15 +4,36 @@ import { Payroll, PayrollEvent, Employee } from '@/integrations/supabase/rh-type
 // SERVIÇO DE GERAÇÃO DE CONTRACHEQUE (PDF)
 // =====================================================
 
+export interface CompanyPayslipData {
+  id: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+  cnpj?: string;
+  inscricao_estadual?: string;
+  logo_url?: string | null;
+  endereco?: any;
+  contato?: any;
+  numero_empresa?: string;
+}
+
+export interface EmployeePayslipData {
+  id: string;
+  nome: string;
+  matricula?: string;
+  cpf?: string;
+  cargo?: { nome?: string } | null;
+  departamento?: { nome?: string } | null;
+  estado?: string;
+  data_admissao?: string;
+  pis_pasep?: string;
+}
+
 export interface PayslipData {
   payroll: Payroll;
   employee: Employee;
   events: PayrollEvent[];
-  company?: {
-    name: string;
-    cnpj?: string;
-    address?: string;
-  };
+  company?: CompanyPayslipData;
+  employeeData?: EmployeePayslipData;
 }
 
 /**
@@ -39,7 +60,7 @@ export async function generatePayslipPDF(data: PayslipData): Promise<Blob> {
  * Gera HTML do contracheque (pode ser convertido para PDF depois)
  */
 function generatePayslipHTML(data: PayslipData): string {
-  const { payroll, employee, events, company } = data;
+  const { payroll, employee, events, company, employeeData } = data;
   
   const monthNames = [
     'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -48,9 +69,19 @@ function generatePayslipHTML(data: PayslipData): string {
   
   const monthName = monthNames[payroll.mes_referencia - 1];
   
-  // Separar eventos por tipo
-  const proventos = events.filter(e => e.tipo_rubrica === 'provento');
-  const descontos = events.filter(e => e.tipo_rubrica === 'desconto');
+  // Separar eventos por tipo e filtrar valores zerados
+  const proventos = events.filter(e => 
+    e.tipo_rubrica === 'provento' && 
+    e.valor_total !== null && 
+    e.valor_total !== undefined && 
+    e.valor_total !== 0
+  );
+  const descontos = events.filter(e => 
+    e.tipo_rubrica === 'desconto' && 
+    e.valor_total !== null && 
+    e.valor_total !== undefined && 
+    e.valor_total !== 0
+  );
   
   // Calcular bases de cálculo
   const inssEvent = descontos.find(e => e.codigo_rubrica === 'INSS' || e.descricao_rubrica.toLowerCase().includes('inss'));
@@ -92,6 +123,63 @@ function generatePayslipHTML(data: PayslipData): string {
   const formatPercent = (value: number) => {
     return value.toFixed(2).replace('.', ',') + '%';
   };
+
+  // Funções auxiliares para formatar dados
+  const formatCNPJ = (cnpj?: string) => {
+    if (!cnpj) return '-';
+    const cleaned = cnpj.replace(/\D/g, '');
+    if (cleaned.length === 14) {
+      return cleaned.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+    }
+    return cnpj;
+  };
+
+  const formatCPF = (cpf?: string) => {
+    if (!cpf) return '-';
+    const cleaned = cpf.replace(/\D/g, '');
+    if (cleaned.length === 11) {
+      return cleaned.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+    }
+    return cpf;
+  };
+
+  const formatEndereco = (endereco?: any) => {
+    if (!endereco) return '-';
+    const parts: string[] = [];
+    if (endereco.logradouro) parts.push(endereco.logradouro);
+    if (endereco.numero) parts.push(endereco.numero);
+    if (endereco.complemento) parts.push(endereco.complemento);
+    if (endereco.bairro) parts.push(endereco.bairro);
+    if (endereco.cidade) parts.push(endereco.cidade);
+    if (endereco.uf) parts.push(endereco.uf);
+    if (endereco.cep) parts.push(endereco.cep);
+    return parts.length > 0 ? parts.join(', ') : '-';
+  };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    try {
+      const date = new Date(dateStr);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Dados formatados
+  const logoUrl = company?.logo_url || '';
+  const empresaNome = company?.nome_fantasia || company?.razao_social || 'Empresa';
+  const empresaCNPJ = formatCNPJ(company?.cnpj);
+  const empresaEndereco = formatEndereco(company?.endereco);
+  const empresaTelefone = company?.contato?.telefone || '';
+  const funcionarioCPF = formatCPF(employeeData?.cpf || employee.cpf);
+  const funcionarioCargo = employeeData?.cargo?.nome || employee.cargo?.nome || '-';
+  const funcionarioDepartamento = employeeData?.departamento?.nome || employee.departamento?.nome || '-';
+  const funcionarioPIS = employeeData?.pis_pasep || employee.pis_pasep || '-';
+  const funcionarioAdmissao = formatDate(employeeData?.data_admissao || employee.data_admissao);
   
   return `
 <!DOCTYPE html>
@@ -114,25 +202,53 @@ function generatePayslipHTML(data: PayslipData): string {
       box-shadow: 0 0 10px rgba(0,0,0,0.1);
     }
     .header {
-      text-align: center;
       border-bottom: 3px solid #000;
       padding-bottom: 20px;
       margin-bottom: 30px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .header-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      flex: 1;
+    }
+    .logo-container {
+      flex-shrink: 0;
+    }
+    .logo-container img {
+      max-width: 120px;
+      max-height: 120px;
+      object-fit: contain;
+    }
+    .header-title {
+      flex: 1;
     }
     .header h1 {
       margin: 0;
       font-size: 24px;
       font-weight: bold;
+      text-align: left;
     }
     .company-info {
-      font-size: 14px;
+      font-size: 12px;
       margin-top: 10px;
+      text-align: left;
+    }
+    .company-info-line {
+      margin: 2px 0;
     }
     .period-info {
       text-align: right;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: bold;
-      margin-top: 10px;
+      margin-top: 0;
+    }
+    .period-info div {
+      margin: 2px 0;
     }
     .employee-details {
       margin-bottom: 20px;
@@ -245,35 +361,49 @@ function generatePayslipHTML(data: PayslipData): string {
 <body>
   <div class="container">
     <div class="header">
-      <h1>RECIBO DE PAGAMENTO DE SALÁRIO</h1>
-      ${company ? `
-        <div class="company-info">
-          <strong>${company.name}</strong>
-          ${company.cnpj ? `<br>CNPJ: ${company.cnpj}` : ''}
-          ${company.address ? `<br>${company.address}` : ''}
+      <div class="header-left">
+        ${logoUrl ? `<div class="logo-container"><img src="${logoUrl}" alt="Logo da Empresa" /></div>` : ''}
+        <div class="header-title">
+          <h1>RECIBO DE PAGAMENTO FOLHA MENSAL</h1>
+          ${company ? `
+            <div class="company-info">
+              <div class="company-info-line"><strong>(${company.numero_empresa || '-'} - 1) ${empresaNome.toUpperCase()}</strong></div>
+              <div class="company-info-line">CNPJ: ${empresaCNPJ}</div>
+              ${empresaEndereco !== '-' ? `<div class="company-info-line">${empresaEndereco}</div>` : ''}
+            </div>
+          ` : ''}
         </div>
-      ` : ''}
-      <div class="period-info">${monthName}/${payroll.ano_referencia}</div>
+      </div>
+      <div class="period-info">
+        <div>Ref.: ${monthName}/${payroll.ano_referencia}</div>
+        ${empresaTelefone ? `<div>${empresaTelefone}</div>` : ''}
+      </div>
     </div>
     
     <!-- Informações do Funcionário -->
     <div class="employee-details">
       <table>
         <tr>
-          <td class="label">Código</td>
-          <td>${employee.matricula || '-'}</td>
-          <td class="label">Nome do Funcionário</td>
-          <td colspan="5">${employee.nome}</td>
+          <td class="label">Nome</td>
+          <td colspan="3">${employee.nome}</td>
         </tr>
         <tr>
-          <td class="label">CBO</td>
-          <td>${employee.cargo?.nome || '-'}</td>
-          <td class="label">Departamento</td>
-          <td>${employee.departamento?.nome || '-'}</td>
-          <td class="label">Setor</td>
-          <td>-</td>
+          <td class="label">Função</td>
+          <td>${funcionarioCargo}</td>
+          <td class="label">Seção</td>
+          <td>${funcionarioDepartamento}</td>
+        </tr>
+        <tr>
+          <td class="label">Código</td>
+          <td>${employeeData?.matricula || employee.matricula || '-'}</td>
+          <td class="label">Data Admissão</td>
+          <td>${funcionarioAdmissao}</td>
+        </tr>
+        <tr>
           <td class="label">CPF</td>
-          <td>${employee.cpf || '-'}</td>
+          <td>${funcionarioCPF}</td>
+          <td class="label">PIS</td>
+          <td>${funcionarioPIS}</td>
         </tr>
       </table>
     </div>
@@ -419,11 +549,13 @@ export async function generateBatchPayslips(
   payrolls: Payroll[],
   eventsMap: Map<string, PayrollEvent[]>,
   employeesMap: Map<string, Employee>,
-  company?: { name: string; cnpj?: string; address?: string }
+  company?: CompanyPayslipData,
+  employeesDataMap?: Map<string, EmployeePayslipData>
 ): Promise<Blob[]> {
   const promises = payrolls.map(async (payroll) => {
     const employee = employeesMap.get(payroll.employee_id);
     const events = eventsMap.get(payroll.id) || [];
+    const employeeData = employeesDataMap?.get(payroll.employee_id);
     
     if (!employee) {
       throw new Error(`Funcionário não encontrado para folha ${payroll.id}`);
@@ -433,7 +565,8 @@ export async function generateBatchPayslips(
       payroll,
       employee,
       events,
-      company
+      company,
+      employeeData
     });
   });
   

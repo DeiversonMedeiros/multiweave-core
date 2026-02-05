@@ -94,6 +94,31 @@ export function useUpdatePurchaseRequisition() {
   });
 }
 
+export function useDuplicatePurchaseRequisition() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: (requisicaoId: string) => {
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      if (!user?.id) throw new Error('Usuário não autenticado');
+      return purchaseService.duplicateRequisition({
+        companyId: selectedCompany.id,
+        userId: user.id,
+        requisicaoId,
+      });
+    },
+    onSuccess: () => {
+      toast.success('Requisição duplicada com sucesso. A nova requisição está em rascunho.');
+      queryClient.invalidateQueries({ queryKey: ['compras', 'requisicoes'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Erro ao duplicar requisição');
+    },
+  });
+}
+
 export function useRequisitionWorkflow() {
   const queryClient = useQueryClient();
   const { user } = useAuth();

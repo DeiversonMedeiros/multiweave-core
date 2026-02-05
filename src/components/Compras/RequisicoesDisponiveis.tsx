@@ -55,6 +55,7 @@ interface ItemExplodido {
   requisicao_item_id: string; // ID real do item de requisição (requisicao_item.id)
   requisicao_numero: string;
   tipo_requisicao: string;
+  is_emergencial?: boolean;
   prioridade: string;
   centro_custo_id?: string;
   projeto_id?: string;
@@ -89,6 +90,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
   const [selectedRequisicoes, setSelectedRequisicoes] = useState<Set<string>>(new Set());
   const [selectedItens, setSelectedItens] = useState<Set<string>>(new Set()); // IDs de itens no modo explodido
   const [tipoSelecionado, setTipoSelecionado] = useState<string | null>(null); // Para validação impeditiva
+  const [hasEmergencialSelected, setHasEmergencialSelected] = useState(false); // Para rastrear se há requisições emergenciais selecionadas
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [loadingItens, setLoadingItens] = useState(false);
@@ -560,6 +562,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
             requisicao_item_id: item.id, // ID real do requisicao_item para filtrar no modal
             requisicao_numero: req.numero_requisicao,
             tipo_requisicao: req.tipo_requisicao || '',
+            is_emergencial: req.is_emergencial || false,
             prioridade: req.prioridade || 'normal',
             centro_custo_id: req.centro_custo_id,
             projeto_id: req.projeto_id,
@@ -693,7 +696,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
 
       if (filters.apenas_emergenciais) {
         result = result.filter((req: any) => 
-          req.tipo_requisicao === 'emergencial' || req.prioridade === 'alta'
+          req.is_emergencial === true || req.prioridade === 'alta'
         );
       }
 
@@ -723,15 +726,22 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
   }, [projectsData, filters.centro_custo_id]);
 
   // Validação de tipo (filtro impeditivo)
-  const validarTipoCompra = (tipo: string): boolean => {
-    if (!tipoSelecionado) {
-      setTipoSelecionado(tipo);
-      return true;
+  const validarTipoCompra = (tipo: string, isEmergencial: boolean = false): boolean => {
+    // Requisições emergenciais NÃO podem misturar com nenhuma outra requisição
+    if (isEmergencial && (hasEmergencialSelected || tipoSelecionado !== null)) {
+      return hasEmergencialSelected && tipoSelecionado === tipo;
+    }
+    
+    if (hasEmergencialSelected && !isEmergencial) {
+      return false; // Não pode adicionar não-emergencial quando já tem emergencial
     }
 
-    // Emergencial NÃO pode misturar com nenhum outro tipo
-    if (tipoSelecionado === 'emergencial' || tipo === 'emergencial') {
-      return tipoSelecionado === tipo;
+    if (!tipoSelecionado) {
+      setTipoSelecionado(tipo);
+      if (isEmergencial) {
+        setHasEmergencialSelected(true);
+      }
+      return true;
     }
 
     // Reposição NÃO pode misturar com compra direta (podem ser para locais diferentes)
@@ -754,18 +764,23 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
     return tipoSelecionado === tipo;
   };
 
-  const handleSelectItem = (itemId: string, itemTipo: string, checked: boolean) => {
+  const handleSelectItem = (itemId: string, itemTipo: string, checked: boolean, isEmergencial: boolean = false) => {
     if (checked) {
-      if (!validarTipoCompra(itemTipo)) {
+      if (!validarTipoCompra(itemTipo, isEmergencial)) {
         toast({
           title: 'Seleção inválida',
-          description: `Não é possível misturar itens de ${getTipoNome(tipoSelecionado!)} com itens de ${getTipoNome(itemTipo)} nesta cotação.`,
+          description: isEmergencial || hasEmergencialSelected
+            ? 'Requisições emergenciais não podem ser misturadas com outras requisições.'
+            : `Não é possível misturar itens de ${getTipoNome(tipoSelecionado!)} com itens de ${getTipoNome(itemTipo)} nesta cotação.`,
           variant: 'destructive',
         });
         return;
       }
 
       setSelectedItens(prev => new Set(prev).add(itemId));
+      if (isEmergencial) {
+        setHasEmergencialSelected(true);
+      }
       
       // Coletar requisições dos itens selecionados
       const requisicoesDosItens = new Set<string>();
@@ -782,9 +797,20 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         return newSet;
       });
 
-      // Se não houver mais itens selecionados, limpar tipo
+      // Se não houver mais itens selecionados, limpar tipo e emergencial
       if (selectedItens.size === 1) {
         setTipoSelecionado(null);
+        setHasEmergencialSelected(false);
+      } else {
+        // Verificar se ainda há itens emergenciais selecionados
+        const itensSelecionados = Array.from(selectedItens).filter(id => id !== itemId);
+        const aindaTemEmergencial = itensSelecionados.some(id => {
+          const item = (filtered as ItemExplodido[]).find(i => i.id === id);
+          return item?.is_emergencial === true;
+        });
+        if (!aindaTemEmergencial) {
+          setHasEmergencialSelected(false);
+        }
       }
     }
   };
@@ -792,10 +818,12 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
   const handleSelectRequisicao = (requisicaoId: string, checked: boolean) => {
     if (checked) {
       const requisicao = requisicoesDisponiveis.find((r: any) => r.id === requisicaoId);
-      if (requisicao && !validarTipoCompra(requisicao.tipo_requisicao)) {
+      if (requisicao && !validarTipoCompra(requisicao.tipo_requisicao, requisicao.is_emergencial)) {
         toast({
           title: 'Seleção inválida',
-          description: `Não é possível misturar requisições de ${getTipoNome(tipoSelecionado!)} com requisições de ${getTipoNome(requisicao.tipo_requisicao)} nesta cotação.`,
+          description: requisicao.is_emergencial || hasEmergencialSelected
+            ? 'Requisições emergenciais não podem ser misturadas com outras requisições.'
+            : `Não é possível misturar requisições de ${getTipoNome(tipoSelecionado!)} com requisições de ${getTipoNome(requisicao.tipo_requisicao)} nesta cotação.`,
           variant: 'destructive',
         });
         return;
@@ -806,6 +834,10 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         newSet.add(requisicaoId);
         return newSet;
       });
+      
+      if (requisicao?.is_emergencial) {
+        setHasEmergencialSelected(true);
+      }
     } else {
       setSelectedRequisicoes(prev => {
         const newSet = new Set(prev);
@@ -815,6 +847,17 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
 
       if (selectedRequisicoes.size === 1) {
         setTipoSelecionado(null);
+        setHasEmergencialSelected(false);
+      } else {
+        // Verificar se ainda há requisições emergenciais selecionadas
+        const requisicoesSelecionadas = Array.from(selectedRequisicoes).filter(id => id !== requisicaoId);
+        const aindaTemEmergencial = requisicoesSelecionadas.some(id => {
+          const req = requisicoesDisponiveis.find((r: any) => r.id === id);
+          return req?.is_emergencial === true;
+        });
+        if (!aindaTemEmergencial) {
+          setHasEmergencialSelected(false);
+        }
       }
     }
   };
@@ -827,7 +870,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         // Validar se pode selecionar todos os tipos
         if (tipos.size > 1) {
           // Verificar se há tipos incompatíveis
-          const temEmergencial = tipos.has('emergencial');
+          const temEmergencial = (filtered as ItemExplodido[]).some((item: ItemExplodido) => item.is_emergencial === true);
           const temReposicao = tipos.has('reposicao');
           const temCompraDireta = tipos.has('compra_direta');
           
@@ -866,7 +909,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
         const tipos = new Set(filtered.map((r: any) => r.tipo_requisicao));
         
         if (tipos.size > 1) {
-          const temEmergencial = tipos.has('emergencial');
+          const temEmergencial = filtered.some((r: any) => r.is_emergencial === true);
           const temReposicao = tipos.has('reposicao');
           const temCompraDireta = tipos.has('compra_direta');
           
@@ -1341,7 +1384,7 @@ export function RequisicoesDisponiveis({ onGerarCotacao }: RequisicoesDisponivei
                           <Checkbox
                             checked={isSelected}
                             onCheckedChange={(checked) => 
-                              handleSelectItem(item.id, item.tipo_requisicao, checked as boolean)
+                              handleSelectItem(item.id, item.tipo_requisicao, checked as boolean, item.is_emergencial)
                             }
                           />
                         </TableCell>

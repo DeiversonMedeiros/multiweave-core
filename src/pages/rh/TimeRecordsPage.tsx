@@ -201,8 +201,17 @@ export default function TimeRecordsPage() {
         return; // Pular registros não aprovados
       }
       
+      // CORREÇÃO: Não incluir horas negativas de dias futuros no total
+      const recordDate = new Date(record.data_registro);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isFutureDate = recordDate > today;
+      
       summary.totalHorasTrabalhadas += record.horas_trabalhadas || 0;
-      summary.totalHorasNegativas += record.horas_negativas || 0;
+      // Só somar horas negativas se não for dia futuro
+      if (!isFutureDate) {
+        summary.totalHorasNegativas += record.horas_negativas || 0;
+      }
       summary.totalHorasExtras50 += record.horas_extras_50 || 0;
       summary.totalHorasExtras100 += record.horas_extras_100 || 0;
       summary.totalHorasNoturnas += record.horas_noturnas || 0;
@@ -892,15 +901,26 @@ export default function TimeRecordsPage() {
                               +{Number(record.horas_extras).toFixed(1)}h
                             </span>
                           </div>
-                        ) : (record.horas_negativas && record.horas_negativas > 0) ? (
-                          // Mostrar horas negativas
-                          <div className="text-sm">
-                            <span className="text-gray-500">Negativas: </span>
-                            <span className="font-medium text-red-600">
-                              -{record.horas_negativas.toFixed(2)}h
-                            </span>
-                          </div>
-                        ) : null}
+                        ) : (() => {
+                          // CORREÇÃO: Não mostrar horas negativas para dias futuros
+                          const recordDate = new Date(record.data_registro);
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const isFutureDate = recordDate > today;
+                          
+                          // Se tem horas negativas e não é dia futuro, mostrar
+                          if (record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) {
+                            return (
+                              <div className="text-sm">
+                                <span className="text-gray-500">Negativas: </span>
+                                <span className="font-medium text-red-600">
+                                  -{record.horas_negativas.toFixed(2)}h
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       
                       {record.observacoes && (
@@ -1147,13 +1167,25 @@ export default function TimeRecordsPage() {
                                             </span>
                                           </TableCell>
                                           <TableCell>
-                                            {record.horas_negativas && record.horas_negativas > 0 ? (
-                                              <span className="text-red-600 font-medium">
-                                                -{record.horas_negativas.toFixed(2)}h
-                                              </span>
-                                            ) : (
-                                              <span className="text-muted-foreground">0.00h</span>
-                                            )}
+                                            {(() => {
+                                              // CORREÇÃO: Não mostrar horas negativas para dias futuros
+                                              const recordDate = new Date(record.data_registro);
+                                              const today = new Date();
+                                              today.setHours(0, 0, 0, 0);
+                                              const isFutureDate = recordDate > today;
+                                              
+                                              // Se tem horas negativas e não é dia futuro, mostrar
+                                              if (record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) {
+                                                return (
+                                                  <span className="text-red-600 font-medium">
+                                                    -{record.horas_negativas.toFixed(2)}h
+                                                  </span>
+                                                );
+                                              }
+                                              
+                                              // Caso padrão
+                                              return <span className="text-muted-foreground">0.00h</span>;
+                                            })()}
                                           </TableCell>
                                           <TableCell>
                                             {record.horas_extras_50 && record.horas_extras_50 > 0 ? (

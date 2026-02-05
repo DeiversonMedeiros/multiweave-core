@@ -9,9 +9,11 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { 
   FileText, 
   Plus, 
@@ -44,16 +46,23 @@ import { formatDateOnly } from '@/lib/utils';
 import { RequireModule } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useAuth } from '@/lib/auth-context';
 
 export default function MedicalCertificatesPage() {
   const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('todos');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
   const [viewingCertificate, setViewingCertificate] = useState<MedicalCertificate | null>(null);
+  const [aprovacaoObservacoes, setAprovacaoObservacoes] = useState('');
+  const [rejeicaoObservacoes, setRejeicaoObservacoes] = useState('');
+  const [isAprovacaoDialogOpen, setIsAprovacaoDialogOpen] = useState(false);
+  const [isRejeicaoDialogOpen, setIsRejeicaoDialogOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const {
     medicalCertificates,
@@ -61,7 +70,8 @@ export default function MedicalCertificatesPage() {
     error,
     useMedicalCertificatesByEmployee,
     createMedicalCertificate,
-    calculateAbsenceDays
+    calculateAbsenceDays,
+    refetch: refetchCertificates
   } = useMedicalCertificatesSimple(selectedCompany?.id);
 
   // Filtrar atestados por status
@@ -91,17 +101,91 @@ export default function MedicalCertificatesPage() {
   const totalValue = medicalCertificates?.reduce((sum, cert) => sum + (cert.valor_beneficio || 0), 0) || 0;
 
   const handleApprove = async (certificate: any) => {
-    toast({
-      title: "Funcionalidade em desenvolvimento",
-      description: "Aprovação de atestados será implementada em breve.",
-    });
+    setSelectedCertificate(certificate);
+    setAprovacaoObservacoes('');
+    setIsAprovacaoDialogOpen(true);
   };
 
   const handleReject = async (certificate: any) => {
-    toast({
-      title: "Funcionalidade em desenvolvimento",
-      description: "Rejeição de atestados será implementada em breve.",
-    });
+    setSelectedCertificate(certificate);
+    setRejeicaoObservacoes('');
+    setIsRejeicaoDialogOpen(true);
+  };
+
+  const confirmarAprovacao = async () => {
+    if (!selectedCertificate || !user?.id) return;
+
+    try {
+      setIsProcessing(true);
+      const { data, error: rpcError } = await supabase.rpc('approve_medical_certificate', {
+        p_certificate_id: selectedCertificate.id,
+        p_approved_by: user.id,
+        p_observacoes: aprovacaoObservacoes || null
+      });
+
+      if (rpcError) {
+        throw rpcError;
+      }
+
+      toast({
+        title: "Atestado aprovado!",
+        description: `O atestado foi aprovado com sucesso.`,
+      });
+
+      setIsAprovacaoDialogOpen(false);
+      setSelectedCertificate(null);
+      setAprovacaoObservacoes('');
+      if (refetchCertificates) {
+        await refetchCertificates();
+      }
+    } catch (error) {
+      console.error('Erro ao aprovar atestado:', error);
+      toast({
+        title: "Erro ao aprovar atestado",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const confirmarRejeicao = async () => {
+    if (!selectedCertificate || !rejeicaoObservacoes.trim() || !user?.id) return;
+
+    try {
+      setIsProcessing(true);
+      const { data, error: rpcError } = await supabase.rpc('reject_medical_certificate', {
+        p_certificate_id: selectedCertificate.id,
+        p_rejected_by: user.id,
+        p_observacoes: rejeicaoObservacoes
+      });
+
+      if (rpcError) {
+        throw rpcError;
+      }
+
+      toast({
+        title: "Atestado rejeitado!",
+        description: `O atestado foi rejeitado.`,
+      });
+
+      setIsRejeicaoDialogOpen(false);
+      setSelectedCertificate(null);
+      setRejeicaoObservacoes('');
+      if (refetchCertificates) {
+        await refetchCertificates();
+      }
+    } catch (error) {
+      console.error('Erro ao rejeitar atestado:', error);
+      toast({
+        title: "Erro ao rejeitar atestado",
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleDelete = async (certificate: any) => {
@@ -835,6 +919,110 @@ export default function MedicalCertificatesPage() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Aprovação */}
+      <Dialog open={isAprovacaoDialogOpen} onOpenChange={setIsAprovacaoDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Aprovar Atestado</DialogTitle>
+            <DialogDescription>
+              Confirme a aprovação do atestado
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedCertificate && (
+              <div className="space-y-2">
+                {selectedCertificate.employee?.nome && (
+                  <p><strong>Funcionário:</strong> {selectedCertificate.employee.nome}</p>
+                )}
+                {selectedCertificate.numero_atestado && (
+                  <p><strong>Número:</strong> {selectedCertificate.numero_atestado}</p>
+                )}
+                <p><strong>Período:</strong> {formatDateOnly(selectedCertificate.data_inicio)} - {formatDateOnly(selectedCertificate.data_fim)}</p>
+                <p><strong>Dias:</strong> {selectedCertificate.dias_afastamento}</p>
+                {selectedCertificate.cid_codigo && (
+                  <p><strong>CID:</strong> {selectedCertificate.cid_codigo} {selectedCertificate.cid_descricao && `- ${selectedCertificate.cid_descricao}`}</p>
+                )}
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Observações (opcional)</label>
+              <Textarea
+                placeholder="Adicione observações sobre a aprovação..."
+                value={aprovacaoObservacoes}
+                onChange={(e) => setAprovacaoObservacoes(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsAprovacaoDialogOpen(false)}
+              disabled={isProcessing}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmarAprovacao} 
+              className="bg-green-600 hover:bg-green-700"
+              disabled={isProcessing}
+            >
+              {isProcessing ? 'Processando...' : 'Confirmar Aprovação'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Rejeição */}
+      <Dialog open={isRejeicaoDialogOpen} onOpenChange={setIsRejeicaoDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rejeitar Atestado</DialogTitle>
+            <DialogDescription>
+              Informe o motivo da rejeição do atestado
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedCertificate && (
+              <div className="space-y-2">
+                {selectedCertificate.employee?.nome && (
+                  <p><strong>Funcionário:</strong> {selectedCertificate.employee.nome}</p>
+                )}
+                {selectedCertificate.numero_atestado && (
+                  <p><strong>Número:</strong> {selectedCertificate.numero_atestado}</p>
+                )}
+                <p><strong>Período:</strong> {formatDateOnly(selectedCertificate.data_inicio)} - {formatDateOnly(selectedCertificate.data_fim)}</p>
+                <p><strong>Dias:</strong> {selectedCertificate.dias_afastamento}</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Motivo da Rejeição *</label>
+              <Textarea
+                placeholder="Informe o motivo da rejeição..."
+                value={rejeicaoObservacoes}
+                onChange={(e) => setRejeicaoObservacoes(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsRejeicaoDialogOpen(false)}
+              disabled={isProcessing}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={confirmarRejeicao} 
+              variant="destructive"
+              disabled={!rejeicaoObservacoes.trim() || isProcessing}
+            >
+              {isProcessing ? 'Processando...' : 'Confirmar Rejeição'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

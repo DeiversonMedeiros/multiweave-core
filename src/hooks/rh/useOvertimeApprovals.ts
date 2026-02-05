@@ -5,15 +5,26 @@ import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
 
 /**
- * Hook para buscar registros de ponto com hora extra pendentes
+ * Hook para buscar registros de ponto com hora extra pendentes.
+ * No portal gestor (forManager: true), retorna apenas registros dos funcionários
+ * subordinados ao gestor logado.
  */
-export function usePendingOvertimeRecords() {
+export function usePendingOvertimeRecords(forManager?: boolean) {
   const { selectedCompany } = useCompany();
+  const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['pending-overtime-records', selectedCompany?.id],
-    queryFn: () => TimeRecordsService.getPendingOvertimeRecords(selectedCompany?.id || ''),
-    enabled: !!selectedCompany?.id,
+    queryKey: ['pending-overtime-records', selectedCompany?.id, forManager ? user?.id : null],
+    queryFn: () => {
+      if (forManager && user?.id) {
+        return TimeRecordsService.getPendingOvertimeRecordsForManager(
+          selectedCompany?.id || '',
+          user.id
+        );
+      }
+      return TimeRecordsService.getPendingOvertimeRecords(selectedCompany?.id || '');
+    },
+    enabled: !!selectedCompany?.id && (!forManager || !!user?.id),
     staleTime: 1 * 60 * 1000, // 1 minuto
     refetchInterval: 30 * 1000, // Refetch a cada 30 segundos
   });
@@ -58,11 +69,12 @@ export function useRejectOvertimeRecord() {
 }
 
 /**
- * Hook para buscar estatísticas de horas extras pendentes
+ * Hook para buscar estatísticas de horas extras pendentes.
+ * Passar forManager: true no portal gestor para stats apenas dos subordinados.
  */
-export function useOvertimeApprovalsStats() {
+export function useOvertimeApprovalsStats(forManager?: boolean) {
   const { selectedCompany } = useCompany();
-  const { data: pendingRecords, isLoading } = usePendingOvertimeRecords();
+  const { data: pendingRecords, isLoading } = usePendingOvertimeRecords(forManager);
 
   const stats = React.useMemo(() => {
     if (!pendingRecords) {

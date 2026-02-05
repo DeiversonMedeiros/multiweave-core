@@ -168,20 +168,32 @@ BEGIN
   WHERE time_record_id = p_time_record_id AND event_type = 'extra_fim';
 
   -- =====================================================
-  -- FALLBACK 1: Se não houver eventos, buscar campos *_date
+  -- FALLBACK 1: Calcular campos *_date a partir dos eventos
   -- =====================================================
-  -- Buscar campos *_date do registro quando eventos não existirem
-  IF v_entrada_event_at IS NULL OR v_saida_event_at IS NULL THEN
-    SELECT 
-      entrada_date, saida_date, 
-      entrada_almoco_date, saida_almoco_date,
-      entrada_extra1_date, saida_extra1_date
-    INTO 
-      v_entrada_date, v_saida_date,
-      v_entrada_almoco_date, v_saida_almoco_date,
-      v_entrada_extra1_date, v_saida_extra1_date
-    FROM rh.time_records
-    WHERE id = p_time_record_id;
+  -- Calcular datas a partir dos event_at quando disponíveis
+  -- (campos *_date não existem como colunas na tabela, são calculados)
+  IF v_entrada_event_at IS NOT NULL THEN
+    v_entrada_date := (v_entrada_event_at AT TIME ZONE v_timezone)::date;
+  END IF;
+
+  IF v_saida_event_at IS NOT NULL THEN
+    v_saida_date := (v_saida_event_at AT TIME ZONE v_timezone)::date;
+  END IF;
+
+  IF v_entrada_almoco_event_at IS NOT NULL THEN
+    v_entrada_almoco_date := (v_entrada_almoco_event_at AT TIME ZONE v_timezone)::date;
+  END IF;
+
+  IF v_saida_almoco_event_at IS NOT NULL THEN
+    v_saida_almoco_date := (v_saida_almoco_event_at AT TIME ZONE v_timezone)::date;
+  END IF;
+
+  IF v_entrada_extra1_event_at IS NOT NULL THEN
+    v_entrada_extra1_date := (v_entrada_extra1_event_at AT TIME ZONE v_timezone)::date;
+  END IF;
+
+  IF v_saida_extra1_event_at IS NOT NULL THEN
+    v_saida_extra1_date := (v_saida_extra1_event_at AT TIME ZONE v_timezone)::date;
   END IF;
 
   -- =====================================================

@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmpresaForm } from "@/components/forms/EmpresaForm";
+import { Button } from "@/components/ui/button";
+import { Edit } from "lucide-react";
 import { toast } from "sonner";
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from "@/components/PermissionGuard";
@@ -40,6 +42,11 @@ export default function Empresas() {
     }
   };
 
+  const handleEdit = (empresa: Company) => {
+    setEditingEmpresa(empresa);
+    setIsDialogOpen(true);
+  };
+
   const columns = [
     { header: "Nome Fantasia", accessor: "nome_fantasia" as keyof Company },
     { header: "Razão Social", accessor: "razao_social" as keyof Company },
@@ -50,6 +57,22 @@ export default function Empresas() {
         <Badge variant={item.ativo ? "default" : "secondary"} className={item.ativo ? "badge-success" : ""}>
           {item.ativo ? "Ativo" : "Inativo"}
         </Badge>
+      ),
+    },
+    {
+      header: "Ações",
+      accessor: (item: Company) => (
+        <div className="flex gap-2">
+          {canEditPage('/cadastros/empresas*') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleEdit(item)}
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       ),
     },
   ];
@@ -81,8 +104,13 @@ export default function Empresas() {
         showNewButton={canCreatePage('/cadastros/empresas*')}
       />
 
-      <PermissionGuard page="/cadastros/empresas*" action="create">
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <PermissionGuard page="/cadastros/empresas*" action={editingEmpresa ? "edit" : "create"}>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setEditingEmpresa(null);
+          }
+        }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -93,9 +121,13 @@ export default function Empresas() {
             empresa={editingEmpresa || undefined}
             onSuccess={() => {
               setIsDialogOpen(false);
+              setEditingEmpresa(null);
               fetchEmpresas();
             }}
-            onCancel={() => setIsDialogOpen(false)}
+            onCancel={() => {
+              setIsDialogOpen(false);
+              setEditingEmpresa(null);
+            }}
           />
         </DialogContent>
         </Dialog>

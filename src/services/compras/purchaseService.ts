@@ -1,4 +1,4 @@
-import { supabase, comprasSupabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/client';
 import { EntityFilters, EntityListResult, EntityService } from '@/services/generic/entityService';
 
 export type RequisitionWorkflowState =
@@ -22,7 +22,7 @@ export interface PurchaseRequisition {
   numero_requisicao: string;
   status: string;
   workflow_state: RequisitionWorkflowState;
-  tipo_requisicao: 'reposicao' | 'compra_direta' | 'emergencial';
+  tipo_requisicao: 'reposicao' | 'compra_direta';
   destino_almoxarifado_id?: string | null;
   local_entrega?: string | null;
   is_emergencial: boolean;
@@ -50,7 +50,7 @@ export interface PurchaseRequisitionInput {
   centro_custo_id: string;
   projeto_id?: string | null;
   service_id?: string | null;
-  tipo_requisicao: 'reposicao' | 'compra_direta' | 'emergencial';
+  tipo_requisicao: 'reposicao' | 'compra_direta';
   destino_almoxarifado_id?: string | null;
   local_entrega?: string | null;
   justificativa?: string;
@@ -519,7 +519,7 @@ export const purchaseService = {
   },
 
   async listPurchaseOrders(companyId: string, filters?: EntityFilters) {
-    return EntityService.list({
+    const result = await EntityService.list<Record<string, any>>({
       schema: 'compras',
       table: 'pedidos_compra',
       companyId,
@@ -527,6 +527,114 @@ export const purchaseService = {
       page: 1,
       pageSize: 100,
     });
+
+    if (!result.data?.length) return result;
+
+    // numero_cotacao vem de cotacao_ciclos (pedido.cotacao_ciclo_id) ou de compras.cotacoes (pedido.cotacao_id)
+    const cotacaoCicloIds = [...new Set(result.data.map((p: any) => p.cotacao_ciclo_id).filter(Boolean))];
+    const cotacaoIds = [...new Set(result.data.map((p: any) => p.cotacao_id).filter(Boolean))];
+    const numeroPorCicloId = new Map<string, string>();
+    const numeroPorCotacaoId = new Map<string, string>();
+
+    // Schema compras não é exposto pela API REST do Supabase (apenas public/graphql_public).
+    // Usar sempre EntityService.list (RPC get_entity_data) para cotacao_ciclos e cotacoes.
+    if (cotacaoCicloIds.length > 0) {
+      const ciclosResult = await EntityService.list<{ id: string; numero_cotacao?: string }>({
+        schema: 'compras',
+        table: 'cotacao_ciclos',
+        companyId,
+        page: 1,
+        pageSize: 500,
+      });
+      const allCiclos = ciclosResult.data || [];
+      const ciclos = allCiclos.filter((c) => c.id && cotacaoCicloIds.includes(c.id));
+      ciclos.forEach((c) => {
+        if (c.id && c.numero_cotacao) numeroPorCicloId.set(c.id, c.numero_cotacao);
+      });
+    }
+    if (cotacaoIds.length > 0) {
+      const cotacoesResult = await EntityService.list<{ id: string; numero_cotacao?: string | null }>({
+        schema: 'compras',
+        table: 'cotacoes',
+        companyId,
+        page: 1,
+        pageSize: 500,
+      });
+      const cotacoes = (cotacoesResult.data || []).filter((c) => c.id && cotacaoIds.includes(c.id));
+      cotacoes.forEach((c) => {
+        if (c.id && c.numero_cotacao) numeroPorCotacaoId.set(c.id, c.numero_cotacao);
+      });
+    }
+
+    const getNumeroCotacao = (pedido: Record<string, any>) =>
+      (pedido.cotacao_ciclo_id ? numeroPorCicloId.get(pedido.cotacao_ciclo_id) : null) ??
+      (pedido.cotacao_id ? numeroPorCotacaoId.get(pedido.cotacao_id) : null) ??
+      null;
+
+    const fornecedorIds = [...new Set(result.data.map((p: any) => p.fornecedor_id).filter(Boolean))];
+    if (fornecedorIds.length === 0) {
+      const data = result.data.map((pedido: any) => ({
+        ...pedido,
+        numero_cotacao: getNumeroCotacao(pedido),
+        fornecedor_nome: pedido.fornecedor_id ?? null,
+      }));
+      return { ...result, data };
+    }
+
+    // fornecedores_dados não tem razao_social/nome_fantasia; o nome vem de public.partners (via partner_id)
+    const fornecedoresResult = await EntityService.list<{ id: string; partner_id?: string }>({
+      schema: 'compras',
+      table: 'fornecedores_dados',
+      companyId,
+      page: 1,
+      pageSize: 500,
+    });
+
+    const fdByFornecedorId = new Map<string, { partner_id: string }>();
+    (fornecedoresResult.data || []).forEach((f) => {
+      if (f.id && fornecedorIds.includes(f.id) && f.partner_id) {
+        fdByFornecedorId.set(f.id, { partner_id: f.partner_id });
+      }
+    });
+
+    const partnerIds = [...new Set([...fdByFornecedorId.values()].map((fd) => fd.partner_id))];
+    if (partnerIds.length === 0) {
+      const data = result.data.map((pedido: any) => ({
+        ...pedido,
+        numero_cotacao: getNumeroCotacao(pedido),
+        fornecedor_nome: pedido.fornecedor_id ?? null,
+      }));
+      return { ...result, data };
+    }
+
+    const partnersResult = await EntityService.list<{ id: string; nome_fantasia?: string; razao_social?: string }>({
+      schema: 'public',
+      table: 'partners',
+      companyId,
+      page: 1,
+      pageSize: 500,
+    });
+
+    const partnerNames = new Map<string, string>();
+    (partnersResult.data || []).forEach((p) => {
+      if (p.id && partnerIds.includes(p.id)) {
+        partnerNames.set(p.id, p.nome_fantasia || p.razao_social || p.id);
+      }
+    });
+
+    const fornecedoresMap = new Map<string, string>();
+    fdByFornecedorId.forEach((fd, fornecedorId) => {
+      const nome = partnerNames.get(fd.partner_id);
+      if (nome) fornecedoresMap.set(fornecedorId, nome);
+    });
+
+    const data = result.data.map((pedido: any) => ({
+      ...pedido,
+      numero_cotacao: getNumeroCotacao(pedido),
+      fornecedor_nome: pedido.fornecedor_id ? (fornecedoresMap.get(pedido.fornecedor_id) ?? pedido.fornecedor_id) : null,
+    }));
+
+    return { ...result, data };
   },
 
   async listNFEntries(companyId: string, filters?: EntityFilters) {
@@ -575,7 +683,7 @@ export const purchaseService = {
         tipo_requisicao: payload.tipo_requisicao,
         destino_almoxarifado_id: payload.destino_almoxarifado_id,
         local_entrega: payload.local_entrega,
-        is_emergencial: payload.tipo_requisicao === 'emergencial',
+        is_emergencial: payload.is_emergencial || false,
         justificativa: payload.justificativa,
         observacoes: payload.observacoes,
         data_necessidade: payload.data_necessidade,
@@ -645,6 +753,90 @@ export const purchaseService = {
     return requisicao;
   },
 
+  /**
+   * Duplica uma requisição de compra com todos os campos e itens.
+   * A nova requisição é criada com status "rascunho".
+   */
+  async duplicateRequisition(params: {
+    companyId: string;
+    userId: string;
+    requisicaoId: string;
+  }) {
+    const { companyId, userId, requisicaoId } = params;
+
+    const original = await EntityService.getById({
+      schema: 'compras',
+      table: 'requisicoes_compra',
+      companyId,
+      id: requisicaoId,
+    });
+    if (!original) {
+      throw new Error('Requisição não encontrada');
+    }
+
+    const itensResult = await EntityService.list({
+      schema: 'compras',
+      table: 'requisicao_itens',
+      companyId,
+      filters: { requisicao_id: requisicaoId },
+      page: 1,
+      pageSize: 1000,
+      skipCompanyFilter: true,
+    });
+    const itens = (itensResult.data || []) as any[];
+
+    const numeroData = await callSchemaFunction<{ result: string }>('compras', 'gerar_numero_requisicao', {
+      p_company_id: companyId,
+    });
+    const numero_requisicao =
+      (typeof numeroData === 'string' ? numeroData : numeroData?.result) ||
+      `REQ-${new Date().getTime()}`;
+
+    const novaRequisicao = await EntityService.create({
+      schema: 'compras',
+      table: 'requisicoes_compra',
+      companyId,
+      data: {
+        numero_requisicao,
+        solicitante_id: userId,
+        centro_custo_id: (original as any).centro_custo_id,
+        projeto_id: (original as any).projeto_id,
+        tipo_requisicao: (original as any).tipo_requisicao,
+        destino_almoxarifado_id: (original as any).destino_almoxarifado_id,
+        local_entrega: (original as any).local_entrega,
+        is_emergencial: (original as any).is_emergencial ?? false,
+        justificativa: (original as any).justificativa,
+        observacoes: (original as any).observacoes
+          ? `${(original as any).observacoes} (Duplicada de ${(original as any).numero_requisicao})`
+          : `Duplicada de ${(original as any).numero_requisicao}`,
+        data_necessidade: (original as any).data_necessidade,
+        prioridade: (original as any).prioridade,
+        status: 'rascunho',
+        workflow_state: 'pendente_aprovacao',
+      },
+    });
+
+    const novaRequisicaoId = (novaRequisicao as any)?.id;
+    for (const item of itens) {
+      await EntityService.create({
+        schema: 'compras',
+        table: 'requisicao_itens',
+        companyId,
+        data: {
+          requisicao_id: novaRequisicaoId,
+          material_id: item.material_id,
+          quantidade: item.quantidade,
+          unidade_medida: item.unidade_medida || 'UN',
+          valor_unitario_estimado: item.valor_unitario_estimado ?? 0,
+          observacoes: item.observacoes,
+          almoxarifado_id: item.almoxarifado_id,
+        },
+      });
+    }
+
+    return novaRequisicao;
+  },
+
   async updateRequisition(params: {
     companyId: string;
     requisicaoId: string;
@@ -672,7 +864,7 @@ export const purchaseService = {
         tipo_requisicao: payload.tipo_requisicao,
         destino_almoxarifado_id: payload.destino_almoxarifado_id,
         local_entrega: payload.local_entrega,
-        is_emergencial: payload.tipo_requisicao === 'emergencial',
+        is_emergencial: payload.is_emergencial || false,
         justificativa: payload.justificativa,
         observacoes: payload.observacoes,
         data_necessidade: payload.data_necessidade,

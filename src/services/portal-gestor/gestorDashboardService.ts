@@ -74,8 +74,15 @@ export async function getGestorRecentActivities(
   limit: number = 10
 ): Promise<RecentActivity[]> {
   try {
+    // Obter o usuário atual
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('Usuário não autenticado');
+    }
+
     const { data, error } = await supabase.rpc('get_gestor_recent_activities', {
       company_uuid: companyId,
+      p_user_id: user.id,
       limit_count: limit
     });
 

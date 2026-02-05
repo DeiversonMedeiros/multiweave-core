@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCompany } from '@/lib/company-context';
+import { useAuth } from '@/lib/auth-context';
 import { EntityService } from '@/services/generic/entityService';
 import { usePeriodicExams } from '@/hooks/rh/usePeriodicExams';
 import { useRHData } from '@/hooks/generic/useEntityData';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface ExameData {
   id: string;
@@ -18,25 +20,75 @@ export interface ExameData {
 
 /**
  * Hook para buscar exames formatados para o portal do gestor
+ * Filtra apenas exames dos funcionários gerenciados pelo gestor logado
  */
 export function useExamesGestor() {
   const { selectedCompany } = useCompany();
+  const { user } = useAuth();
   const companyId = selectedCompany?.id || '';
 
+  // Buscar funcionários gerenciados pelo gestor
+  const { data: managedEmployeesData, isLoading: isLoadingEmployees } = useQuery({
+    queryKey: ['managed-employees-for-exams', user?.id, companyId],
+    queryFn: async () => {
+      if (!user?.id || !companyId) {
+        return [];
+      }
+
+      // Buscar todos os funcionários ativos da empresa
+      const { data: allEmployees, error } = await supabase
+        .from('employees')
+        .select('id, gestor_imediato_id, user_id')
+        .eq('company_id', companyId)
+        .eq('status', 'ativo');
+
+      if (error) {
+        console.error('Erro ao buscar funcionários:', error);
+        return [];
+      }
+
+      if (!allEmployees) return [];
+
+      // Criar mapa de employee_id -> user_id para verificação rápida
+      const employeeUserIdMap = new Map(
+        allEmployees.map((emp: any) => [emp.id, emp.user_id])
+      );
+
+      // Filtrar funcionários gerenciados
+      return allEmployees
+        .filter((emp: any) => {
+          // Caso 1: gestor_imediato_id é o user_id diretamente
+          if (emp.gestor_imediato_id === user.id) return true;
+          
+          // Caso 2: gestor_imediato_id é um employee_id que tem o user_id correspondente
+          const gestorUserId = employeeUserIdMap.get(emp.gestor_imediato_id);
+          return gestorUserId === user.id;
+        })
+        .map((emp: any) => emp.id);
+    },
+    enabled: !!user?.id && !!companyId,
+  });
+
   // Buscar exames usando o hook existente
-  const { data: examsData, isLoading, error } = usePeriodicExams(companyId, {});
+  const { data: examsData, isLoading: isLoadingExams, error } = usePeriodicExams(companyId, {});
   
   // Buscar funcionários para mapear nomes e matrículas
   const { data: employeesData } = useRHData<any>('employees', companyId);
 
-  // Formatar dados
+  // Formatar dados e filtrar apenas exames dos funcionários gerenciados
   const formattedExamesData: ExameData[] = [];
 
-  if (examsData && employeesData) {
+  if (examsData && employeesData && managedEmployeesData) {
     const employees = Array.isArray(employeesData) ? employeesData : employeesData?.data || [];
     const employeeMap = new Map(employees.map((emp: any) => [emp.id, emp]));
+    const managedEmployeeIds = new Set(managedEmployeesData);
 
-    examsData.forEach((exam: any) => {
+    // Filtrar apenas exames dos funcionários gerenciados
+    const filteredExams = examsData.filter((exam: any) => 
+      managedEmployeeIds.has(exam.employee_id)
+    );
+
+    filteredExams.forEach((exam: any) => {
       const employee = employeeMap.get(exam.employee_id);
       
       // Calcular dias para vencimento
@@ -85,7 +137,7 @@ export function useExamesGestor() {
 
   return {
     data: formattedExamesData,
-    isLoading: isLoading || (employeesData === undefined),
+    isLoading: isLoadingExams || isLoadingEmployees || (employeesData === undefined),
     error
   };
 }

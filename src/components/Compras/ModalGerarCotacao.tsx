@@ -99,6 +99,7 @@ interface RequisicaoData {
   centro_custo_id?: string;
   projeto_id?: string;
   tipo_requisicao?: string;
+  is_emergencial?: boolean;
   prioridade?: string;
   local_entrega?: string;
   itens: RequisicaoItem[];
@@ -124,7 +125,7 @@ interface ItemAgrupado {
   unidade_medida: string;
   quantidade_total: number;
   origem: string[]; // Array de números de requisição
-  tipo_requisicao: string; // Tipo da requisição (reposicao, compra_direta, emergencial)
+  tipo_requisicao: string; // Tipo da requisição (reposicao, compra_direta)
   selecionado: boolean;
   itens_origem: RequisicaoItem[];
   imagem_url?: string | null;
@@ -221,6 +222,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
   // Dados da cotação
   const [formData, setFormData] = useState({
     tipo_cotacao: 'reposicao',
+    is_emergencial: false,
     data_cotacao: new Date().toISOString().split('T')[0],
     data_limite: '',
     observacoes_internas: '',
@@ -1062,24 +1064,25 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
               .map((r) => r.tipo_requisicao)
               .filter(Boolean)
           )
-        ) as Array<'reposicao' | 'compra_direta' | 'emergencial'>;
+        ) as Array<'reposicao' | 'compra_direta'>;
 
-        let tipoCotacao: 'reposicao' | 'compra_direta' | 'emergencial' = 'reposicao';
+        let tipoCotacao: 'reposicao' | 'compra_direta' = 'reposicao';
 
         if (tiposRequisicao.length === 1) {
           // Todas as requisições têm o mesmo tipo
           tipoCotacao = tiposRequisicao[0];
-        } else if (tiposRequisicao.includes('emergencial')) {
-          // Se houver qualquer requisição emergencial, priorizar esse tipo
-          tipoCotacao = 'emergencial';
         } else if (tiposRequisicao.includes('compra_direta')) {
           // Caso misto entre reposição e compra direta, priorizar compra direta
           tipoCotacao = 'compra_direta';
         }
 
+        // Verificar se há requisições emergenciais
+        const temEmergencial = requisicoesData.some((r) => r.is_emergencial === true);
+
         setFormData(prev => ({
           ...prev,
           tipo_cotacao: tipoCotacao,
+          is_emergencial: temEmergencial,
         }));
 
         // Carregar fornecedores disponíveis
@@ -1479,7 +1482,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
   }, [fornecedores, itensAgrupados]);
 
   const handleAddFornecedor = () => {
-    if (formData.tipo_cotacao === 'emergencial' && fornecedores.length >= 1) {
+    if (formData.is_emergencial && fornecedores.length >= 1) {
       toast({
         title: "Atenção",
         description: "Cotações emergenciais permitem apenas 1 fornecedor.",
@@ -2187,7 +2190,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
 
   const handleEnviarAprovacao = async () => {
     // Validações
-    if (formData.tipo_cotacao === 'emergencial' && fornecedores.length !== 1) {
+    if (formData.is_emergencial && fornecedores.length !== 1) {
       toast({
         title: "Erro",
         description: "Cotações emergenciais devem ter exatamente 1 fornecedor.",
@@ -2196,7 +2199,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       return;
     }
 
-    if (formData.tipo_cotacao !== 'emergencial' && fornecedores.length < 2) {
+    if (!formData.is_emergencial && fornecedores.length < 2) {
       toast({
         title: "Erro",
         description: "Cotações normais devem ter no mínimo 2 fornecedores.",
@@ -2875,17 +2878,18 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
     }
   };
 
-  const isEmergencial = formData.tipo_cotacao === 'emergencial';
+  const isEmergencial = formData.is_emergencial === true;
   const minFornecedores = isEmergencial ? 1 : 2;
 
   // Função para obter badge do tipo de requisição
-  const getTipoBadge = (tipo: string) => {
+  const getTipoBadge = (tipo: string, isEmergencial?: boolean) => {
+    if (isEmergencial) {
+      return <Badge variant="outline" className="text-orange-600 bg-orange-50 text-xs">
+        <Zap className="h-3 w-3 mr-1" />
+        Emergencial
+      </Badge>;
+    }
     switch (tipo) {
-      case 'emergencial':
-        return <Badge variant="outline" className="text-orange-600 bg-orange-50 text-xs">
-          <Zap className="h-3 w-3 mr-1" />
-          Emergencial
-        </Badge>;
       case 'reposicao':
         return <Badge variant="outline" className="text-blue-600 bg-blue-50 text-xs">Reposição</Badge>;
       case 'compra_direta':
@@ -2944,8 +2948,9 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
     }
 
     const tipos = requisicoes.map(r => r.tipo_requisicao).filter(Boolean);
-    const tipoPrincipal = tipos.includes('emergencial') 
-      ? 'Emergencial' 
+    const temEmergencial = requisicoes.some(r => r.is_emergencial === true);
+    const tipoPrincipal = temEmergencial
+      ? 'Emergencial'
       : tipos.includes('compra_direta')
       ? 'Compra Direta'
       : tipos.includes('reposicao')
@@ -3048,10 +3053,6 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       value={formData.tipo_cotacao}
                       onValueChange={(value) => {
                         setFormData({ ...formData, tipo_cotacao: value });
-                        // Se emergencial, limitar a 1 fornecedor
-                        if (value === 'emergencial' && fornecedores.length > 1) {
-                          setFornecedores(fornecedores.slice(0, 1));
-                        }
                       }}
                       disabled={readOnly}
                     >
@@ -3061,18 +3062,15 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                       <SelectContent>
                         <SelectItem value="reposicao">Reposição</SelectItem>
                         <SelectItem value="compra_direta">Compra Direta</SelectItem>
-                        <SelectItem value="emergencial">
-                          <div className="flex items-center">
-                            <Zap className="h-4 w-4 mr-2 text-orange-500" />
-                            Emergencial
-                          </div>
-                        </SelectItem>
                       </SelectContent>
                     </Select>
                     {isEmergencial && (
-                      <p className="text-xs text-muted-foreground">
-                        Cotações emergenciais permitem apenas 1 fornecedor
-                      </p>
+                      <div className="flex items-center gap-2 rounded-md border p-2 bg-orange-50 dark:bg-orange-950">
+                        <Zap className="h-4 w-4 text-orange-600" />
+                        <p className="text-xs text-orange-800 dark:text-orange-200">
+                          Requisição emergencial detectada - permite apenas 1 fornecedor
+                        </p>
+                      </div>
                     )}
                   </div>
 
@@ -5164,7 +5162,24 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
                     : null;
 
                   // Calcular valores para o resumo detalhado
-                  const subtotalItens = fornecedoresVencedores.reduce((sum, f) => sum + f.subtotalParcial, 0);
+                  // Calcular subtotalItens diretamente a partir de todos os itens vencedores
+                  const subtotalItens = itensAgrupados
+                    .filter((item) => itensSelecionados.has(getItemKey(item)))
+                    .reduce((sum, item) => {
+                      const itemKey = getItemKey(item);
+                      // Encontrar o fornecedor vencedor para este item
+                      const fornecedorVencedor = fornecedores.find(f => {
+                        const cell = mapaFornecedorItens[f.id]?.[itemKey];
+                        return cell && cell.is_vencedor === true;
+                      });
+                      if (fornecedorVencedor) {
+                        const cell = mapaFornecedorItens[fornecedorVencedor.id]?.[itemKey];
+                        if (cell) {
+                          return sum + valorItemCalculado(cell);
+                        }
+                      }
+                      return sum;
+                    }, 0);
                   const freteTotal = fornecedoresVencedores.reduce((sum, f) => {
                     const frete = typeof f.fornecedor.valor_frete === 'number' 
                       ? f.fornecedor.valor_frete 

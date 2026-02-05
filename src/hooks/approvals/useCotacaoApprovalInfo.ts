@@ -8,6 +8,8 @@ interface CotacaoApprovalInfo {
   comprador_nome?: string;
   comprador_email?: string;
   valor_total?: number;
+  /** Valor final (com frete, desconto, impostos, desconto geral do ciclo) - usar este no card de aprovação */
+  valor_final?: number;
   status?: string;
 }
 
@@ -20,12 +22,15 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
       if (!cotacaoId || !selectedCompany?.id) return null;
 
       try {
-        // Buscar ciclo de cotação
+        // Buscar ciclo de cotação (incluir campos para cálculo do valor final)
         const cicloResult = await EntityService.getById<{
           id: string;
           numero_cotacao?: string;
           status?: string;
           created_by?: string;
+          valor_frete?: number;
+          desconto_percentual?: number;
+          desconto_valor?: number;
         }>({
           schema: 'compras',
           table: 'cotacao_ciclos',
@@ -66,6 +71,7 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
             valor_frete?: number;
             valor_imposto?: number;
             desconto_valor?: number;
+            desconto_percentual?: number;
             preco_total?: number;
             status?: string;
             selecionado?: boolean;
@@ -75,7 +81,7 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
             companyId: selectedCompany.id,
             filters: { cotacao_id: cotacaoId },
             page: 1,
-            pageSize: 100, // Buscar todos
+            pageSize: 1000, // Buscar todos (igual CotacaoDetails)
             skipCompanyFilter: true
           });
 
@@ -100,9 +106,8 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
             fornecedoresVencedores = todosFornecedores;
           }
 
-          console.log('[useCotacaoApprovalInfo] Fornecedores vencedores encontrados:', fornecedoresVencedores.length);
-
-          // ✅ CORREÇÃO: Calcular valor total apenas dos ITENS VENCEDORES (mesma lógica do CotacaoDetails)
+          // Igual CotacaoDetails: só incluir fornecedores que têm PELO MENOS UM item vencedor
+          const fornecedoresComItensVencedores: Array<typeof fornecedoresVencedores[0] & { itensVencedores: any[] }> = [];
           for (const fornecedor of fornecedoresVencedores) {
             try {
               const itensResult = await EntityService.list<{
@@ -125,79 +130,68 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
                 skipCompanyFilter: true
               });
 
-              // Filtrar APENAS itens vencedores
-              const itensVencedores = (itensResult.data || []).filter(item => 
+              const itensVencedores = (itensResult.data || []).filter(item =>
                 item.is_vencedor === true || item.is_vencedor === 'true' || item.status === 'vencedor'
               );
 
-              // Calcular valor base dos itens vencedores
-              let valorBaseItens = 0;
-              let freteItens = 0;
-              let descontoItens = 0;
-
-              for (const item of itensVencedores) {
-                // Valor base do item
-                const quantidade = item.quantidade_ofertada != null 
-                  ? (typeof item.quantidade_ofertada === 'string' ? parseFloat(item.quantidade_ofertada) : Number(item.quantidade_ofertada)) || 0
-                  : 0;
-                const valorUnitario = item.valor_unitario != null
-                  ? (typeof item.valor_unitario === 'string' ? parseFloat(item.valor_unitario) : Number(item.valor_unitario)) || 0
-                  : 0;
-                const valorBaseItem = quantidade * valorUnitario;
-                valorBaseItens += valorBaseItem;
-
-                // Frete do item
-                const freteItem = item.valor_frete != null
-                  ? (typeof item.valor_frete === 'string' ? parseFloat(item.valor_frete) : Number(item.valor_frete)) || 0
-                  : 0;
-                freteItens += freteItem;
-
-                // Desconto do item (percentual + valor)
-                const descontoPercentualItem = item.desconto_percentual != null
-                  ? (typeof item.desconto_percentual === 'string' ? parseFloat(item.desconto_percentual) : Number(item.desconto_percentual)) || 0
-                  : 0;
-                const descontoValorItem = item.desconto_valor != null
-                  ? (typeof item.desconto_valor === 'string' ? parseFloat(item.desconto_valor) : Number(item.desconto_valor)) || 0
-                  : 0;
-                const descontoPercentualCalculado = valorBaseItem * (descontoPercentualItem / 100);
-                descontoItens += descontoPercentualCalculado + descontoValorItem;
-              }
-
-              // Frete e imposto do fornecedor
-              const freteFornecedor = Number(fornecedor.valor_frete) || 0;
-              const impostoFornecedor = Number(fornecedor.valor_imposto) || 0;
-              
-              // Desconto do fornecedor (percentual sobre valor base dos itens + valor absoluto)
-              const descontoPercentualFornecedor = Number(fornecedor.desconto_percentual) || 0;
-              const descontoPercentualCalculadoFornecedor = valorBaseItens * (descontoPercentualFornecedor / 100);
-              const descontoValorFornecedor = Number(fornecedor.desconto_valor) || 0;
-              const descontoFornecedor = descontoPercentualCalculadoFornecedor + descontoValorFornecedor;
-
-              // Total do fornecedor = Valor Base Itens + Frete (fornecedor + itens) + Imposto - Desconto (fornecedor + itens)
-              const freteTotal = freteFornecedor + impostoFornecedor + freteItens;
-              const descontoTotal = descontoFornecedor + descontoItens;
-              const valorFornecedor = valorBaseItens + freteTotal - descontoTotal;
-
-              console.log(`[useCotacaoApprovalInfo] Fornecedor ${fornecedor.id} calculado:`, {
-                itensVencedores: itensVencedores.length,
-                valorBaseItens,
-                freteFornecedor,
-                impostoFornecedor,
-                freteItens,
-                freteTotal,
-                descontoFornecedor,
-                descontoItens,
-                descontoTotal,
-                valorFornecedor
-              });
-
-              valorTotal += valorFornecedor;
+              if (itensVencedores.length === 0) continue;
+              fornecedoresComItensVencedores.push({ ...fornecedor, itensVencedores });
             } catch (itemErr) {
               console.warn('[useCotacaoApprovalInfo] Erro ao buscar itens do fornecedor:', itemErr);
             }
           }
 
-          console.log('[useCotacaoApprovalInfo] Valor total final calculado:', valorTotal);
+          console.log('[useCotacaoApprovalInfo] Fornecedores com itens vencedores:', fornecedoresComItensVencedores.length);
+
+          let valorTotalItens = 0;
+          let valorTotalFrete = 0;
+          let valorTotalDescontoSemGeral = 0;
+
+          for (const fornecedor of fornecedoresComItensVencedores) {
+            const itensVencedores = fornecedor.itensVencedores;
+
+            // Valor dos itens vencedores (igual CotacaoDetails: item.valor_total)
+            const valorItensFornecedor = itensVencedores.reduce((sum, item) => {
+              const vt = item.valor_total_calculado != null
+                ? (typeof item.valor_total_calculado === 'string' ? parseFloat(item.valor_total_calculado) : Number(item.valor_total_calculado)) || 0
+                : (item.valor_total != null ? (typeof item.valor_total === 'string' ? parseFloat(item.valor_total) : Number(item.valor_total)) || 0 : 0);
+              return sum + vt;
+            }, 0);
+            valorTotalItens += valorItensFornecedor;
+
+            // Frete: fornecedor + imposto + frete dos itens vencedores
+            const freteItens = itensVencedores.reduce((s, item) => s + (Number(item.valor_frete) || 0), 0);
+            valorTotalFrete += (Number(fornecedor.valor_frete) || 0) + (Number(fornecedor.valor_imposto) || 0) + freteItens;
+
+            // Desconto fornecedor (percentual sobre itens + valor)
+            const descontoPctFornecedor = valorItensFornecedor * ((Number(fornecedor.desconto_percentual) || 0) / 100);
+            const descontoValorFornecedor = Number(fornecedor.desconto_valor) || 0;
+            const descontoFornecedor = descontoPctFornecedor + descontoValorFornecedor;
+            // Desconto dos itens
+            const descontoItens = itensVencedores.reduce((itemSum, item) => {
+              const valorItem = item.valor_total_calculado != null
+                ? (typeof item.valor_total_calculado === 'string' ? parseFloat(item.valor_total_calculado) : Number(item.valor_total_calculado)) || 0
+                : (Number(item.valor_total) || 0);
+              const pct = Number(item.desconto_percentual) || 0;
+              const val = Number(item.desconto_valor) || 0;
+              return itemSum + (valorItem * (pct / 100)) + val;
+            }, 0);
+            valorTotalDescontoSemGeral += descontoFornecedor + descontoItens;
+          }
+
+          // Frete do ciclo (nível cotação)
+          valorTotalFrete += cicloResult.valor_frete != null ? Number(cicloResult.valor_frete) : 0;
+
+          // Desconto geral do ciclo (igual CotacaoDetails)
+          const baseParaDescontoGeral = valorTotalItens + valorTotalFrete - valorTotalDescontoSemGeral;
+          const descontoGeral = baseParaDescontoGeral * ((cicloResult.desconto_percentual != null ? Number(cicloResult.desconto_percentual) : 0) / 100)
+            + (cicloResult.desconto_valor != null ? Number(cicloResult.desconto_valor) : 0);
+          const valorTotalDesconto = valorTotalDescontoSemGeral + descontoGeral;
+
+          const valorTotalFinal = valorTotalItens + valorTotalFrete - valorTotalDesconto;
+          valorTotal = valorTotalFinal;
+
+          console.log('[useCotacaoApprovalInfo] Valor final calculado:', { valorTotalItens, valorTotalFrete, valorTotalDesconto, valorTotalFinal });
         } catch (err) {
           console.warn('[useCotacaoApprovalInfo] Erro ao calcular valor total:', err);
         }
@@ -207,6 +201,7 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
           comprador_nome: compradorNome,
           comprador_email: compradorEmail,
           valor_total: valorTotal,
+          valor_final: valorTotal,
           status: cicloResult.status
         };
       } catch (error) {

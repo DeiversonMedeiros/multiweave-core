@@ -41,6 +41,7 @@ import { toast } from 'sonner';
 import { generatePayslipPDF, generateBatchPayslips, downloadPayslip } from '@/services/rh/payslipService';
 import { FinancialIntegrationService } from '@/services/rh/financialIntegrationService';
 import { EntityService } from '@/services/generic/entityService';
+import { supabase } from '@/integrations/supabase/client';
 
 // =====================================================
 // COMPONENTE PRINCIPAL - FOLHAS INDIVIDUAIS
@@ -188,17 +189,72 @@ export default function PayrollIndividualPage() {
         return;
       }
 
+      if (!selectedCompany?.id) {
+        toast.error('Selecione uma empresa');
+        return;
+      }
+
+      // Buscar dados completos da empresa
+      const { data: companyData, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', selectedCompany.id)
+        .single();
+      
+      if (companyError) {
+        console.warn('Erro ao buscar dados da empresa:', companyError);
+      }
+
+      // Buscar cargo do funcionário se houver cargo_id
+      let cargoData = null;
+      if (employee.cargo_id) {
+        cargoData = await EntityService.getById<any>({
+          schema: 'rh',
+          table: 'positions',
+          id: employee.cargo_id,
+          companyId: selectedCompany.id
+        });
+      }
+
+      // Buscar departamento do funcionário se houver departamento_id
+      let departamentoData = null;
+      if (employee.departamento_id) {
+        departamentoData = await EntityService.getById<any>({
+          schema: 'rh',
+          table: 'units',
+          id: employee.departamento_id,
+          companyId: selectedCompany.id
+        });
+      }
+
       const events = payrollEvents.filter((event: PayrollEvent) => event.payroll_id === payroll.id);
       
       const blob = await generatePayslipPDF({
         payroll,
         employee,
         events,
-        company: selectedCompany ? {
-          name: selectedCompany.nome || 'Empresa',
-          cnpj: selectedCompany.cnpj,
-          address: selectedCompany.endereco
-        } : undefined
+        company: companyData ? {
+          id: companyData.id,
+          razao_social: companyData.razao_social,
+          nome_fantasia: companyData.nome_fantasia,
+          cnpj: companyData.cnpj,
+          inscricao_estadual: companyData.inscricao_estadual,
+          logo_url: companyData.logo_url,
+          endereco: companyData.endereco,
+          contato: companyData.contato,
+          numero_empresa: companyData.numero_empresa
+        } : undefined,
+        employeeData: {
+          id: employee.id,
+          nome: employee.nome,
+          matricula: employee.matricula,
+          cpf: employee.cpf,
+          estado: employee.estado,
+          data_admissao: employee.data_admissao,
+          pis_pasep: employee.pis_pasep,
+          cargo: cargoData ? { nome: cargoData.nome } : null,
+          departamento: departamentoData ? { nome: departamentoData.nome } : null
+        }
       });
 
       const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',

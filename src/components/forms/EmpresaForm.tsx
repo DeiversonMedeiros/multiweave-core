@@ -16,6 +16,8 @@ import {
 import { Company } from "@/lib/supabase-types";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { ImageUpload } from "@/components/ui/image-upload";
+import { STORAGE_BUCKETS } from "@/config/storage";
 
 const empresaSchema = z.object({
   razao_social: z.string().min(3, "Razão social deve ter no mínimo 3 caracteres").max(200),
@@ -24,6 +26,7 @@ const empresaSchema = z.object({
   inscricao_estadual: z.string().optional(),
   numero_empresa: z.string().optional(),
   ativo: z.boolean().default(true),
+  logo_url: z.string().optional().nullable(),
   endereco_logradouro: z.string().optional(),
   endereco_numero: z.string().optional(),
   endereco_complemento: z.string().optional(),
@@ -53,6 +56,7 @@ export function EmpresaForm({ empresa, onSuccess, onCancel }: EmpresaFormProps) 
       inscricao_estadual: empresa?.inscricao_estadual || "",
       numero_empresa: empresa?.numero_empresa || "",
       ativo: empresa?.ativo ?? true,
+      logo_url: empresa?.logo_url || null,
       endereco_logradouro: (empresa?.endereco as any)?.logradouro || "",
       endereco_numero: (empresa?.endereco as any)?.numero || "",
       endereco_complemento: (empresa?.endereco as any)?.complemento || "",
@@ -67,46 +71,114 @@ export function EmpresaForm({ empresa, onSuccess, onCancel }: EmpresaFormProps) 
 
   const onSubmit = async (data: EmpresaFormData) => {
     try {
-      const empresaData = {
-        razao_social: data.razao_social,
-        nome_fantasia: data.nome_fantasia,
-        cnpj: data.cnpj.replace(/\D/g, ""),
-        inscricao_estadual: data.inscricao_estadual,
-        numero_empresa: data.numero_empresa || null, // Se vazio, será gerado automaticamente pelo trigger
-        ativo: data.ativo,
-        endereco: {
-          logradouro: data.endereco_logradouro,
-          numero: data.endereco_numero,
-          complemento: data.endereco_complemento,
-          bairro: data.endereco_bairro,
-          cidade: data.endereco_cidade,
-          uf: data.endereco_uf,
-          cep: data.endereco_cep,
-        },
-        contato: {
-          telefone: data.contato_telefone,
-          email: data.contato_email,
-        },
+      // Função auxiliar para converter strings vazias em null
+      const emptyToNull = (value: string | undefined | null): string | null => {
+        return value && value.trim() !== "" ? value.trim() : null;
       };
 
+      // Construir objeto endereco apenas com campos preenchidos
+      const endereco: Record<string, string> = {};
+      if (data.endereco_logradouro?.trim()) endereco.logradouro = data.endereco_logradouro.trim();
+      if (data.endereco_numero?.trim()) endereco.numero = data.endereco_numero.trim();
+      if (data.endereco_complemento?.trim()) endereco.complemento = data.endereco_complemento.trim();
+      if (data.endereco_bairro?.trim()) endereco.bairro = data.endereco_bairro.trim();
+      if (data.endereco_cidade?.trim()) endereco.cidade = data.endereco_cidade.trim();
+      if (data.endereco_uf?.trim()) endereco.uf = data.endereco_uf.trim();
+      if (data.endereco_cep?.trim()) endereco.cep = data.endereco_cep.trim();
+
+      // Construir objeto contato apenas com campos preenchidos
+      const contato: Record<string, string> = {};
+      if (data.contato_telefone?.trim()) contato.telefone = data.contato_telefone.trim();
+      if (data.contato_email?.trim()) contato.email = data.contato_email.trim();
+
+      const empresaData: any = {
+        razao_social: data.razao_social.trim(),
+        nome_fantasia: data.nome_fantasia.trim(),
+        cnpj: data.cnpj.replace(/\D/g, ""),
+        inscricao_estadual: emptyToNull(data.inscricao_estadual),
+        numero_empresa: emptyToNull(data.numero_empresa), // Se vazio, será gerado automaticamente pelo trigger
+        ativo: data.ativo,
+        endereco: Object.keys(endereco).length > 0 ? endereco : null,
+        contato: Object.keys(contato).length > 0 ? contato : null,
+      };
+
+      // Adicionar logo_url apenas se tiver valor (evita erro se coluna não existir)
+      // A migração deve ser aplicada para que este campo funcione
+      if (data.logo_url) {
+        empresaData.logo_url = data.logo_url;
+      }
+
       if (empresa) {
-        const { error } = await supabase
+        // Tentar atualizar com logo_url primeiro
+        let { data, error } = await supabase
           .from("companies")
           .update(empresaData)
-          .eq("id", empresa.id);
+          .eq("id", empresa.id)
+          .select();
 
-        if (error) throw error;
-        toast.success("Empresa atualizada com sucesso!");
+        // Se erro for relacionado a logo_url não existir, tentar sem o campo
+        if (error && error.code === 'PGRST204' && error.message?.includes('logo_url')) {
+          console.warn("Campo logo_url não encontrado. Tentando atualizar sem o campo...");
+          const { logo_url, ...empresaDataWithoutLogo } = empresaData;
+          const retryResult = await supabase
+            .from("companies")
+            .update(empresaDataWithoutLogo)
+            .eq("id", empresa.id)
+            .select();
+          
+          if (retryResult.error) {
+            console.error("Erro ao atualizar empresa:", retryResult.error);
+            console.error("Dados enviados:", empresaDataWithoutLogo);
+            throw retryResult.error;
+          }
+          
+          data = retryResult.data;
+          toast.warning("Empresa atualizada, mas logo não foi salva. Aplique a migração para adicionar o campo logo_url.");
+        } else if (error) {
+          console.error("Erro ao atualizar empresa:", error);
+          console.error("Dados enviados:", empresaData);
+          throw error;
+        } else {
+          toast.success("Empresa atualizada com sucesso!");
+        }
       } else {
-        const { error } = await supabase.from("companies").insert([empresaData]);
+        // Tentar inserir com logo_url primeiro
+        let { data, error } = await supabase
+          .from("companies")
+          .insert([empresaData])
+          .select();
 
-        if (error) throw error;
-        toast.success("Empresa cadastrada com sucesso!");
+        // Se erro for relacionado a logo_url não existir, tentar sem o campo
+        if (error && error.code === 'PGRST204' && error.message?.includes('logo_url')) {
+          console.warn("Campo logo_url não encontrado. Tentando inserir sem o campo...");
+          const { logo_url, ...empresaDataWithoutLogo } = empresaData;
+          const retryResult = await supabase
+            .from("companies")
+            .insert([empresaDataWithoutLogo])
+            .select();
+          
+          if (retryResult.error) {
+            console.error("Erro ao criar empresa:", retryResult.error);
+            console.error("Dados enviados:", empresaDataWithoutLogo);
+            throw retryResult.error;
+          }
+          
+          data = retryResult.data;
+          toast.warning("Empresa cadastrada, mas logo não foi salva. Aplique a migração para adicionar o campo logo_url.");
+        } else if (error) {
+          console.error("Erro ao criar empresa:", error);
+          console.error("Dados enviados:", empresaData);
+          throw error;
+        } else {
+          toast.success("Empresa cadastrada com sucesso!");
+        }
       }
 
       onSuccess();
     } catch (error: any) {
-      toast.error("Erro ao salvar empresa: " + error.message);
+      console.error("Erro completo:", error);
+      const errorMessage = error.message || error.details || "Erro desconhecido ao salvar empresa";
+      toast.error("Erro ao salvar empresa: " + errorMessage);
     }
   };
 
@@ -184,6 +256,28 @@ export function EmpresaForm({ empresa, onSuccess, onCancel }: EmpresaFormProps) 
             )}
           />
         </div>
+
+        <FormField
+          control={form.control}
+          name="logo_url"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Logo da Empresa</FormLabel>
+              <FormControl>
+                <ImageUpload
+                  value={field.value || undefined}
+                  onChange={(url) => field.onChange(url)}
+                  label=""
+                  description="Clique para fazer upload da logo da empresa"
+                  maxSize={5}
+                  acceptedTypes={['image/jpeg', 'image/jpg', 'image/png', 'image/webp']}
+                  bucket={STORAGE_BUCKETS.COMPANY_LOGOS}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <div className="space-y-2">
           <h3 className="font-medium">Endereço</h3>

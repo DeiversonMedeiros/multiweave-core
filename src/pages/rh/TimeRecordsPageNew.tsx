@@ -50,9 +50,11 @@ import { RequirePage } from '@/components/RequireAuth';
 import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { useEmployees } from '@/hooks/rh/useEmployees';
-import { formatDateOnly, formatDateToISO } from '@/lib/utils';
+import { formatDateOnly, formatDateToISO, formatDecimalHoursToHhMm } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { EntityService } from '@/services/generic/entityService';
+import { EmployeesService } from '@/services/rh/employeesService';
 import { 
   generateTimeRecordReportHTML, 
   generateTimeRecordReportCSV, 
@@ -61,7 +63,11 @@ import {
   getBankHoursBalanceUntilDate,
   TimeRecordReportData,
   completeRecordsWithRestDays,
-  getMonthDaysInfo
+  getMonthDaysInfo,
+  DAY_NATURE_OPTIONS,
+  getDayNatureFromRecord,
+  getDayNatureLabel,
+  isDayNatureNoNegativeHours
 } from '@/services/rh/timeRecordReportService';
 import { toast } from 'sonner';
 import { TimeRecordsImportModal } from '@/components/rh/TimeRecordsImportModal';
@@ -304,6 +310,8 @@ export default function TimeRecordsPageNew() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   // Estado para armazenar registros completos (com DSR, Férias, etc.) por funcionário
   const [completeRecordsByEmployee, setCompleteRecordsByEmployee] = useState<Map<string, TimeRecord[]>>(new Map());
+  /** Overrides de Natureza do Dia: chave `${employeeId}-${dateStr}` -> valor (normal, dsr, feriado, etc.) */
+  const [dayNatureOverrides, setDayNatureOverrides] = useState<Record<string, string>>({});
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
 
   // Helper para extrair path relativo do photo_url
@@ -639,6 +647,7 @@ export default function TimeRecordsPageNew() {
     }
   }, [activeTab, summaryMonth, summaryYear, records.length, data?.pages?.length, hasNextPage, isFetchingNextPage, isLoading, dateRangeForQuery, queryParams]);
   const createRecord = useCreateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
+  const queryClient = useQueryClient();
   const updateRecord = useUpdateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
   const deleteRecordMutation = useDeleteTimeRecord();
   const approveRecordMutation = useApproveTimeRecord();
@@ -1103,8 +1112,17 @@ export default function TimeRecordsPageNew() {
         });
       }
       
+      // CORREÇÃO: Não incluir horas negativas de dias futuros no total
+      const recordDate = new Date(record.data_registro);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isFutureDate = recordDate > today;
+      
       summary.totalHorasTrabalhadas += horasTrabalhadas;
-      summary.totalHorasNegativas += horasNegativas;
+      // Só somar horas negativas se não for dia futuro
+      if (!isFutureDate) {
+        summary.totalHorasNegativas += horasNegativas;
+      }
       summary.totalHorasExtras50 += horasExtras50;
       summary.totalHorasExtras100 += horasExtras100;
       summary.totalHorasNoturnas += horasNoturnas;
@@ -1199,6 +1217,38 @@ export default function TimeRecordsPageNew() {
     };
 
     processEmployees();
+  }, [employeeSummary, summaryMonth, summaryYear, selectedCompany?.id]);
+
+  // Carregar overrides de Natureza do Dia do banco (registros virtuais: DSR, Férias, etc.)
+  useEffect(() => {
+    if (!summaryMonth || !summaryYear || !selectedCompany?.id || employeeSummary.length === 0) return;
+    const month = parseInt(summaryMonth);
+    const year = parseInt(summaryYear);
+    const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0);
+    const lastDayStr = lastDay.toISOString().split('T')[0];
+
+    (async () => {
+      try {
+        const { data: rows } = await EntityService.list<{ id: string; employee_id: string; data_registro: string; natureza_dia: string }>({
+          schema: 'rh',
+          table: 'time_record_day_nature_override',
+          companyId: selectedCompany.id,
+          filters: { data_registro_gte: firstDay, data_registro_lte: lastDayStr },
+          pageSize: 2000
+        });
+        const employeeIdsSet = new Set(employeeSummary.map((s) => s.employeeId));
+        const map: Record<string, string> = {};
+        (rows || []).forEach((r) => {
+          if (!employeeIdsSet.has(r.employee_id)) return;
+          const dateStr = typeof r.data_registro === 'string' ? r.data_registro.split('T')[0] : r.data_registro;
+          map[`${r.employee_id}-${dateStr}`] = r.natureza_dia;
+        });
+        setDayNatureOverrides((prev) => ({ ...map, ...prev }));
+      } catch (err) {
+        console.warn('[TimeRecordsPageNew] Erro ao buscar overrides de natureza:', err);
+      }
+    })();
   }, [employeeSummary, summaryMonth, summaryYear, selectedCompany?.id]);
 
   const toggleEmployeeExpanded = (employeeId: string) => {
@@ -1331,6 +1381,31 @@ export default function TimeRecordsPageNew() {
     try {
       toast.loading('Gerando folha de ponto...', { id: 'generate-time-record-pdf' });
 
+      // Buscar dados da empresa (companies está no schema public, sem company_id)
+      const { data: companyData, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', selectedCompany.id)
+        .single();
+      
+      if (companyError) {
+        console.warn('Erro ao buscar dados da empresa:', companyError);
+      }
+
+      // Buscar dados completos do funcionário (incluindo cargo)
+      const employeeData = await EmployeesService.getById(summary.employeeId, selectedCompany.id);
+      
+      // Buscar cargo se houver cargo_id
+      let cargoData = null;
+      if (employeeData?.cargo_id) {
+        cargoData = await EntityService.getById<any>({
+          schema: 'rh',
+          table: 'positions',
+          id: employeeData.cargo_id,
+          companyId: selectedCompany.id
+        });
+      }
+
       // Buscar saldo do banco de horas
       const bankHoursBalance = await getBankHoursBalanceUntilDate(
         summary.employeeId,
@@ -1340,6 +1415,14 @@ export default function TimeRecordsPageNew() {
 
       // Calcular DSR
       const dsr = calculateDSR(summary.records, parseInt(summaryMonth), parseInt(summaryYear));
+
+      // Overrides de Natureza do Dia para este funcionário (chave = dateStr para o relatório)
+      const employeeDayOverrides: Record<string, string> = {};
+      Object.entries(dayNatureOverrides).forEach(([k, v]) => {
+        if (k.startsWith(summary.employeeId + '-')) {
+          employeeDayOverrides[k.slice(summary.employeeId.length + 1)] = v;
+        }
+      });
 
       // Preparar dados
       const reportData: TimeRecordReportData = {
@@ -1351,7 +1434,27 @@ export default function TimeRecordsPageNew() {
         records: summary.records,
         bankHoursBalance,
         dsr,
-        companyId: selectedCompany.id
+        companyId: selectedCompany.id,
+        dayNatureOverrides: Object.keys(employeeDayOverrides).length > 0 ? employeeDayOverrides : undefined,
+        company: companyData ? {
+          id: companyData.id,
+          razao_social: companyData.razao_social,
+          nome_fantasia: companyData.nome_fantasia,
+          cnpj: companyData.cnpj,
+          inscricao_estadual: companyData.inscricao_estadual,
+          logo_url: companyData.logo_url,
+          endereco: companyData.endereco,
+          contato: companyData.contato,
+          numero_empresa: companyData.numero_empresa
+        } : undefined,
+        employee: employeeData ? {
+          id: employeeData.id,
+          nome: employeeData.nome,
+          matricula: employeeData.matricula,
+          cpf: employeeData.cpf,
+          estado: employeeData.estado,
+          cargo: cargoData ? { nome: cargoData.nome } : null
+        } : undefined
       };
 
       // Gerar HTML (agora é assíncrono)
@@ -1392,6 +1495,14 @@ export default function TimeRecordsPageNew() {
       // Calcular DSR
       const dsr = calculateDSR(summary.records, parseInt(summaryMonth), parseInt(summaryYear));
 
+      // Overrides de Natureza do Dia para este funcionário
+      const employeeDayOverrides: Record<string, string> = {};
+      Object.entries(dayNatureOverrides).forEach(([k, v]) => {
+        if (k.startsWith(summary.employeeId + '-')) {
+          employeeDayOverrides[k.slice(summary.employeeId.length + 1)] = v;
+        }
+      });
+
       // Preparar dados
       const reportData: TimeRecordReportData = {
         employeeId: summary.employeeId,
@@ -1402,7 +1513,8 @@ export default function TimeRecordsPageNew() {
         records: summary.records,
         bankHoursBalance,
         dsr,
-        companyId: selectedCompany.id
+        companyId: selectedCompany.id,
+        dayNatureOverrides: Object.keys(employeeDayOverrides).length > 0 ? employeeDayOverrides : undefined
       };
 
       // Gerar CSV (agora é assíncrono)
@@ -1972,7 +2084,7 @@ export default function TimeRecordsPageNew() {
                               <div className="flex items-center gap-1">
                                 <span className="text-gray-500">Extras 50%:</span>
                                 <span className="font-medium text-blue-600">
-                                  +{record.horas_extras_50.toFixed(1)}h
+                                  +{formatDecimalHoursToHhMm(record.horas_extras_50)}
                                 </span>
                                 <span className="text-xs text-gray-400">(Banco)</span>
                               </div>
@@ -1981,7 +2093,7 @@ export default function TimeRecordsPageNew() {
                               <div className="flex items-center gap-1">
                                 <span className="text-gray-500">Extras 100%:</span>
                                 <span className="font-medium text-orange-600">
-                                  +{record.horas_extras_100.toFixed(1)}h
+                                  +{formatDecimalHoursToHhMm(record.horas_extras_100)}
                                 </span>
                                 <span className="text-xs text-gray-400">(Pagamento)</span>
                               </div>
@@ -1992,18 +2104,29 @@ export default function TimeRecordsPageNew() {
                           <div className="text-sm">
                             <span className="text-gray-500">Extras: </span>
                             <span className="font-medium text-orange-600">
-                              +{Number(record.horas_extras).toFixed(1)}h
+                              +{formatDecimalHoursToHhMm(Number(record.horas_extras))}
                             </span>
                           </div>
-                        ) : (record.horas_negativas && record.horas_negativas > 0) ? (
-                          // Mostrar horas negativas
-                          <div className="text-sm">
-                            <span className="text-gray-500">Negativas: </span>
-                            <span className="font-medium text-red-600">
-                              -{record.horas_negativas.toFixed(2)}h
-                            </span>
-                          </div>
-                        ) : null}
+                        ) : (() => {
+                          // CORREÇÃO: Não mostrar horas negativas para dias futuros
+                          const recordDate = new Date(record.data_registro);
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const isFutureDate = recordDate > today;
+                          
+                          // Se tem horas negativas e não é dia futuro, mostrar
+                          if (record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) {
+                            return (
+                              <div className="text-sm">
+                                <span className="text-gray-500">Negativas: </span>
+                                <span className="font-medium text-red-600">
+                                  {formatDecimalHoursToHhMm(-(record.horas_negativas || 0))}
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       
                       {record.observacoes && (
@@ -2367,8 +2490,22 @@ export default function TimeRecordsPageNew() {
                     const isExpanded = expandedEmployees.has(summary.employeeId);
                     // Usar completeRecords quando disponível para incluir faltas virtuais (dias úteis sem registro) nos totais
                     const recordsForTotals = completeRecordsByEmployee.get(summary.employeeId) || summary.records;
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
                     const totalHorasTrabalhadas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_trabalhadas) || 0), 0);
-                    const totalHorasNegativas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_negativas) || 0), 0);
+                    // CORREÇÃO: Não incluir horas negativas de dias futuros nem de Feriado/Compensação/Folga no total
+                    const totalHorasNegativas = recordsForTotals.reduce((s, r) => {
+                      const recordDate = new Date(r.data_registro);
+                      recordDate.setHours(0, 0, 0, 0);
+                      const isFutureDate = recordDate > today;
+                      if (isFutureDate) return s;
+                      const dateStr = r.data_registro.split('T')[0];
+                      const overrideKey = `${summary.employeeId}-${dateStr}`;
+                      const natureValue = dayNatureOverrides[overrideKey] ?? (r as TimeRecord).natureza_dia ?? getDayNatureFromRecord(r);
+                      if (isDayNatureNoNegativeHours(natureValue)) return s;
+                      return s + (Number(r.horas_negativas) || 0);
+                    }, 0);
                     const totalHorasExtras50 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_50) || 0), 0);
                     const totalHorasExtras100 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_100) || 0), 0);
                     const totalHorasNoturnas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_noturnas) || 0), 0);
@@ -2427,31 +2564,31 @@ export default function TimeRecordsPageNew() {
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Trabalhadas</p>
                               <p className="text-2xl font-bold text-blue-600">
-                                {totalHorasTrabalhadas.toFixed(2)}h
+                                {formatDecimalHoursToHhMm(totalHorasTrabalhadas)}
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Negativas</p>
                               <p className="text-2xl font-bold text-red-600">
-                                {totalHorasNegativas > 0 ? '-' : ''}{totalHorasNegativas.toFixed(2)}h
+                                {totalHorasNegativas > 0 ? formatDecimalHoursToHhMm(-totalHorasNegativas) : '0h00'}
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Extras 50%</p>
                               <p className="text-2xl font-bold text-orange-600">
-                                {totalHorasExtras50.toFixed(2)}h
+                                {formatDecimalHoursToHhMm(totalHorasExtras50)}
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Extras 100%</p>
                               <p className="text-2xl font-bold text-purple-600">
-                                {totalHorasExtras100.toFixed(2)}h
+                                {formatDecimalHoursToHhMm(totalHorasExtras100)}
                               </p>
                             </div>
                             <div className="space-y-1">
                               <p className="text-sm text-muted-foreground">Horas Noturnas</p>
                               <p className="text-2xl font-bold text-indigo-600">
-                                {totalHorasNoturnas.toFixed(2)}h
+                                {formatDecimalHoursToHhMm(totalHorasNoturnas)}
                               </p>
                             </div>
                             <EmployeeBankHoursBalanceInline 
@@ -2473,6 +2610,7 @@ export default function TimeRecordsPageNew() {
                                   <TableHeader>
                                     <TableRow>
                                       <TableHead>Data</TableHead>
+                                      <TableHead>Natureza do Dia</TableHead>
                                       <TableHead>Horas Trabalhadas</TableHead>
                                       <TableHead>Horas Negativas</TableHead>
                                       <TableHead>Extras 50%</TableHead>
@@ -2490,6 +2628,12 @@ export default function TimeRecordsPageNew() {
                                         return dateB.localeCompare(dateA);
                                       })
                                       .map((record) => {
+                                        const dateStr = record.data_registro.split('T')[0];
+                                        const overrideKey = `${summary.employeeId}-${dateStr}`;
+                                        // Prioridade: override local (virtual) > valor do banco (registro real) > detecção automática
+                                        const natureValue = dayNatureOverrides[overrideKey]
+                                          ?? (record as TimeRecord).natureza_dia
+                                          ?? getDayNatureFromRecord(record);
                                         const isVirtual = record.id.startsWith('virtual-');
                                         const isRestDay = (record as any).is_dia_folga || (isVirtual && record.id.includes('-dsr'));
                                         const isVacation = isVirtual && record.id.includes('-ferias');
@@ -2517,49 +2661,158 @@ export default function TimeRecordsPageNew() {
                                           rowBgColor = 'bg-blue-50';
                                         }
                                         
+                                        const effectiveNatureLabel = getDayNatureLabel(natureValue);
+                                        const hasNatureLabel = !!displayLabel; // dia com natureza especial (DSR, Férias, etc.)
                                         return (
                                         <TableRow key={record.id} className={rowBgColor}>
                                           <TableCell>
                                             {formatDateOnly(record.data_registro)}
-                                            {displayLabel && (
-                                              <Badge variant="outline" className="ml-2 text-xs">
-                                                {displayLabel}
-                                              </Badge>
+                                          </TableCell>
+                                          <TableCell>
+                                            {canEditPage('/rh/time-records*') ? (
+                                              <Select
+                                                value={natureValue}
+                                                onValueChange={async (value) => {
+                                                  if (isVirtual) {
+                                                    try {
+                                                      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+                                                      const { data: existing } = await EntityService.list<{ id: string }>({
+                                                        schema: 'rh',
+                                                        table: 'time_record_day_nature_override',
+                                                        companyId: selectedCompany.id,
+                                                        filters: { employee_id: summary.employeeId, data_registro: dateStr },
+                                                        pageSize: 1
+                                                      });
+                                                      if (existing?.length > 0) {
+                                                        await EntityService.update({
+                                                          schema: 'rh',
+                                                          table: 'time_record_day_nature_override',
+                                                          companyId: selectedCompany.id,
+                                                          id: existing[0].id,
+                                                          data: { natureza_dia: value }
+                                                        });
+                                                      } else {
+                                                        await EntityService.create({
+                                                          schema: 'rh',
+                                                          table: 'time_record_day_nature_override',
+                                                          companyId: selectedCompany.id,
+                                                          data: {
+                                                            employee_id: summary.employeeId,
+                                                            company_id: selectedCompany.id,
+                                                            data_registro: dateStr,
+                                                            natureza_dia: value
+                                                          }
+                                                        });
+                                                      }
+                                                      setDayNatureOverrides((prev) => ({ ...prev, [overrideKey]: value }));
+                                                    } catch (err) {
+                                                      console.error('Erro ao salvar natureza do dia (virtual):', err);
+                                                      toast.error('Não foi possível salvar a natureza do dia');
+                                                    }
+                                                    return;
+                                                  }
+                                                  try {
+                                                    await updateRecord.mutateAsync({
+                                                      id: record.id,
+                                                      data: { natureza_dia: value }
+                                                    });
+                                                    setDayNatureOverrides((prev) => {
+                                                      const next = { ...prev };
+                                                      delete next[overrideKey];
+                                                      return next;
+                                                    });
+                                                    queryClient.invalidateQueries({ queryKey: ['rh', 'time-records'] });
+                                                  } catch (err) {
+                                                    console.error('Erro ao salvar natureza do dia:', err);
+                                                    toast.error('Não foi possível salvar a natureza do dia');
+                                                  }
+                                                }}
+                                              >
+                                                <SelectTrigger className="h-8 w-[140px]">
+                                                  <SelectValue>{getDayNatureLabel(natureValue)}</SelectValue>
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  {DAY_NATURE_OPTIONS.map((opt) => (
+                                                    <SelectItem key={opt.value} value={opt.value}>
+                                                      {opt.label}
+                                                    </SelectItem>
+                                                  ))}
+                                                </SelectContent>
+                                              </Select>
+                                            ) : (
+                                              <span className="text-sm">{getDayNatureLabel(natureValue)}</span>
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            {displayLabel ? (
-                                              <span className="text-muted-foreground italic">{displayLabel}</span>
+                                            {hasNatureLabel ? (
+                                              <span className="text-muted-foreground italic">{effectiveNatureLabel}</span>
                                             ) : (
                                               <span className="font-medium">
-                                                {record.horas_trabalhadas?.toFixed(2) || '0.00'}h
+                                                {formatDecimalHoursToHhMm(record.horas_trabalhadas ?? 0)}
                                               </span>
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            {isFalta ? (
-                                              <span className="text-red-600 font-medium">
-                                                -{(record.horas_negativas || 0).toFixed(2)}h
-                                              </span>
-                                            ) : displayLabel ? (
-                                              <span className="text-muted-foreground">-</span>
-                                            ) : record.horas_negativas && record.horas_negativas > 0 ? (
-                                              <span className="text-red-600 font-medium">
-                                                -{record.horas_negativas.toFixed(2)}h
-                                              </span>
-                                            ) : (
-                                              <span className="text-muted-foreground">0.00h</span>
-                                            )}
+                                            {(() => {
+                                              // Feriado, Compensação e Folga não exibem horas negativas
+                                              if (isDayNatureNoNegativeHours(natureValue)) {
+                                                return <span className="text-muted-foreground">-</span>;
+                                              }
+                                              // CORREÇÃO: Não mostrar horas negativas para dias futuros
+                                              const recordDate = new Date(record.data_registro);
+                                              const today = new Date();
+                                              today.setHours(0, 0, 0, 0);
+                                              const isFutureDate = recordDate > today;
+                                              
+                                              // Se for falta em dia futuro, não mostrar horas negativas
+                                              if (isFalta && isFutureDate) {
+                                                return <span className="text-muted-foreground">-</span>;
+                                              }
+                                              
+                                              // Se for falta em dia passado/hoje, mostrar horas negativas
+                                              if (isFalta) {
+                                                return (
+                                                  <span className="text-red-600 font-medium">
+                                                    {formatDecimalHoursToHhMm(-(record.horas_negativas || 0))}
+                                                  </span>
+                                                );
+                                              }
+                                              
+                                              // Atestado de comparecimento pode ter horas negativas líquidas (ex.: -4h39)
+                                              if (isMedicalCertificate && record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) {
+                                                return (
+                                                  <span className="text-red-600 font-medium">
+                                                    {formatDecimalHoursToHhMm(-record.horas_negativas)}
+                                                  </span>
+                                                );
+                                              }
+                                              // Se não for falta mas tem displayLabel (DSR, Férias, etc)
+                                              if (displayLabel) {
+                                                return <span className="text-muted-foreground">-</span>;
+                                              }
+                                              
+                                              // Se tem horas negativas e não é dia futuro, mostrar
+                                              if (record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) {
+                                                return (
+                                                  <span className="text-red-600 font-medium">
+                                                    {formatDecimalHoursToHhMm(-record.horas_negativas)}
+                                                  </span>
+                                                );
+                                              }
+                                              
+                                              // Caso padrão
+                                              return <span className="text-muted-foreground">0h00</span>;
+                                            })()}
                                           </TableCell>
                                           <TableCell>
                                             {displayLabel ? (
                                               <span className="text-muted-foreground">-</span>
                                             ) : record.horas_extras_50 && record.horas_extras_50 > 0 ? (
                                               <span className="text-orange-600 font-medium">
-                                                +{record.horas_extras_50.toFixed(2)}h
+                                                +{formatDecimalHoursToHhMm(record.horas_extras_50)}
                                               </span>
                                             ) : (
-                                              <span className="text-muted-foreground">0.00h</span>
+                                              <span className="text-muted-foreground">0h00</span>
                                             )}
                                           </TableCell>
                                           <TableCell>
@@ -2567,10 +2820,10 @@ export default function TimeRecordsPageNew() {
                                               <span className="text-muted-foreground">-</span>
                                             ) : record.horas_extras_100 && record.horas_extras_100 > 0 ? (
                                               <span className="text-purple-600 font-medium">
-                                                +{record.horas_extras_100.toFixed(2)}h
+                                                +{formatDecimalHoursToHhMm(record.horas_extras_100)}
                                               </span>
                                             ) : (
-                                              <span className="text-muted-foreground">0.00h</span>
+                                              <span className="text-muted-foreground">0h00</span>
                                             )}
                                           </TableCell>
                                           <TableCell>
@@ -2578,10 +2831,10 @@ export default function TimeRecordsPageNew() {
                                               <span className="text-muted-foreground">-</span>
                                             ) : record.horas_noturnas && record.horas_noturnas > 0 ? (
                                               <span className="text-indigo-600 font-medium">
-                                                +{record.horas_noturnas.toFixed(2)}h
+                                                +{formatDecimalHoursToHhMm(record.horas_noturnas)}
                                               </span>
                                             ) : (
-                                              <span className="text-muted-foreground">0.00h</span>
+                                              <span className="text-muted-foreground">0h00</span>
                                             )}
                                           </TableCell>
                                             <TableCell>
@@ -2593,7 +2846,15 @@ export default function TimeRecordsPageNew() {
                                                 isFalta ? 'bg-red-100 text-red-800' :
                                                 'bg-blue-100 text-blue-800'
                                               }>
-                                                {displayLabel}
+                                                {effectiveNatureLabel}
+                                              </Badge>
+                                            ) : isDayNatureNoNegativeHours(natureValue) ? (
+                                              <Badge className={
+                                                natureValue === 'feriado' ? 'bg-pink-100 text-pink-800' :
+                                                natureValue === 'folga' ? 'bg-sky-100 text-sky-800' :
+                                                'bg-purple-100 text-purple-800'
+                                              }>
+                                                {effectiveNatureLabel}
                                               </Badge>
                                             ) : (
                                               <Badge className={getStatusColor(record.status || '')}>
@@ -2856,7 +3117,7 @@ function EmployeeBankHoursBalanceInline({
           balance < 0 ? 'text-red-600' :
           'text-gray-500'
         }`}>
-          {balance >= 0 ? '+' : ''}{balance.toFixed(2)}h
+          {balance >= 0 ? `+${formatDecimalHoursToHhMm(balance)}` : formatDecimalHoursToHhMm(balance)}
         </p>
       )}
     </div>

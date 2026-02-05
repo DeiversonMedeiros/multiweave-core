@@ -219,37 +219,41 @@ export function CotacoesRealizadas() {
         switch (filtros.ordenarPor) {
           case 'prioridade_desc':
             // Ordenar por prioridade: alta > normal > baixa
-            // Se tipo_requisicao for emergencial, considerar como alta prioridade
+            // Se is_emergencial for true, considerar como alta prioridade
             const prioridadeOrder: Record<string, number> = { urgente: 4, alta: 3, normal: 2, baixa: 1 };
-            const prioridadeA = a.tipo_requisicao === 'emergencial' 
+            const prioridadeA = (a as any).is_emergencial === true
               ? 3 
               : (prioridadeOrder[a.prioridade || 'normal'] || 2);
-            const prioridadeB = b.tipo_requisicao === 'emergencial' 
+            const prioridadeB = (b as any).is_emergencial === true
               ? 3 
               : (prioridadeOrder[b.prioridade || 'normal'] || 2);
             return prioridadeB - prioridadeA;
           
           case 'prioridade_asc':
             const prioridadeOrderAsc: Record<string, number> = { urgente: 4, alta: 3, normal: 2, baixa: 1 };
-            const prioridadeAAsc = a.tipo_requisicao === 'emergencial' 
+            const prioridadeAAsc = (a as any).is_emergencial === true
               ? 3 
               : (prioridadeOrderAsc[a.prioridade || 'normal'] || 2);
-            const prioridadeBAsc = b.tipo_requisicao === 'emergencial' 
+            const prioridadeBAsc = (b as any).is_emergencial === true
               ? 3 
               : (prioridadeOrderAsc[b.prioridade || 'normal'] || 2);
             return prioridadeAAsc - prioridadeBAsc;
           
           case 'tipo_desc':
-            // Ordenar por tipo: emergencial > compra_direta > reposicao
-            const tipoOrder: Record<string, number> = { emergencial: 3, compra_direta: 2, reposicao: 1 };
-            const tipoA = tipoOrder[a.tipo_requisicao || a.tipo_cotacao || 'reposicao'] || 1;
-            const tipoB = tipoOrder[b.tipo_requisicao || b.tipo_cotacao || 'reposicao'] || 1;
+            // Ordenar por tipo: emergencial (is_emergencial=true) > compra_direta > reposicao
+            const tipoOrder: Record<string, number> = { compra_direta: 2, reposicao: 1 };
+            const isEmergencialA = (a as any).is_emergencial === true ? 3 : 0;
+            const isEmergencialB = (b as any).is_emergencial === true ? 3 : 0;
+            const tipoA = isEmergencialA || tipoOrder[a.tipo_requisicao || a.tipo_cotacao || 'reposicao'] || 1;
+            const tipoB = isEmergencialB || tipoOrder[b.tipo_requisicao || b.tipo_cotacao || 'reposicao'] || 1;
             return tipoB - tipoA;
           
           case 'tipo_asc':
-            const tipoOrderAsc: Record<string, number> = { emergencial: 3, compra_direta: 2, reposicao: 1 };
-            const tipoAAsc = tipoOrderAsc[a.tipo_requisicao || a.tipo_cotacao || 'reposicao'] || 1;
-            const tipoBAsc = tipoOrderAsc[b.tipo_requisicao || b.tipo_cotacao || 'reposicao'] || 1;
+            const tipoOrderAsc: Record<string, number> = { compra_direta: 2, reposicao: 1 };
+            const isEmergencialAAsc = (a as any).is_emergencial === true ? 3 : 0;
+            const isEmergencialBAsc = (b as any).is_emergencial === true ? 3 : 0;
+            const tipoAAsc = isEmergencialAAsc || tipoOrderAsc[a.tipo_requisicao || a.tipo_cotacao || 'reposicao'] || 1;
+            const tipoBAsc = isEmergencialBAsc || tipoOrderAsc[b.tipo_requisicao || b.tipo_cotacao || 'reposicao'] || 1;
             return tipoAAsc - tipoBAsc;
           
           case 'data_desc':

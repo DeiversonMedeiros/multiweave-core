@@ -1679,43 +1679,37 @@ export default function RegistroPontoPage() {
             setRegistrationModalOpen(false);
             setPendingRegistrationType(null);
           }}
-          onSuccess={async () => {
+          onSuccess={async (payload) => {
             // Fechar modal primeiro
             setRegistrationModalOpen(false);
             setPendingRegistrationType(null);
             
-            // Invalidar e refetch a query correta para atualizar os dados
-            // Usar a mesma estrutura da query key definida na linha 137
             const employeeId = currentEmployee?.id || employee?.id;
             if (employeeId && selectedCompany?.id) {
               const queryKey = ['today-time-record-consolidated', employeeId, selectedCompany.id, windowHours];
               
-              console.log('[RegistroPontoPage] 🔄 Invalidando query após registro:', {
-                queryKey,
-                employeeId,
-                companyId: selectedCompany.id,
-                windowHours,
-                timestamp: new Date().toISOString()
-              });
+              // Atualização otimista: mesclar o tipo/horário recém-registrado no cache
+              // para que getNextRecordType mostre o próximo passo imediatamente (evita
+              // que o usuário clique várias vezes em "Entrada" enquanto o refetch demora)
+              if (payload?.type && payload?.localTimestamp) {
+                const prev = queryClient.getQueryData<TimeRecord>(queryKey);
+                if (prev) {
+                  const s = String(payload.localTimestamp);
+                  const timeStr = s.includes('T') ? s.split('T')[1]?.split('.')[0]?.slice(0, 8) : s.includes(' ') ? s.split(' ')[1]?.slice(0, 8) : s.slice(11, 19);
+                  if (timeStr) {
+                    const t = timeStr.length === 5 ? `${timeStr}:00` : timeStr;
+                    const optimistic = { ...prev, [payload.type]: t } as TimeRecord;
+                    if (payload.localDate && ['saida_almoco', 'saida', 'entrada_extra1', 'saida_extra1'].includes(payload.type)) {
+                      (optimistic as any)[`${payload.type}_date`] = payload.localDate;
+                    }
+                    queryClient.setQueryData(queryKey, optimistic);
+                  }
+                }
+              }
               
-              // Invalidar apenas a query específica (não todas as queries relacionadas)
-              // para evitar refetches desnecessários que causam "piscar" nas fotos
-              await queryClient.invalidateQueries({ 
-                queryKey,
-                exact: true
-              });
-              
-              console.log('[RegistroPontoPage] ✅ Query invalidada, aguardando 300ms para refetch');
-              
-              // Refetch apenas a query específica após um pequeno delay
-              // para dar tempo do banco processar o registro
+              await queryClient.invalidateQueries({ queryKey, exact: true });
               setTimeout(async () => {
-                console.log('[RegistroPontoPage] 🔄 Fazendo refetch da query:', { queryKey });
-                await queryClient.refetchQueries({ 
-                  queryKey,
-                  type: 'active'
-                });
-                console.log('[RegistroPontoPage] ✅ Refetch concluído');
+                await queryClient.refetchQueries({ queryKey, type: 'active' });
               }, 300);
             }
             

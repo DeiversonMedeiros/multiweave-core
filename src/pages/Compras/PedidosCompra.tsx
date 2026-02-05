@@ -79,9 +79,11 @@ function PedidosList() {
 
   const filtered = useMemo(() => {
     if (!search) return pedidos;
+    const term = search.toLowerCase();
     return pedidos.filter((pedido: any) =>
-      pedido.numero_pedido?.toLowerCase().includes(search.toLowerCase()) ||
-      pedido.status?.toLowerCase().includes(search.toLowerCase()),
+      pedido.numero_pedido?.toLowerCase().includes(term) ||
+      pedido.status?.toLowerCase().includes(term) ||
+      pedido.fornecedor_nome?.toLowerCase().includes(term),
     );
   }, [pedidos, search]);
 
@@ -149,9 +151,11 @@ function PedidosList() {
                     : '--'}
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">
-                    <ShoppingCart className="h-3 w-3 mr-1" />
-                    {pedido.cotacao_id || '—'}
+                  <Badge variant="outline" className="font-normal">
+                    <ShoppingCart className="h-3 w-3 mr-1 shrink-0" />
+                    <span className="truncate max-w-[140px]">
+                      {pedido.numero_cotacao ?? (pedido.cotacao_id ? 'Cotação vinculada' : 'Sem cotação')}
+                    </span>
                   </Badge>
                 </TableCell>
                 <TableCell>

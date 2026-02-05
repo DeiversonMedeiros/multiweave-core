@@ -7,7 +7,8 @@ export const STORAGE_BUCKETS = {
   DOCUMENTS: 'documents',
   TEMP: 'temp',
   TIME_RECORD_PHOTOS: 'time-record-photos',
-  MATERIALS: 'materials'
+  MATERIALS: 'materials',
+  COMPANY_LOGOS: 'company-logos'
 } as const;
 
 export const IMAGE_UPLOAD_CONFIG = {

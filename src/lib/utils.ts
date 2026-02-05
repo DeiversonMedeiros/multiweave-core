@@ -64,3 +64,19 @@ export function formatDateToISO(date: Date): string {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Converte horas em decimal para formato legível "XhYY" (ex: 8.5 → "8h30", 2.25 → "2h15").
+ * Valores negativos retornam "-XhYY" (ex: -1.5 → "-1h30").
+ */
+export function formatDecimalHoursToHhMm(hours: number): string {
+  if (hours === 0) return '0h00';
+  const sign = hours < 0 ? '-' : '';
+  const abs = Math.abs(hours);
+  const h = Math.floor(abs);
+  let m = Math.round((abs - h) * 60);
+  if (m === 60) {
+    return `${sign}${h + 1}h00`;
+  }
+  return `${sign}${h}h${String(m).padStart(2, '0')}`;
+}

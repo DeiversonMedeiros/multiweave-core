@@ -93,11 +93,11 @@ export function CotacaoApprovalCard({
                     <span className="font-medium">{cotacaoInfo.comprador_nome}</span>
                   </div>
                 )}
-                {cotacaoInfo.valor_total !== undefined && cotacaoInfo.valor_total > 0 && (
+                {(cotacaoInfo.valor_final !== undefined || cotacaoInfo.valor_total !== undefined) && (cotacaoInfo.valor_final ?? cotacaoInfo.valor_total ?? 0) >= 0 && (
                   <div className="flex items-center gap-2 text-sm">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Valor Total:</span>
-                    <span className="font-semibold text-lg">{formatCurrency(cotacaoInfo.valor_total)}</span>
+                    <span className="text-muted-foreground">Valor Final:</span>
+                    <span className="font-semibold text-lg">{formatCurrency(cotacaoInfo.valor_final ?? cotacaoInfo.valor_total ?? 0)}</span>
                   </div>
                 )}
               </>

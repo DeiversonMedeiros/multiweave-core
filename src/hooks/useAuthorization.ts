@@ -21,7 +21,21 @@ export interface PagePermission {
   can_delete: boolean;
 }
 
+// Contador de instâncias para debug
+let useAuthorizationCallCount = 0;
+let useAuthorizationInstanceCount = 0;
+
 export const useAuthorization = () => {
+  useAuthorizationCallCount++;
+  const instanceId = useRef(++useAuthorizationInstanceCount);
+  const callId = useRef(useAuthorizationCallCount);
+  
+  console.log(`[useAuthorization] 🔄 CHAMADO [${instanceId.current}-${callId.current}]`, {
+    timestamp: new Date().toISOString(),
+    instanceId: instanceId.current,
+    callCount: callId.current,
+  });
+  
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
   const [permissions, setPermissions] = useState<UserPermission[]>([]);
@@ -33,6 +47,34 @@ export const useAuthorization = () => {
   const lastUserIdRef = useRef<string | null>(null);
   const lastCompanyIdRef = useRef<string | null>(null);
   const isLoadingRef = useRef(false);
+  
+  // Refs para rastrear mudanças
+  const prevUserRef = useRef<any>(null);
+  const prevSelectedCompanyRef = useRef<any>(null);
+  
+  // Log mudanças em user
+  useEffect(() => {
+    if (prevUserRef.current !== user) {
+      console.log(`[useAuthorization] 👤 [${instanceId.current}] User mudou:`, {
+        previous: prevUserRef.current?.id || null,
+        current: user?.id || null,
+        changed: prevUserRef.current?.id !== user?.id,
+      });
+      prevUserRef.current = user;
+    }
+  }, [user, instanceId]);
+  
+  // Log mudanças em selectedCompany
+  useEffect(() => {
+    if (prevSelectedCompanyRef.current !== selectedCompany) {
+      console.log(`[useAuthorization] 🏢 [${instanceId.current}] SelectedCompany mudou:`, {
+        previous: prevSelectedCompanyRef.current?.id || null,
+        current: selectedCompany?.id || null,
+        changed: prevSelectedCompanyRef.current?.id !== selectedCompany?.id,
+      });
+      prevSelectedCompanyRef.current = selectedCompany;
+    }
+  }, [selectedCompany, instanceId]);
 
   // Carregar permissões do usuário
   const loadPermissions = useCallback(async () => {
@@ -178,8 +220,13 @@ export const useAuthorization = () => {
 
   // Carregar permissões quando o usuário ou empresa mudar
   useEffect(() => {
+    console.log(`[useAuthorization] 🔄 [${instanceId.current}] useEffect TRIGGERED`, {
+      userId: user?.id || null,
+      companyId: selectedCompany?.id || null,
+      timestamp: new Date().toISOString(),
+    });
     loadPermissions();
-  }, [user?.id, selectedCompany?.id]);
+  }, [user?.id, selectedCompany?.id, loadPermissions, instanceId]);
 
   // Verificar permissão de módulo
   const checkModulePermission = useCallback(async (
@@ -235,17 +282,37 @@ export const useAuthorization = () => {
     }
   }, [user, isAdmin]);
 
+  // Ref para contar chamadas de hasModulePermission por módulo
+  const hasModulePermissionCallCountRef = useRef<Map<string, number>>(new Map());
+  
   // Verificar permissão local (usando cache)
   const hasModulePermission = useCallback((
     moduleName: string, 
     action: PermissionAction
   ): boolean => {
-    console.log('[useAuthorization] hasModulePermission chamado:', {
-      moduleName,
-      action,
-      isAdmin,
-      permissionsCount: permissions.length
-    });
+    // Contador de chamadas por módulo para debug
+    const callKey = `${moduleName}-${action}`;
+    const currentCount = (hasModulePermissionCallCountRef.current.get(callKey) || 0) + 1;
+    hasModulePermissionCallCountRef.current.set(callKey, currentCount);
+    
+    // Log apenas se for chamado muitas vezes (mais de 5x) ou primeira vez
+    if (currentCount > 5) {
+      console.log(`[useAuthorization] ⚠️ [${instanceId.current}] hasModulePermission chamado MUITAS VEZES:`, {
+        moduleName,
+        action,
+        callCount: currentCount,
+        isAdmin,
+        permissionsCount: permissions.length,
+        stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n')
+      });
+    } else if (currentCount <= 2) {
+      console.log(`[useAuthorization] [${instanceId.current}] hasModulePermission chamado [${currentCount}x]:`, {
+        moduleName,
+        action,
+        isAdmin,
+        permissionsCount: permissions.length
+      });
+    }
     
     if (isAdmin) {
       console.log('[useAuthorization] Usuário é admin - permitindo módulo:', moduleName);

@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+
+// Log de render para debug
+let renderCount = 0;
 import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
 import { useTimeRecordsPaginated } from '@/hooks/rh/useTimeRecords';
@@ -61,8 +64,24 @@ interface TimeRecord {
 }
 
 export default function HistoricoMarcacoesPage() {
+  renderCount++;
+  const renderId = useRef(renderCount);
+  
+  console.log(`[HistoricoMarcacoesPage] 🔄 RENDER #${renderId.current}`, {
+    timestamp: new Date().toISOString(),
+    renderCount,
+  });
+  
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
+  
+  // Refs para rastrear mudanças
+  const prevUserRef = useRef<any>(null);
+  const prevSelectedCompanyRef = useRef<any>(null);
+  const prevEmployeeRef = useRef<any>(null);
+  const prevFiltersRef = useRef<any>(null);
+  const prevDataRef = useRef<any>(null);
+  
   const [filters, setFilters] = useState({
     startDate: format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'),
     endDate: format(new Date(), 'yyyy-MM-dd'),
@@ -71,6 +90,19 @@ export default function HistoricoMarcacoesPage() {
 
   // Buscar dados do funcionário
   const { data: employee } = useEmployeeByUserId(user?.id || '');
+  
+  // Log mudanças em employee
+  useEffect(() => {
+    if (prevEmployeeRef.current !== employee) {
+      console.log(`[HistoricoMarcacoesPage] 👷 Employee mudou:`, {
+        renderId: renderId.current,
+        previous: prevEmployeeRef.current?.id || null,
+        current: employee?.id || null,
+        changed: prevEmployeeRef.current?.id !== employee?.id,
+      });
+      prevEmployeeRef.current = employee;
+    }
+  }, [employee]);
 
   // Buscar histórico de marcações com paginação otimizada
   const {
@@ -87,9 +119,71 @@ export default function HistoricoMarcacoesPage() {
     status: filters.status !== 'all' ? filters.status : undefined,
     pageSize: 10, // Carregar 10 registros por vez
   });
-
+  
   // Combinar todas as páginas em um único array
-  const rawTimeRecords = data?.pages.flatMap(page => page.data) || [];
+  // Memoizar para evitar recriações desnecessárias que causam loops
+  const rawTimeRecords = useMemo(() => {
+    if (!data?.pages) return [];
+    return data.pages.flatMap(page => page.data);
+  }, [data?.pages]);
+  
+  // Log mudanças em data
+  useEffect(() => {
+    const dataChanged = prevDataRef.current !== data;
+    const pagesChanged = prevDataRef.current?.pages?.length !== data?.pages?.length;
+    const totalRecordsChanged = prevDataRef.current?.pages?.flatMap((p: any) => p.data).length !== data?.pages?.flatMap((p: any) => p.data).length;
+    
+    if (dataChanged || pagesChanged || totalRecordsChanged) {
+      console.log(`[HistoricoMarcacoesPage] 📊 Data mudou:`, {
+        renderId: renderId.current,
+        dataReferenceChanged: dataChanged,
+        pagesChanged,
+        totalRecordsChanged,
+        previousPages: prevDataRef.current?.pages?.length || 0,
+        currentPages: data?.pages?.length || 0,
+        previousRecords: prevDataRef.current?.pages?.flatMap((p: any) => p.data).length || 0,
+        currentRecords: data?.pages?.flatMap((p: any) => p.data).length || 0,
+      });
+      prevDataRef.current = data;
+    }
+  }, [data]);
+  
+  // Log mudanças em filters
+  useEffect(() => {
+    const filtersChanged = JSON.stringify(prevFiltersRef.current) !== JSON.stringify(filters);
+    if (filtersChanged) {
+      console.log(`[HistoricoMarcacoesPage] 🔍 Filters mudou:`, {
+        renderId: renderId.current,
+        previous: prevFiltersRef.current,
+        current: filters,
+      });
+      prevFiltersRef.current = filters;
+    }
+  }, [filters]);
+  
+  // Log quando hasNextPage muda (apenas quando realmente muda para evitar spam)
+  const prevHasNextPageRef = useRef<boolean | undefined>(undefined);
+  const prevDataPagesLengthRef = useRef<number>(0);
+  useEffect(() => {
+    const currentDataPagesLength = data?.pages?.length || 0;
+    const dataPagesChanged = prevDataPagesLengthRef.current !== currentDataPagesLength;
+    const hasNextPageChanged = prevHasNextPageRef.current !== hasNextPage;
+    
+    // Só logar se realmente mudou algo relevante
+    if (hasNextPageChanged || dataPagesChanged) {
+      console.log(`[HistoricoMarcacoesPage] 📊 Estado da query mudou:`, {
+        renderId: renderId.current,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading,
+        dataPages: currentDataPagesLength,
+        totalRecords: rawTimeRecords.length,
+        timestamp: new Date().toISOString(),
+      });
+      prevHasNextPageRef.current = hasNextPage;
+      prevDataPagesLengthRef.current = currentDataPagesLength;
+    }
+  }, [hasNextPage, isFetchingNextPage, isLoading, data?.pages?.length, rawTimeRecords.length]);
   
   // Estado para armazenar informações dos dias do mês
   const [daysInfo, setDaysInfo] = useState<Map<string, import('@/services/rh/timeRecordReportService').DayInfo>>(new Map());
@@ -129,12 +223,30 @@ export default function HistoricoMarcacoesPage() {
   }, [employee?.id, selectedCompany?.id, filters.startDate, filters.endDate]);
   
   // Estado para armazenar registros completos (com DSR)
-  const [timeRecords, setTimeRecords] = useState<TimeRecord[]>(rawTimeRecords);
+  // Importante: não inicializar com rawTimeRecords diretamente para evitar “capturar”
+  // referência instável e causar loops de render.
+  // Usar rawTimeRecords diretamente no render (igual à página AcompanhamentoPonto que funciona)
+  const baseTimeRecords = rawTimeRecords as TimeRecord[];
   
-  // Completar registros com dias de folga quando necessário
+  // Processar registros com DSR de forma assíncrona quando necessário (sem causar loops)
+  const [processedRecords, setProcessedRecords] = useState<TimeRecord[]>([]);
+  const processingKeyRef = useRef<string>('');
+  
+  // Completar registros com dias de folga quando necessário (sem causar loops)
   useEffect(() => {
+    // Criar chave única baseada nos dados para evitar processamento duplicado
+    const recordsKey = rawTimeRecords.map(r => r.id).join('|');
+    const fullKey = `${recordsKey}-${daysInfo.size}-${filters.startDate}-${filters.endDate}-${employee?.id}`;
+    
+    // Se a chave não mudou, não processar novamente
+    if (processingKeyRef.current === fullKey) {
+      return;
+    }
+    
+    // Se não for mês completo ou não tiver daysInfo, limpar processedRecords
     if (daysInfo.size === 0 || !filters.startDate || !filters.endDate || !employee?.id || !selectedCompany?.id) {
-      setTimeRecords(rawTimeRecords);
+      setProcessedRecords([]);
+      processingKeyRef.current = fullKey;
       return;
     }
     
@@ -146,6 +258,7 @@ export default function HistoricoMarcacoesPage() {
                         start.getFullYear() === end.getFullYear();
     
     if (isFullMonth) {
+      processingKeyRef.current = fullKey;
       completeRecordsWithRestDays(
         rawTimeRecords as TimeRecord[],
         start.getMonth() + 1,
@@ -154,15 +267,23 @@ export default function HistoricoMarcacoesPage() {
         employee.id,
         selectedCompany.id
       ).then(completeRecords => {
-        setTimeRecords(completeRecords);
+        // Verificar se a chave ainda é a mesma antes de atualizar
+        const currentKey = `${rawTimeRecords.map(r => r.id).join('|')}-${daysInfo.size}-${filters.startDate}-${filters.endDate}-${employee?.id}`;
+        if (currentKey === fullKey) {
+          setProcessedRecords(completeRecords);
+        }
       }).catch(err => {
         console.error('[HistoricoMarcacoesPage] Erro ao completar registros:', err);
-        setTimeRecords(rawTimeRecords);
+        setProcessedRecords([]);
       });
     } else {
-      setTimeRecords(rawTimeRecords);
+      setProcessedRecords([]);
+      processingKeyRef.current = fullKey;
     }
   }, [rawTimeRecords, daysInfo, filters.startDate, filters.endDate, employee?.id, selectedCompany?.id]);
+  
+  // Usar processedRecords se disponível e não vazio, senão usar baseTimeRecords
+  const timeRecords = processedRecords.length > 0 ? processedRecords : baseTimeRecords;
 
   // Wrapper para fetchNextPage que só permite chamadas explícitas do botão
   const fetchNextPage = useCallback(() => {
@@ -657,15 +778,26 @@ export default function HistoricoMarcacoesPage() {
                               +{Number((record as any).horas_extras).toFixed(1)}h
                             </span>
                           </div>
-                        ) : ((record as any).horas_negativas && (record as any).horas_negativas > 0) ? (
-                          // Mostrar horas negativas
-                          <div className="text-sm">
-                            <span className="text-gray-500">Negativas: </span>
-                            <span className="font-medium text-red-600">
-                              -{(record as any).horas_negativas.toFixed(2)}h
-                            </span>
-                          </div>
-                        ) : null}
+                        ) : (() => {
+                          // CORREÇÃO: Não mostrar horas negativas para dias futuros
+                          const recordDate = new Date(record.data_registro);
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const isFutureDate = recordDate > today;
+                          
+                          // Se tem horas negativas e não é dia futuro, mostrar
+                          if ((record as any).horas_negativas && (record as any).horas_negativas > 0 && !isFutureDate) {
+                            return (
+                              <div className="text-sm">
+                                <span className="text-gray-500">Negativas: </span>
+                                <span className="font-medium text-red-600">
+                                  -{(record as any).horas_negativas.toFixed(2)}h
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       
                       {record.observacoes && (

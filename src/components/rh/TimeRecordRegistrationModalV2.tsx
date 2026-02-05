@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 interface TimeRecordRegistrationModalV2Props {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (payload?: { type: TimeRecordType; localDate?: string; localTimestamp?: string }) => void;
   type: TimeRecordType;
   typeLabel: string;
   employeeId: string;
@@ -133,7 +133,7 @@ export function TimeRecordRegistrationModalV2({
         });
         
         onClose();
-        onSuccess();
+        onSuccess({ type, localDate: result.localDate, localTimestamp: result.localTimestamp });
       } else {
         throw new Error(result.error || 'Erro desconhecido ao registrar ponto');
       }

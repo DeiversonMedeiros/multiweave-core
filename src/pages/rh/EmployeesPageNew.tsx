@@ -203,8 +203,8 @@ export default function EmployeesPageNew() {
         const errorMsg = error.message.toLowerCase();
         
         // Erro de CPF duplicado na mesma empresa
-        if (errorMsg.includes('duplicate key') || errorMsg.includes('cpf') || errorMsg.includes('employees_company_id_cpf_unique') || errorMsg.includes('employees_cpf_key')) {
-          errorMessage = 'Este CPF já está cadastrado nesta empresa. Verifique se o funcionário já existe ou use um CPF diferente.';
+        if (errorMsg.includes('duplicate key') || errorMsg.includes('cpf') || errorMsg.includes('employees_company_id_cpf_unique') || errorMsg.includes('employees_company_id_cpf_active_unique') || errorMsg.includes('employees_cpf_key')) {
+          errorMessage = 'Este CPF já está cadastrado nesta empresa para um funcionário ativo. Se o funcionário anterior foi demitido, você pode cadastrá-lo novamente. Verifique se o funcionário já existe ou use um CPF diferente.';
         }
         // Erro de constraint
         else if (errorMsg.includes('constraint') || errorMsg.includes('violates')) {

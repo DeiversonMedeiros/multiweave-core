@@ -3,12 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { 
   Stethoscope, 
-  User, 
   CheckCircle, 
   XCircle, 
   Eye,
@@ -18,23 +16,15 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useMedicalCertificates } from '@/hooks/rh/useGestorPortal';
 import { useCompany } from '@/lib/company-context';
-import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
 
 const AprovacaoAtestados: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('pendente');
   const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
-  const [aprovacaoObservacoes, setAprovacaoObservacoes] = useState('');
-  const [rejeicaoObservacoes, setRejeicaoObservacoes] = useState('');
-  const [isAprovacaoDialogOpen, setIsAprovacaoDialogOpen] = useState(false);
-  const [isRejeicaoDialogOpen, setIsRejeicaoDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const { selectedCompany } = useCompany();
   const { certificates, loading, error, refetch: fetchCertificates } = useMedicalCertificates(selectedCompany?.id || '');
@@ -65,89 +55,6 @@ const AprovacaoAtestados: React.FC = () => {
     return matchesSearch && matchesStatus;
   });
 
-  const handleAprovar = (certificate: any) => {
-    setSelectedCertificate(certificate);
-    setAprovacaoObservacoes('');
-    setIsAprovacaoDialogOpen(true);
-  };
-
-  const handleRejeitar = (certificate: any) => {
-    setSelectedCertificate(certificate);
-    setRejeicaoObservacoes('');
-    setIsRejeicaoDialogOpen(true);
-  };
-
-  const confirmarAprovacao = async () => {
-    if (!selectedCertificate || !user?.id) return;
-
-    try {
-      setIsProcessing(true);
-      const { data, error: rpcError } = await supabase.rpc('approve_medical_certificate', {
-        p_certificate_id: selectedCertificate.id,
-        p_approved_by: user.id,
-        p_observacoes: aprovacaoObservacoes || null
-      });
-
-      if (rpcError) {
-        throw rpcError;
-      }
-
-      toast({
-        title: "Atestado aprovado!",
-        description: `O atestado de ${selectedCertificate.funcionario_nome} foi aprovado com sucesso.`,
-      });
-
-      setIsAprovacaoDialogOpen(false);
-      setSelectedCertificate(null);
-      setAprovacaoObservacoes('');
-      await fetchCertificates();
-    } catch (error) {
-      console.error('Erro ao aprovar atestado:', error);
-      toast({
-        title: "Erro ao aprovar atestado",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const confirmarRejeicao = async () => {
-    if (!selectedCertificate || !rejeicaoObservacoes.trim() || !user?.id) return;
-
-    try {
-      setIsProcessing(true);
-      const { data, error: rpcError } = await supabase.rpc('reject_medical_certificate', {
-        p_certificate_id: selectedCertificate.id,
-        p_rejected_by: user.id,
-        p_observacoes: rejeicaoObservacoes
-      });
-
-      if (rpcError) {
-        throw rpcError;
-      }
-
-      toast({
-        title: "Atestado rejeitado!",
-        description: `O atestado de ${selectedCertificate.funcionario_nome} foi rejeitado.`,
-      });
-
-      setIsRejeicaoDialogOpen(false);
-      setSelectedCertificate(null);
-      setRejeicaoObservacoes('');
-      await fetchCertificates();
-    } catch (error) {
-      console.error('Erro ao rejeitar atestado:', error);
-      toast({
-        title: "Erro ao rejeitar atestado",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const getAtestadosPendentes = () => {
     return certificates.filter(c => c.status === 'pendente').length;
@@ -314,29 +221,6 @@ const AprovacaoAtestados: React.FC = () => {
                         <Eye className="h-4 w-4 mr-1" />
                         Ver Detalhes
                       </Button>
-                      
-                      {certificate.status === 'pendente' && (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() => handleAprovar(certificate)}
-                            className="bg-green-600 hover:bg-green-700"
-                            disabled={isProcessing}
-                          >
-                            <CheckCircle className="h-4 w-4 mr-1" />
-                            Aprovar
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleRejeitar(certificate)}
-                            disabled={isProcessing}
-                          >
-                            <XCircle className="h-4 w-4 mr-1" />
-                            Rejeitar
-                          </Button>
-                        </>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -355,102 +239,6 @@ const AprovacaoAtestados: React.FC = () => {
           </Card>
         )}
       </div>
-
-      {/* Dialog de Aprovação */}
-      <Dialog open={isAprovacaoDialogOpen} onOpenChange={setIsAprovacaoDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Aprovar Atestado</DialogTitle>
-            <DialogDescription>
-              Confirme a aprovação do atestado de {selectedCertificate?.funcionario_nome}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {selectedCertificate && (
-              <div className="space-y-2">
-                <p><strong>Funcionário:</strong> {selectedCertificate.funcionario_nome}</p>
-                <p><strong>Número:</strong> {selectedCertificate.numero_atestado}</p>
-                <p><strong>Período:</strong> {new Date(selectedCertificate.data_inicio).toLocaleDateString('pt-BR')} - {new Date(selectedCertificate.data_fim).toLocaleDateString('pt-BR')}</p>
-                <p><strong>Dias:</strong> {selectedCertificate.dias_afastamento}</p>
-                {selectedCertificate.cid_codigo && (
-                  <p><strong>CID:</strong> {selectedCertificate.cid_codigo} - {selectedCertificate.cid_descricao}</p>
-                )}
-              </div>
-            )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Observações (opcional)</label>
-              <Textarea
-                placeholder="Adicione observações sobre a aprovação..."
-                value={aprovacaoObservacoes}
-                onChange={(e) => setAprovacaoObservacoes(e.target.value)}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setIsAprovacaoDialogOpen(false)}
-              disabled={isProcessing}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              onClick={confirmarAprovacao} 
-              className="bg-green-600 hover:bg-green-700"
-              disabled={isProcessing}
-            >
-              {isProcessing ? 'Processando...' : 'Confirmar Aprovação'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog de Rejeição */}
-      <Dialog open={isRejeicaoDialogOpen} onOpenChange={setIsRejeicaoDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rejeitar Atestado</DialogTitle>
-            <DialogDescription>
-              Informe o motivo da rejeição do atestado de {selectedCertificate?.funcionario_nome}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {selectedCertificate && (
-              <div className="space-y-2">
-                <p><strong>Funcionário:</strong> {selectedCertificate.funcionario_nome}</p>
-                <p><strong>Número:</strong> {selectedCertificate.numero_atestado}</p>
-                <p><strong>Período:</strong> {new Date(selectedCertificate.data_inicio).toLocaleDateString('pt-BR')} - {new Date(selectedCertificate.data_fim).toLocaleDateString('pt-BR')}</p>
-                <p><strong>Dias:</strong> {selectedCertificate.dias_afastamento}</p>
-              </div>
-            )}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Motivo da Rejeição *</label>
-              <Textarea
-                placeholder="Informe o motivo da rejeição..."
-                value={rejeicaoObservacoes}
-                onChange={(e) => setRejeicaoObservacoes(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button 
-              variant="outline" 
-              onClick={() => setIsRejeicaoDialogOpen(false)}
-              disabled={isProcessing}
-            >
-              Cancelar
-            </Button>
-            <Button 
-              onClick={confirmarRejeicao} 
-              variant="destructive"
-              disabled={!rejeicaoObservacoes.trim() || isProcessing}
-            >
-              {isProcessing ? 'Processando...' : 'Confirmar Rejeição'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Dialog de Detalhes */}
       <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>

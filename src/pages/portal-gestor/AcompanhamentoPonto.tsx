@@ -642,15 +642,26 @@ const AcompanhamentoPonto: React.FC = () => {
                               +{Number(ponto.horas_extras).toFixed(1)}h
                             </span>
                           </div>
-                        ) : (ponto.horas_negativas && ponto.horas_negativas > 0) ? (
-                          // Mostrar horas negativas
-                          <div className="text-sm">
-                            <span className="text-gray-500">Negativas: </span>
-                            <span className="font-medium text-red-600">
-                              -{ponto.horas_negativas.toFixed(2)}h
-                            </span>
-                          </div>
-                        ) : null}
+                        ) : (() => {
+                          // CORREÇÃO: Não mostrar horas negativas para dias futuros
+                          const recordDate = new Date(ponto.data_registro);
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const isFutureDate = recordDate > today;
+                          
+                          // Se tem horas negativas e não é dia futuro, mostrar
+                          if (ponto.horas_negativas && ponto.horas_negativas > 0 && !isFutureDate) {
+                            return (
+                              <div className="text-sm">
+                                <span className="text-gray-500">Negativas: </span>
+                                <span className="font-medium text-red-600">
+                                  -{ponto.horas_negativas.toFixed(2)}h
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       
                       {ponto.observacoes && (

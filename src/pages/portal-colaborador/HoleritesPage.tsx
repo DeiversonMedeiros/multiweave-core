@@ -83,6 +83,39 @@ export default function HoleritesPage() {
     try {
       toast.loading('Gerando contracheque em PDF...', { id: 'generate-pdf' });
 
+      // Buscar dados completos da empresa
+      const { data: companyData, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', selectedCompany.id)
+        .single();
+      
+      if (companyError) {
+        console.warn('Erro ao buscar dados da empresa:', companyError);
+      }
+
+      // Buscar cargo do funcionário se houver cargo_id
+      let cargoData = null;
+      if (employee.cargo_id && selectedCompany.id) {
+        cargoData = await EntityService.getById<any>({
+          schema: 'rh',
+          table: 'positions',
+          id: employee.cargo_id,
+          companyId: selectedCompany.id
+        });
+      }
+
+      // Buscar departamento do funcionário se houver departamento_id
+      let departamentoData = null;
+      if (employee.departamento_id && selectedCompany.id) {
+        departamentoData = await EntityService.getById<any>({
+          schema: 'rh',
+          table: 'units',
+          id: employee.departamento_id,
+          companyId: selectedCompany.id
+        });
+      }
+
       // Buscar eventos da folha
       const { getPayrollEvents } = await import('@/services/rh/payrollCalculationService');
       const eventsResult = await getPayrollEvents(selectedCompany.id, payroll.id);
@@ -93,10 +126,27 @@ export default function HoleritesPage() {
         payroll,
         employee,
         events,
-        company: {
-          name: selectedCompany.nome || 'Empresa',
-          cnpj: selectedCompany.cnpj,
-          address: selectedCompany.endereco
+        company: companyData ? {
+          id: companyData.id,
+          razao_social: companyData.razao_social,
+          nome_fantasia: companyData.nome_fantasia,
+          cnpj: companyData.cnpj,
+          inscricao_estadual: companyData.inscricao_estadual,
+          logo_url: companyData.logo_url,
+          endereco: companyData.endereco,
+          contato: companyData.contato,
+          numero_empresa: companyData.numero_empresa
+        } : undefined,
+        employeeData: {
+          id: employee.id,
+          nome: employee.nome,
+          matricula: employee.matricula,
+          cpf: employee.cpf,
+          estado: employee.estado,
+          data_admissao: employee.data_admissao,
+          pis_pasep: employee.pis_pasep,
+          cargo: cargoData ? { nome: cargoData.nome } : null,
+          departamento: departamentoData ? { nome: departamentoData.nome } : null
         }
       });
 

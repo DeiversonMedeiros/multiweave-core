@@ -1,0 +1,14 @@
+-- =====================================================
+-- REGRAS DE PERMISSÃO (documentação – sem alteração de dados)
+-- =====================================================
+-- Regras implementadas no useMenu (frontend):
+-- 1) Só permissão de PÁGINA (ex.: /rh/treinamentos, /rh/training), sem módulo RH
+--    → usuário NÃO vê nenhuma página (seção RH não aparece).
+-- 2) Só permissão de MÓDULO RH, sem permissão de páginas do módulo
+--    → usuário vê apenas a seção "Recursos Humanos", sem itens de página.
+-- 3) Para ver páginas do módulo RH: é necessário MÓDULO (rh) + PÁGINA.
+--
+-- Para o perfil "Gestor Qualidade" ver Treinamentos no RH, conceder:
+-- - module_permissions: rh (can_read = true) e
+-- - page_permissions: /rh/training*, /rh/treinamentos* (conforme já configurado).
+-- =====================================================

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef, useCallback } from 'react';
 import { TimeRecordsService } from '@/services/rh/timeRecordsService';
 import { 
   TimeRecord, 
@@ -91,7 +91,240 @@ export function useTimeRecordsPaginated(
     (!hasEmployeeIdParam || !!employeeId) && 
     (!hasManagerUserIdParam || !!managerUserId);
 
-  const queryKey = ['rh', 'time-records', 'paginated', selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId];
+  // Estabilizar queryKey com useMemo para evitar recriações desnecessárias
+  const queryKey = useMemo(() => [
+    'rh', 
+    'time-records', 
+    'paginated', 
+    selectedCompany?.id, 
+    employeeId, 
+    startDate, 
+    endDate, 
+    status, 
+    pageSize, 
+    managerUserId
+  ], [selectedCompany?.id, employeeId, startDate, endDate, status, pageSize, managerUserId]);
+
+  // Ref para rastrear o último cursor retornado (proteção contra loops)
+  const lastReturnedCursorRef = useRef<number | undefined>(undefined);
+  const lastReturnedCursorCallCountRef = useRef<number>(0);
+  const getNextPageParamCallCountRef = useRef<number>(0);
+  const lastCallTimeRef = useRef<number>(0);
+  const loopDetectedRef = useRef<boolean>(false);
+  // Cache do último resultado para evitar recálculos desnecessários
+  // Incluir uma chave baseada nos parâmetros da última página para melhor detecção
+  const lastResultCacheRef = useRef<{ 
+    totalRecords: number; 
+    totalCount: number; 
+    result: number | undefined;
+    lastPageDataLength: number;
+    allPagesLength: number;
+  } | null>(null);
+  
+  // Resetar cache e flags de loop quando os parâmetros da query mudarem
+  useEffect(() => {
+    lastResultCacheRef.current = null;
+    loopDetectedRef.current = false;
+    lastReturnedCursorRef.current = undefined;
+    lastReturnedCursorCallCountRef.current = 0;
+    getNextPageParamCallCountRef.current = 0;
+    lastCallTimeRef.current = 0;
+  }, [queryKey]);
+
+  // Memoizar getNextPageParam para evitar recriações que causam loops
+  const getNextPageParam = useCallback((lastPage: {
+    data: TimeRecord[];
+    nextCursor?: number;
+    hasMore: boolean;
+    totalCount: number;
+  }, allPages: Array<{
+    data: TimeRecord[];
+    nextCursor?: number;
+    hasMore: boolean;
+    totalCount: number;
+  }>) => {
+    // Calcular valores críticos PRIMEIRO para verificação de cache
+    const totalRecordsLoaded = allPages.reduce((sum, page) => sum + page.data.length, 0);
+    const allPagesLength = allPages.length;
+    const lastPageDataLength = lastPage.data.length;
+    
+    // VERIFICAÇÃO DE CACHE ANTES DE QUALQUER OUTRA LÓGICA
+    // Isso evita recálculos desnecessários que causam loops
+    if (lastResultCacheRef.current) {
+      const cached = lastResultCacheRef.current;
+      const isExactMatch = 
+        cached.totalRecords === totalRecordsLoaded && 
+        cached.totalCount === lastPage.totalCount &&
+        cached.lastPageDataLength === lastPageDataLength &&
+        cached.allPagesLength === allPagesLength;
+      
+      if (isExactMatch) {
+        // Cache hit perfeito - retornar imediatamente sem logs ou cálculos
+        return cached.result;
+      }
+    }
+    
+    const callId = Math.random().toString(36).substring(7);
+    const now = Date.now();
+    const timeSinceLastCall = now - lastCallTimeRef.current;
+    
+    // Log detalhado de cada chamada (apenas quando não é cache hit)
+    console.log(`[useTimeRecordsPaginated] 🔍 getNextPageParam CHAMADO [${callId}]:`, {
+      callId,
+      timestamp: new Date().toISOString(),
+      timeSinceLastCall: `${timeSinceLastCall}ms`,
+      callCount: getNextPageParamCallCountRef.current + 1,
+      loopDetected: loopDetectedRef.current,
+      lastPageDataLength,
+      lastPageTotalCount: lastPage.totalCount,
+      lastPageHasMore: lastPage.hasMore,
+      lastPageNextCursor: lastPage.nextCursor,
+      allPagesLength,
+      totalRecordsLoaded,
+      lastReturnedCursor: lastReturnedCursorRef.current,
+      lastReturnedCursorCallCount: lastReturnedCursorCallCountRef.current,
+      hasCache: !!lastResultCacheRef.current,
+    });
+    
+    // Se já detectamos um loop anteriormente, retornar undefined imediatamente
+    if (loopDetectedRef.current) {
+      console.log(`[useTimeRecordsPaginated] ⏭️ [${callId}] Loop já detectado anteriormente, retornando undefined imediatamente`);
+      return undefined;
+    }
+
+    // PROTEÇÃO ANTI-LOOP: Detectar chamadas muito frequentes (loop infinito)
+    getNextPageParamCallCountRef.current++;
+    
+    // Se foi chamado mais de 2 vezes em menos de 100ms, quebrar o loop IMEDIATAMENTE
+    if (timeSinceLastCall < 100) {
+      if (getNextPageParamCallCountRef.current > 2) {
+        console.error(`[useTimeRecordsPaginated] 🚨 [${callId}] LOOP INFINITO DETECTADO! Quebrando após ${getNextPageParamCallCountRef.current} chamadas em ${timeSinceLastCall}ms`, {
+          callId,
+          callCount: getNextPageParamCallCountRef.current,
+          timeWindow: `${timeSinceLastCall}ms`,
+          lastPageDataLength,
+          lastPageTotalCount: lastPage.totalCount,
+          allPagesLength,
+          totalRecordsLoaded,
+        });
+        loopDetectedRef.current = true;
+        getNextPageParamCallCountRef.current = 0;
+        lastCallTimeRef.current = now;
+        const result = undefined;
+        lastResultCacheRef.current = { 
+          totalRecords: totalRecordsLoaded, 
+          totalCount: lastPage.totalCount, 
+          result,
+          lastPageDataLength,
+          allPagesLength,
+        };
+        return result;
+      }
+    } else {
+      // Resetar contador se passou tempo suficiente
+      getNextPageParamCallCountRef.current = 0;
+      loopDetectedRef.current = false; // Resetar flag de loop se passou tempo
+    }
+    lastCallTimeRef.current = now;
+    
+    console.log(`[useTimeRecordsPaginated] 📊 [${callId}] Cálculos:`, {
+      callId,
+      totalRecordsLoaded,
+      lastPageTotalCount: lastPage.totalCount,
+      lastPageDataLength,
+      allPagesLength,
+    });
+    
+    // PROTEÇÃO IMEDIATA: Se já carregamos tudo ou mais que o total, retornar undefined
+    if (totalRecordsLoaded >= lastPage.totalCount) {
+      console.log(`[useTimeRecordsPaginated] 🛑 [${callId}] Todos os registros já carregados:`, {
+        callId,
+        totalRecordsLoaded,
+        totalCount: lastPage.totalCount,
+      });
+      const result = undefined;
+      lastResultCacheRef.current = { 
+        totalRecords: totalRecordsLoaded, 
+        totalCount: lastPage.totalCount, 
+        result,
+        lastPageDataLength,
+        allPagesLength,
+      };
+      return result;
+    }
+    
+    // Se não há dados na última página, não há mais páginas
+    if (lastPageDataLength === 0) {
+      console.log(`[useTimeRecordsPaginated] 🛑 [${callId}] Última página vazia`);
+      const result = undefined;
+      lastResultCacheRef.current = { 
+        totalRecords: totalRecordsLoaded, 
+        totalCount: lastPage.totalCount, 
+        result,
+        lastPageDataLength,
+        allPagesLength,
+      };
+      return result;
+    }
+    
+    // Verificação rigorosa: só há mais páginas se total carregado é menor que total disponível
+    const actuallyHasMore = totalRecordsLoaded < lastPage.totalCount;
+    
+    // Calcular o próximo cursor baseado no offset atual
+    const nextCursor = actuallyHasMore ? totalRecordsLoaded : undefined;
+    
+    console.log(`[useTimeRecordsPaginated] 🧮 [${callId}] Cálculo de cursor:`, {
+      callId,
+      totalRecordsLoaded,
+      totalCount: lastPage.totalCount,
+      actuallyHasMore,
+      calculatedNextCursor: nextCursor,
+      lastReturnedCursor: lastReturnedCursorRef.current,
+    });
+    
+    // PROTEÇÃO CRÍTICA: Se estamos retornando o mesmo cursor repetidamente, parar IMEDIATAMENTE
+    let finalResult: number | undefined = nextCursor;
+    
+    if (nextCursor !== undefined) {
+      if (nextCursor === lastReturnedCursorRef.current) {
+        lastReturnedCursorCallCountRef.current++;
+        
+        // Se o mesmo cursor foi retornado mais de 1 vez, quebrar o loop IMEDIATAMENTE
+        if (lastReturnedCursorCallCountRef.current > 1) {
+          console.error(`[useTimeRecordsPaginated] 🚨 [${callId}] LOOP DETECTADO: Cursor ${nextCursor} repetido ${lastReturnedCursorCallCountRef.current} vezes!`);
+          loopDetectedRef.current = true;
+          finalResult = undefined;
+        }
+      } else {
+        // Novo cursor diferente, resetar contador e atualizar referência
+        lastReturnedCursorRef.current = nextCursor;
+        lastReturnedCursorCallCountRef.current = 0;
+      }
+    } else {
+      // Se retornando undefined, resetar tudo (não há mais páginas)
+      lastReturnedCursorRef.current = undefined;
+      lastReturnedCursorCallCountRef.current = 0;
+    }
+    
+    // Salvar resultado no cache antes de retornar
+    lastResultCacheRef.current = { 
+      totalRecords: totalRecordsLoaded, 
+      totalCount: lastPage.totalCount, 
+      result: finalResult,
+      lastPageDataLength,
+      allPagesLength,
+    };
+    
+    console.log(`[useTimeRecordsPaginated] ✅ [${callId}] Retornando resultado final:`, {
+      callId,
+      result: finalResult,
+      totalRecordsLoaded,
+      totalCount: lastPage.totalCount,
+    });
+    
+    // Retornar o resultado final
+    return finalResult;
+  }, []); // Array vazio = função nunca muda
 
   return useInfiniteQuery({
     queryKey,
@@ -101,10 +334,15 @@ export function useTimeRecordsPaginated(
       hasMore: boolean;
       totalCount: number;
     }> => {
+      const stackTrace = new Error().stack;
+      const caller = stackTrace?.split('\n')[2]?.trim() || 'unknown';
+      
       console.log(`[useTimeRecordsPaginated] 🔄 Query executando:`, {
         queryKey: queryKey.slice(0, 3), // Log apenas parte da key
         pageParam,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        caller,
+        stackTrace: stackTrace?.split('\n').slice(0, 5).join('\n'),
       });
       
       const queryStartTime = performance.now();
@@ -147,7 +385,12 @@ export function useTimeRecordsPaginated(
       const serviceEndTime = performance.now();
       const serviceDuration = serviceEndTime - serviceStartTime;
 
-      const hasMore = (pageParam as number) + pageSize < result.totalCount;
+      // Calcular hasMore baseado nos registros retornados vs total
+      // Se retornou menos registros que o pageSize, não há mais páginas
+      // Se o offset atual + registros retornados < totalCount, há mais páginas
+      const recordsReturned = result.data.length;
+      const currentOffset = pageParam as number;
+      const hasMore = recordsReturned === pageSize && (currentOffset + recordsReturned) < result.totalCount;
 
       // LOG DETALHADO: Verificar dados recebidos do serviço
       const pageNum = Math.floor((pageParam as number) / pageSize) + 1;
@@ -186,26 +429,7 @@ export function useTimeRecordsPaginated(
         totalCount: result.totalCount,
       };
     },
-    getNextPageParam: (lastPage, allPages) => {
-      // Só retornar nextCursor se houver mais páginas
-      // O React Query não faz prefetch automático por padrão
-      const nextParam = lastPage.hasMore ? lastPage.nextCursor : undefined;
-      const totalRecordsLoaded = allPages.reduce((sum, page) => sum + page.data.length, 0);
-      
-      console.log(`[useTimeRecordsPaginated] 🔍 getNextPageParam:`, {
-        hasMore: lastPage.hasMore,
-        nextCursor: lastPage.nextCursor,
-        totalCount: lastPage.totalCount,
-        dataLength: lastPage.data.length,
-        totalPages: allPages.length,
-        totalRecordsLoaded,
-        progresso: `${totalRecordsLoaded} de ${lastPage.totalCount}`,
-        retornando: nextParam,
-        ultimaPaginaIds: lastPage.data.slice(0, 3).map(r => r.id)
-      });
-      
-      return nextParam;
-    },
+    getNextPageParam,
     enabled: isEnabled,
     initialPageParam: 0,
     // Desabilitar completamente refetch automático

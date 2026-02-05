@@ -95,6 +95,23 @@ export default function AprovacaoCorrecoesPonto() {
     return time.substring(0, 5); // HH:MM
   };
 
+  /** Formata data + horário para exibição no modal de detalhes (dd/MM/yyyy HH:mm). */
+  const formatDateTime = (dateStr?: string, timeStr?: string) => {
+    if (!timeStr) return '-';
+    // Extrair HH:MM (aceita "HH:MM", "HH:MM:SS" ou ISO "YYYY-MM-DDTHH:MM...")
+    const timeOnly = timeStr.includes('T')
+      ? timeStr.substring(timeStr.indexOf('T') + 1, timeStr.indexOf('T') + 6)
+      : timeStr.substring(0, 5);
+    if (!dateStr || !dateStr.match(/^\d{4}-\d{2}-\d{2}/)) return timeOnly;
+    const parts = dateStr.split(/[-T]/).map(Number);
+    const [y, m, d] = [parts[0], parts[1], parts[2]];
+    if (!y || !m || !d) return timeOnly;
+    const date = new Date(y, m - 1, d);
+    if (isNaN(date.getTime())) return timeOnly;
+    const dateFormatted = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return `${dateFormatted} ${timeOnly}`;
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
     
@@ -546,20 +563,20 @@ export default function AprovacaoCorrecoesPonto() {
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Horário Original</Label>
                   <div className="text-sm space-y-1">
-                    <p>Entrada: {formatTime(selectedCorrection.entrada_original)}</p>
-                    <p>Saída: {formatTime(selectedCorrection.saida_original)}</p>
+                    <p>Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_original)}</p>
+                    <p>Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_original)}</p>
                     {(selectedCorrection.entrada_almoco_original || selectedCorrection.saida_almoco_original) && (
                       <>
                         <p className="text-xs text-gray-500 mt-2">Almoço:</p>
-                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_almoco_original)}</p>
-                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_almoco_original)}</p>
+                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_almoco_original)}</p>
+                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_almoco_original)}</p>
                       </>
                     )}
                     {(selectedCorrection.entrada_extra1_original || selectedCorrection.saida_extra1_original) && (
                       <>
                         <p className="text-xs text-gray-500 mt-2">Hora Extra:</p>
-                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_extra1_original)}</p>
-                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_extra1_original)}</p>
+                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_extra1_original)}</p>
+                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_extra1_original)}</p>
                       </>
                     )}
                   </div>
@@ -567,20 +584,20 @@ export default function AprovacaoCorrecoesPonto() {
                 <div>
                   <Label className="text-sm font-medium text-gray-600">Horário Corrigido</Label>
                   <div className="text-sm space-y-1">
-                    <p>Entrada: {formatTime(selectedCorrection.entrada_corrigida)}</p>
-                    <p>Saída: {formatTime(selectedCorrection.saida_corrigida)}</p>
+                    <p>Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_corrigida)}</p>
+                    <p>Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_corrigida)}</p>
                     {(selectedCorrection.entrada_almoco_corrigida || selectedCorrection.saida_almoco_corrigida) && (
                       <>
                         <p className="text-xs text-gray-500 mt-2">Almoço:</p>
-                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_almoco_corrigida)}</p>
-                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_almoco_corrigida)}</p>
+                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_almoco_corrigida)}</p>
+                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_almoco_corrigida)}</p>
                       </>
                     )}
                     {(selectedCorrection.entrada_extra1_corrigida || selectedCorrection.saida_extra1_corrigida) && (
                       <>
                         <p className="text-xs text-gray-500 mt-2">Hora Extra:</p>
-                        <p className="text-xs">Entrada: {formatTime(selectedCorrection.entrada_extra1_corrigida)}</p>
-                        <p className="text-xs">Saída: {formatTime(selectedCorrection.saida_extra1_corrigida)}</p>
+                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_extra1_corrigida)}</p>
+                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_extra1_corrigida)}</p>
                       </>
                     )}
                   </div>
