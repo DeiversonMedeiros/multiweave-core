@@ -132,9 +132,9 @@ export const OnlineTrainingDashboard: React.FC<OnlineTrainingDashboardProps> = (
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0 w-full max-w-full overflow-hidden">
       {/* Cards de estatísticas principais */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 min-w-0">
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
           return (

@@ -19,10 +19,10 @@ export const Layout = () => {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         <AppSidebar />
-        <div className="flex-1 flex flex-col">
-          <header className="sticky top-0 z-10 flex h-16 items-center gap-2 sm:gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 sm:px-6 overflow-x-auto">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          <header className="sticky top-0 z-10 flex h-16 items-center gap-2 sm:gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-3 sm:px-6 min-w-0 overflow-hidden">
             <SidebarTrigger className="relative z-50 flex-shrink-0" />
-            <div className="hidden sm:block flex-1 min-w-0">
+            <div className="hidden sm:block flex-1 min-w-0 overflow-hidden">
               <Breadcrumbs />
             </div>
             <div className="ml-auto flex items-center gap-2 sm:gap-4 flex-shrink-0">
@@ -46,7 +46,7 @@ export const Layout = () => {
             </div>
           </header>
           <TrainingNotificationScheduler />
-          <main className="flex-1 p-3 sm:p-6">
+          <main className="flex-1 p-3 sm:p-6 min-w-0 overflow-x-hidden">
             {selectedCompany ? (
               <Outlet />
             ) : (

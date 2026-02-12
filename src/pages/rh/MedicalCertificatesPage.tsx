@@ -341,6 +341,16 @@ export default function MedicalCertificatesPage() {
         return 'Odontológico';
       case 'psicologico':
         return 'Psicológico';
+      case 'obito':
+        return 'Óbito';
+      case 'forcas_militares':
+        return 'Forças Militares';
+      case 'poder_judiciario':
+        return 'Poder Judiciário';
+      case 'servico_publico':
+        return 'Serviço Público';
+      case 'outros':
+        return 'Outros';
       default:
         return tipo;
     }

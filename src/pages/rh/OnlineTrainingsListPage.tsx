@@ -9,6 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { 
   BookOpen, 
   Search, 
@@ -261,13 +268,21 @@ export default function OnlineTrainingsListPage() {
           </div>
         )}
 
-        {/* Modal/Formulário de Criação */}
-        {showCreateForm && (
-          <CreateOnlineTrainingForm
-            onSave={handleCreateTraining}
-            onCancel={() => setShowCreateForm(false)}
-          />
-        )}
+        {/* Modal de Novo Treinamento Online */}
+        <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Novo Treinamento Online</DialogTitle>
+              <DialogDescription>
+                Preencha as informações básicas do treinamento. Você poderá adicionar conteúdo, provas e avaliações depois.
+              </DialogDescription>
+            </DialogHeader>
+            <CreateOnlineTrainingForm
+              onSave={handleCreateTraining}
+              onCancel={() => setShowCreateForm(false)}
+            />
+          </DialogContent>
+        </Dialog>
       </div>
     </RequirePage>
   );
@@ -314,15 +329,7 @@ const CreateOnlineTrainingForm: React.FC<CreateOnlineTrainingFormProps> = ({ onS
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Novo Treinamento Online</CardTitle>
-        <CardDescription>
-          Preencha as informações básicas do treinamento. Você poderá adicionar conteúdo, provas e avaliações depois.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="nome">Nome do Treinamento *</Label>
@@ -504,8 +511,6 @@ const CreateOnlineTrainingForm: React.FC<CreateOnlineTrainingFormProps> = ({ onS
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
   );
 };
 

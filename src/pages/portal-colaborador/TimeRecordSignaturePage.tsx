@@ -14,12 +14,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { useMonthlyTimeRecords, TimeRecord } from '@/hooks/rh/useMonthlyTimeRecords';
 import { EntityService } from '@/services/generic/entityService';
 import { getMonthDaysInfo, completeRecordsWithRestDays } from '@/services/rh/timeRecordReportService';
+import { TimeRecordSignatureModal } from '@/components/rh/TimeRecordSignatureModal';
 
 // Removido interface duplicada - usando a do service
 
 export default function TimeRecordSignaturePage() {
   const [signatures, setSignatures] = useState<TimeRecordSignature[]>([]);
+  const [monthLockedMap, setMonthLockedMap] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  const [signatureToSign, setSignatureToSign] = useState<TimeRecordSignature | null>(null);
+  const [signingLoading, setSigningLoading] = useState(false);
   const { toast } = useToast();
   const { currentCompany } = useMultiTenancy();
 
@@ -129,11 +133,24 @@ export default function TimeRecordSignaturePage() {
           
           console.log('📊 [TimeRecordSignaturePage] Resultado criação mês anterior:', { data: lastResult, error: lastError });
           
-          // Se criou assinaturas, buscar novamente
+          // Se criou assinaturas, buscar novamente e carregar status de bloqueio por mês
           if (currentResult || lastResult) {
             console.log('🔄 [TimeRecordSignaturePage] Assinaturas criadas, buscando novamente...');
             const newSignatures = await timeRecordSignatureService.getEmployeeSignatures(employeeId, companyId);
             console.log('✅ [TimeRecordSignaturePage] Novas assinaturas encontradas:', newSignatures.length);
+            const uniqueMonthYears = [...new Set(newSignatures.map((s) => s.month_year))];
+            const lockedMap: Record<string, boolean> = {};
+            await Promise.all(
+              uniqueMonthYears.map(async (my) => {
+                try {
+                  const status = await timeRecordSignatureService.getMonthStatus(companyId, my);
+                  lockedMap[my] = status?.is_locked === true;
+                } catch {
+                  lockedMap[my] = false;
+                }
+              })
+            );
+            setMonthLockedMap(lockedMap);
             setSignatures(newSignatures);
             return;
           }
@@ -142,6 +159,20 @@ export default function TimeRecordSignaturePage() {
         }
       }
 
+      // Controle por mês/ano tem prioridade: buscar status (liberado/bloqueado) de cada mês
+      const uniqueMonthYears = [...new Set(signaturesData.map((s) => s.month_year))];
+      const lockedMap: Record<string, boolean> = {};
+      await Promise.all(
+        uniqueMonthYears.map(async (my) => {
+          try {
+            const status = await timeRecordSignatureService.getMonthStatus(companyId, my);
+            lockedMap[my] = status?.is_locked === true;
+          } catch {
+            lockedMap[my] = false;
+          }
+        })
+      );
+      setMonthLockedMap(lockedMap);
       setSignatures(signaturesData);
     } catch (error) {
       console.error('❌ [TimeRecordSignaturePage] Erro ao carregar assinaturas:', error);
@@ -218,20 +249,51 @@ export default function TimeRecordSignaturePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentCompany?.id, employee?.id, employeeLoading]);
 
-  const handleSign = async (signatureId: string) => {
+  const handleSign = (signatureId: string) => {
+    const signature = signatures.find((s) => s.id === signatureId);
+    if (signature) {
+      setSignatureToSign(signature);
+    }
+  };
+
+  const handleCloseSignatureModal = () => {
+    if (!signingLoading) {
+      setSignatureToSign(null);
+    }
+  };
+
+  const handleSubmitSignature = async (signatureData: any) => {
+    if (!signatureToSign || !currentCompany?.id) return;
+
     try {
-      // TODO: Implementar modal de assinatura
+      setSigningLoading(true);
+      const ipAddress = undefined; // opcional; pode integrar com serviço de IP se necessário
+      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : undefined;
+
+      await timeRecordSignatureService.signRecord(
+        signatureToSign.id,
+        signatureData,
+        currentCompany.id,
+        ipAddress,
+        userAgent
+      );
+
       toast({
-        title: 'Funcionalidade em desenvolvimento',
-        description: 'O modal de assinatura será implementado em breve.',
+        title: 'Assinatura registrada',
+        description: 'Seus registros de ponto foram assinados com sucesso.',
       });
+
+      setSignatureToSign(null);
+      loadSignatures();
     } catch (error) {
       console.error('Erro ao assinar:', error);
       toast({
         title: 'Erro',
-        description: 'Não foi possível processar a assinatura.',
+        description: 'Não foi possível processar a assinatura. Tente novamente.',
         variant: 'destructive',
       });
+    } finally {
+      setSigningLoading(false);
     }
   };
 
@@ -345,6 +407,7 @@ export default function TimeRecordSignaturePage() {
               getStatusText={getStatusText}
               getStatusVariant={getStatusVariant}
               isExpired={isExpired}
+              isMonthLocked={monthLockedMap[signature.month_year] === true}
             />
           ))}
         </div>
@@ -357,6 +420,15 @@ export default function TimeRecordSignaturePage() {
           Após o vencimento, não será mais possível assinar e será necessário entrar em contato com o RH.
         </AlertDescription>
       </Alert>
+
+      {signatureToSign && (
+        <TimeRecordSignatureModal
+          signature={signatureToSign}
+          onClose={handleCloseSignatureModal}
+          onSubmit={handleSubmitSignature}
+          isLoading={signingLoading}
+        />
+      )}
     </div>
   );
 }
@@ -373,6 +445,8 @@ interface SignatureCardWithRecordsProps {
   getStatusText: (status: string) => string;
   getStatusVariant: (status: string) => "default" | "secondary" | "destructive" | "outline";
   isExpired: (expiresAt: string) => boolean;
+  /** Quando true, o mês está bloqueado pelo RH e o colaborador não pode assinar (prioridade sobre config/expiração) */
+  isMonthLocked?: boolean;
 }
 
 function SignatureCardWithRecords({
@@ -385,7 +459,8 @@ function SignatureCardWithRecords({
   getStatusIcon,
   getStatusText,
   getStatusVariant,
-  isExpired
+  isExpired,
+  isMonthLocked = false,
 }: SignatureCardWithRecordsProps) {
   const [showRecords, setShowRecords] = useState(true);
   const [year, month] = signature.month_year.split('-').map(Number);
@@ -784,10 +859,11 @@ function SignatureCardWithRecords({
                     <TableRow>
                       <TableHead>Data</TableHead>
                       <TableHead>Entrada</TableHead>
+                      <TableHead>Entrada Almoço</TableHead>
                       <TableHead>Saída Almoço</TableHead>
-                      <TableHead>Retorno Almoço</TableHead>
                       <TableHead>Saída</TableHead>
                       <TableHead>Horas</TableHead>
+                      <TableHead>Horas Negativas</TableHead>
                       <TableHead>Extras</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>
@@ -851,17 +927,17 @@ function SignatureCardWithRecords({
                             )}
                           </TableCell>
                           <TableCell>
-                            {isVirtual && !record.saida_almoco ? (
-                              <span className="text-muted-foreground text-sm">-</span>
-                            ) : (
-                              formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)
-                            )}
-                          </TableCell>
-                          <TableCell>
                             {isVirtual && !record.entrada_almoco ? (
                               <span className="text-muted-foreground text-sm">-</span>
                             ) : (
                               formatTimeWithDate(record.entrada_almoco, record.entrada_almoco_date, record.base_date || record.data_registro)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual && !record.saida_almoco ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : (
+                              formatTimeWithDate(record.saida_almoco, record.saida_almoco_date, record.base_date || record.data_registro)
                             )}
                           </TableCell>
                           <TableCell>
@@ -876,6 +952,17 @@ function SignatureCardWithRecords({
                               <span className="text-muted-foreground text-sm">-</span>
                             ) : (
                               formatHours(record.horas_trabalhadas)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {isVirtual ? (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            ) : record.horas_negativas && record.horas_negativas > 0 ? (
+                              <span className="text-red-600 font-medium">
+                                -{formatHours(record.horas_negativas)}
+                              </span>
+                            ) : (
+                              '-'
                             )}
                           </TableCell>
                           <TableCell>
@@ -911,7 +998,16 @@ function SignatureCardWithRecords({
           </Alert>
         )}
 
-        {isExpired(signature.expires_at) && signature.status === 'pending' && (
+        {isMonthLocked && signature.status === 'pending' && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Este mês está bloqueado para assinatura pelo RH. Entre em contato para mais informações.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {isExpired(signature.expires_at) && signature.status === 'pending' && !isMonthLocked && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
@@ -920,7 +1016,7 @@ function SignatureCardWithRecords({
           </Alert>
         )}
 
-        {signature.status === 'pending' && !isExpired(signature.expires_at) && (
+        {signature.status === 'pending' && !isExpired(signature.expires_at) && !isMonthLocked && (
           <div className="flex gap-2">
             <Button onClick={() => onSign(signature.id)}>
               <FileText className="mr-2 h-4 w-4" />

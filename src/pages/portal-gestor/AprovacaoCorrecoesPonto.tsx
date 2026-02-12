@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CheckCircle, XCircle, Clock, Search, Filter, Eye, Check, X, AlertTriangle, Users, Calendar, BarChart3, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Search, Eye, Check, X, AlertTriangle, BarChart3, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface CorrectionDetails {
@@ -535,100 +535,164 @@ export default function AprovacaoCorrecoesPonto() {
 
       {/* Dialog de Detalhes */}
       <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Eye className="w-5 h-5" />
+              <Eye className="w-5 h-5 text-primary" />
               Detalhes da Correção
             </DialogTitle>
             <DialogDescription>
-              Informações completas da solicitação de correção
+              Comparação entre o horário registrado e o horário solicitado na correção
             </DialogDescription>
           </DialogHeader>
           {selectedCorrection && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-5">
+              {/* Funcionário e Data */}
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b pb-4">
                 <div>
-                  <Label className="text-sm font-medium text-gray-600">Funcionário</Label>
-                  <p className="text-sm">{selectedCorrection.funcionario_nome}</p>
-                  <p className="text-xs text-gray-500">{selectedCorrection.funcionario_matricula}</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Funcionário</p>
+                  <p className="font-semibold text-foreground">{selectedCorrection.funcionario_nome}</p>
+                  <p className="text-sm text-muted-foreground">{selectedCorrection.funcionario_matricula}</p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-gray-600">Data</Label>
-                  <p className="text-sm">{formatDate(selectedCorrection.data_original)}</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Data</p>
+                  <p className="font-semibold text-foreground">{formatDate(selectedCorrection.data_original)}</p>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm font-medium text-gray-600">Horário Original</Label>
-                  <div className="text-sm space-y-1">
-                    <p>Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_original)}</p>
-                    <p>Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_original)}</p>
-                    {(selectedCorrection.entrada_almoco_original || selectedCorrection.saida_almoco_original) && (
-                      <>
-                        <p className="text-xs text-gray-500 mt-2">Almoço:</p>
-                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_almoco_original)}</p>
-                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_almoco_original)}</p>
-                      </>
-                    )}
-                    {(selectedCorrection.entrada_extra1_original || selectedCorrection.saida_extra1_original) && (
-                      <>
-                        <p className="text-xs text-gray-500 mt-2">Hora Extra:</p>
-                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_extra1_original)}</p>
-                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_extra1_original)}</p>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium text-gray-600">Horário Corrigido</Label>
-                  <div className="text-sm space-y-1">
-                    <p>Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_corrigida)}</p>
-                    <p>Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_corrigida)}</p>
-                    {(selectedCorrection.entrada_almoco_corrigida || selectedCorrection.saida_almoco_corrigida) && (
-                      <>
-                        <p className="text-xs text-gray-500 mt-2">Almoço:</p>
-                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_almoco_corrigida)}</p>
-                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_almoco_corrigida)}</p>
-                      </>
-                    )}
-                    {(selectedCorrection.entrada_extra1_corrigida || selectedCorrection.saida_extra1_corrigida) && (
-                      <>
-                        <p className="text-xs text-gray-500 mt-2">Hora Extra:</p>
-                        <p className="text-xs">Entrada: {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_extra1_corrigida)}</p>
-                        <p className="text-xs">Saída: {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_extra1_corrigida)}</p>
-                      </>
-                    )}
-                  </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <Badge className={getStatusColor(selectedCorrection.status)}>
+                    <div className="flex items-center gap-1">
+                      {getStatusIcon(selectedCorrection.status)}
+                      {selectedCorrection.status.charAt(0).toUpperCase() + selectedCorrection.status.slice(1)}
+                    </div>
+                  </Badge>
                 </div>
               </div>
 
-              <div>
-                <Label className="text-sm font-medium text-gray-600">Justificativa</Label>
-                <p className="text-sm bg-gray-50 p-3 rounded-md mt-1">
+              {/* Comparação Original x Corrigido */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Horário Original */}
+                <div className="rounded-xl border-2 border-amber-200 bg-amber-50/80 dark:bg-amber-950/20 dark:border-amber-800/60 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-amber-100 dark:bg-amber-900/40 border-b border-amber-200 dark:border-amber-800/60">
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      Horário Original
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">Registro antes da correção</p>
+                  </div>
+                  <div className="p-4">
+                    <Table>
+                      <TableBody className="text-sm">
+                        <TableRow className="border-amber-200/50 dark:border-amber-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground w-40">Entrada</TableCell>
+                          <TableCell className="py-2 font-mono font-semibold">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_original)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-amber-200/50 dark:border-amber-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Saída</TableCell>
+                          <TableCell className="py-2 font-mono font-semibold">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_original)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-amber-200/50 dark:border-amber-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Almoço (entrada)</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_almoco_original)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-amber-200/50 dark:border-amber-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Almoço (saída)</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_almoco_original)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-amber-200/50 dark:border-amber-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Entrada Hora Extra</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_extra1_original)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-amber-200/50 dark:border-amber-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Saída Hora Extra</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_extra1_original)}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {/* Horário Corrigido */}
+                <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/80 dark:bg-emerald-950/20 dark:border-emerald-800/60 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-emerald-100 dark:bg-emerald-900/40 border-b border-emerald-200 dark:border-emerald-800/60">
+                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" />
+                      Horário Corrigido
+                    </p>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">Solicitação do colaborador</p>
+                  </div>
+                  <div className="p-4">
+                    <Table>
+                      <TableBody className="text-sm">
+                        <TableRow className="border-emerald-200/50 dark:border-emerald-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground w-40">Entrada</TableCell>
+                          <TableCell className="py-2 font-mono font-semibold">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_corrigida)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-emerald-200/50 dark:border-emerald-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Saída</TableCell>
+                          <TableCell className="py-2 font-mono font-semibold">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_corrigida)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-emerald-200/50 dark:border-emerald-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Almoço (entrada)</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_almoco_corrigida)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-emerald-200/50 dark:border-emerald-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Almoço (saída)</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_almoco_corrigida)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-emerald-200/50 dark:border-emerald-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Entrada Hora Extra</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.entrada_extra1_corrigida)}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow className="border-emerald-200/50 dark:border-emerald-800/30">
+                          <TableCell className="py-2 font-medium text-muted-foreground">Saída Hora Extra</TableCell>
+                          <TableCell className="py-2 font-mono">
+                            {formatDateTime(selectedCorrection.data_original, selectedCorrection.saida_extra1_corrigida)}
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Justificativa */}
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <Label className="text-sm font-semibold text-foreground">Justificativa</Label>
+                <p className="text-sm mt-2 text-foreground/90 leading-relaxed">
                   {selectedCorrection.justificativa}
                 </p>
               </div>
 
               {selectedCorrection.observacoes && (
-                <div>
-                  <Label className="text-sm font-medium text-gray-600">Observações</Label>
-                  <p className="text-sm bg-gray-50 p-3 rounded-md mt-1">
+                <div className="rounded-lg border bg-muted/30 p-4">
+                  <Label className="text-sm font-semibold text-foreground">Observações</Label>
+                  <p className="text-sm mt-2 text-foreground/90 leading-relaxed">
                     {selectedCorrection.observacoes}
                   </p>
                 </div>
               )}
-
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium text-gray-600">Status:</Label>
-                <Badge className={getStatusColor(selectedCorrection.status)}>
-                  <div className="flex items-center gap-1">
-                    {getStatusIcon(selectedCorrection.status)}
-                    {selectedCorrection.status.charAt(0).toUpperCase() + selectedCorrection.status.slice(1)}
-                  </div>
-                </Badge>
-              </div>
             </div>
           )}
           <DialogFooter>

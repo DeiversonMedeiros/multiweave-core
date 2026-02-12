@@ -18,6 +18,13 @@ import {
   Alert,
   AlertDescription,
 } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   Calendar, 
   Plus, 
@@ -37,6 +44,10 @@ import { EntityService } from '@/services/generic/entityService';
 import { FractionedVacationForm } from '@/components/rh/FractionedVacationForm';
 import { useVacationYears } from '@/hooks/rh/useVacationYears';
 import { useAuth } from '@/lib/auth-context';
+import { useEmployees } from '@/hooks/rh/useEmployees';
+import { EmployeesService } from '@/services/rh/employeesService';
+import { generateVacationReceiptHTML, generateVacationPaymentReceiptHTML, VacationPaymentEvent } from '@/services/rh/vacationReceiptService';
+import { downloadFile } from '@/services/rh/timeRecordReportService';
 
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -67,13 +78,22 @@ export default function VacationsManagement() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
+  // Estados
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
   const [isFractionedDialogOpen, setIsFractionedDialogOpen] = useState(false);
   const [selectedVacation, setSelectedVacation] = useState<PendingVacation | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+
+  // Buscar lista de funcionários
+  const { data: employeesData } = useEmployees({ ativo: true });
+  const employees = employeesData?.data || [];
+
+  // Buscar anos de férias quando funcionário for selecionado
+  const { data: availableYears } = useVacationYears(selectedEmployeeId);
 
   // Buscar férias (todas ou filtradas por status)
   const { data: pendingVacations, isLoading: isLoadingPending } = useQuery({
@@ -250,15 +270,299 @@ export default function VacationsManagement() {
     enabled: !!selectedCompany?.id,
   });
 
+  /**
+   * Gera e baixa o recibo/aviso de férias em HTML (imprimível em PDF)
+   */
+  const handleDownloadVacationReceipt = async (vacation: any) => {
+    if (!selectedCompany?.id) {
+      toast({
+        title: 'Empresa não selecionada',
+        description: 'Selecione uma empresa para gerar o recibo de férias.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: 'Gerando recibo de férias...',
+        description: 'Aguarde enquanto preparamos o recibo para download.',
+      });
+
+      // Buscar dados da empresa
+      const { data: companyData, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', selectedCompany.id)
+        .single();
+
+      if (companyError) {
+        console.warn('Erro ao buscar dados da empresa para recibo de férias:', companyError);
+      }
+
+      // Buscar dados completos do funcionário
+      const employeeData = await EmployeesService.getById(vacation.employee_id, selectedCompany.id);
+
+      // Buscar cargo se houver cargo_id
+      let cargoData: any = null;
+      if (employeeData?.cargo_id) {
+        cargoData = await EntityService.getById<any>({
+          schema: 'rh',
+          table: 'positions',
+          id: employeeData.cargo_id,
+          companyId: selectedCompany.id,
+        });
+      }
+
+      const html = generateVacationReceiptHTML({
+        company: companyData,
+        employee: employeeData,
+        positionName: cargoData?.nome,
+        vacation: {
+          data_inicio: vacation.data_inicio,
+          data_fim: vacation.data_fim,
+          dias_solicitados: vacation.dias_solicitados,
+          tipo: vacation.tipo,
+          ano_aquisitivo: vacation.ano_aquisitivo,
+          periodo_aquisitivo_inicio: vacation.periodo_aquisitivo_inicio,
+          periodo_aquisitivo_fim: vacation.periodo_aquisitivo_fim,
+        },
+      });
+
+      const employeeNameForFile =
+        (employeeData?.nome || vacation.employee_nome || 'funcionario').replace(/\s+/g, '_');
+      const startDate = vacation.data_inicio ? new Date(vacation.data_inicio) : null;
+      const startDateStr = startDate && !isNaN(startDate.getTime())
+        ? `${String(startDate.getDate()).padStart(2, '0')}-${String(
+            startDate.getMonth() + 1,
+          ).padStart(2, '0')}-${startDate.getFullYear()}`
+        : 'periodo';
+
+      const filename = `Recibo_Ferias_${employeeNameForFile}_${startDateStr}.html`;
+
+      downloadFile(html, filename, 'text/html');
+
+      toast({
+        title: 'Recibo gerado',
+        description: 'Recibo de férias gerado com sucesso.',
+      });
+    } catch (error: any) {
+      console.error('Erro ao gerar recibo de férias:', error);
+      toast({
+        title: 'Erro ao gerar recibo de férias',
+        description: error?.message || 'Tente novamente em instantes.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  /**
+   * Gera e baixa o RECIBO DE FÉRIAS (pagamento) em HTML, usando
+   * os lançamentos de folha de pagamento relacionados às férias.
+   */
+  const handleDownloadVacationPaymentReceipt = async (vacation: any) => {
+    if (!selectedCompany?.id) {
+      toast({
+        title: 'Empresa não selecionada',
+        description: 'Selecione uma empresa para gerar o recibo de férias.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: 'Gerando recibo de férias (pagamento)...',
+        description: 'Aguarde enquanto buscamos os lançamentos de férias na folha.',
+      });
+
+      // Buscar dados da empresa
+      const { data: companyData, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', selectedCompany.id)
+        .single();
+
+      if (companyError) {
+        console.warn('Erro ao buscar dados da empresa para recibo de férias (pagamento):', companyError);
+      }
+
+      // Buscar dados completos do funcionário
+      const employeeData = await EmployeesService.getById(vacation.employee_id, selectedCompany.id);
+
+      // Buscar cargo se houver cargo_id
+      let cargoData: any = null;
+      if (employeeData?.cargo_id) {
+        cargoData = await EntityService.getById<any>({
+          schema: 'rh',
+          table: 'positions',
+          id: employeeData.cargo_id,
+          companyId: selectedCompany.id,
+        });
+      }
+
+      // Determinar meses/anos que abrangem o período de gozo
+      const startDate = vacation.data_inicio ? new Date(vacation.data_inicio) : null;
+      const endDate = vacation.data_fim ? new Date(vacation.data_fim) : null;
+
+      if (!startDate || isNaN(startDate.getTime()) || !endDate || isNaN(endDate.getTime())) {
+        toast({
+          title: 'Período inválido',
+          description: 'Não foi possível determinar o período de gozo das férias para gerar o recibo.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const months: { month: number; year: number }[] = [];
+      const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+      const endCursor = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+
+      while (cursor <= endCursor) {
+        months.push({ month: cursor.getMonth() + 1, year: cursor.getFullYear() });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+
+      // Buscar folhas de pagamento para cada mês/ano do período de gozo
+      const { getPayrollEvents, getPayrolls } = await import('@/services/rh/payrollCalculationService');
+
+      const allEvents: VacationPaymentEvent[] = [];
+
+      for (const { month, year } of months) {
+        const payrollsResult = await getPayrolls(selectedCompany.id, {
+          employee_id: vacation.employee_id,
+          mes_referencia: month,
+          ano_referencia: year,
+        });
+
+        for (const payroll of payrollsResult.data || []) {
+          const eventsResult = await getPayrollEvents(selectedCompany.id, payroll.id);
+          const events = eventsResult.data || [];
+
+          // Filtrar apenas rubricas claramente relacionadas a férias
+          const vacationEvents = events.filter((ev: any) => {
+            const desc = (ev.descricao_rubrica || '').toString().toLowerCase();
+            const code = (ev.codigo_rubrica || '').toString().toLowerCase();
+            return (
+              desc.includes('ferias') ||
+              desc.includes('férias') ||
+              code.includes('ferias') ||
+              code.includes('férias')
+            );
+          });
+
+          // Mapear para estrutura usada pelo gerador de HTML
+          vacationEvents.forEach((ev: any) => {
+            let referencia = '';
+            if (ev.percentual && ev.percentual !== 0) {
+              const percent = ev.percentual > 1 ? ev.percentual : ev.percentual * 100;
+              referencia = `${percent.toFixed(2).replace('.', ',')}%`;
+            } else if (ev.quantidade && ev.quantidade !== 1) {
+              referencia = String(ev.quantidade);
+            }
+
+            allEvents.push({
+              codigo: ev.codigo_rubrica,
+              descricao: ev.descricao_rubrica,
+              referencia,
+              valor: ev.valor_total || 0,
+              tipo: ev.tipo_rubrica === 'desconto' ? 'desconto' : 'provento',
+              mes_referencia: ev.mes_referencia || payroll.mes_referencia,
+              ano_referencia: ev.ano_referencia || payroll.ano_referencia,
+            });
+          });
+        }
+      }
+
+      if (allEvents.length === 0) {
+        toast({
+          title: 'Nenhum lançamento de férias encontrado',
+          description: 'Não foram encontrados lançamentos de férias na folha de pagamento para este período.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const totalProventos = allEvents
+        .filter((ev) => ev.tipo === 'provento')
+        .reduce((sum, ev) => sum + (ev.valor || 0), 0);
+
+      const totalDescontos = allEvents
+        .filter((ev) => ev.tipo === 'desconto')
+        .reduce((sum, ev) => sum + (ev.valor || 0), 0);
+
+      const liquido = totalProventos - totalDescontos;
+
+      const html = generateVacationPaymentReceiptHTML({
+        company: companyData,
+        employee: employeeData,
+        positionName: cargoData?.nome,
+        vacation: {
+          data_inicio: vacation.data_inicio,
+          data_fim: vacation.data_fim,
+          dias_solicitados: vacation.dias_solicitados,
+          tipo: vacation.tipo,
+          ano_aquisitivo: vacation.ano_aquisitivo,
+          periodo_aquisitivo_inicio: vacation.periodo_aquisitivo_inicio,
+          periodo_aquisitivo_fim: vacation.periodo_aquisitivo_fim,
+        },
+        events: allEvents,
+        totals: {
+          totalProventos,
+          totalDescontos,
+          liquido,
+        },
+      });
+
+      const employeeNameForFile =
+        (employeeData?.nome || vacation.employee_nome || 'funcionario').replace(/\s+/g, '_');
+
+      const startDateStr = `${String(startDate.getDate()).padStart(2, '0')}-${String(
+        startDate.getMonth() + 1,
+      ).padStart(2, '0')}-${startDate.getFullYear()}`;
+
+      const filename = `Recibo_Pagamento_Ferias_${employeeNameForFile}_${startDateStr}.html`;
+
+      downloadFile(html, filename, 'text/html');
+
+      toast({
+        title: 'Recibo de férias gerado',
+        description: 'Recibo de pagamento de férias gerado com sucesso.',
+      });
+    } catch (error: any) {
+      console.error('Erro ao gerar recibo de férias (pagamento):', error);
+      toast({
+        title: 'Erro ao gerar recibo de férias',
+        description: error?.message || 'Tente novamente em instantes.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Aprovar férias
   const approveMutation = useMutation({
     mutationFn: async (vacationId: string) => {
-      const { error } = await supabase.rpc('aprovar_ferias', {
-        p_vacation_id: vacationId,
-        p_aprovado_por: user?.id
-      }, { schema: 'rh' });
+      if (!user?.id) {
+        throw new Error('Usuário não autenticado');
+      }
 
-      if (error) throw error;
+      const { data: result, error } = await (supabase as any).rpc('call_schema_rpc', {
+        p_schema_name: 'rh',
+        p_function_name: 'aprovar_ferias',
+        p_params: {
+          p_vacation_id: vacationId,
+          p_aprovado_por: user.id
+        }
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao aprovar férias');
+      }
+
+      // Verificar se há erro no resultado
+      if (result && typeof result === 'object' && result.error) {
+        throw new Error(result.message || 'Erro ao aprovar férias');
+      }
     },
     onSuccess: () => {
       // Invalidar todas as queries relacionadas, incluindo diferentes statusFilters
@@ -273,10 +577,11 @@ export default function VacationsManagement() {
       });
       setIsApprovalDialogOpen(false);
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || 'Ocorreu um erro ao aprovar a solicitação.';
       toast({
         title: 'Erro ao aprovar férias',
-        description: 'Ocorreu um erro ao aprovar a solicitação.',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -285,13 +590,28 @@ export default function VacationsManagement() {
   // Rejeitar férias
   const rejectMutation = useMutation({
     mutationFn: async ({ vacationId, reason }: { vacationId: string; reason?: string }) => {
-      const { error } = await supabase.rpc('rejeitar_ferias', {
-        p_vacation_id: vacationId,
-        p_aprovado_por: user?.id,
-        p_motivo_rejeicao: reason
-      }, { schema: 'rh' });
+      if (!user?.id) {
+        throw new Error('Usuário não autenticado');
+      }
 
-      if (error) throw error;
+      const { data: result, error } = await (supabase as any).rpc('call_schema_rpc', {
+        p_schema_name: 'rh',
+        p_function_name: 'rejeitar_ferias',
+        p_params: {
+          p_vacation_id: vacationId,
+          p_aprovado_por: user.id,
+          p_motivo_rejeicao: reason || null
+        }
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao rejeitar férias');
+      }
+
+      // Verificar se há erro no resultado
+      if (result && typeof result === 'object' && result.error) {
+        throw new Error(result.message || 'Erro ao rejeitar férias');
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pending-vacations'] });
@@ -303,10 +623,11 @@ export default function VacationsManagement() {
       setIsApprovalDialogOpen(false);
       setRejectionReason('');
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      const errorMessage = error?.message || 'Ocorreu um erro ao rejeitar a solicitação.';
       toast({
         title: 'Erro ao rejeitar férias',
-        description: 'Ocorreu um erro ao rejeitar a solicitação.',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -508,7 +829,7 @@ export default function VacationsManagement() {
             <div className="space-y-4">
               {filteredVacations.map((vacation) => (
                 <Card key={vacation.id} className="p-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <h4 className="font-medium">{vacation.employee_nome}</h4>
@@ -558,24 +879,47 @@ export default function VacationsManagement() {
                       )}
                     </div>
                     
-                    <div className="flex space-x-2">
+                    <div className="flex flex-col items-end gap-2">
                       <Button
                         size="sm"
-                        onClick={() => handleApprove(vacation)}
-                        disabled={approveMutation.isPending}
+                        variant="outline"
+                        onClick={() => handleDownloadVacationReceipt(vacation)}
+                        title="Baixar comunicado de férias (HTML imprimível em PDF)"
                       >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Aprovar
+                        <FileText className="h-4 w-4 mr-2" />
+                        Comunicado
                       </Button>
                       <Button
                         size="sm"
-                        variant="destructive"
-                        onClick={() => handleReject(vacation)}
-                        disabled={rejectMutation.isPending}
+                        variant="outline"
+                        onClick={() => handleDownloadVacationPaymentReceipt(vacation)}
+                        title="Baixar recibo de férias (pagamento, HTML imprimível em PDF)"
                       >
-                        <XCircle className="h-4 w-4 mr-2" />
-                        Rejeitar
+                        <FileText className="h-4 w-4 mr-2" />
+                        Recibo
                       </Button>
+
+                      {vacation.status === 'pendente' && (
+                        <div className="flex space-x-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleApprove(vacation)}
+                            disabled={approveMutation.isPending}
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Aprovar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleReject(vacation)}
+                            disabled={rejectMutation.isPending}
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            Rejeitar
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -652,7 +996,12 @@ export default function VacationsManagement() {
       </Dialog>
 
       {/* Dialog de Férias Fracionadas */}
-      <Dialog open={isFractionedDialogOpen} onOpenChange={setIsFractionedDialogOpen}>
+      <Dialog open={isFractionedDialogOpen} onOpenChange={(open) => {
+        setIsFractionedDialogOpen(open);
+        if (!open) {
+          setSelectedEmployeeId('');
+        }
+      }}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Nova Solicitação de Férias</DialogTitle>
@@ -661,18 +1010,113 @@ export default function VacationsManagement() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="max-h-[70vh] overflow-y-auto">
-            <FractionedVacationForm
-              onSubmit={(data) => {
-                console.log('Dados da férias:', data);
-                // Implementar criação de férias
-                setIsFractionedDialogOpen(false);
-              }}
-              onCancel={() => setIsFractionedDialogOpen(false)}
-              companyId={selectedCompany?.id || ''}
-              employeeId={''} // Será implementado seleção de funcionário
-              availableYears={[]} // Será implementado busca de anos
-            />
+          <div className="max-h-[70vh] overflow-y-auto space-y-4">
+            {/* Campo de seleção de funcionário */}
+            <div className="grid gap-2">
+              <Label htmlFor="employee-select">Funcionário</Label>
+              <Select
+                value={selectedEmployeeId}
+                onValueChange={(value) => setSelectedEmployeeId(value)}
+              >
+                <SelectTrigger id="employee-select">
+                  <SelectValue placeholder="Selecione um funcionário" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.length > 0 ? (
+                    employees.map((employee: any) => (
+                      <SelectItem key={employee.id} value={employee.id}>
+                        {employee.nome} {employee.matricula ? `(${employee.matricula})` : ''}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="loading" disabled>Carregando funcionários...</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+              {employees.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum funcionário encontrado</p>
+              )}
+            </div>
+
+            {selectedEmployeeId && (
+              <FractionedVacationForm
+                onSubmit={async (data) => {
+                  if (!selectedCompany?.id || !selectedEmployeeId) {
+                    toast({
+                      title: 'Erro',
+                      description: 'Empresa ou funcionário não selecionado',
+                      variant: 'destructive',
+                    });
+                    return;
+                  }
+
+                  try {
+                    // Formatar períodos para JSONB
+                    const periodosFormatados = data.periodos.map((p: any) => ({
+                      data_inicio: p.dataInicio,
+                      data_fim: p.dataFim,
+                      dias_ferias: p.diasFerias,
+                      dias_abono: p.diasAbono || 0,
+                      observacoes: p.observacoes || null
+                    }));
+
+                    const { data: result, error } = await (supabase as any).rpc('call_schema_rpc', {
+                      p_schema_name: 'rh',
+                      p_function_name: 'criar_ferias_fracionadas',
+                      p_params: {
+                        p_company_id: selectedCompany.id,
+                        p_employee_id: selectedEmployeeId,
+                        p_ano: data.ano,
+                        p_periodos: periodosFormatados,
+                        p_observacoes: data.observacoes || null
+                      }
+                    });
+
+                    if (error) {
+                      throw new Error(error.message || 'Erro ao criar solicitação de férias fracionadas');
+                    }
+
+                    // Verificar se há erro no resultado
+                    if (result && typeof result === 'object' && result.error) {
+                      throw new Error(result.message || 'Erro ao criar solicitação de férias fracionadas');
+                    }
+
+                    toast({
+                      title: 'Solicitação criada',
+                      description: 'A solicitação de férias foi criada com sucesso.',
+                    });
+
+                    // Invalidar queries relacionadas
+                    queryClient.invalidateQueries({ queryKey: ['pending-vacations'] });
+                    queryClient.invalidateQueries({ queryKey: ['vacation-stats'] });
+                    queryClient.invalidateQueries({ queryKey: ['vacation-years'] });
+
+                    setIsFractionedDialogOpen(false);
+                    setSelectedEmployeeId('');
+                  } catch (error: any) {
+                    toast({
+                      title: 'Erro ao criar solicitação',
+                      description: error?.message || 'Ocorreu um erro ao criar a solicitação de férias.',
+                      variant: 'destructive',
+                    });
+                  }
+                }}
+                onCancel={() => {
+                  setIsFractionedDialogOpen(false);
+                  setSelectedEmployeeId('');
+                }}
+                companyId={selectedCompany?.id || ''}
+                employeeId={selectedEmployeeId}
+                availableYears={availableYears || []}
+              />
+            )}
+
+            {!selectedEmployeeId && (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Selecione um funcionário para continuar</p>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

@@ -13,7 +13,9 @@ import {
   Eye,
   MapPin,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Upload,
+  Download
 } from 'lucide-react';
 import {
   Select,
@@ -27,6 +29,8 @@ import { useMateriaisEquipamentos, useCreateMaterialEquipamento, useUpdateMateri
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useLocalizacoesFisicas } from '@/hooks/almoxarifado/useLocalizacoesFisicas';
 import FormModal from '@/components/almoxarifado/FormModal';
+import { ImportacaoMateriaisModal } from '@/components/almoxarifado/ImportacaoMateriaisModal';
+import { generateMateriaisExcelTemplate } from '@/services/almoxarifado/materiaisImportService';
 import { toast } from 'sonner';
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -48,6 +52,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialEquipamento | null>(null);
   const [viewingMaterial, setViewingMaterial] = useState<MaterialEquipamento | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Hooks para dados reais
   const {
@@ -146,15 +151,24 @@ const MateriaisEquipamentosPage: React.FC = () => {
     [selectedCompany?.id]
   );
 
+  // Assinatura estável das classes vindas dos materiais (evita loop: useEffect não depende do array materiais)
+  const classesFromMateriaisSignature = useMemo(
+    () =>
+      Array.from(
+        new Set(materiais.map((mat) => mat.classe).filter((c): c is string => Boolean(c)))
+      )
+        .sort()
+        .join(','),
+    [materiais]
+  );
+
   useEffect(() => {
     const stored = localStorage.getItem(storageKey);
     const storedGroups: string[] = stored ? JSON.parse(stored) : [];
-    const fromMateriais = materiais
-      .map(mat => mat.classe)
-      .filter((classe): classe is string => Boolean(classe));
+    const fromMateriais = classesFromMateriaisSignature ? classesFromMateriaisSignature.split(',') : [];
     const unique = Array.from(new Set([...storedGroups, ...fromMateriais])).sort();
     setMaterialGroups(unique);
-  }, [materiais, storageKey]);
+  }, [storageKey, classesFromMateriaisSignature]);
 
   const handleAddGroup = () => {
     const name = newGroupName.trim();
@@ -215,10 +229,37 @@ const MateriaisEquipamentosPage: React.FC = () => {
                 Cadastro e gestão de materiais e equipamentos do almoxarifado
               </p>
             </div>
-            <Button className="bg-primary hover:bg-primary/90" onClick={handleNewMaterial}>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Material
-            </Button>
+            <div className="flex gap-2">
+              <PermissionButton
+                action="create"
+                page="/almoxarifado/materiais*"
+                variant="outline"
+                onClick={() => {
+                  try {
+                    generateMateriaisExcelTemplate();
+                    toast.success('Template baixado com sucesso!');
+                  } catch (e) {
+                    toast.error('Erro ao baixar template');
+                  }
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Baixar template
+              </PermissionButton>
+              <PermissionButton
+                action="create"
+                page="/almoxarifado/materiais*"
+                variant="outline"
+                onClick={() => setIsImportModalOpen(true)}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Importar
+              </PermissionButton>
+              <Button className="bg-primary hover:bg-primary/90" onClick={handleNewMaterial}>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Material
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -533,6 +574,14 @@ const MateriaisEquipamentosPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de Importação em Massa */}
+      <ImportacaoMateriaisModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        companyId={selectedCompany?.id || ''}
+        onSuccess={() => refetch()}
+      />
 
       {/* Modal de Formulário */}
       <FormModal

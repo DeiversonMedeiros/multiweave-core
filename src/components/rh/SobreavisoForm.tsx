@@ -73,14 +73,20 @@ export function SobreavisoForm({
   }, [escala]);
 
   useEffect(() => {
-    if (formData.employee_id && employees.length) {
-      const emp = employees.find((e) => e.id === formData.employee_id);
-      if (emp?.salario_base && formData.valor_hora_normal === 0 && !escala) {
-        const chMensal = 220;
-        const valorHora = Number(emp.salario_base) / chMensal;
-        setFormData((prev) => ({ ...prev, valor_hora_normal: Math.round(valorHora * 100) / 100 }));
-      }
-    }
+    if (!formData.employee_id || !employees.length || escala) return;
+
+    const emp = employees.find((e) => e.id === formData.employee_id);
+    if (!emp?.salario_base) return;
+
+    // Cálculo da hora normal com base no salário mensal do funcionário
+    // Considerando carga horária padrão de 220h/mês (CLT).
+    const chMensal = 220;
+    const valorHora = Number(emp.salario_base) / chMensal;
+
+    setFormData((prev) => ({
+      ...prev,
+      valor_hora_normal: Math.round(valorHora * 100) / 100,
+    }));
   }, [formData.employee_id, employees, escala]);
 
   const validate = (): boolean => {

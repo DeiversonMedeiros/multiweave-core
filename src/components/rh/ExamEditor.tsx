@@ -7,6 +7,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { 
   Plus, 
   Edit, 
@@ -284,25 +290,25 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-w-0 w-full max-w-full overflow-hidden">
       {/* Lista de Provas (quando não há prova selecionada) */}
       {!examId && !showExamForm && (
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="min-w-0">
                 <CardTitle>Provas</CardTitle>
                 <CardDescription>
                   Gerencie as provas do treinamento
                 </CardDescription>
               </div>
-              <Button onClick={() => setShowExamForm(true)}>
+              <Button className="flex-shrink-0" onClick={() => setShowExamForm(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Nova Prova
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="min-w-0">
             {loadingExams ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -315,16 +321,16 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 {exams.map((examItem) => (
                   <div
                     key={examItem.id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
+                    className="flex flex-wrap items-center justify-between gap-4 p-4 border rounded-lg hover:bg-accent transition-colors min-w-0"
                   >
-                    <div className="flex items-center gap-4 flex-1">
-                      <FileText className="h-5 w-5 text-muted-foreground" />
-                      <div className="flex-1">
-                        <div className="font-medium">{examItem.titulo}</div>
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{examItem.titulo}</div>
                         <div className="text-sm text-muted-foreground">
                           {examItem.descricao || 'Sem descrição'}
                         </div>
@@ -339,7 +345,7 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <Button
                         variant="outline"
                         size="sm"
@@ -380,10 +386,10 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
       {/* Se já tem prova, mostrar questões */}
       {examId && exam && (
         <>
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <Button
                       variant="ghost"
@@ -399,10 +405,10 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
                       Voltar para Lista
                     </Button>
                   </div>
-                  <CardTitle>{exam.titulo}</CardTitle>
-                  <CardDescription>{exam.descricao}</CardDescription>
+                  <CardTitle className="truncate">{exam.titulo}</CardTitle>
+                  <CardDescription className="truncate">{exam.descricao}</CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-shrink-0">
                   <Badge variant="outline">
                     {exam.tipo_avaliacao === 'entre_aulas' ? 'Entre Aulas' : 
                      exam.tipo_avaliacao === 'final' ? 'Final' : 'Diagnóstica'}
@@ -416,16 +422,16 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
           </Card>
 
           {/* Lista de Questões */}
-          <Card>
+          <Card className="min-w-0 overflow-hidden">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="min-w-0">
                   <CardTitle>Questões</CardTitle>
                   <CardDescription>
                     {questions.length} questão(ões) cadastrada(s)
                   </CardDescription>
                 </div>
-                <Button onClick={() => {
+                <Button className="flex-shrink-0" onClick={() => {
                   setEditingQuestion(null);
                   setShowQuestionForm(true);
                 }}>
@@ -434,7 +440,7 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-w-0">
               {questions.length === 0 ? (
                 <Alert>
                   <AlertDescription>
@@ -461,18 +467,28 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({
             </CardContent>
           </Card>
 
-          {/* Formulário de Questão */}
-          {showQuestionForm && (
-            <QuestionForm
-              examId={examId}
-              question={editingQuestion ? questions.find(q => q.question.id === editingQuestion) : null}
-              onSave={handleSaveQuestion}
-              onCancel={() => {
-                setShowQuestionForm(false);
-                setEditingQuestion(null);
-              }}
-            />
-          )}
+          {/* Modal Nova/Editar Questão */}
+          <Dialog
+            open={showQuestionForm}
+            onOpenChange={(open) => !open && (setShowQuestionForm(false), setEditingQuestion(null))}
+          >
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingQuestion ? 'Editar Questão' : 'Nova Questão'}
+                </DialogTitle>
+              </DialogHeader>
+              <QuestionForm
+                examId={examId}
+                question={editingQuestion ? questions.find(q => q.question.id === editingQuestion) ?? null : null}
+                onSave={handleSaveQuestion}
+                onCancel={() => {
+                  setShowQuestionForm(false);
+                  setEditingQuestion(null);
+                }}
+              />
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </div>
@@ -748,12 +764,7 @@ const QuestionForm: React.FC<QuestionFormProps> = ({ examId, question, onSave, o
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{question ? 'Editar Questão' : 'Nova Questão'}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="space-y-2">
             <Label>Pergunta *</Label>
             <Textarea
@@ -870,8 +881,6 @@ const QuestionForm: React.FC<QuestionFormProps> = ({ examId, question, onSave, o
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
   );
 };
 

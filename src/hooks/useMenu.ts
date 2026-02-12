@@ -350,7 +350,7 @@ export const useMenu = () => {
         },
         {
           id: 'gestor-aprovacao-atestados',
-          title: 'Aprovação de Atestados',
+          title: 'Atestados',
           url: '/portal-gestor/aprovacoes/atestados',
           icon: Stethoscope,
           description: 'Atestados médicos',
@@ -1026,6 +1026,14 @@ export const useMenu = () => {
               icon: Clock,
               description: 'Escalas de sobreaviso: regime de espera remunerado (1/3 da hora normal, máx. 24h)',
               requiresPermission: { type: 'page', name: '/rh/sobreaviso*', action: 'read' }
+            },
+            {
+              id: 'rh-escala-folga',
+              title: 'Escala de Folga',
+              url: '/rh/rest-day-schedule',
+              icon: Calendar,
+              description: 'Gerencie dias de folga adicionais e desconte horas do banco de horas',
+              requiresPermission: { type: 'page', name: '/rh/rest-day-schedule*', action: 'read' }
             },
             {
               id: 'rh-feriados',

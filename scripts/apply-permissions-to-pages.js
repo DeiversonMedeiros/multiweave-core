@@ -31,6 +31,7 @@ const moduleConfig = {
       'src/pages/rh/DelayReasonsPage.tsx',
       'src/pages/rh/CidCodesPage.tsx',
       'src/pages/rh/CompensationRequestsPage.tsx',
+      'src/pages/rh/RestDaySchedulePage.tsx',
       'src/pages/rh/AwardsProductivityPage.tsx',
       'src/pages/rh/AnalyticsPage.tsx',
       'src/pages/rh/EventConsolidationPage.tsx',

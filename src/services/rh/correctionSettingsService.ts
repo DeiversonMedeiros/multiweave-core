@@ -93,7 +93,8 @@ export const CorrectionSettingsService = {
         filters: { 
           company_id: companyId,
           mes_ano: mesAno
-        }
+        },
+        pageSize: 10000
       });
 
       return result.data || [];

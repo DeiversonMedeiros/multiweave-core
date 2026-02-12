@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { PenTool, CheckCircle, AlertCircle, RotateCcw } from 'lucide-react';
+import { PenTool, CheckCircle, AlertCircle, RotateCcw, Loader2 } from 'lucide-react';
 import { TimeRecordSignature } from '@/services/rh/timeRecordSignatureService';
 
 interface TimeRecordSignatureModalProps {
@@ -51,34 +51,28 @@ export function TimeRecordSignatureModal({
   }, []);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
     setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     ctx.beginPath();
     ctx.moveTo(x, y);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     ctx.lineTo(x, y);
     ctx.stroke();
   };
@@ -144,8 +138,8 @@ export function TimeRecordSignatureModal({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-4 sm:p-6">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <PenTool className="h-5 w-5" />
             Assinar Registros de Ponto
@@ -155,7 +149,7 @@ export function TimeRecordSignatureModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-y-auto min-h-0 flex-1 pr-2 -mr-2">
           {/* Informações da Assinatura */}
           <Card>
             <CardContent className="pt-6">
@@ -198,17 +192,63 @@ export function TimeRecordSignatureModal({
                 <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4">
                   <canvas
                     ref={canvasRef}
-                    className="w-full h-48 cursor-crosshair"
+                    className="w-full h-48 cursor-crosshair touch-none"
                     onMouseDown={startDrawing}
                     onMouseMove={draw}
                     onMouseUp={stopDrawing}
                     onMouseLeave={stopDrawing}
+                    onTouchStart={(e) => {
+                      e.preventDefault();
+                      if (e.touches.length !== 1) return;
+                      setIsDrawing(true);
+                      const canvas = canvasRef.current;
+                      if (!canvas) return;
+                      const rect = canvas.getBoundingClientRect();
+                      const touch = e.touches[0];
+                      const x = touch.clientX - rect.left;
+                      const y = touch.clientY - rect.top;
+                      const ctx = canvas.getContext('2d');
+                      if (!ctx) return;
+                      ctx.beginPath();
+                      ctx.moveTo(x, y);
+                    }}
+                    onTouchMove={(e) => {
+                      e.preventDefault();
+                      if (!isDrawing || e.touches.length !== 1) return;
+                      const canvas = canvasRef.current;
+                      if (!canvas) return;
+                      const rect = canvas.getBoundingClientRect();
+                      const touch = e.touches[0];
+                      const x = touch.clientX - rect.left;
+                      const y = touch.clientY - rect.top;
+                      const ctx = canvas.getContext('2d');
+                      if (!ctx) return;
+                      ctx.lineTo(x, y);
+                      ctx.stroke();
+                    }}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      if (isDrawing) {
+                        setHasSignature(true);
+                        const canvas = canvasRef.current;
+                        if (canvas) {
+                          const dataURL = canvas.toDataURL();
+                          setSignatureData({
+                            dataURL,
+                            timestamp: new Date().toISOString(),
+                            coordinates: getSignatureCoordinates()
+                          });
+                        }
+                        setIsDrawing(false);
+                      }
+                    }}
+                    onTouchCancel={stopDrawing}
                     style={{ touchAction: 'none' }}
                   />
                 </div>
 
                 <p className="text-sm text-muted-foreground text-center">
-                  Use o mouse para assinar na área acima
+                  Use o mouse ou o dedo para assinar na área acima
                 </p>
               </div>
             </CardContent>
@@ -242,7 +282,7 @@ export function TimeRecordSignatureModal({
             >
               {isLoading ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Assinando...
                 </>
               ) : (

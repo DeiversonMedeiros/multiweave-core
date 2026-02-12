@@ -1234,40 +1234,173 @@ export const OnlineTrainingService = {
       progress?: TrainingProgressStats;
     }>;
   }> {
-    // Buscar treinamentos online ativos
-    const trainingsResult = await EntityService.list<Training>({
-      schema: 'rh',
-      table: 'trainings',
-      companyId,
-      filters: {
-        modalidade: 'online',
-        is_active: true
+    // IMPORTANTE: Primeiro buscar o funcionário para obter o company_id correto
+    // O funcionário pode estar vinculado a uma empresa diferente da selecionada
+    let employee: any = null;
+    let employeeCompanyId = companyId; // Fallback para a empresa selecionada
+    
+    // Tentar buscar o funcionário na empresa selecionada primeiro
+    try {
+      const employeeResult = await EntityService.list({
+        schema: 'rh',
+        table: 'employees',
+        companyId,
+        filters: {
+          id: employeeId
+        }
+      });
+
+      if (employeeResult.data && employeeResult.data.length > 0) {
+        employee = employeeResult.data[0];
+        employeeCompanyId = employee.company_id;
       }
-    });
+    } catch (error) {
+      console.warn('[getAvailableTrainingsForEmployee] Erro ao buscar funcionário na empresa selecionada:', error);
+    }
 
-    const trainings = trainingsResult.data;
+    // Se não encontrou o funcionário na empresa selecionada, buscar em todas as empresas do usuário
+    if (!employee) {
+      try {
+        // Buscar funcionário em todas as empresas do usuário atual
+        // Primeiro, precisamos obter o user_id do funcionário através de uma busca mais ampla
+        // Vamos buscar o funcionário através de uma query SQL usando RPC ou buscar em todas as empresas conhecidas
+        
+        // Tentar buscar através de uma função RPC se existir, ou buscar em todas as empresas do usuário
+        // Como não temos acesso direto ao userId aqui, vamos tentar buscar o funcionário
+        // através de todas as empresas conhecidas do usuário atual
+        
+        // Buscar empresas do usuário atual através do contexto de autenticação
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (!user) {
+          console.error('[getAvailableTrainingsForEmployee] ❌ Usuário não autenticado');
+          return {
+            assigned: [],
+            byPosition: [],
+            public: []
+          };
+        }
 
-    // Buscar atribuições
-    const assignmentsResult = await EntityService.list<TrainingAssignment>({
-      schema: 'rh',
-      table: 'training_assignments',
-      companyId,
-      filters: {}
-    });
+        const { data: userCompanies, error: userCompaniesError } = await supabase
+          .from('user_companies')
+          .select('company_id')
+          .eq('user_id', user.id)
+          .eq('ativo', true);
 
-    const assignments = assignmentsResult.data;
+        if (!userCompaniesError && userCompanies && userCompanies.length > 0) {
+          // Tentar buscar o funcionário em cada empresa do usuário
+          for (const uc of userCompanies) {
+            try {
+              const result = await EntityService.list({
+                schema: 'rh',
+                table: 'employees',
+                companyId: uc.company_id,
+                filters: { id: employeeId },
+                pageSize: 1
+              });
 
-    // Buscar dados do funcionário para verificar cargo
-    const employeeResult = await EntityService.list({
-      schema: 'rh',
-      table: 'employees',
-      companyId,
-      filters: {
-        id: employeeId
+              if (result.data && result.data.length > 0) {
+                employee = result.data[0];
+                employeeCompanyId = employee.company_id;
+                console.log('[getAvailableTrainingsForEmployee] ✅ Funcionário encontrado na empresa:', employeeCompanyId);
+                break;
+              }
+            } catch (error) {
+              console.warn('[getAvailableTrainingsForEmployee] ⚠️ Erro ao buscar na empresa:', uc.company_id, error);
+            }
+          }
+        }
+
+        // Se ainda não encontrou, retornar resultado vazio
+        if (!employee) {
+          console.error('[getAvailableTrainingsForEmployee] ❌ Funcionário não encontrado em nenhuma empresa do usuário');
+          return {
+            assigned: [],
+            byPosition: [],
+            public: []
+          };
+        }
+      } catch (error) {
+        console.error('[getAvailableTrainingsForEmployee] ❌ Erro ao buscar funcionário em todas as empresas:', error);
+        // Retornar resultado vazio se não encontrou o funcionário
+        return {
+          assigned: [],
+          byPosition: [],
+          public: []
+        };
       }
+    }
+
+    // IMPORTANTE: Para treinamentos públicos, precisamos buscar em TODAS as empresas do usuário
+    // Para treinamentos atribuídos diretamente, buscamos apenas da empresa do funcionário
+    
+    // Obter todas as empresas do usuário para buscar treinamentos públicos
+    const { data: { user } } = await supabase.auth.getUser();
+    let userCompanyIds: string[] = [employeeCompanyId]; // Incluir a empresa do funcionário
+    
+    if (user) {
+      const { data: userCompanies } = await supabase
+        .from('user_companies')
+        .select('company_id')
+        .eq('user_id', user.id)
+        .eq('ativo', true);
+      
+      if (userCompanies && userCompanies.length > 0) {
+        userCompanyIds = userCompanies.map(uc => uc.company_id);
+        // Garantir que a empresa do funcionário está incluída
+        if (!userCompanyIds.includes(employeeCompanyId)) {
+          userCompanyIds.push(employeeCompanyId);
+        }
+      }
+    }
+
+    console.log('[getAvailableTrainingsForEmployee] 🔍 Empresas do usuário para busca:', {
+      employeeCompanyId,
+      userCompanyIds,
+      totalCompanies: userCompanyIds.length
     });
 
-    const employee = employeeResult.data[0] as any;
+    // Buscar treinamentos de todas as empresas do usuário (para treinamentos públicos)
+    const allTrainings: Training[] = [];
+    const allAssignments: TrainingAssignment[] = [];
+    
+    for (const companyId of userCompanyIds) {
+      try {
+        // Buscar treinamentos online ativos desta empresa
+        const trainingsResult = await EntityService.list<Training>({
+          schema: 'rh',
+          table: 'trainings',
+          companyId,
+          filters: {
+            modalidade: 'online',
+            is_active: true
+          }
+        });
+        
+        allTrainings.push(...trainingsResult.data);
+
+        // Buscar atribuições desta empresa
+        const assignmentsResult = await EntityService.list<TrainingAssignment>({
+          schema: 'rh',
+          table: 'training_assignments',
+          companyId,
+          filters: {}
+        });
+        
+        allAssignments.push(...assignmentsResult.data);
+      } catch (error) {
+        console.warn('[getAvailableTrainingsForEmployee] ⚠️ Erro ao buscar dados da empresa:', companyId, error);
+      }
+    }
+
+    // Remover duplicatas de treinamentos (mesmo treinamento pode estar em múltiplas empresas)
+    const uniqueTrainings = allTrainings.filter((t, index, self) => 
+      index === self.findIndex(tr => tr.id === t.id)
+    );
+
+    const trainings = uniqueTrainings;
+    const assignments = allAssignments;
+
     const positionId = employee?.position_id;
     const unitId = employee?.unit_id;
 
@@ -1284,39 +1417,47 @@ export const OnlineTrainingService = {
         let shouldInclude = false;
         let assignmentType: 'assigned' | 'byPosition' | 'public' | null = null;
 
-        // Verificar se é atribuição pública
+        // Verificar se é atribuição pública (deve aparecer de qualquer empresa onde o usuário tem acesso)
         if (assignment.tipo_atribuicao === 'publica') {
           shouldInclude = true;
           assignmentType = 'public';
         }
-        // Verificar se é atribuição direta ao funcionário
-        else if (assignment.employee_id === employeeId) {
+        // Verificar se é atribuição direta ao funcionário (apenas da empresa do funcionário)
+        else if (assignment.employee_id === employeeId && assignment.company_id === employeeCompanyId) {
           shouldInclude = true;
           assignmentType = 'assigned';
         }
-        // Verificar se é atribuição por cargo
-        else if (assignment.position_id === positionId) {
+        // Verificar se é atribuição por cargo (apenas da empresa do funcionário)
+        else if (assignment.position_id === positionId && assignment.company_id === employeeCompanyId) {
           shouldInclude = true;
           assignmentType = 'byPosition';
         }
-        // Verificar se é atribuição por departamento
-        else if (assignment.unit_id === unitId) {
+        // Verificar se é atribuição por departamento (apenas da empresa do funcionário)
+        else if (assignment.unit_id === unitId && assignment.company_id === employeeCompanyId) {
           shouldInclude = true;
           assignmentType = 'byPosition';
         }
 
         if (shouldInclude && assignmentType) {
-          // Buscar progresso
+          // Buscar progresso usando o company_id do treinamento (não o do funcionário)
+          // Para treinamentos públicos de outras empresas, precisamos usar o company_id do treinamento
+          const trainingCompanyId = training.company_id || employeeCompanyId;
           let progress: TrainingProgressStats | undefined;
           try {
             console.log('[getAvailableTrainingsForEmployee] 🔍 Buscando progresso para treinamento', {
               trainingId: training.id,
               trainingName: training.nome,
               employeeId,
-              companyId
+              employeeCompanyId,
+              trainingCompanyId,
+              assignmentType,
+              originalCompanyId: companyId
             });
             
-            progress = await this.getProgressStats(companyId, training.id, employeeId);
+            // Para treinamentos públicos, usar o company_id do treinamento
+            // Para treinamentos atribuídos, usar o company_id do funcionário
+            const progressCompanyId = assignmentType === 'public' ? trainingCompanyId : employeeCompanyId;
+            progress = await this.getProgressStats(progressCompanyId, training.id, employeeId);
             
             console.log('[getAvailableTrainingsForEmployee] ✅ Progresso recebido', {
               trainingId: training.id,
@@ -1392,7 +1533,11 @@ export const OnlineTrainingService = {
     
     console.log('[getAvailableTrainingsForEmployee] ✅ RESULTADO FINAL', {
       employeeId,
-      companyId,
+      employeeCompanyId,
+      originalCompanyId: companyId,
+      userCompanyIds,
+      totalTrainingsFound: trainings.length,
+      totalAssignmentsFound: assignments.length,
       totalAssigned: finalResult.assigned.length,
       totalByPosition: finalResult.byPosition.length,
       totalPublic: finalResult.public.length,

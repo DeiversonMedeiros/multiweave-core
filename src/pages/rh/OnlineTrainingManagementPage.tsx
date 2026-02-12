@@ -241,17 +241,17 @@ export default function OnlineTrainingManagementPage() {
 
   return (
     <RequirePage pagePath="/rh/treinamentos*" action="read">
-      <div className="space-y-6">
+      <div className="space-y-6 min-w-0 w-full max-w-full overflow-x-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
             <h1 className="text-3xl font-bold flex items-center gap-2">
-              <BookOpen className="h-8 w-8" />
-              Gestão de Treinamento Online
+              <BookOpen className="h-8 w-8 flex-shrink-0" />
+              <span className="truncate">Gestão de Treinamento Online</span>
             </h1>
-            <p className="text-muted-foreground mt-1">{currentTraining.nome}</p>
+            <p className="text-muted-foreground mt-1 truncate" title={currentTraining.nome}>{currentTraining.nome}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-shrink-0">
             <Button
               variant="outline"
               onClick={() => navigate('/rh/treinamentos')}
@@ -267,8 +267,8 @@ export default function OnlineTrainingManagementPage() {
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full min-w-0">
+          <TabsList className="flex flex-wrap h-auto gap-1 w-full max-w-full">
             <TabsTrigger value="dashboard">
               <Settings className="h-4 w-4 mr-2" />
               Dashboard
@@ -291,24 +291,24 @@ export default function OnlineTrainingManagementPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="dashboard" className="space-y-6">
+          <TabsContent value="dashboard" className="space-y-6 min-w-0">
             <OnlineTrainingDashboard 
               companyId={selectedCompany?.id || ''} 
               trainingId={trainingId}
             />
           </TabsContent>
 
-          <TabsContent value="content" className="space-y-6">
-            <Card>
+          <TabsContent value="content" className="space-y-6 min-w-0">
+            <Card className="min-w-0 overflow-hidden">
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="min-w-0">
                     <CardTitle>Conteúdo do Treinamento</CardTitle>
                     <CardDescription>
                       Gerencie as aulas e materiais do treinamento
                     </CardDescription>
                   </div>
-                  <Button onClick={() => {
+                  <Button className="flex-shrink-0" onClick={() => {
                     setEditingContent(null);
                     setShowContentForm(true);
                   }}>
@@ -317,7 +317,7 @@ export default function OnlineTrainingManagementPage() {
                   </Button>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="min-w-0">
                 {contentLoading ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -330,23 +330,23 @@ export default function OnlineTrainingManagementPage() {
                     </AlertDescription>
                   </Alert>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2 min-w-0">
                     {content.map((item, index) => (
                       <div
                         key={item.id}
-                        className="flex items-center gap-4 p-4 border rounded-lg hover:bg-accent transition-colors"
+                        className="flex flex-wrap items-center gap-4 p-4 border rounded-lg hover:bg-accent transition-colors min-w-0"
                       >
-                        <div className="flex items-center gap-2 flex-1">
-                          <Badge variant="outline">Aula {item.ordem}</Badge>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Badge variant="outline" className="flex-shrink-0">Aula {item.ordem}</Badge>
                           {getContentIcon(item.tipo_conteudo)}
-                          <div className="flex-1">
-                            <div className="font-medium">{item.titulo}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">{item.titulo}</div>
                             <div className="text-sm text-muted-foreground">
                               {item.tipo_conteudo} • {item.duracao_minutos || 0} min
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -388,27 +388,32 @@ export default function OnlineTrainingManagementPage() {
               </CardContent>
             </Card>
 
-            {/* Formulário de conteúdo */}
-            {showContentForm && (
-              <ContentForm
-                content={editingContent}
-                trainingId={trainingId}
-                onSave={(data) => {
-                  if (editingContent) {
-                    handleUpdateContent(editingContent.id, data);
-                  } else {
-                    handleCreateContent(data);
-                  }
-                }}
-                onCancel={() => {
-                  setShowContentForm(false);
-                  setEditingContent(null);
-                }}
-              />
-            )}
+            {/* Modal Novo/Editar Conteúdo */}
+            <Dialog open={showContentForm} onOpenChange={(open) => !open && (setShowContentForm(false), setEditingContent(null))}>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>{editingContent ? 'Editar Conteúdo' : 'Novo Conteúdo'}</DialogTitle>
+                </DialogHeader>
+                <ContentForm
+                  content={editingContent}
+                  trainingId={trainingId}
+                  onSave={(data) => {
+                    if (editingContent) {
+                      handleUpdateContent(editingContent.id, data);
+                    } else {
+                      handleCreateContent(data);
+                    }
+                  }}
+                  onCancel={() => {
+                    setShowContentForm(false);
+                    setEditingContent(null);
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
-          <TabsContent value="exams" className="space-y-6">
+          <TabsContent value="exams" className="space-y-6 min-w-0">
             <ExamEditor
               trainingId={trainingId}
               onSave={() => {
@@ -420,7 +425,7 @@ export default function OnlineTrainingManagementPage() {
             />
           </TabsContent>
 
-          <TabsContent value="assignments" className="space-y-6">
+          <TabsContent value="assignments" className="space-y-6 min-w-0">
             <TrainingAssignmentsManager
               trainingId={trainingId}
               assignments={assignments}
@@ -500,7 +505,7 @@ export default function OnlineTrainingManagementPage() {
             )}
           </TabsContent>
 
-          <TabsContent value="history" className="space-y-6">
+          <TabsContent value="history" className="space-y-6 min-w-0">
             <TrainingFileHistory trainingId={trainingId} />
           </TabsContent>
         </Tabs>
@@ -541,12 +546,7 @@ const ContentForm: React.FC<ContentFormProps> = ({ content, trainingId, onSave, 
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{content ? 'Editar Conteúdo' : 'Novo Conteúdo'}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Título *</Label>
@@ -750,8 +750,6 @@ const ContentForm: React.FC<ContentFormProps> = ({ content, trainingId, onSave, 
             </Button>
           </div>
         </form>
-      </CardContent>
-    </Card>
   );
 };
 
@@ -828,16 +826,16 @@ const TrainingAssignmentsManager: React.FC<TrainingAssignmentsManagerProps> = ({
   };
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
             <CardTitle>Atribuições</CardTitle>
             <CardDescription>
               Defina usuários obrigatórios e opcionais para o treinamento
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
             <Select value={filter} onValueChange={(value: any) => onFilterChange(value)}>
               <SelectTrigger className="w-[180px]">
                 <Filter className="h-4 w-4 mr-2" />
@@ -857,7 +855,7 @@ const TrainingAssignmentsManager: React.FC<TrainingAssignmentsManagerProps> = ({
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-w-0">
         {loading ? (
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -870,20 +868,20 @@ const TrainingAssignmentsManager: React.FC<TrainingAssignmentsManagerProps> = ({
             </AlertDescription>
           </Alert>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 min-w-0">
             {filteredAssignments.map((assignment) => {
               const target = getAssignmentTarget(assignment);
               return (
                 <div
                   key={assignment.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
+                  className="flex flex-wrap items-center justify-between gap-4 p-4 border rounded-lg hover:bg-accent transition-colors min-w-0"
                 >
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="flex items-center gap-2 text-muted-foreground">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-muted-foreground flex-shrink-0">
                       {target?.icon || <Users className="h-4 w-4" />}
                     </div>
-                    <div className="flex-1">
-                      <div className="font-medium">{target?.label || 'Alvo não encontrado'}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{target?.label || 'Alvo não encontrado'}</div>
                       <div className="text-sm text-muted-foreground flex items-center gap-4 mt-1">
                         <Badge variant={
                           assignment.tipo_atribuicao === 'obrigatorio' ? 'default' : 
@@ -903,7 +901,7 @@ const TrainingAssignmentsManager: React.FC<TrainingAssignmentsManagerProps> = ({
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <Button
                       variant="ghost"
                       size="sm"

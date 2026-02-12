@@ -102,6 +102,9 @@ import OnlineTrainingPage from './OnlineTrainingPage';
 import OnlineTrainingManagementPage from './OnlineTrainingManagementPage';
 import OnlineTrainingsListPage from './OnlineTrainingsListPage';
 
+// Importar página de Escala de Folga
+import RestDaySchedulePage from './RestDaySchedulePage';
+
 // =====================================================
 // ROTAS DO MÓDULO RH - NOVA ABORDAGEM
 // =====================================================
@@ -283,6 +286,10 @@ export function RHRoutesNew() {
       <Route path="/bank-hours" element={<BankHoursPage />} />
       <Route path="/bank-hours/config" element={<BankHoursPage />} />
       <Route path="/bank-hours/dashboard" element={<BankHoursPage />} />
+
+      {/* Escala de Folga */}
+      <Route path="/rest-day-schedule" element={<RestDaySchedulePage />} />
+      <Route path="/rest-day-schedule/new" element={<RestDaySchedulePage />} />
 
       {/* Sobreaviso - escalas de espera remuneradas (1/3 hora normal, máx. 24h) */}
       <Route path="/sobreaviso" element={<SobreavisoPage />} />

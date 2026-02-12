@@ -24,11 +24,11 @@ const medicalCertificateSchema = z.object({
   data_emissao: z.string().min(1, 'Data de emissão é obrigatória'),
   data_inicio: z.string().min(1, 'Data de início é obrigatória'),
   data_fim: z.string().min(1, 'Data de fim é obrigatória'),
-  tipo_atestado: z.enum(['medico', 'odontologico', 'psicologico'], {
+  tipo_atestado: z.enum(['medico', 'odontologico', 'psicologico', 'obito', 'forcas_militares', 'poder_judiciario', 'servico_publico', 'outros'], {
     required_error: 'Tipo do atestado é obrigatório'
   }),
-  medico_nome: z.string().min(1, 'Nome do médico é obrigatório'),
-  crm_crmo: z.string().min(1, 'CRM/CRMO é obrigatório'),
+  medico_nome: z.string().min(1, 'Nome do médico/emissor é obrigatório'),
+  crm_crmo: z.string().optional(),
   especialidade: z.string().optional(),
   cid_codigo: z.string().optional(),
   valor_beneficio: z.number().min(0, 'Valor deve ser maior ou igual a 0'),
@@ -201,6 +201,11 @@ export const MedicalCertificateForm: React.FC<MedicalCertificateFormProps> = ({
                   <SelectItem value="medico">Médico</SelectItem>
                   <SelectItem value="odontologico">Odontológico</SelectItem>
                   <SelectItem value="psicologico">Psicológico</SelectItem>
+                  <SelectItem value="obito">Óbito</SelectItem>
+                  <SelectItem value="forcas_militares">Forças Militares</SelectItem>
+                  <SelectItem value="poder_judiciario">Poder Judiciário</SelectItem>
+                  <SelectItem value="servico_publico">Serviço Público</SelectItem>
+                  <SelectItem value="outros">Outros</SelectItem>
                 </SelectContent>
               </Select>
               {errors.tipo_atestado && (

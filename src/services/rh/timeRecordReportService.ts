@@ -268,13 +268,42 @@ export async function getMonthDaysInfo(
     const medicalCertificates = (medicalCertificatesResult.data || []).filter((mc: any) => {
       return medicalCertificatesStatusOk.includes(mc.status) && mc.data_inicio <= lastDate && mc.data_fim >= firstDate;
     });
-    const vacationsStatusOk = ['aprovado', 'em_andamento', 'concluido'];
+    // CORREÇÃO: Apenas férias aprovadas devem ser marcadas como "Férias" na folha de ponto
+    const vacationsStatusOk = ['aprovado'];
     const vacations = (vacationsResult.data || []).filter((v: any) => {
       return vacationsStatusOk.includes(v.status) && v.data_inicio <= lastDate && v.data_fim >= firstDate;
     });
     const compensations = (compensationsResult.data || []).filter((comp: any) => {
       return comp.data_inicio <= lastDate && (comp.data_fim === null || comp.data_fim >= firstDate);
     });
+    
+    // Buscar períodos de férias fracionadas para férias aprovadas
+    // Como vacations já foi filtrado apenas para 'aprovado', todos os IDs são de férias aprovadas
+    const approvedVacationIds = vacations.map((v: any) => v.id);
+    
+    let vacationPeriods: any[] = [];
+    if (approvedVacationIds.length > 0) {
+      try {
+        // Buscar todos os períodos e filtrar pelos IDs das férias aprovadas
+        // (EntityService não suporta filtro IN diretamente)
+        const vacationPeriodsResult = await EntityService.list({
+          schema: 'rh',
+          table: 'vacation_periods',
+          companyId: companyId,
+          filters: {},
+          pageSize: 1000 // Aumentar limite para garantir que busca todos os períodos
+        });
+        
+        // Filtrar períodos que pertencem às férias aprovadas e que se sobrepõem ao mês
+        vacationPeriods = (vacationPeriodsResult.data || []).filter((vp: any) => {
+          if (!approvedVacationIds.includes(vp.vacation_id)) return false;
+          // Verificar se o período se sobrepõe ao mês
+          return vp.data_inicio <= lastDate && vp.data_fim >= firstDate;
+        });
+      } catch (err) {
+        console.warn('[getMonthDaysInfo] Erro ao buscar períodos de férias:', err);
+      }
+    }
     
     // Criar maps para verificação rápida e armazenar informações adicionais
     // Map para armazenar informações completas do atestado por data
@@ -321,9 +350,32 @@ export async function getMonthDaysInfo(
     });
     
     const vacationDates = new Set<string>();
+    
+    // Criar um Set com IDs de férias que têm períodos (férias fracionadas)
+    const vacationIdsWithPeriods = new Set(vacationPeriods.map((vp: any) => vp.vacation_id));
+    
+    // Processar férias integrais (usar data_inicio e data_fim da tabela vacations)
+    // Férias fracionadas serão processadas pelos períodos
     vacations.forEach((v: any) => {
+      // Se esta férias tem períodos, não processar aqui (será processado pelos períodos)
+      if (vacationIdsWithPeriods.has(v.id)) {
+        return;
+      }
+      
+      // Férias integrais: usar data_inicio e data_fim diretamente
       const start = new Date(v.data_inicio);
       const end = new Date(v.data_fim);
+      const current = new Date(start);
+      while (current <= end) {
+        vacationDates.add(current.toISOString().split('T')[0]);
+        current.setDate(current.getDate() + 1);
+      }
+    });
+    
+    // Processar períodos de férias fracionadas aprovadas
+    vacationPeriods.forEach((vp: any) => {
+      const start = new Date(vp.data_inicio);
+      const end = new Date(vp.data_fim);
       const current = new Date(start);
       while (current <= end) {
         vacationDates.add(current.toISOString().split('T')[0]);
@@ -623,21 +675,32 @@ export async function completeRecordsWithRestDays(
     const existingRecord = recordsByDate.get(dateStr);
     
     // Se já existe registro, ajustar horas negativas se houver atestado de comparecimento
+    // CORREÇÃO: Se é dia de férias aprovadas, garantir que a natureza do dia seja "Férias"
     if (existingRecord) {
+      let recordToAdd = { ...existingRecord };
+      
+      // CORREÇÃO: Se é dia de férias aprovadas, marcar natureza do dia como "ferias"
+      if (dayInfo.isVacation) {
+        recordToAdd = {
+          ...recordToAdd,
+          natureza_dia: 'ferias' as any
+        };
+      }
+      
       // CORREÇÃO: Se há registro com horas negativas e existe atestado de comparecimento, reduzir horas negativas
       if (dayInfo.isMedicalCertificateAttendance && 
           dayInfo.medicalCertificateHours && 
           existingRecord.horas_negativas && 
           existingRecord.horas_negativas > 0) {
         const horasNegativasAjustadas = Math.max(0, existingRecord.horas_negativas - dayInfo.medicalCertificateHours);
-        allDays.push({
-          ...existingRecord,
+        recordToAdd = {
+          ...recordToAdd,
           horas_negativas: horasNegativasAjustadas,
           horas_faltas: horasNegativasAjustadas > 0 ? horasNegativasAjustadas : 0
-        });
-      } else {
-        allDays.push(existingRecord);
+        };
       }
+      
+      allDays.push(recordToAdd);
       continue;
     }
     

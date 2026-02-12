@@ -372,20 +372,58 @@ export default function HistoricoMarcacoesPage() {
   const calculateTotalHours = (record: TimeRecord) => {
     if (!record.entrada || !record.saida) return '--:--';
     
-    const entrada = new Date(`2000-01-01T${record.entrada}`);
-    const saida = new Date(`2000-01-01T${record.saida}`);
+    // CORREÇÃO: Usar campos *_date quando disponíveis para calcular corretamente quando cruza meia-noite
+    // Determinar datas a usar
+    const entradaDate = record.entrada_date || record.base_date || record.data_registro;
+    const saidaDate = record.saida_date || record.base_date || record.data_registro;
+    
+    // Se saída (hora) < entrada (hora) e as datas são iguais, assumir saída no dia seguinte
+    const entradaTime = record.entrada.substring(0, 5); // HH:MM
+    const saidaTime = record.saida.substring(0, 5); // HH:MM
+    const saidaTimeNum = parseInt(saidaTime.split(':')[0]) * 60 + parseInt(saidaTime.split(':')[1]);
+    const entradaTimeNum = parseInt(entradaTime.split(':')[0]) * 60 + parseInt(entradaTime.split(':')[1]);
+    
+    let saidaDateToUse = saidaDate;
+    if (saidaTimeNum < entradaTimeNum && entradaDate === saidaDate) {
+      // Saída cruzou meia-noite: usar dia seguinte
+      const saidaDateObj = new Date(saidaDate);
+      saidaDateObj.setDate(saidaDateObj.getDate() + 1);
+      saidaDateToUse = saidaDateObj.toISOString().split('T')[0];
+    }
+    
+    const entrada = new Date(`${entradaDate}T${record.entrada}`);
+    const saida = new Date(`${saidaDateToUse}T${record.saida}`);
     
     // Subtrair tempo de almoço se existir
     let almocoTime = 0;
     if (record.entrada_almoco && record.saida_almoco) {
-      const entradaAlmoco = new Date(`2000-01-01T${record.entrada_almoco}`);
-      const saidaAlmoco = new Date(`2000-01-01T${record.saida_almoco}`);
+      const entradaAlmocoDate = record.entrada_almoco_date || entradaDate;
+      const saidaAlmocoDate = record.saida_almoco_date || entradaDate;
+      const entradaAlmoco = new Date(`${entradaAlmocoDate}T${record.entrada_almoco}`);
+      const saidaAlmoco = new Date(`${saidaAlmocoDate}T${record.saida_almoco}`);
       almocoTime = saidaAlmoco.getTime() - entradaAlmoco.getTime();
     }
     
     const totalMs = saida.getTime() - entrada.getTime() - almocoTime;
+    
+    // Se ainda deu negativo, tentar com saída no dia seguinte
+    if (totalMs < 0 && entradaDate === saidaDate) {
+      const saidaNextDay = new Date(`${saidaDateToUse}T${record.saida}`);
+      const totalMsFixed = saidaNextDay.getTime() - entrada.getTime() - almocoTime;
+      if (totalMsFixed > 0) {
+        const hours = Math.floor(totalMsFixed / (1000 * 60 * 60));
+        const minutes = Math.floor((totalMsFixed % (1000 * 60 * 60)) / (1000 * 60));
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      }
+    }
+    
     const hours = Math.floor(totalMs / (1000 * 60 * 60));
     const minutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
+    
+    // Se deu negativo, retornar formato negativo
+    if (totalMs < 0) {
+      return `-${Math.abs(hours).toString().padStart(2, '0')}:${Math.abs(minutes).toString().padStart(2, '0')}`;
+    }
     
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };

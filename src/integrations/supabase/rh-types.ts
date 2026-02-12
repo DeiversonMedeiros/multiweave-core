@@ -1209,7 +1209,7 @@ export interface MedicalCertificate {
   data_inicio: string;
   data_fim: string;
   dias_afastamento: number;
-  tipo_atestado: 'medico' | 'odontologico' | 'psicologico';
+  tipo_atestado: 'medico' | 'odontologico' | 'psicologico' | 'obito' | 'forcas_militares' | 'poder_judiciario' | 'servico_publico' | 'outros';
   medico_nome: string;
   crm_crmo: string;
   especialidade?: string;

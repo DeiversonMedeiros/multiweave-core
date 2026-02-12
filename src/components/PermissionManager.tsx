@@ -196,6 +196,7 @@ export const PermissionManager: React.FC = () => {
       '/rh/ponto-eletronico-config*',
       '/rh/location-zones*',
       '/rh/bank-hours*',
+      '/rh/rest-day-schedule*',
       '/rh/sobreaviso*',
       '/rh/holidays*',
       '/rh/compensation-requests*',

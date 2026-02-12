@@ -245,6 +245,21 @@ export function TimeRecordEditModal({
       console.log('✅ [TimeRecordEditModal] Formulário preenchido');
     } else if (isCreating) {
       reset();
+    } else {
+      // Quando não está criando e não há registro existente (correção nova)
+      // Inicializar campos datetime-local com a data selecionada para evitar que smartphones usem a data atual
+      // Isso é especialmente importante em dispositivos móveis onde o navegador pode usar a data atual como padrão
+      reset({
+        entrada: `${date}T08:00`,
+        saida: `${date}T18:00`,
+        entrada_almoco: '',
+        saida_almoco: '',
+        entrada_extra1: '',
+        saida_extra1: '',
+        justificativa: '',
+        motivo_id: '',
+        observacoes: ''
+      });
     }
   }, [existingRecord, isCreating, setValue, reset, date]);
 
@@ -389,7 +404,7 @@ export function TimeRecordEditModal({
     onSuccess: () => {
       toast({
         title: "Registro salvo!",
-        description: `Registro de ponto para ${new Date(date).toLocaleDateString('pt-BR')} foi salvo com sucesso.`,
+        description: `Registro de ponto para ${formatDateSimple(date)} foi salvo com sucesso.`,
       });
       
       // Invalidar queries relacionadas
@@ -530,7 +545,7 @@ export function TimeRecordEditModal({
     onSuccess: () => {
       toast({
         title: "Correção solicitada!",
-        description: `Solicitação de correção para ${new Date(date).toLocaleDateString('pt-BR')} foi enviada para aprovação.`,
+        description: `Solicitação de correção para ${formatDateSimple(date)} foi enviada para aprovação.`,
       });
       
       // Invalidar queries relacionadas
@@ -570,6 +585,16 @@ export function TimeRecordEditModal({
         });
         return;
       }
+      // Ordem cronológica: entrada → entrada_almoco → saida_almoco → saída → entrada_extra1 → saida_extra1
+      const seqValidation = getTimeSequenceValidation();
+      if (!seqValidation.valid) {
+        toast({
+          title: "Horários inválidos",
+          description: seqValidation.message,
+          variant: "destructive",
+        });
+        return;
+      }
     }
     
     if (isCreating) {
@@ -579,13 +604,27 @@ export function TimeRecordEditModal({
     }
   };
 
+  // Função auxiliar para criar Date no timezone local a partir de string YYYY-MM-DD
+  const parseLocalDate = (dateString: string): Date => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  // Função para formatar data completa (com dia da semana)
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
+    const date = parseLocalDate(dateString);
+    return date.toLocaleDateString('pt-BR', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     });
+  };
+
+  // Função para formatar data simples (sem dia da semana)
+  const formatDateSimple = (dateString: string) => {
+    const date = parseLocalDate(dateString);
+    return date.toLocaleDateString('pt-BR');
   };
 
   const validateTime = (time: string) => {
@@ -598,39 +637,73 @@ export function TimeRecordEditModal({
     return validateTime(time);
   };
 
-  const isTimeSequenceValid = () => {
-    const { entrada, saida, entrada_almoco, saida_almoco } = watchedValues;
-    
-    if (!entrada || !saida) return true;
-    
-    // Se for datetime-local, usar diretamente; se for apenas time, criar data fictícia
-    const entradaDateTime = entrada.includes('T') ? new Date(entrada) : new Date(`2000-01-01T${entrada}`);
-    const saidaDateTime = saida.includes('T') ? new Date(saida) : new Date(`2000-01-01T${saida}`);
-    
-    // Se entrada e saída têm datas diferentes, considerar a diferença de dias
-    if (entradaDateTime >= saidaDateTime && entradaDateTime.getDate() === saidaDateTime.getDate()) {
-      return false;
+  // Converte valor do form (datetime-local ou time) para Date usando data base quando não há data
+  const toDateTime = (value: string | undefined, baseDate: string): Date | null => {
+    if (!value || !value.trim()) return null;
+    if (value.includes('T')) {
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
     }
-    
-    if (entrada_almoco && saida_almoco) {
-      const entradaAlmocoDateTime = entrada_almoco.includes('T') ? new Date(entrada_almoco) : new Date(`2000-01-01T${entrada_almoco}`);
-      const saidaAlmocoDateTime = saida_almoco.includes('T') ? new Date(saida_almoco) : new Date(`2000-01-01T${saida_almoco}`);
-      
-      if (entradaAlmocoDateTime >= saidaAlmocoDateTime && entradaAlmocoDateTime.getDate() === saidaAlmocoDateTime.getDate()) {
-        return false;
-      }
-      
-      // Verificar se o almoço está dentro do período de trabalho
-      if (entradaAlmocoDateTime <= entradaDateTime || saidaAlmocoDateTime >= saidaDateTime) {
-        // Permitir se as datas são diferentes (trabalho noturno)
-        if (entradaAlmocoDateTime.getDate() === entradaDateTime.getDate() && 
-            saidaAlmocoDateTime.getDate() === saidaDateTime.getDate()) {
-          return false;
+    // Apenas time (HH:MM) — usar data base
+    const [h, m] = value.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return null;
+    const [y, mo, day] = baseDate.split('-').map(Number);
+    return new Date(y, mo - 1, day, h, m, 0, 0);
+  };
+
+  // Ordem cronológica obrigatória: entrada → entrada_almoco → saida_almoco → saída → entrada_extra1 → saida_extra1
+  const ORDERED_FIELDS = ['entrada', 'entrada_almoco', 'saida_almoco', 'saida', 'entrada_extra1', 'saida_extra1'] as const;
+
+  const getTimeSequenceValidation = (): { valid: boolean; message?: string } => {
+    const vals = watchedValues;
+    const baseDate = date;
+
+    const dates: (Date | null)[] = ORDERED_FIELDS.map((f) => toDateTime(vals[f], baseDate));
+
+    // Qualquer campo preenchido não pode ser anterior a outro que venha antes na ordem
+    for (let i = 0; i < ORDERED_FIELDS.length; i++) {
+      for (let j = i + 1; j < ORDERED_FIELDS.length; j++) {
+        const earlier = dates[i];
+        const later = dates[j];
+        if (earlier == null || later == null) continue;
+        if (later.getTime() < earlier.getTime()) {
+          const labels: Record<string, string> = {
+            entrada: 'Entrada',
+            entrada_almoco: 'Início do almoço',
+            saida_almoco: 'Fim do almoço',
+            saida: 'Saída',
+            entrada_extra1: 'Entrada extra',
+            saida_extra1: 'Saída extra'
+          };
+          const earlierName = labels[ORDERED_FIELDS[i]];
+          const laterName = labels[ORDERED_FIELDS[j]];
+          return {
+            valid: false,
+            message: `${laterName} não pode ser anterior a ${earlierName}. Respeite a ordem: Entrada → Início almoço → Fim almoço → Saída → Entrada extra → Saída extra.`
+          };
         }
       }
     }
-    
-    return true;
+    return { valid: true };
+  };
+
+  const isTimeSequenceValid = (): boolean => getTimeSequenceValidation().valid;
+
+  // Para correção: retorna o min (datetime-local) para cada campo, garantindo que não seja anterior ao anterior na ordem
+  const getMinForCorrectionField = (fieldKey: (typeof ORDERED_FIELDS)[number]): string => {
+    const idx = ORDERED_FIELDS.indexOf(fieldKey);
+    if (idx <= 0) return `${date}T00:00`;
+    const vals = watchedValues;
+    const toDatetimeLocal = (v: string | undefined): string | null => {
+      if (!v || !v.trim()) return null;
+      if (v.includes('T')) return v;
+      return `${date}T${v.length === 5 ? v : v.substring(0, 5)}`;
+    };
+    for (let i = idx - 1; i >= 0; i--) {
+      const v = toDatetimeLocal(vals[ORDERED_FIELDS[i]]);
+      if (v) return v;
+    }
+    return `${date}T00:00`;
   };
 
   return (
@@ -731,16 +804,56 @@ export function TimeRecordEditModal({
                 <Label htmlFor="entrada">
                   Entrada {isCreating ? '*' : ''}
                 </Label>
-                <Input
-                  id="entrada"
-                  type={isCreating ? 'time' : 'datetime-local'}
-                  {...register('entrada')}
-                  className={errors.entrada ? 'border-red-500' : ''}
-                  step={isCreating ? undefined : '60'}
-                />
+                {isCreating ? (
+                  <Input
+                    id="entrada"
+                    type="time"
+                    {...register('entrada')}
+                    className={errors.entrada ? 'border-red-500' : ''}
+                  />
+                ) : (
+                  <Controller
+                    name="entrada"
+                    control={control}
+                    render={({ field }) => (
+                      <Input
+                        key={`entrada-${date}`}
+                        id="entrada"
+                        type="datetime-local"
+                        value={field.value || `${date}T08:00`}
+                        className={errors.entrada ? 'border-red-500' : ''}
+                        step="60"
+                        min={getMinForCorrectionField('entrada')}
+                        onFocus={(e) => {
+                          // Garantir que sempre use a data selecionada, especialmente em smartphones
+                          const currentValue = e.target.value;
+                          if (!currentValue) {
+                            // Se vazio, usar data selecionada com hora padrão
+                            const defaultValue = `${date}T08:00`;
+                            e.target.value = defaultValue;
+                            field.onChange(defaultValue);
+                          } else {
+                            // Se já tem valor mas a data pode estar errada, garantir que use a data selecionada
+                            const [currentDate] = currentValue.split('T');
+                            if (currentDate !== date) {
+                              const [time] = currentValue.split('T').slice(1);
+                              const correctedValue = `${date}T${time || '08:00'}`;
+                              e.target.value = correctedValue;
+                              field.onChange(correctedValue);
+                            }
+                          }
+                        }}
+                        onChange={(e) => {
+                          field.onChange(e.target.value);
+                        }}
+                        onBlur={field.onBlur}
+                      />
+                    )}
+                  />
+                )}
                 {!isCreating && (
                   <p className="text-xs text-gray-500">
-                    Selecione data e hora. Se a data for diferente de {new Date(date).toLocaleDateString('pt-BR')}, especifique a data correta.
+                    Selecione data e hora. Se a data for diferente de {formatDateSimple(date)}, especifique a data correta.
                   </p>
                 )}
                 {errors.entrada && (
@@ -752,17 +865,57 @@ export function TimeRecordEditModal({
                 <Label htmlFor="saida">
                   Saída {isCreating ? '*' : ''}
                 </Label>
-                <Input
-                  id="saida"
-                  type={isCreating ? 'time' : 'datetime-local'}
-                  {...register('saida')}
-                  className={errors.saida ? 'border-red-500' : ''}
-                  placeholder={isCreating ? 'Obrigatório' : 'Opcional'}
-                  step={isCreating ? undefined : '60'}
-                />
+                {isCreating ? (
+                  <Input
+                    id="saida"
+                    type="time"
+                    {...register('saida')}
+                    className={errors.saida ? 'border-red-500' : ''}
+                    placeholder="Obrigatório"
+                  />
+                ) : (
+                  <Controller
+                    name="saida"
+                    control={control}
+                    render={({ field }) => (
+                      <Input
+                        key={`saida-${date}`}
+                        id="saida"
+                        type="datetime-local"
+                        value={field.value || `${date}T18:00`}
+                        className={errors.saida ? 'border-red-500' : ''}
+                        step="60"
+                        min={getMinForCorrectionField('saida')}
+                        onFocus={(e) => {
+                          // Garantir que sempre use a data selecionada, especialmente em smartphones
+                          const currentValue = e.target.value;
+                          if (!currentValue) {
+                            // Se vazio, usar data selecionada com hora padrão
+                            const defaultValue = `${date}T18:00`;
+                            e.target.value = defaultValue;
+                            field.onChange(defaultValue);
+                          } else {
+                            // Se já tem valor mas a data pode estar errada, garantir que use a data selecionada
+                            const [currentDate] = currentValue.split('T');
+                            if (currentDate !== date) {
+                              const [time] = currentValue.split('T').slice(1);
+                              const correctedValue = `${date}T${time || '18:00'}`;
+                              e.target.value = correctedValue;
+                              field.onChange(correctedValue);
+                            }
+                          }
+                        }}
+                        onChange={(e) => {
+                          field.onChange(e.target.value);
+                        }}
+                        onBlur={field.onBlur}
+                      />
+                    )}
+                  />
+                )}
                 {!isCreating && (
                   <p className="text-xs text-gray-500">
-                    Selecione data e hora. Se a data for diferente de {new Date(date).toLocaleDateString('pt-BR')}, especifique a data correta.
+                    Selecione data e hora. Se a data for diferente de {formatDateSimple(date)}, especifique a data correta.
                   </p>
                 )}
                 {errors.saida && (
@@ -775,12 +928,51 @@ export function TimeRecordEditModal({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="entrada_almoco">Início do Almoço</Label>
-                <Input
-                  id="entrada_almoco"
-                  type={isCreating ? 'time' : 'datetime-local'}
-                  {...register('entrada_almoco')}
-                  step={isCreating ? undefined : '60'}
-                />
+                {isCreating ? (
+                  <Input
+                    id="entrada_almoco"
+                    type="time"
+                    {...register('entrada_almoco')}
+                  />
+                ) : (
+                  <Controller
+                    name="entrada_almoco"
+                    control={control}
+                    render={({ field }) => (
+                      <Input
+                        key={`entrada_almoco-${date}`}
+                        id="entrada_almoco"
+                        type="datetime-local"
+                        value={field.value || ''}
+                        step="60"
+                        min={getMinForCorrectionField('entrada_almoco')}
+                        onFocus={(e) => {
+                          // Garantir que sempre use a data selecionada, especialmente em smartphones
+                          const currentValue = e.target.value;
+                          if (!currentValue) {
+                            // Se vazio, usar data selecionada com hora padrão
+                            const defaultValue = `${date}T12:00`;
+                            e.target.value = defaultValue;
+                            field.onChange(defaultValue);
+                          } else {
+                            // Se já tem valor mas a data pode estar errada, garantir que use a data selecionada
+                            const [currentDate] = currentValue.split('T');
+                            if (currentDate !== date) {
+                              const [time] = currentValue.split('T').slice(1);
+                              const correctedValue = `${date}T${time || '12:00'}`;
+                              e.target.value = correctedValue;
+                              field.onChange(correctedValue);
+                            }
+                          }
+                        }}
+                        onChange={(e) => {
+                          field.onChange(e.target.value);
+                        }}
+                        onBlur={field.onBlur}
+                      />
+                    )}
+                  />
+                )}
                 {!isCreating && (
                   <p className="text-xs text-gray-500">Data e hora</p>
                 )}
@@ -788,12 +980,51 @@ export function TimeRecordEditModal({
 
               <div className="space-y-2">
                 <Label htmlFor="saida_almoco">Fim do Almoço</Label>
-                <Input
-                  id="saida_almoco"
-                  type={isCreating ? 'time' : 'datetime-local'}
-                  {...register('saida_almoco')}
-                  step={isCreating ? undefined : '60'}
-                />
+                {isCreating ? (
+                  <Input
+                    id="saida_almoco"
+                    type="time"
+                    {...register('saida_almoco')}
+                  />
+                ) : (
+                  <Controller
+                    name="saida_almoco"
+                    control={control}
+                    render={({ field }) => (
+                      <Input
+                        key={`saida_almoco-${date}`}
+                        id="saida_almoco"
+                        type="datetime-local"
+                        value={field.value || ''}
+                        step="60"
+                        min={getMinForCorrectionField('saida_almoco')}
+                        onFocus={(e) => {
+                          // Garantir que sempre use a data selecionada, especialmente em smartphones
+                          const currentValue = e.target.value;
+                          if (!currentValue) {
+                            // Se vazio, usar data selecionada com hora padrão
+                            const defaultValue = `${date}T13:00`;
+                            e.target.value = defaultValue;
+                            field.onChange(defaultValue);
+                          } else {
+                            // Se já tem valor mas a data pode estar errada, garantir que use a data selecionada
+                            const [currentDate] = currentValue.split('T');
+                            if (currentDate !== date) {
+                              const [time] = currentValue.split('T').slice(1);
+                              const correctedValue = `${date}T${time || '13:00'}`;
+                              e.target.value = correctedValue;
+                              field.onChange(correctedValue);
+                            }
+                          }
+                        }}
+                        onChange={(e) => {
+                          field.onChange(e.target.value);
+                        }}
+                        onBlur={field.onBlur}
+                      />
+                    )}
+                  />
+                )}
                 {!isCreating && (
                   <p className="text-xs text-gray-500">Data e hora</p>
                 )}
@@ -804,12 +1035,51 @@ export function TimeRecordEditModal({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="entrada_extra1">Entrada Extra</Label>
-                <Input
-                  id="entrada_extra1"
-                  type={isCreating ? 'time' : 'datetime-local'}
-                  {...register('entrada_extra1')}
-                  step={isCreating ? undefined : '60'}
-                />
+                {isCreating ? (
+                  <Input
+                    id="entrada_extra1"
+                    type="time"
+                    {...register('entrada_extra1')}
+                  />
+                ) : (
+                  <Controller
+                    name="entrada_extra1"
+                    control={control}
+                    render={({ field }) => (
+                      <Input
+                        key={`entrada_extra1-${date}`}
+                        id="entrada_extra1"
+                        type="datetime-local"
+                        value={field.value || ''}
+                        step="60"
+                        min={getMinForCorrectionField('entrada_extra1')}
+                        onFocus={(e) => {
+                          // Garantir que sempre use a data selecionada, especialmente em smartphones
+                          const currentValue = e.target.value;
+                          if (!currentValue) {
+                            // Se vazio, usar data selecionada com hora padrão
+                            const defaultValue = `${date}T18:00`;
+                            e.target.value = defaultValue;
+                            field.onChange(defaultValue);
+                          } else {
+                            // Se já tem valor mas a data pode estar errada, garantir que use a data selecionada
+                            const [currentDate] = currentValue.split('T');
+                            if (currentDate !== date) {
+                              const [time] = currentValue.split('T').slice(1);
+                              const correctedValue = `${date}T${time || '18:00'}`;
+                              e.target.value = correctedValue;
+                              field.onChange(correctedValue);
+                            }
+                          }
+                        }}
+                        onChange={(e) => {
+                          field.onChange(e.target.value);
+                        }}
+                        onBlur={field.onBlur}
+                      />
+                    )}
+                  />
+                )}
                 {!isCreating && (
                   <p className="text-xs text-gray-500">Data e hora</p>
                 )}
@@ -817,12 +1087,51 @@ export function TimeRecordEditModal({
 
               <div className="space-y-2">
                 <Label htmlFor="saida_extra1">Saída Extra</Label>
-                <Input
-                  id="saida_extra1"
-                  type={isCreating ? 'time' : 'datetime-local'}
-                  {...register('saida_extra1')}
-                  step={isCreating ? undefined : '60'}
-                />
+                {isCreating ? (
+                  <Input
+                    id="saida_extra1"
+                    type="time"
+                    {...register('saida_extra1')}
+                  />
+                ) : (
+                  <Controller
+                    name="saida_extra1"
+                    control={control}
+                    render={({ field }) => (
+                      <Input
+                        key={`saida_extra1-${date}`}
+                        id="saida_extra1"
+                        type="datetime-local"
+                        value={field.value || ''}
+                        step="60"
+                        min={getMinForCorrectionField('saida_extra1')}
+                        onFocus={(e) => {
+                          // Garantir que sempre use a data selecionada, especialmente em smartphones
+                          const currentValue = e.target.value;
+                          if (!currentValue) {
+                            // Se vazio, usar data selecionada com hora padrão
+                            const defaultValue = `${date}T20:00`;
+                            e.target.value = defaultValue;
+                            field.onChange(defaultValue);
+                          } else {
+                            // Se já tem valor mas a data pode estar errada, garantir que use a data selecionada
+                            const [currentDate] = currentValue.split('T');
+                            if (currentDate !== date) {
+                              const [time] = currentValue.split('T').slice(1);
+                              const correctedValue = `${date}T${time || '20:00'}`;
+                              e.target.value = correctedValue;
+                              field.onChange(correctedValue);
+                            }
+                          }
+                        }}
+                        onChange={(e) => {
+                          field.onChange(e.target.value);
+                        }}
+                        onBlur={field.onBlur}
+                      />
+                    )}
+                  />
+                )}
                 {!isCreating && (
                   <p className="text-xs text-gray-500">Data e hora</p>
                 )}
@@ -842,12 +1151,12 @@ export function TimeRecordEditModal({
               </div>
             </div>
 
-            {/* Validação de sequência de horários */}
-            {!isTimeSequenceValid() && (
+            {/* Validação de sequência de horários (correção: ordem cronológica obrigatória) */}
+            {!isCreating && !getTimeSequenceValidation().valid && (
               <Alert className="border-red-200 bg-red-50">
                 <AlertTriangle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-800">
-                  Verifique a sequência dos horários. A entrada deve ser anterior à saída.
+                  {getTimeSequenceValidation().message}
                 </AlertDescription>
               </Alert>
             )}

@@ -10,11 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Loader2, 
   Save, 
   Settings, 
-  Clock, 
   Users, 
   Bell, 
   Lock, 
@@ -61,6 +61,7 @@ export default function TimeRecordSignatureConfigPage() {
   const [saving, setSaving] = useState(false);
   const [loadingMonth, setLoadingMonth] = useState(false);
   const [loadingAction, setLoadingAction] = useState(false);
+  const [activeTab, setActiveTab] = useState<'config' | 'status'>('status');
   const { toast } = useToast();
   const { currentCompany } = useMultiTenancy();
 
@@ -353,123 +354,30 @@ export default function TimeRecordSignatureConfigPage() {
         </div>
       </div>
 
-      {/* Configurações Gerais */}
-      <div className="grid gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Configuração Principal
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="enabled">Habilitar Assinatura de Ponto</Label>
-                <p className="text-sm text-muted-foreground">
-                  Ativa o sistema de assinatura de registros de ponto
-                </p>
-              </div>
-              <Switch
-                id="enabled"
-                checked={config.is_enabled}
-                onCheckedChange={() => handleToggle('is_enabled')}
-              />
-            </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'config' | 'status')} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="status" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Status das Assinaturas
+          </TabsTrigger>
+          <TabsTrigger value="config" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Configuração
+          </TabsTrigger>
+        </TabsList>
 
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="auto_close">Fechamento Automático do Mês</Label>
-                <p className="text-sm text-muted-foreground">
-                  Gera automaticamente as assinaturas no início do mês seguinte
-                </p>
-              </div>
-              <Switch
-                id="auto_close"
-                checked={config.auto_close_month}
-                onCheckedChange={() => handleToggle('auto_close_month')}
-              />
-            </div>
-
-            <Separator />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="signature_period">Período para Assinatura (dias)</Label>
-                <Input
-                  id="signature_period"
-                  type="number"
-                  min="1"
-                  max="30"
-                  value={config.signature_period_days}
-                  onChange={(e) => handleInputChange('signature_period_days', parseInt(e.target.value))}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Quantos dias após o fechamento do mês para assinar
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="reminder_days">Dias para Lembrete</Label>
-                <Input
-                  id="reminder_days"
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={config.reminder_days}
-                  onChange={(e) => handleInputChange('reminder_days', parseInt(e.target.value))}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Quantos dias antes do vencimento enviar lembrete
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="manager_approval">Exigir Aprovação do Gestor</Label>
-                <p className="text-sm text-muted-foreground">
-                  Assinaturas precisam ser aprovadas pelo gestor imediato
-                </p>
-              </div>
-              <Switch
-                id="manager_approval"
-                checked={config.require_manager_approval}
-                onCheckedChange={() => handleToggle('require_manager_approval')}
-              />
-            </div>
-
-            <div className="flex justify-end pt-4">
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Salvar Configuração
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Controle de Mês/Ano */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              Controle de Assinaturas por Mês/Ano
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        {/* Aba: Status das Assinaturas - escolher mês/ano e ver status */}
+        <TabsContent value="status" className="space-y-6 mt-6">
+          <div className="grid gap-6">
+            {/* Controle de Assinaturas por Mês/Ano */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Controle de Assinaturas por Mês/Ano
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label>Mês</Label>
@@ -626,7 +534,7 @@ export default function TimeRecordSignatureConfigPage() {
           </CardContent>
         </Card>
 
-        {/* Estatísticas */}
+        {/* Estatísticas - na aba Status */}
         {monthStats && (
           <Card>
             <CardHeader>
@@ -676,7 +584,7 @@ export default function TimeRecordSignatureConfigPage() {
           </Card>
         )}
 
-        {/* Lista de Funcionários */}
+        {/* Lista de Funcionários - na aba Status */}
         {monthStats && employeeList.length > 0 && (
           <Card>
             <CardHeader>
@@ -748,17 +656,128 @@ export default function TimeRecordSignatureConfigPage() {
             </CardContent>
           </Card>
         )}
+          </div>
+        </TabsContent>
 
-        {/* Informações Importantes */}
-        <Alert>
-          <Bell className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Importante:</strong> Esta funcionalidade está em conformidade com a Portaria 671/2021, 
-            que permite a assinatura eletrônica de registros de ponto. As assinaturas são criptografadas 
-            e incluem timestamp, IP e user agent para auditoria.
-          </AlertDescription>
-        </Alert>
-      </div>
+        {/* Aba: Configuração */}
+        <TabsContent value="config" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Configuração Principal
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="enabled">Habilitar Assinatura de Ponto</Label>
+                <p className="text-sm text-muted-foreground">
+                  Ativa o sistema de assinatura de registros de ponto
+                </p>
+              </div>
+              <Switch
+                id="enabled"
+                checked={config.is_enabled}
+                onCheckedChange={() => handleToggle('is_enabled')}
+              />
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="auto_close">Fechamento Automático do Mês</Label>
+                <p className="text-sm text-muted-foreground">
+                  Gera automaticamente as assinaturas no início do mês seguinte
+                </p>
+              </div>
+              <Switch
+                id="auto_close"
+                checked={config.auto_close_month}
+                onCheckedChange={() => handleToggle('auto_close_month')}
+              />
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="signature_period">Período para Assinatura (dias)</Label>
+                <Input
+                  id="signature_period"
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={config.signature_period_days}
+                  onChange={(e) => handleInputChange('signature_period_days', parseInt(e.target.value))}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Quantos dias após o fechamento do mês para assinar
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reminder_days">Dias para Lembrete</Label>
+                <Input
+                  id="reminder_days"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={config.reminder_days}
+                  onChange={(e) => handleInputChange('reminder_days', parseInt(e.target.value))}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Quantos dias antes do vencimento enviar lembrete
+                </p>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="manager_approval">Exigir Aprovação do Gestor</Label>
+                <p className="text-sm text-muted-foreground">
+                  Assinaturas precisam ser aprovadas pelo gestor imediato
+                </p>
+              </div>
+              <Switch
+                id="manager_approval"
+                checked={config.require_manager_approval}
+                onCheckedChange={() => handleToggle('require_manager_approval')}
+              />
+            </div>
+
+            <div className="flex justify-end pt-4">
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Salvar Configuração
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Informações Importantes */}
+      <Alert>
+        <Bell className="h-4 w-4" />
+        <AlertDescription>
+          <strong>Importante:</strong> Esta funcionalidade está em conformidade com a Portaria 671/2021, 
+          que permite a assinatura eletrônica de registros de ponto. As assinaturas são criptografadas 
+          e incluem timestamp, IP e user agent para auditoria.
+        </AlertDescription>
+      </Alert>
     </div>
   );
 }

@@ -17,10 +17,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
 import { Separator } from "@/components/ui/separator";
+import { Download, Upload } from "lucide-react";
 
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ImportacaoParceirosModal } from '@/components/cadastros/ImportacaoParceirosModal';
+import { generateParceirosExcelTemplate } from '@/services/cadastros/parceirosImportService';
 
 const estadosBrasileiros = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 
@@ -116,6 +119,7 @@ export default function Parceiros() {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParceiro, setEditingParceiro] = useState<Partner | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const { selectedCompany } = useCompany();
 
   const form = useForm<PartnerFormData>({
@@ -396,6 +400,36 @@ export default function Parceiros() {
         </p>
       </div>
 
+      {canCreatePage('/cadastros/parceiros*') && (
+        <div className="flex gap-2">
+          <PermissionButton
+            action="create"
+            page="/cadastros/parceiros*"
+            variant="outline"
+            onClick={() => {
+              try {
+                generateParceirosExcelTemplate();
+                toast.success('Template baixado com sucesso!');
+              } catch (e) {
+                toast.error('Erro ao baixar template');
+              }
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Baixar template
+          </PermissionButton>
+          <PermissionButton
+            action="create"
+            page="/cadastros/parceiros*"
+            variant="outline"
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Importar
+          </PermissionButton>
+        </div>
+      )}
+
       <DataTable
         data={parceiros}
         columns={columns}
@@ -423,6 +457,13 @@ export default function Parceiros() {
         searchPlaceholder="Buscar por razão social ou CNPJ..."
         newButtonLabel="Novo Parceiro"
         showNewButton={canCreatePage('/cadastros/parceiros*')}
+      />
+
+      <ImportacaoParceirosModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        companyId={selectedCompany?.id || ''}
+        onSuccess={fetchParceiros}
       />
 
       <PermissionGuard page="/cadastros/parceiros*" action="create">

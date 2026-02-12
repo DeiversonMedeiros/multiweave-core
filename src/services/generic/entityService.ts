@@ -12,8 +12,14 @@ export async function callSchemaFunction<T = any>(
   functionName: string,
   params: Record<string, any> = {},
 ): Promise<T | null> {
+  const shouldLogVerbose =
+    schemaName === 'rh' &&
+    (functionName === 'calculate_training_progress' ||
+      functionName === 'create_rest_day_and_deduct_hours' ||
+      functionName === 'remove_rest_day_and_revert_deduction');
+
   // Log antes da chamada
-  if (schemaName === 'rh' && functionName === 'calculate_training_progress') {
+  if (shouldLogVerbose) {
     console.log('[callSchemaFunction] 🚀 ANTES da chamada RPC:', {
       schemaName,
       functionName,
@@ -35,7 +41,7 @@ export async function callSchemaFunction<T = any>(
   }
 
   // Log detalhado da resposta
-  if (schemaName === 'rh' && functionName === 'calculate_training_progress') {
+  if (shouldLogVerbose) {
     console.log('[callSchemaFunction] 📥 Resposta completa da RPC call_schema_rpc:', {
       schemaName,
       functionName,
@@ -69,9 +75,19 @@ export async function callSchemaFunction<T = any>(
 
   if (data?.error) {
     // Se a função não existe, não é um erro crítico - apenas logar como warning
-    const isFunctionNotFound = data.message?.includes('does not exist') || 
-                               data.message?.includes('não existe') ||
-                               data.sqlstate === '42883'; // SQLSTATE para função não encontrada
+    const isFunctionNotFound =
+      (data.message?.includes('does not exist') || data.message?.includes('não existe')) &&
+      data.sqlstate === '42883'; // SQLSTATE para função não encontrada
+
+    if (shouldLogVerbose) {
+      console.error('[callSchemaFunction] 🔍 DEBUG erro na resposta RPC:', {
+        schemaName,
+        functionName,
+        params,
+        data,
+        isFunctionNotFound,
+      });
+    }
     
     if (isFunctionNotFound) {
       console.warn(`[callSchemaFunction] ⚠️ Função ${schemaName}.${functionName} não encontrada no banco de dados. Isso pode ser esperado se a funcionalidade ainda não foi implementada.`);

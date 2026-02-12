@@ -89,7 +89,7 @@ const AprovacaoAtestados: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Aprovação de Atestados</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Atestados</h1>
           <p className="text-muted-foreground">
             Gerencie atestados médicos da sua equipe
           </p>

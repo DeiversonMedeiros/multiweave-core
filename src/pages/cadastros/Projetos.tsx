@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Edit, Trash2 } from "lucide-react";
+import { CalendarIcon, Edit, Trash2, Download, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ImportacaoProjetosModal } from '@/components/cadastros/ImportacaoProjetosModal';
+import { generateProjetosExcelTemplate } from '@/services/cadastros/projetosImportService';
 
 const projectSchema = z.object({
   nome: z.string().min(3, "Nome deve ter no mínimo 3 caracteres").max(100),
@@ -123,6 +125,7 @@ export default function Projetos() {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProjeto, setEditingProjeto] = useState<Project | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const { selectedCompany } = useCompany();
   const queryClient = useQueryClient();
 
@@ -442,6 +445,36 @@ export default function Projetos() {
         </p>
       </div>
 
+      {canCreatePage('/cadastros/projetos*') && (
+        <div className="flex gap-2">
+          <PermissionButton
+            action="create"
+            page="/cadastros/projetos*"
+            variant="outline"
+            onClick={() => {
+              try {
+                generateProjetosExcelTemplate();
+                toast.success('Template baixado com sucesso!');
+              } catch (e) {
+                toast.error('Erro ao baixar template');
+              }
+            }}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Baixar template
+          </PermissionButton>
+          <PermissionButton
+            action="create"
+            page="/cadastros/projetos*"
+            variant="outline"
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Importar
+          </PermissionButton>
+        </div>
+      )}
+
       <DataTable
         data={projetos}
         columns={columns}
@@ -449,6 +482,19 @@ export default function Projetos() {
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por código ou nome..."
         newButtonLabel="Novo Projeto"
+      />
+
+      <ImportacaoProjetosModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        companyId={selectedCompany?.id || ''}
+        onSuccess={() => {
+          fetchProjetos();
+          if (selectedCompany?.id) {
+            queryClient.invalidateQueries({ queryKey: ['public', 'projects', selectedCompany.id] });
+            queryClient.invalidateQueries({ queryKey: ['public', 'projects', 'active', selectedCompany.id] });
+          }
+        }}
       />
 
       {(canCreatePage('/cadastros/projetos*') || canEditPage('/cadastros/projetos*')) && (

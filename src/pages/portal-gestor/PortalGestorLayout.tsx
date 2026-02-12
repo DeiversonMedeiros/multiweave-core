@@ -76,7 +76,7 @@ const menuItems = [
     description: 'Solicitações de reembolso'
   },
   {
-    title: 'Aprovação de Atestados',
+    title: 'Atestados',
     href: '/portal-gestor/aprovacoes/atestados',
     icon: Stethoscope,
     description: 'Atestados médicos'

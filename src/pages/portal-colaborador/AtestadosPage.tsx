@@ -84,10 +84,18 @@ const ESPECIALIDADES_PSICOLOGICAS = [
   'Psicologia Positiva', 'Neuropsicologia Clínica', 'Terapia Cognitivo-Comportamental',
 ];
 
+// Tipos que exigem especialidade (médico/odontológico/psicológico)
+const TIPOS_COM_ESPECIALIDADE = ['medico', 'odontologico', 'psicologico'];
+
 const ESPECIALIDADES_POR_TIPO: Record<string, string[]> = {
   medico: ESPECIALIDADES_MEDICAS,
   odontologico: ESPECIALIDADES_ODONTOLOGICAS,
   psicologico: ESPECIALIDADES_PSICOLOGICAS,
+  obito: [],
+  forcas_militares: [],
+  poder_judiciario: [],
+  servico_publico: [],
+  outros: [],
 };
 
 export default function AtestadosPage() {
@@ -135,7 +143,7 @@ export default function AtestadosPage() {
         data_emissao: new Date().toISOString().split('T')[0],
         data_inicio: startDate,
         data_fim: endDate,
-        tipo_atestado: type as 'medico' | 'odontologico' | 'psicologico',
+        tipo_atestado: type,
         valor_beneficio: 0,
         status: 'pendente',
         medico_nome: medicoNome || undefined,
@@ -195,9 +203,8 @@ export default function AtestadosPage() {
   const handleSubmit = () => {
     const faltando: string[] = [];
     if (!type) faltando.push('Tipo de Atestado');
-    if (!medicoNome?.trim()) faltando.push('Nome do Médico');
-    if (!crmCrmo?.trim()) faltando.push('CRM/CRMO');
-    if (!especialidade) faltando.push('Especialidade');
+    if (!medicoNome?.trim()) faltando.push(TIPOS_COM_ESPECIALIDADE.includes(type) ? 'Nome do Médico' : 'Nome do emissor');
+    if (TIPOS_COM_ESPECIALIDADE.includes(type) && !especialidade) faltando.push('Especialidade');
     if (!startDate) faltando.push('Data de Início');
     if (!endDate) faltando.push('Data de Fim');
     if (!file) faltando.push('Arquivo do Atestado');
@@ -300,21 +307,28 @@ export default function AtestadosPage() {
                     <SelectItem value="medico">Médico</SelectItem>
                     <SelectItem value="odontologico">Odontológico</SelectItem>
                     <SelectItem value="psicologico">Psicológico</SelectItem>
+                    <SelectItem value="obito">Óbito</SelectItem>
+                    <SelectItem value="forcas_militares">Forças Militares</SelectItem>
+                    <SelectItem value="poder_judiciario">Poder Judiciário</SelectItem>
+                    <SelectItem value="servico_publico">Serviço Público</SelectItem>
+                    <SelectItem value="outros">Outros</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="medicoNome">Nome do Médico <span className="text-destructive">*</span></Label>
+                <Label htmlFor="medicoNome">
+                  {TIPOS_COM_ESPECIALIDADE.includes(type) ? 'Nome do Médico' : 'Nome do emissor / Autoridade'} <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="medicoNome"
                   type="text"
-                  placeholder="Nome do médico que emitiu o atestado"
+                  placeholder={TIPOS_COM_ESPECIALIDADE.includes(type) ? 'Nome do médico que emitiu o atestado' : 'Ex.: Cartório, Comando, Tribunal'}
                   value={medicoNome}
                   onChange={(e) => setMedicoNome(e.target.value)}
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="crmCrmo">CRM/CRMO <span className="text-destructive">*</span></Label>
+                <Label htmlFor="crmCrmo">CRM/CRMO {TIPOS_COM_ESPECIALIDADE.includes(type) ? '' : '(opcional)'}</Label>
                 <Input
                   id="crmCrmo"
                   type="text"
@@ -323,31 +337,33 @@ export default function AtestadosPage() {
                   onChange={(e) => setCrmCrmo(e.target.value)}
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="especialidade">Especialidade <span className="text-destructive">*</span></Label>
-                <Select
-                  value={especialidade || undefined}
-                  onValueChange={setEspecialidade}
-                  disabled={!type}
-                >
-                  <SelectTrigger id="especialidade">
-                    <SelectValue
-                      placeholder={
-                        type
-                          ? 'Selecione a especialidade'
-                          : 'Selecione o tipo de atestado primeiro'
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[200px]">
-                    {(ESPECIALIDADES_POR_TIPO[type] ?? []).map((esp) => (
-                      <SelectItem key={esp} value={esp}>
-                        {esp}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {TIPOS_COM_ESPECIALIDADE.includes(type) && (
+                <div className="grid gap-2">
+                  <Label htmlFor="especialidade">Especialidade <span className="text-destructive">*</span></Label>
+                  <Select
+                    value={especialidade || undefined}
+                    onValueChange={setEspecialidade}
+                    disabled={!type}
+                  >
+                    <SelectTrigger id="especialidade">
+                      <SelectValue
+                        placeholder={
+                          type
+                            ? 'Selecione a especialidade'
+                            : 'Selecione o tipo de atestado primeiro'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[200px]">
+                      {(ESPECIALIDADES_POR_TIPO[type] ?? []).map((esp) => (
+                        <SelectItem key={esp} value={esp}>
+                          {esp}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label htmlFor="start">Data de Início <span className="text-destructive">*</span></Label>
                 <Input
