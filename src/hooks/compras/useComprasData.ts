@@ -467,6 +467,36 @@ export interface FollowUpComprasItem {
   data_entrada?: string;
   entrada_status?: string;
   entrada_created_at?: string;
+
+  /** Quando agrupado por cotação: números de todas as requisições da mesma cotação (para exibir no cabeçalho do card). */
+  numeros_requisicoes?: string[];
+
+  /** Todos os pedidos vinculados à cotação (quando há múltiplos pedidos para cotação unificada). */
+  pedidos?: Array<{
+    pedido_id: string;
+    numero_pedido?: string;
+    fornecedor_nome?: string;
+    data_pedido?: string;
+    data_entrega_prevista?: string;
+    data_entrega_real?: string;
+    pedido_status?: string;
+    pedido_workflow_state?: string;
+    pedido_valor_total?: number;
+    pedido_valor_final?: number;
+  }>;
+
+  /** Todas as contas a pagar vinculadas aos pedidos da cotação (quando há múltiplas contas). */
+  contas?: Array<{
+    conta_id: string;
+    conta_descricao?: string;
+    conta_valor_original?: number;
+    conta_valor_atual?: number;
+    data_vencimento?: string;
+    conta_status?: string;
+    numero_nota_fiscal?: string;
+    pedido_id?: string;
+    numero_pedido?: string;
+  }>;
 }
 
 export function useFollowUp(filters?: FollowUpComprasFilters) {

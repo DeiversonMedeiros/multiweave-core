@@ -42,6 +42,7 @@ import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useTesouraria } from '@/hooks/financial/useTesouraria';
 import { useContasPagarParcelas } from '@/hooks/financial/useContasPagarParcelas';
+import { useContasPagarRateio } from '@/hooks/financial/useContasPagarRateio';
 import { useClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EntityService } from '@/services/generic/entityService';
@@ -84,12 +85,13 @@ export function ContaPagarDetails({
   const { data: projectsData } = useProjects();
   const { contasBancarias } = useTesouraria();
   const { data: parcelasData, isLoading: loadingParcelas } = useContasPagarParcelas(conta.id);
+  const { rateio: rateioList, isLoading: loadingRateio } = useContasPagarRateio(conta.id);
   const { data: classesFinanceirasData } = useClassesFinanceiras();
   const [classeFinanceiraNome, setClasseFinanceiraNome] = useState<string | undefined>(undefined);
 
-  // Encontrar nomes dos relacionamentos
   const centroCusto = costCentersData?.data?.find(cc => cc.id === conta.centro_custo_id);
   const projeto = projectsData?.data?.find(p => p.id === conta.projeto_id);
+  const hasRateio = rateioList && rateioList.length > 0;
   
   // Buscar conta bancária vinculada ou usar a primeira conta ativa como padrão
   let contaBancaria = contasBancarias?.find(cb => cb.id === conta.conta_bancaria_id);
@@ -386,17 +388,59 @@ export function ContaPagarDetails({
                     <p className="text-sm">{classeFinanceiraNome}</p>
                   </div>
                 )}
-                {centroCusto && (
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground">Centro de Custo</Label>
-                    <p className="text-sm">{centroCusto.codigo} - {centroCusto.nome}</p>
+                {hasRateio ? (
+                  <div className="col-span-full">
+                    <Label className="text-sm font-medium text-muted-foreground">Rateio (centros de custo e projetos)</Label>
+                    {loadingRateio ? (
+                      <p className="text-sm text-muted-foreground">Carregando...</p>
+                    ) : (
+                      <div className="mt-2 border rounded-md overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Centro de Custo</TableHead>
+                              <TableHead>Projeto</TableHead>
+                              <TableHead>Tipo</TableHead>
+                              <TableHead className="text-right">Valor</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {rateioList.map((r) => {
+                              const cc = costCentersData?.data?.find(c => c.id === r.centro_custo_id);
+                              const pr = projectsData?.data?.find(p => p.id === r.projeto_id);
+                              return (
+                                <TableRow key={r.id}>
+                                  <TableCell className="text-sm">{cc ? `${cc.codigo} - ${cc.nome}` : '-'}</TableCell>
+                                  <TableCell className="text-sm">{pr ? `${pr.codigo} - ${pr.nome}` : '—'}</TableCell>
+                                  <TableCell className="text-sm">{r.tipo_rateio === 'percentual' ? 'Percentual' : 'Valor'}</TableCell>
+                                  <TableCell className="text-sm text-right">
+                                    {r.tipo_rateio === 'percentual'
+                                      ? `${Number(r.valor_percentual ?? 0).toFixed(1)}%`
+                                      : formatCurrency(Number(r.valor_monetario ?? 0))}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
                   </div>
-                )}
-                {projeto && (
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground">Projeto</Label>
-                    <p className="text-sm">{projeto.codigo} - {projeto.nome}</p>
-                  </div>
+                ) : (
+                  <>
+                    {centroCusto && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground">Centro de Custo</Label>
+                        <p className="text-sm">{centroCusto.codigo} - {centroCusto.nome}</p>
+                      </div>
+                    )}
+                    {projeto && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground">Projeto</Label>
+                        <p className="text-sm">{projeto.codigo} - {projeto.nome}</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

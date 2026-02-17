@@ -371,6 +371,27 @@ export function useContasPagar(): UseContasPagarReturn {
         }
       }
 
+      // Rateio: múltiplos centros de custo e projetos
+      if (data.rateio && data.rateio.length > 0) {
+        for (const row of data.rateio) {
+          if (!row.centro_custo_id) continue;
+          await EntityService.create({
+            schema: 'financeiro',
+            table: 'contas_pagar_rateio',
+            companyId: selectedCompany.id,
+            data: {
+              conta_pagar_id: createdConta.id,
+              company_id: selectedCompany.id,
+              centro_custo_id: row.centro_custo_id,
+              projeto_id: row.projeto_id || null,
+              tipo_rateio: row.tipo_rateio,
+              valor_percentual: row.tipo_rateio === 'percentual' ? row.valor_percentual : null,
+              valor_monetario: row.tipo_rateio === 'valor' ? row.valor_monetario : null,
+            },
+          });
+        }
+      }
+
       await loadContasPagar();
     } catch (err) {
       console.error('Erro ao criar conta a pagar:', err);
@@ -383,17 +404,14 @@ export function useContasPagar(): UseContasPagarReturn {
     if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
 
     try {
-      // Preparar dados para atualização
-      const updateData: any = { ...data };
-      
-      // Remover campos vazios (strings vazias) para evitar erros
+      const { rateio, ...rest } = data;
+      const updateData: any = { ...rest };
       Object.keys(updateData).forEach(key => {
         if (updateData[key] === '' || updateData[key] === 'none' || updateData[key] === 'loading') {
           updateData[key] = null;
         }
       });
 
-      // Atualizar conta a pagar usando EntityService
       await EntityService.update<ContaPagar>({
         schema: 'financeiro',
         table: 'contas_pagar',
@@ -401,6 +419,44 @@ export function useContasPagar(): UseContasPagarReturn {
         id: id,
         data: updateData
       });
+
+      // Atualizar rateio: remover existentes e inserir os novos
+      if (rateio !== undefined) {
+        const existing = await EntityService.list<{ id: string }>({
+          schema: 'financeiro',
+          table: 'contas_pagar_rateio',
+          companyId: selectedCompany.id,
+          filters: { conta_pagar_id: id },
+          pageSize: 100,
+        });
+        for (const row of existing?.data ?? []) {
+          await EntityService.delete({
+            schema: 'financeiro',
+            table: 'contas_pagar_rateio',
+            companyId: selectedCompany.id,
+            id: row.id,
+          });
+        }
+        if (rateio.length > 0) {
+          for (const row of rateio) {
+            if (!row.centro_custo_id) continue;
+            await EntityService.create({
+              schema: 'financeiro',
+              table: 'contas_pagar_rateio',
+              companyId: selectedCompany.id,
+              data: {
+                conta_pagar_id: id,
+                company_id: selectedCompany.id,
+                centro_custo_id: row.centro_custo_id,
+                projeto_id: row.projeto_id || null,
+                tipo_rateio: row.tipo_rateio,
+                valor_percentual: row.tipo_rateio === 'percentual' ? row.valor_percentual : null,
+                valor_monetario: row.tipo_rateio === 'valor' ? row.valor_monetario : null,
+              },
+            });
+          }
+        }
+      }
 
       await loadContasPagar();
     } catch (err) {

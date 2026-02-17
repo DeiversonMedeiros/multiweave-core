@@ -14,9 +14,9 @@ import {
   Search, 
   Filter, 
   Download, 
-  Eye, 
-  Edit, 
-  Trash2, 
+  Eye,
+  Edit,
+  Trash2,
   CheckCircle,
   Clock,
   AlertCircle,
@@ -25,6 +25,10 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { usePurchaseOrders } from '@/hooks/compras/useComprasData';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useCompany } from '@/lib/company-context';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { purchaseService } from '@/services/compras/purchaseService';
 
 // Componente principal protegido por permissões
 export default function PedidosCompraPage() {
@@ -60,7 +64,103 @@ export default function PedidosCompraPage() {
 function PedidosList() {
   const { canEditPage, canDeletePage } = usePermissions();
   const { data: pedidos = [], isLoading } = usePurchaseOrders();
+  const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [search, setSearch] = useState('');
+  const [selectedPedido, setSelectedPedido] = useState<any | null>(null);
+  const [editingPedido, setEditingPedido] = useState<any | null>(null);
+  const [editDataEntrega, setEditDataEntrega] = useState('');
+  const [editObservacoes, setEditObservacoes] = useState('');
+
+  const { data: pedidoItems = [], isLoading: isLoadingItems } = useQuery({
+    queryKey: ['compras', 'pedido-itens', selectedPedido?.id, selectedCompany?.id],
+    queryFn: () =>
+      purchaseService.getPedidoItems(selectedPedido!.id, selectedCompany!.id),
+    enabled: !!selectedCompany?.id && !!selectedPedido?.id,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (input: { pedidoId: string; data_entrega_prevista?: string | null; observacoes?: string | null }) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+      await purchaseService.updatePurchaseOrder({
+        companyId: selectedCompany.id,
+        pedidoId: input.pedidoId,
+        data: {
+          data_entrega_prevista: input.data_entrega_prevista || null,
+          observacoes: input.observacoes ?? null,
+        },
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Pedido atualizado',
+        description: 'O pedido de compra foi atualizado com sucesso.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['compras', 'pedidos'] });
+      setEditingPedido(null);
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao atualizar pedido',
+        description: error?.message || 'Não foi possível atualizar o pedido.',
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (pedidoId: string) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+      await purchaseService.deletePurchaseOrder({
+        companyId: selectedCompany.id,
+        pedidoId,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Pedido excluído',
+        description: 'O pedido de compra foi excluído com sucesso.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['compras', 'pedidos'] });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Erro ao excluir pedido',
+        description: error?.message || 'Não foi possível excluir o pedido.',
+      });
+    },
+  });
+
+  const handleView = (pedido: any) => {
+    setSelectedPedido(pedido);
+  };
+
+  const handleCloseDetails = () => {
+    setSelectedPedido(null);
+  };
+
+  const handleEdit = (pedido: any) => {
+    setEditingPedido(pedido);
+    setEditDataEntrega(
+      pedido.data_entrega_prevista
+        ? new Date(pedido.data_entrega_prevista).toISOString().split('T')[0]
+        : ''
+    );
+    setEditObservacoes(pedido.observacoes || '');
+  };
+
+  const handleDelete = (pedido: any) => {
+    if (!window.confirm(`Tem certeza que deseja excluir o pedido "${pedido.numero_pedido}"?`)) {
+      return;
+    }
+    deleteMutation.mutate(pedido.id);
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -160,12 +260,21 @@ function PedidosList() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleView(pedido)}
+                    >
                       <Eye className="h-4 w-4" />
                     </Button>
 
                     <PermissionGuard page="/compras/pedidos*" action="edit" fallback={null}>
-                      <Button variant="outline" size="sm" disabled={!canEditPage('/compras/pedidos*')}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!canEditPage('/compras/pedidos*')}
+                        onClick={() => handleEdit(pedido)}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
                     </PermissionGuard>
@@ -176,6 +285,7 @@ function PedidosList() {
                         size="sm"
                         className="text-red-600 hover:text-red-700"
                         disabled={!canDeletePage('/compras/pedidos*')}
+                        onClick={() => handleDelete(pedido)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -187,6 +297,183 @@ function PedidosList() {
           )}
         </TableBody>
       </Table>
+
+      {selectedPedido && (
+        <Dialog open={!!selectedPedido} onOpenChange={handleCloseDetails}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Detalhes do Pedido de Compra</DialogTitle>
+              <DialogDescription>
+                Número {selectedPedido.numero_pedido} • Fornecedor{' '}
+                {selectedPedido.fornecedor_nome || selectedPedido.fornecedor_id || '—'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Data do Pedido:</span>{' '}
+                  <span className="font-medium">
+                    {selectedPedido.data_pedido
+                      ? new Date(selectedPedido.data_pedido).toLocaleDateString('pt-BR')
+                      : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Data Entrega Prevista:</span>{' '}
+                  <span className="font-medium">
+                    {selectedPedido.data_entrega_prevista
+                      ? new Date(selectedPedido.data_entrega_prevista).toLocaleDateString('pt-BR')
+                      : '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Fornecedor:</span>{' '}
+                  <span className="font-medium">
+                    {selectedPedido.fornecedor_nome || selectedPedido.fornecedor_id || '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Status:</span>{' '}
+                  <span className="font-medium">
+                    {selectedPedido.workflow_state || selectedPedido.status || '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Valor Total:</span>{' '}
+                  <span className="font-medium">
+                    {selectedPedido.valor_total
+                      ? `R$ ${Number(selectedPedido.valor_total).toLocaleString('pt-BR', {
+                          minimumFractionDigits: 2,
+                        })}`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+
+              {selectedPedido.observacoes && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Observações:</span>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedPedido.observacoes}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <h3 className="font-semibold text-sm">Itens do Pedido</h3>
+                {isLoadingItems ? (
+                  <div className="text-sm text-muted-foreground">Carregando itens...</div>
+                ) : pedidoItems.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">Nenhum item encontrado.</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Material</TableHead>
+                        <TableHead>Quantidade</TableHead>
+                        <TableHead>Valor Unitário</TableHead>
+                        <TableHead>Valor Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pedidoItems.map((item: any) => (
+                        <TableRow key={item.id}>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">
+                                {item.material?.nome || item.material?.codigo || '—'}
+                              </span>
+                              {item.material?.codigo && (
+                                <span className="text-xs text-muted-foreground">
+                                  {item.material.codigo}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{item.quantidade || '—'}</TableCell>
+                          <TableCell>
+                            {item.valor_unitario
+                              ? `R$ ${Number(item.valor_unitario).toLocaleString('pt-BR', {
+                                  minimumFractionDigits: 2,
+                                })}`
+                              : '—'}
+                          </TableCell>
+                          <TableCell>
+                            {item.valor_total
+                              ? `R$ ${Number(item.valor_total).toLocaleString('pt-BR', {
+                                  minimumFractionDigits: 2,
+                                })}`
+                              : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {editingPedido && (
+        <Dialog open={!!editingPedido} onOpenChange={() => setEditingPedido(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Editar Pedido de Compra</DialogTitle>
+              <DialogDescription>
+                Número {editingPedido.numero_pedido} • Fornecedor{' '}
+                {editingPedido.fornecedor_nome || editingPedido.fornecedor_id || '—'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-data-entrega">Data de Entrega Prevista</Label>
+                <Input
+                  id="edit-data-entrega"
+                  type="date"
+                  value={editDataEntrega}
+                  onChange={(e) => setEditDataEntrega(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-observacoes">Observações</Label>
+                <Textarea
+                  id="edit-observacoes"
+                  value={editObservacoes}
+                  onChange={(e) => setEditObservacoes(e.target.value)}
+                  rows={4}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditingPedido(null)}
+                  disabled={updateMutation.isPending}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() =>
+                    updateMutation.mutate({
+                      pedidoId: editingPedido.id,
+                      data_entrega_prevista: editDataEntrega || undefined,
+                      observacoes: editObservacoes,
+                    })
+                  }
+                  disabled={updateMutation.isPending}
+                >
+                  {updateMutation.isPending ? 'Salvando...' : 'Salvar alterações'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
 import { Separator } from "@/components/ui/separator";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload, Eye, Edit } from "lucide-react";
 
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -114,12 +114,13 @@ const partnerSchema = z.object({
 type PartnerFormData = z.infer<typeof partnerSchema>;
 
 export default function Parceiros() {
-  const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
+  const { canCreatePage, canEditPage } = usePermissions();
   const [parceiros, setParceiros] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParceiro, setEditingParceiro] = useState<Partner | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isViewMode, setIsViewMode] = useState(false);
   const { selectedCompany } = useCompany();
 
   const form = useForm<PartnerFormData>({
@@ -241,8 +242,21 @@ export default function Parceiros() {
     }
   };
 
+  const handleView = (parceiro: Partner) => {
+    setEditingParceiro(parceiro);
+    setIsViewMode(true);
+    setIsDialogOpen(true);
+  };
+
+  const handleEdit = (parceiro: Partner) => {
+    setEditingParceiro(parceiro);
+    setIsViewMode(false);
+    setIsDialogOpen(true);
+  };
+
   const handleNew = () => {
     setEditingParceiro(null);
+    setIsViewMode(false);
     form.reset({
       razao_social: "",
       nome_fantasia: "",
@@ -386,6 +400,32 @@ export default function Parceiros() {
         </Badge>
       ),
     },
+    {
+      header: "Ações",
+      accessor: (item: Partner) => (
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleView(item)}
+            title="Visualizar parceiro"
+          >
+            <Eye className="h-4 w-4" />
+          </Button>
+          <PermissionGuard page="/cadastros/parceiros*" action="edit" fallback={null}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!canEditPage('/cadastros/parceiros*')}
+              onClick={() => handleEdit(item)}
+              title="Editar parceiro"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+          </PermissionGuard>
+        </div>
+      ),
+    },
   ];
 
   if (loading) return <div>Carregando...</div>;
@@ -433,26 +473,7 @@ export default function Parceiros() {
       <DataTable
         data={parceiros}
         columns={columns}
-        onNew={handleNew}
-        onEdit={(parceiro) => {
-          setEditingParceiro(parceiro);
-          setIsDialogOpen(true);
-        }}
-        onDelete={async (parceiro) => {
-          if (window.confirm(`Tem certeza que deseja excluir o parceiro ${parceiro.razao_social}?`)) {
-            try {
-              const { error } = await supabase
-                .from("partners")
-                .delete()
-                .eq("id", parceiro.id);
-              if (error) throw error;
-              toast.success("Parceiro excluído!");
-              fetchParceiros();
-            } catch (error: any) {
-              toast.error("Erro ao excluir: " + error.message);
-            }
-          }
-        }}
+        onNew={canCreatePage('/cadastros/parceiros*') ? handleNew : undefined}
         onExport={() => toast.info("Exportação em desenvolvimento")}
         searchPlaceholder="Buscar por razão social ou CNPJ..."
         newButtonLabel="Novo Parceiro"
@@ -466,7 +487,7 @@ export default function Parceiros() {
         onSuccess={fetchParceiros}
       />
 
-      <PermissionGuard page="/cadastros/parceiros*" action="create">
+      <PermissionGuard page="/cadastros/parceiros*" action="read">
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -479,6 +500,7 @@ export default function Parceiros() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className={isViewMode ? "space-y-6 pointer-events-none opacity-80" : "space-y-6"}>
               {/* Informações Básicas */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Informações Básicas</h3>
@@ -1072,13 +1094,21 @@ export default function Parceiros() {
                   )}
                 />
               </div>
-
-              <div className="flex gap-2 justify-end pt-4">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit">Salvar</Button>
               </div>
+              {isViewMode ? (
+                <div className="flex gap-2 justify-end pt-4 pointer-events-auto">
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    Fechar
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2 justify-end pt-4">
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit">Salvar</Button>
+                </div>
+              )}
             </form>
           </Form>
         </DialogContent>

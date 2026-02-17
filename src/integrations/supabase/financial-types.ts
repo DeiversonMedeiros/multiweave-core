@@ -390,6 +390,8 @@ export interface ContaPagarFormData {
   intervalo_parcelas?: 'diario' | 'semanal' | 'quinzenal' | 'mensal' | 'bimestral' | 'trimestral' | 'semestral' | 'anual';
   data_primeira_parcela?: string;
   parcelas?: ContaPagarParcelaFormData[];
+  // Rateio entre centros de custo e projetos (múltiplos)
+  rateio?: ContaPagarRateioItem[];
   // Campos de urgência (M2)
   is_urgente?: boolean;
   motivo_urgencia?: string;
@@ -400,6 +402,30 @@ export interface ContaPagarParcelaFormData {
   valor_parcela: number;
   data_vencimento: string;
   observacoes?: string;
+}
+
+/** Rateio: uma linha = centro de custo + projeto + percentual OU valor monetário */
+export interface ContaPagarRateioItem {
+  id?: string;
+  centro_custo_id: string;
+  projeto_id?: string;
+  tipo_rateio: 'percentual' | 'valor';
+  valor_percentual?: number;
+  valor_monetario?: number;
+}
+
+/** Entidade de rateio persistida (financeiro.contas_pagar_rateio) */
+export interface ContaPagarRateio {
+  id: string;
+  conta_pagar_id: string;
+  company_id: string;
+  centro_custo_id: string;
+  projeto_id?: string;
+  tipo_rateio: 'percentual' | 'valor';
+  valor_percentual?: number;
+  valor_monetario?: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ContaReceberFormData {

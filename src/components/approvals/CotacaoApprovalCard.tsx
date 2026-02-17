@@ -9,7 +9,8 @@ import {
   ArrowRight, 
   Building2, 
   DollarSign,
-  Loader2
+  Loader2,
+  FolderOpen
 } from 'lucide-react';
 import { Approval } from '@/services/approvals/approvalService';
 import { PermissionButton } from '@/components/PermissionGuard';
@@ -91,6 +92,20 @@ export function CotacaoApprovalCard({
                     <User className="h-4 w-4 text-muted-foreground" />
                     <span className="text-muted-foreground">Comprador:</span>
                     <span className="font-medium">{cotacaoInfo.comprador_nome}</span>
+                  </div>
+                )}
+                {cotacaoInfo.centro_custo_nome && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Centro de Custo:</span>
+                    <span className="font-medium">{cotacaoInfo.centro_custo_nome}</span>
+                  </div>
+                )}
+                {cotacaoInfo.projeto_nome && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Projeto:</span>
+                    <span className="font-medium">{cotacaoInfo.projeto_nome}</span>
                   </div>
                 )}
                 {(cotacaoInfo.valor_final !== undefined || cotacaoInfo.valor_total !== undefined) && (cotacaoInfo.valor_final ?? cotacaoInfo.valor_total ?? 0) >= 0 && (

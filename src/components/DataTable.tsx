@@ -24,6 +24,7 @@ type DataTableProps<T> = {
   onExport?: () => void;
   searchPlaceholder?: string;
   newButtonLabel?: string;
+  showNewButton?: boolean;
 };
 
 export function DataTable<T extends { id: string }>({
@@ -33,6 +34,7 @@ export function DataTable<T extends { id: string }>({
   onExport,
   searchPlaceholder = "Buscar...",
   newButtonLabel = "Novo",
+  showNewButton = true,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
 
@@ -84,7 +86,7 @@ export function DataTable<T extends { id: string }>({
               Exportar
             </Button>
           )}
-          {onNew && (
+          {onNew && showNewButton && (
             <Button onClick={onNew}>
               <Plus className="mr-2 h-4 w-4" />
               {newButtonLabel}

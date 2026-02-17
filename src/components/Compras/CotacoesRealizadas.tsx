@@ -86,24 +86,26 @@ export function CotacoesRealizadas() {
     return map;
   }, [users]);
 
-  // Função para obter nome do comprador (prioriza username, depois nome)
+  // Função para obter nome do comprador (prioriza comprador_nome da API, depois usersMap)
   const getCompradorNome = (cotacao: any) => {
-    // Tentar pegar created_by da cotação primeiro
+    // Nome vindo da view/API (profiles), quando a requisição tem created_by ou solicitante_id
+    if (cotacao.comprador_nome) {
+      return cotacao.comprador_nome;
+    }
+    // Fallback: buscar no mapa de usuários por created_by da cotação
     if (cotacao.created_by) {
       const user = usersMap.get(cotacao.created_by);
       if (user) {
         return user.username || user.nome || '—';
       }
     }
-    
-    // Se não tiver, tentar pegar da requisição
+    // Fallback: buscar por requisicao_created_by (ou solicitante_id exposto pela view)
     if (cotacao.requisicao_created_by) {
       const user = usersMap.get(cotacao.requisicao_created_by);
       if (user) {
         return user.username || user.nome || '—';
       }
     }
-    
     return '—';
   };
 

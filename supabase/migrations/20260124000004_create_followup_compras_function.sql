@@ -121,6 +121,7 @@ BEGIN
     pedidos AS (
         SELECT 
             pc.id as pedido_id,
+            pc.cotacao_ciclo_id,
             pc.cotacao_id,
             pc.numero_pedido,
             pc.data_pedido,
@@ -132,11 +133,13 @@ BEGIN
             pc.valor_final as pedido_valor_final,
             pt.razao_social as fornecedor_nome,
             pc.created_at as pedido_created_at,
-            pc.updated_at as pedido_updated_at
+            pc.updated_at as pedido_updated_at,
+            pc.observacoes
         FROM compras.pedidos_compra pc
         LEFT JOIN compras.fornecedores_dados fd ON fd.id = pc.fornecedor_id
         LEFT JOIN public.partners pt ON pt.id = fd.partner_id
-        WHERE (p_status_pedido IS NULL OR pc.workflow_state = p_status_pedido OR pc.status::TEXT = p_status_pedido)
+        WHERE pc.company_id = p_company_id
+        AND (p_status_pedido IS NULL OR pc.workflow_state = p_status_pedido OR pc.status::TEXT = p_status_pedido)
         AND (p_fornecedor_id IS NULL OR pc.fornecedor_id = p_fornecedor_id)
     ),
     contas_pagar AS (
@@ -221,7 +224,18 @@ BEGIN
         
     FROM requisicoes r
     LEFT JOIN cotacoes c ON c.requisicao_id = r.id
-    LEFT JOIN pedidos p ON p.cotacao_id = c.cotacao_id
+    LEFT JOIN pedidos p ON 
+        (
+            p.cotacao_ciclo_id = c.cotacao_id 
+            OR p.cotacao_id = c.cotacao_id
+            -- Fallback para pedidos antigos que não possuem vínculo por ID,
+            -- mas têm a informação da cotação apenas no texto das observações
+            OR (
+                p.cotacao_ciclo_id IS NULL 
+                AND p.cotacao_id IS NULL 
+                AND p.observacoes ILIKE '%' || c.numero_cotacao || '%'
+            )
+        )
     LEFT JOIN contas_pagar cp ON cp.pedido_id = p.pedido_id
     LEFT JOIN entradas_estoque e ON e.numero_documento = p.numero_pedido OR e.numero_documento LIKE '%' || p.numero_pedido || '%'
     ORDER BY r.data_solicitacao DESC, c.data_cotacao DESC, p.data_pedido DESC;

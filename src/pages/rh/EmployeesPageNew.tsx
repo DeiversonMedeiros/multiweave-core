@@ -164,6 +164,23 @@ export default function EmployeesPageNew() {
             });
           }
         }
+
+        // Sincronizar gestores de ponto após criar o funcionário
+        if (savedEmployee?.id && selectedCompany?.id && Array.isArray((data as any).ponto_gestor_user_ids)) {
+          try {
+            const { syncEmployeeGestores } = await import('@/services/rh/employeePontoGestoresService');
+            await syncEmployeeGestores(
+              savedEmployee.id,
+              (data as any).ponto_gestor_user_ids,
+              selectedCompany.id
+            );
+          } catch (gestorError: any) {
+            console.error('Erro ao sincronizar gestores de ponto:', gestorError);
+            toast('Aviso: Funcionário criado, mas houve um erro ao salvar os gestores de ponto. Você pode editar o funcionário para corrigir.', {
+              style: { background: '#ef4444', color: 'white' }
+            });
+          }
+        }
         
         toast('Funcionário criado com sucesso!');
       } else if (modalMode === 'edit' && selectedEmployee) {
@@ -184,6 +201,23 @@ export default function EmployeesPageNew() {
           } catch (zoneError: any) {
             console.error('Erro ao sincronizar zonas de localização:', zoneError);
             toast('Aviso: Funcionário atualizado, mas houve um erro ao associar as zonas de localização.', {
+              style: { background: '#ef4444', color: 'white' }
+            });
+          }
+        }
+
+        // Sincronizar gestores de ponto após atualizar o funcionário
+        if (selectedEmployee.id && selectedCompany?.id && Array.isArray((data as any).ponto_gestor_user_ids)) {
+          try {
+            const { syncEmployeeGestores } = await import('@/services/rh/employeePontoGestoresService');
+            await syncEmployeeGestores(
+              selectedEmployee.id,
+              (data as any).ponto_gestor_user_ids,
+              selectedCompany.id
+            );
+          } catch (gestorError: any) {
+            console.error('Erro ao sincronizar gestores de ponto:', gestorError);
+            toast('Aviso: Funcionário atualizado, mas houve um erro ao salvar os gestores de ponto.', {
               style: { background: '#ef4444', color: 'white' }
             });
           }

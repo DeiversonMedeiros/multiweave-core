@@ -70,6 +70,8 @@ export interface QuoteCycleInput {
   prazo_resposta?: string;
   observacoes?: string;
   requisicao_item_ids?: string[]; // IDs específicos dos itens no modo explodido
+  /** Quando informado, cria ciclo com este numero_cotacao (para cotação multi-requisição / multi-CC) */
+  numero_cotacao_existente?: string;
 }
 
 export interface QuoteSupplierResponseInput {
@@ -518,6 +520,240 @@ export const purchaseService = {
     });
   },
 
+  async deleteQuote(params: { companyId: string; quoteId: string }) {
+    const { companyId, quoteId } = params;
+
+    // Buscar a cotação para verificar se é rascunho
+    let quote = null;
+    try {
+      quote = await EntityService.getById({
+        schema: 'compras',
+        table: 'cotacao_ciclos',
+        id: quoteId,
+        companyId,
+      });
+    } catch (error) {
+      console.error('Erro ao buscar cotação para exclusão:', error);
+      // Continuar mesmo se não encontrar, pode ser que já tenha sido deletada
+    }
+
+    const isRascunho = quote && (quote.workflow_state === 'rascunho' || quote.status === 'rascunho');
+
+    // Se for rascunho, reverter status dos itens antes de deletar
+    if (isRascunho) {
+      try {
+        // Buscar fornecedores da cotação
+        const fornecedoresCotacaoResult = await EntityService.list({
+          schema: 'compras',
+          table: 'cotacao_fornecedores',
+          companyId,
+          filters: { cotacao_id: quoteId },
+          page: 1,
+          pageSize: 100,
+          skipCompanyFilter: true,
+        });
+        const fornecedoresCotacao = fornecedoresCotacaoResult.data || [];
+        const cotacaoFornecedoresIds = fornecedoresCotacao.map((fc: any) => fc.id);
+
+        if (cotacaoFornecedoresIds.length > 0) {
+          // Buscar todos os itens cotados (cotacao_item_fornecedor)
+          const cotacaoItensResult = await EntityService.list({
+            schema: 'compras',
+            table: 'cotacao_item_fornecedor',
+            companyId,
+            filters: {},
+            page: 1,
+            pageSize: 1000,
+            skipCompanyFilter: true,
+          });
+
+          const cotacaoItens = (cotacaoItensResult.data || []).filter((item: any) =>
+            cotacaoFornecedoresIds.includes(item.cotacao_fornecedor_id)
+          );
+
+          // Obter requisicao_item_ids únicos
+          const requisicaoItemIds = [...new Set(cotacaoItens.map((item: any) => item.requisicao_item_id).filter(Boolean))];
+
+          // Reverter status dos itens de 'cotado' para 'pendente'
+          await Promise.all(
+            requisicaoItemIds.map(async (itemId) => {
+              try {
+                await EntityService.update({
+                  schema: 'compras',
+                  table: 'requisicao_itens',
+                  companyId,
+                  id: itemId,
+                  data: { status: 'pendente' },
+                });
+              } catch (error) {
+                console.error(`Erro ao reverter status do item ${itemId}:`, error);
+                // Continuar mesmo se algum falhar
+              }
+            })
+          );
+
+          // Verificar e reverter workflow_state das requisições se necessário
+          const requisicaoIds = new Set<string>();
+          for (const itemId of requisicaoItemIds) {
+            try {
+              const item = await EntityService.getById({
+                schema: 'compras',
+                table: 'requisicao_itens',
+                id: itemId,
+                companyId,
+              });
+              if (item && (item as any).requisicao_id) {
+                requisicaoIds.add((item as any).requisicao_id);
+              }
+            } catch (error) {
+              console.error(`Erro ao buscar item ${itemId}:`, error);
+            }
+          }
+
+          // Para cada requisição, verificar se todos os itens voltaram a pendente
+          for (const reqId of Array.from(requisicaoIds)) {
+            try {
+              const itensRequisicao = await EntityService.list({
+                schema: 'compras',
+                table: 'requisicao_itens',
+                companyId,
+                filters: { requisicao_id: reqId },
+                page: 1,
+                pageSize: 1000,
+                skipCompanyFilter: true,
+              });
+
+              const todosItensPendentes = (itensRequisicao.data || []).every(
+                (item: any) => item.status === 'pendente' || !item.status
+              );
+
+              // Se todos os itens voltaram a pendente, reverter workflow_state da requisição
+              if (todosItensPendentes) {
+                const requisicao = await EntityService.getById({
+                  schema: 'compras',
+                  table: 'requisicoes_compra',
+                  id: reqId,
+                  companyId,
+                });
+
+                const currentState = (requisicao as any)?.workflow_state;
+                
+                // Reverter workflow_state se estava em 'em_cotacao'
+                if (currentState === 'em_cotacao') {
+                  // Buscar o estado anterior nos workflow_logs
+                  try {
+                    const logsResult = await EntityService.list({
+                      schema: 'compras',
+                      table: 'workflow_logs',
+                      companyId,
+                      filters: {
+                        entity_type: 'requisicao_compra',
+                        entity_id: reqId,
+                        to_state: 'em_cotacao',
+                      },
+                      page: 1,
+                      pageSize: 1,
+                      skipCompanyFilter: true,
+                    });
+
+                    const log = logsResult.data && logsResult.data.length > 0 ? logsResult.data[0] : null;
+                    const previousState = (log as any)?.from_state || 'aprovada';
+
+                    // Reverter para o estado anterior (geralmente 'aprovada')
+                    await EntityService.update({
+                      schema: 'compras',
+                      table: 'requisicoes_compra',
+                      companyId,
+                      id: reqId,
+                      data: {
+                        workflow_state: previousState,
+                      },
+                    });
+
+                    // Registrar no log de workflow
+                    await EntityService.create({
+                      schema: 'compras',
+                      table: 'workflow_logs',
+                      companyId,
+                      data: {
+                        entity_type: 'requisicao_compra',
+                        entity_id: reqId,
+                        from_state: 'em_cotacao',
+                        to_state: previousState,
+                        actor_id: null, // Sistema
+                        payload: { motivo: 'cotacao_rascunho_excluida', cotacao_ciclo_id: quoteId },
+                      },
+                    });
+                  } catch (error) {
+                    console.error(`Erro ao buscar logs ou reverter estado da requisição ${reqId}:`, error);
+                    // Tentar reverter para 'aprovada' como fallback
+                    try {
+                      await EntityService.update({
+                        schema: 'compras',
+                        table: 'requisicoes_compra',
+                        companyId,
+                        id: reqId,
+                        data: {
+                          workflow_state: 'aprovada',
+                        },
+                      });
+                    } catch (updateError) {
+                      console.error(`Erro ao reverter estado da requisição ${reqId}:`, updateError);
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              console.error(`Erro ao verificar requisição ${reqId}:`, error);
+              // Continuar mesmo se falhar
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao reverter status dos itens:', error);
+        // Continuar com a exclusão mesmo se a reversão falhar
+      }
+    }
+
+    // Deletar a cotação (isso vai deletar em cascata cotacao_fornecedores e cotacao_item_fornecedor)
+    return EntityService.delete({
+      schema: 'compras',
+      table: 'cotacao_ciclos',
+      companyId,
+      id: quoteId,
+    });
+  },
+
+  async deletePurchaseOrder(params: { companyId: string; pedidoId: string }) {
+    const { companyId, pedidoId } = params;
+
+    return EntityService.delete({
+      schema: 'compras',
+      table: 'pedidos_compra',
+      companyId,
+      id: pedidoId,
+    });
+  },
+
+  async updatePurchaseOrder(params: {
+    companyId: string;
+    pedidoId: string;
+    data: {
+      data_entrega_prevista?: string | null;
+      observacoes?: string | null;
+    };
+  }) {
+    const { companyId, pedidoId, data } = params;
+
+    return EntityService.update({
+      schema: 'compras',
+      table: 'pedidos_compra',
+      companyId,
+      id: pedidoId,
+      data,
+    });
+  },
+
   async listPurchaseOrders(companyId: string, filters?: EntityFilters) {
     const result = await EntityService.list<Record<string, any>>({
       schema: 'compras',
@@ -566,9 +802,17 @@ export const purchaseService = {
       });
     }
 
+    const extractNumeroCotacaoFromObservacoes = (observacoes?: string | null): string | null => {
+      if (!observacoes || typeof observacoes !== 'string') return null;
+      // Padrão: "cotação COT-000123" (com ou sem acentos/cedilha)
+      const match = observacoes.match(/cota[cç][aã]o\s+([A-Za-z0-9_\-\/]+)/i);
+      return match?.[1]?.trim() || null;
+    };
+
     const getNumeroCotacao = (pedido: Record<string, any>) =>
       (pedido.cotacao_ciclo_id ? numeroPorCicloId.get(pedido.cotacao_ciclo_id) : null) ??
       (pedido.cotacao_id ? numeroPorCotacaoId.get(pedido.cotacao_id) : null) ??
+      extractNumeroCotacaoFromObservacoes(pedido.observacoes) ??
       null;
 
     const fornecedorIds = [...new Set(result.data.map((p: any) => p.fornecedor_id).filter(Boolean))];
@@ -1268,15 +1512,18 @@ export const purchaseService = {
     
     while (tentativas < maxTentativas) {
       try {
-        // Usar função específica para gerar número de cotação
-        // Isso garante que o número seja único e sequencial baseado em cotacao_ciclos
-        const numeroData = await callSchemaFunction<{ result: string }>('compras', 'gerar_numero_cotacao', {
-          p_company_id: params.companyId,
-        });
-
-        const numero_cotacao =
-          (typeof numeroData === 'string' ? numeroData : numeroData?.result) ||
-          `COT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        // Se numero_cotacao_existente foi passado (2ª, 3ª requisição da mesma cotação), reutilizar
+        let numero_cotacao: string;
+        if (params.input.numero_cotacao_existente?.trim()) {
+          numero_cotacao = params.input.numero_cotacao_existente.trim();
+        } else {
+          const numeroData = await callSchemaFunction<{ result: string }>('compras', 'gerar_numero_cotacao', {
+            p_company_id: params.companyId,
+          });
+          numero_cotacao =
+            (typeof numeroData === 'string' ? numeroData : numeroData?.result) ||
+            `COT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        }
 
         ciclo = await EntityService.create({
           schema: 'compras',
@@ -1446,6 +1693,7 @@ export const purchaseService = {
           companyId: params.companyId,
           id: fornecedorExistente.id,
           data: dadosAtualizacao,
+          skipCompanyFilter: true, // cotacao_fornecedores não tem company_id
         });
 
         return { ...fornecedorExistente, ...dadosAtualizacao };
@@ -1568,6 +1816,7 @@ export const purchaseService = {
         status: params.data.workflow_state === 'completa' ? 'completa' : params.data.workflow_state,
         workflow_state: params.data.workflow_state,
       },
+      skipCompanyFilter: true, // cotacao_fornecedores não tem company_id
     });
 
     return fornecedor;
@@ -1884,6 +2133,55 @@ export const purchaseService = {
       return [];
     }
 
+    // 1b. Resolver nomes dos fornecedores e condições/forma de pagamento (para colunas no follow-up)
+    const fornecedorIds = [...new Set(fornecedoresCotacao.map((fc: any) => fc.fornecedor_id).filter(Boolean))];
+    let fdList: any[] = [];
+    let partnersList: any[] = [];
+    if (fornecedorIds.length > 0) {
+      try {
+        const [fdResult, ptResult] = await Promise.all([
+          EntityService.list({
+            schema: 'compras',
+            table: 'fornecedores_dados',
+            companyId,
+            page: 1,
+            pageSize: 200,
+          }),
+          EntityService.list({
+            schema: 'public',
+            table: 'partners',
+            companyId,
+            page: 1,
+            pageSize: 500,
+          }),
+        ]);
+        fdList = fdResult.data || [];
+        partnersList = ptResult.data || [];
+      } catch (_) {
+        // ignorar; colunas opcionais ficarão vazias
+      }
+    }
+    const fdMap = new Map((fdList as any[]).map((fd: any) => [fd.id, fd]));
+    const partnersMap = new Map((partnersList as any[]).map((p: any) => [p.id, p.nome_fantasia || p.razao_social || p.nome || '']));
+    const cotacaoFornecedorInfoMap = new Map<string, { fornecedor_ganhador_nome: string; forma_pagamento: string; condicoes_pagamento: string }>();
+    fornecedoresCotacao.forEach((fc: any) => {
+      const fd = fdMap.get(fc.fornecedor_id);
+      const partnerId = fd?.partner_id;
+      const nome = partnerId ? (partnersMap.get(partnerId) || '—') : '—';
+      let condicoes = '—';
+      if (fc.is_parcelada && fc.numero_parcelas >= 2) {
+        const intervalo = fc.intervalo_parcelas ? `${fc.intervalo_parcelas} dias` : 'parcelas';
+        condicoes = `${fc.numero_parcelas}x (${intervalo})`;
+      } else {
+        condicoes = 'À vista';
+      }
+      cotacaoFornecedorInfoMap.set(fc.id, {
+        fornecedor_ganhador_nome: nome,
+        forma_pagamento: fc.forma_pagamento || '—',
+        condicoes_pagamento: condicoes,
+      });
+    });
+
     // 2. Buscar itens cotados (cotacao_item_fornecedor)
     const cotacaoItensResult = await EntityService.list({
       schema: 'compras',
@@ -1964,6 +2262,7 @@ export const purchaseService = {
             id: item.id,
             requisicao_item_id: item.requisicao_item_id,
             material_id: item.material_id,
+            cotacao_fornecedor_id: item.cotacao_fornecedor_id,
             quantidade: item.quantidade_ofertada || 0,
             valor_unitario: item.valor_unitario || 0,
             valor_total: item.valor_total_calculado || item.valor_unitario * (item.quantidade_ofertada || 0),
@@ -1975,9 +2274,17 @@ export const purchaseService = {
         }
       });
 
-      const finalItems = Array.from(itemsByRequisicaoItem.values());
+      const finalItems = Array.from(itemsByRequisicaoItem.values()).map((row: any) => {
+        const info = row.cotacao_fornecedor_id ? cotacaoFornecedorInfoMap.get(row.cotacao_fornecedor_id) : null;
+        return {
+          ...row,
+          fornecedor_ganhador_nome: info?.fornecedor_ganhador_nome ?? '—',
+          forma_pagamento: info?.forma_pagamento ?? '—',
+          condicoes_pagamento: info?.condicoes_pagamento ?? '—',
+        };
+      });
       console.log('[purchaseService.getCotacaoItems] Itens finais após agrupamento:', finalItems.length);
-      return finalItems;
+      return finalItems as any[];
     }
 
     return [];

@@ -21,7 +21,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Truck,
-  Fuel
+  Fuel,
+  FolderOpen
 } from 'lucide-react';
 import { usePendingApprovals, useProcessApproval, useTransferApproval } from '@/hooks/approvals/useApprovals';
 import { useCompany } from '@/lib/company-context';
@@ -531,20 +532,32 @@ const CentralAprovacoesExpandida: React.FC = () => {
                   <CardContent>
                     <div className="flex items-center justify-between">
                       <div className="space-y-2">
+                        {(approval.comprador_nome || approval.solicitante_nome) && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">Comprador:</span>
+                            <span className="font-medium">{approval.comprador_nome || approval.solicitante_nome}</span>
+                          </div>
+                        )}
+                        {approval.centro_custo_nome && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">Centro de Custo:</span>
+                            <span className="font-medium">{approval.centro_custo_nome}</span>
+                          </div>
+                        )}
+                        {approval.projeto_nome && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-muted-foreground">Projeto:</span>
+                            <span className="font-medium">{approval.projeto_nome}</span>
+                          </div>
+                        )}
                         {approval.numero_requisicao ? (
-                          <>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <User className="h-4 w-4" />
-                              <span>Requisição: {approval.numero_requisicao}</span>
-                            </div>
-                            {approval.solicitante_nome && (
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <User className="h-4 w-4" />
-                                <span>Solicitante: {approval.solicitante_nome}</span>
-                              </div>
-                            )}
-                          </>
-                        ) : (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <span>Requisição: {approval.numero_requisicao}</span>
+                          </div>
+                        ) : !approval.comprador_nome && !approval.solicitante_nome && !approval.centro_custo_nome && !approval.projeto_nome && (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <User className="h-4 w-4" />
                             <span>ID da Solicitação: {approval.processo_id?.slice(0, 8) || 'N/A'}...</span>

@@ -7,6 +7,8 @@ interface CotacaoApprovalInfo {
   numero_cotacao?: string;
   comprador_nome?: string;
   comprador_email?: string;
+  centro_custo_nome?: string;
+  projeto_nome?: string;
   valor_total?: number;
   /** Valor final (com frete, desconto, impostos, desconto geral do ciclo) - usar este no card de aprovação */
   valor_final?: number;
@@ -22,12 +24,12 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
       if (!cotacaoId || !selectedCompany?.id) return null;
 
       try {
-        // Buscar ciclo de cotação (incluir campos para cálculo do valor final)
+        // Buscar ciclo de cotação (incluir requisicao_id para comprador, centro e projeto)
         const cicloResult = await EntityService.getById<{
           id: string;
           numero_cotacao?: string;
           status?: string;
-          created_by?: string;
+          requisicao_id?: string;
           valor_frete?: number;
           desconto_percentual?: number;
           desconto_valor?: number;
@@ -40,25 +42,73 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
 
         if (!cicloResult) return null;
 
-        // Buscar informações do comprador
+        // Buscar requisição para comprador, centro de custo e projeto
         let compradorNome: string | undefined;
         let compradorEmail: string | undefined;
-        
-        if (cicloResult.created_by) {
+        let centroCustoNome: string | undefined;
+        let projetoNome: string | undefined;
+
+        if (cicloResult.requisicao_id) {
           try {
-            // Usar supabase diretamente pois users não tem company_id
-            const { data: user, error: userError } = await supabase
-              .from('users')
-              .select('nome, email')
-              .eq('id', cicloResult.created_by)
-              .single();
-            
-            if (!userError && user) {
-              compradorNome = user.nome || user.email || 'Usuário não encontrado';
-              compradorEmail = user.email;
+            const reqResult = await EntityService.getById<{
+              id: string;
+              created_by?: string;
+              solicitante_id?: string;
+              centro_custo_id?: string;
+              projeto_id?: string;
+            }>({
+              schema: 'compras',
+              table: 'requisicoes_compra',
+              id: cicloResult.requisicao_id,
+              companyId: selectedCompany.id
+            });
+            if (reqResult) {
+              const compradorId = reqResult.created_by || reqResult.solicitante_id;
+              // Comprador: priorizar nome do colaborador (rh.employees), senão perfil (profiles)
+              if (compradorId) {
+                try {
+                  const empList = await EntityService.list<{ id: string; nome?: string; user_id?: string }>({
+                    schema: 'rh',
+                    table: 'employees',
+                    companyId: selectedCompany.id,
+                    filters: { user_id: compradorId },
+                    page: 1,
+                    pageSize: 1
+                  });
+                  const emp = (empList.data || [])[0];
+                  if (emp?.nome) {
+                    compradorNome = emp.nome;
+                  }
+                } catch (_) {}
+                if (!compradorNome) {
+                  const { data: profile } = await supabase.from('profiles').select('nome, email').eq('id', compradorId).single();
+                  if (profile) {
+                    compradorNome = profile.nome || profile.email;
+                    compradorEmail = profile.email;
+                  }
+                }
+              }
+              if (reqResult.centro_custo_id) {
+                const cc = await EntityService.getById<{ id: string; nome: string }>({
+                  schema: 'public',
+                  table: 'cost_centers',
+                  id: reqResult.centro_custo_id,
+                  companyId: selectedCompany.id
+                });
+                centroCustoNome = cc?.nome;
+              }
+              if (reqResult.projeto_id) {
+                const proj = await EntityService.getById<{ id: string; nome: string }>({
+                  schema: 'public',
+                  table: 'projects',
+                  id: reqResult.projeto_id,
+                  companyId: selectedCompany.id
+                });
+                projetoNome = proj?.nome;
+              }
             }
           } catch (err) {
-            console.warn('[useCotacaoApprovalInfo] Erro ao buscar comprador:', err);
+            console.warn('[useCotacaoApprovalInfo] Erro ao buscar requisição/comprador/centro/projeto:', err);
           }
         }
 
@@ -200,6 +250,8 @@ export function useCotacaoApprovalInfo(cotacaoId?: string) {
           numero_cotacao: cicloResult.numero_cotacao,
           comprador_nome: compradorNome,
           comprador_email: compradorEmail,
+          centro_custo_nome: centroCustoNome,
+          projeto_nome: projetoNome,
           valor_total: valorTotal,
           valor_final: valorTotal,
           status: cicloResult.status

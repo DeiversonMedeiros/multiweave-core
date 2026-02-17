@@ -40,7 +40,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { EmployeeDocumentsTab } from '@/components/rh/EmployeeDocumentsTab';
 import { useDependentsByEmployee } from '@/hooks/rh/useDependents';
 import { DependentsList } from '@/components/rh/DependentsList';
-import { Users } from 'lucide-react';
+import { Users, UserCog, Search } from 'lucide-react';
+import { getGestorUserIdsByEmployeeId } from '@/services/rh/employeePontoGestoresService';
 
 // =====================================================
 // COMPONENTE PARA ABA DE DEPENDENTES (MODO VIEW)
@@ -150,6 +151,7 @@ const employeeSchema = z.object({
   status: z.enum(['ativo', 'inativo', 'afastado', 'demitido', 'aposentado', 'licenca']).default('ativo'),
   requer_registro_ponto: z.boolean().default(true), // Artigo 62 da CLT
   location_zone_ids: z.array(z.string()).default([]), // Array de IDs de zonas de localização
+  ponto_gestor_user_ids: z.array(z.string()).default([]), // Usuários que podem acompanhar ponto no portal gestor
   tipo_contrato_trabalho: z.enum(['CLT', 'PJ', 'Estagiario', 'Menor_Aprendiz', 'Terceirizado', 'Autonomo', 'Cooperado', 'Temporario', 'Intermitente', 'Outro']).optional(),
   vinculo_periculosidade: z.boolean().optional(),
   vinculo_insalubridade: z.boolean().optional(),
@@ -238,6 +240,7 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('personal');
   const [hasTriedSubmit, setHasTriedSubmit] = useState(false);
+  const [gestoresSearchTerm, setGestoresSearchTerm] = useState('');
 
   // Hooks para carregar dados relacionados usando nova abordagem genérica
   const { data: positionsData, isLoading: positionsLoading } = useRHData('positions', selectedCompany?.id || '');
@@ -300,6 +303,7 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
       status: employee?.status || 'ativo',
       requer_registro_ponto: employee?.requer_registro_ponto ?? true,
       location_zone_ids: [], // Será carregado separadamente
+      ponto_gestor_user_ids: [], // Será carregado separadamente (gestores de ponto)
       user_id: employee?.user_id || 'none',
       tipo_contrato_trabalho: employee?.tipo_contrato_trabalho || undefined,
       vinculo_periculosidade: employee?.vinculo_periculosidade || false,
@@ -400,6 +404,36 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
       isMounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id, selectedCompany?.id]);
+
+  // Carregar gestores de ponto do funcionário quando estiver editando
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPontoGestores = async () => {
+      if (!isMounted) return;
+
+      if (employee?.id && selectedCompany?.id) {
+        try {
+          const userIds = await getGestorUserIdsByEmployeeId(employee.id, selectedCompany.id);
+          if (!isMounted) return;
+          const current = form.getValues('ponto_gestor_user_ids') || [];
+          if (JSON.stringify(userIds.sort()) !== JSON.stringify(current.sort())) {
+            form.setValue('ponto_gestor_user_ids', userIds, { shouldDirty: false, shouldValidate: false });
+          }
+        } catch (error) {
+          console.error('Erro ao carregar gestores de ponto:', error);
+        }
+      } else if (!employee?.id) {
+        const current = form.getValues('ponto_gestor_user_ids') || [];
+        if (current.length > 0) {
+          form.setValue('ponto_gestor_user_ids', [], { shouldDirty: false, shouldValidate: false });
+        }
+      }
+    };
+
+    loadPontoGestores();
+    return () => { isMounted = false; };
   }, [employee?.id, selectedCompany?.id]);
 
   // Função para formatar CPF
@@ -609,7 +643,7 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full ${mode === 'view' ? 'grid-cols-10' : 'grid-cols-9'} mb-8 gap-1`}>
+          <TabsList className={`grid w-full ${mode === 'view' ? 'grid-cols-11' : 'grid-cols-10'} mb-8 gap-1`}>
             <TabsTrigger 
               value="personal" 
               className={`text-sm px-2 py-2 relative ${tabsWithErrors.includes('personal') ? 'text-red-600 font-semibold' : ''}`}
@@ -712,6 +746,14 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
                     !
                   </Badge>
                 )}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="gestores" 
+              className="text-sm px-2 py-2"
+            >
+              <span className="flex items-center gap-1">
+                Gestores
               </span>
             </TabsTrigger>
             <TabsTrigger 
@@ -2612,6 +2654,94 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
                     )}
                   />
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* GESTORES DE PONTO */}
+          <TabsContent value="gestores" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <UserCog className="h-5 w-5" />
+                  Gestores
+                </CardTitle>
+                <CardDescription>
+                  Usuários que poderão acompanhar o ponto deste funcionário no portal do gestor (Acompanhamento de Ponto).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {availableUsers.length > 0 && (
+                  <div className="relative mb-4">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por nome ou e-mail..."
+                      value={gestoresSearchTerm}
+                      onChange={(e) => setGestoresSearchTerm(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                )}
+                <FormField
+                  control={form.control}
+                  name="ponto_gestor_user_ids"
+                  render={({ field }) => {
+                    const term = (gestoresSearchTerm || '').trim().toLowerCase();
+                    const filteredUsers = term
+                      ? availableUsers.filter(
+                          (u) =>
+                            (u.nome || '').toLowerCase().includes(term) ||
+                            (u.email || '').toLowerCase().includes(term)
+                        )
+                      : availableUsers;
+                    return (
+                      <FormItem>
+                        <FormControl>
+                          <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2">
+                            {availableUsers.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">
+                                Nenhum usuário vinculado à empresa. Vincule usuários na empresa para poder atribuí-los como gestores de ponto.
+                              </p>
+                            ) : filteredUsers.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">
+                                Nenhum gestor encontrado para &quot;{gestoresSearchTerm}&quot;.
+                              </p>
+                            ) : (
+                              filteredUsers.map((u) => (
+                                <div
+                                  key={u.id}
+                                  className="flex items-center space-x-2 rounded-md border p-3 hover:bg-muted/50"
+                                >
+                                  <Checkbox
+                                    id={`gestor-${u.id}`}
+                                    checked={field.value?.includes(u.id) ?? false}
+                                    onCheckedChange={(checked) => {
+                                      const next = checked
+                                        ? [...(field.value || []), u.id]
+                                        : (field.value || []).filter((id) => id !== u.id);
+                                      field.onChange(next);
+                                    }}
+                                    disabled={isReadOnly}
+                                  />
+                                  <label
+                                    htmlFor={`gestor-${u.id}`}
+                                    className="flex-1 text-sm font-medium leading-none cursor-pointer"
+                                  >
+                                    {u.nome}
+                                    {u.email && (
+                                      <span className="block text-muted-foreground font-normal">{u.email}</span>
+                                    )}
+                                  </label>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
+                />
               </CardContent>
             </Card>
           </TabsContent>

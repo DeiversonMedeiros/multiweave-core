@@ -40,9 +40,12 @@ export interface Approval {
   motivo_transferencia?: string;
   created_at: string;
   updated_at: string;
-  // Campos adicionais para requisições de compra
+  // Campos adicionais para requisições de compra e cotações
   numero_requisicao?: string;
   solicitante_nome?: string;
+  comprador_nome?: string;
+  centro_custo_nome?: string;
+  projeto_nome?: string;
 }
 
 export interface MaterialExitRequest {
@@ -287,8 +290,10 @@ export class ApprovalService {
       const requisicaoApprovals = filteredApprovals.filter(a => a.processo_tipo === 'requisicao_compra');
       const requisicaoIds = requisicaoApprovals.map(a => a.processo_id);
       
-      let requisicoesMap = new Map<string, { numero_requisicao: string; solicitante_id: string }>();
+      let requisicoesMap = new Map<string, { numero_requisicao: string; solicitante_id: string; centro_custo_id?: string; projeto_id?: string }>();
       let usuariosMap = new Map<string, string>();
+      let centroCustoMap = new Map<string, string>();
+      let projetoMap = new Map<string, string>();
       let requisicoesStatus: Array<{ id: string; status: string }> | null = null;
       
       if (requisicaoIds.length > 0) {
@@ -360,6 +365,8 @@ export class ApprovalService {
               id: string;
               numero_requisicao: string;
               solicitante_id: string;
+              centro_custo_id?: string;
+              projeto_id?: string;
               status?: string;
               workflow_state?: string;
             }>({
@@ -391,6 +398,8 @@ export class ApprovalService {
             id: string;
             numero_requisicao: string;
             solicitante_id: string;
+            centro_custo_id?: string;
+            projeto_id?: string;
             status?: string;
             workflow_state?: string;
           }>;
@@ -400,7 +409,9 @@ export class ApprovalService {
             requisicoes.forEach((req) => {
               requisicoesMap.set(req.id, {
                 numero_requisicao: req.numero_requisicao,
-                solicitante_id: req.solicitante_id
+                solicitante_id: req.solicitante_id,
+                centro_custo_id: req.centro_custo_id,
+                projeto_id: req.projeto_id
               });
             });
             
@@ -447,6 +458,38 @@ export class ApprovalService {
                 if (user && user.id) {
                   usuariosMap.set(user.id, user.nome || 'N/A');
                 }
+              });
+            }
+
+            // Buscar nomes de centro de custo e projeto
+            const centroCustoIds = [...new Set(requisicoes.map(r => r.centro_custo_id).filter(Boolean))] as string[];
+            const projetoIds = [...new Set(requisicoes.map(r => r.projeto_id).filter(Boolean))] as string[];
+            if (centroCustoIds.length > 0) {
+              const ccPromises = centroCustoIds.map(ccId =>
+                EntityService.getById<{ id: string; nome: string }>({
+                  schema: 'public',
+                  table: 'cost_centers',
+                  id: ccId,
+                  companyId
+                })
+              );
+              const ccResults = await Promise.all(ccPromises);
+              ccResults.forEach((cc) => {
+                if (cc?.id && cc.nome) centroCustoMap.set(cc.id, cc.nome);
+              });
+            }
+            if (projetoIds.length > 0) {
+              const projPromises = projetoIds.map(projId =>
+                EntityService.getById<{ id: string; nome: string }>({
+                  schema: 'public',
+                  table: 'projects',
+                  id: projId,
+                  companyId
+                })
+              );
+              const projResults = await Promise.all(projPromises);
+              projResults.forEach((p) => {
+                if (p?.id && p.nome) projetoMap.set(p.id, p.nome);
               });
             }
           }
@@ -587,10 +630,14 @@ export class ApprovalService {
           if (approval.processo_tipo === 'requisicao_compra') {
             const reqData = requisicoesMap.get(approval.processo_id);
             if (reqData) {
+              const solicitanteNome = usuariosMap.get(reqData.solicitante_id) || 'N/A';
               return {
                 ...approval,
                 numero_requisicao: reqData.numero_requisicao,
-                solicitante_nome: usuariosMap.get(reqData.solicitante_id) || 'N/A'
+                solicitante_nome: solicitanteNome,
+                comprador_nome: solicitanteNome,
+                centro_custo_nome: reqData.centro_custo_id ? centroCustoMap.get(reqData.centro_custo_id) : undefined,
+                projeto_nome: reqData.projeto_id ? projetoMap.get(reqData.projeto_id) : undefined
               };
             }
           }

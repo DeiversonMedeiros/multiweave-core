@@ -12,12 +12,15 @@ import {
   Clock,
   User,
   DollarSign,
-  Building2
+  Building2,
+  FolderOpen
 } from 'lucide-react';
 import { Approval } from '@/services/approvals/approvalService';
 import { RequisicaoCompraDetails } from './RequisicaoCompraDetails';
 import { ContaPagarDetails } from './ContaPagarDetails';
 import { CotacaoDetails } from './CotacaoDetails';
+import { useCotacaoApprovalInfo } from '@/hooks/approvals/useCotacaoApprovalInfo';
+import { useContaPagarApprovalInfo } from '@/hooks/approvals/useContaPagarApprovalInfo';
 
 interface ApprovalModalProps {
   approval: Approval | null;
@@ -30,6 +33,12 @@ interface ApprovalModalProps {
 export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading }: ApprovalModalProps) {
   const [observacoes, setObservacoes] = useState('');
   const [selectedAction, setSelectedAction] = useState<'aprovado' | 'rejeitado' | 'cancelado' | null>(null);
+  const { data: cotacaoInfo } = useCotacaoApprovalInfo(
+    approval?.processo_tipo === 'cotacao_compra' ? approval?.processo_id : undefined
+  );
+  const { data: contaPagarInfo, isLoading: isLoadingContaPagar } = useContaPagarApprovalInfo(
+    approval?.processo_tipo === 'conta_pagar' ? approval?.processo_id : undefined
+  );
 
   const handleProcess = (status: 'aprovado' | 'rejeitado' | 'cancelado') => {
     setSelectedAction(status);
@@ -88,6 +97,85 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
 
         <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
           <div className="space-y-6">
+          {/* Conta a Pagar: Aberto por e Fornecedor (sempre exibir quando for conta a pagar) */}
+          {approval.processo_tipo === 'conta_pagar' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-2 text-sm">
+                <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <span className="text-muted-foreground block">Aberto por</span>
+                  <span className="font-medium">
+                    {isLoadingContaPagar ? 'Carregando...' : (contaPagarInfo?.created_by_name ?? '—')}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <span className="text-muted-foreground block">Fornecedor</span>
+                  <span className="font-medium">
+                    {isLoadingContaPagar ? 'Carregando...' : (contaPagarInfo?.fornecedor_nome ?? '—')}
+                  </span>
+                </div>
+              </div>
+              {(contaPagarInfo?.centro_custo_nome || isLoadingContaPagar) && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <span className="text-muted-foreground block">Centro de Custo</span>
+                    <span className="font-medium">
+                      {isLoadingContaPagar ? 'Carregando...' : (contaPagarInfo?.centro_custo_nome ?? '—')}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Comprador, Centro de Custo e Projeto (início do modal) - requisição/cotação (não conta a pagar) */}
+          {approval.processo_tipo !== 'conta_pagar' && (
+            (approval.processo_tipo === 'cotacao_compra' && (cotacaoInfo?.comprador_nome || cotacaoInfo?.centro_custo_nome || cotacaoInfo?.projeto_nome))
+            || (approval.comprador_nome || approval.solicitante_nome || approval.centro_custo_nome || approval.projeto_nome)
+          ) && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+              {(approval.processo_tipo === 'cotacao_compra' ? cotacaoInfo?.comprador_nome : (approval.comprador_nome || approval.solicitante_nome)) && (
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <span className="text-muted-foreground block">Comprador</span>
+                    <span className="font-medium">
+                      {approval.processo_tipo === 'cotacao_compra'
+                        ? cotacaoInfo?.comprador_nome
+                        : (approval.comprador_nome || approval.solicitante_nome)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {(approval.processo_tipo === 'cotacao_compra' ? cotacaoInfo?.centro_custo_nome : approval.centro_custo_nome) && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <span className="text-muted-foreground block">Centro de Custo</span>
+                    <span className="font-medium">
+                      {approval.processo_tipo === 'cotacao_compra' ? cotacaoInfo?.centro_custo_nome : approval.centro_custo_nome}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {(approval.processo_tipo === 'cotacao_compra' ? cotacaoInfo?.projeto_nome : approval.projeto_nome) && (
+                <div className="flex items-center gap-2 text-sm">
+                  <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <span className="text-muted-foreground block">Projeto</span>
+                    <span className="font-medium">
+                      {approval.processo_tipo === 'cotacao_compra' ? cotacaoInfo?.projeto_nome : approval.projeto_nome}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Informações da Aprovação */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">

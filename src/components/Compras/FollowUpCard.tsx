@@ -74,7 +74,11 @@ export function FollowUpCard({ item, onViewDetails }: FollowUpCardProps) {
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
               <FileText className="h-4 w-4 text-gray-500" />
-              <span className="font-semibold text-lg">{item.numero_requisicao}</span>
+              <span className="font-semibold text-lg">
+                {item.numeros_requisicoes?.length
+                  ? item.numeros_requisicoes.join(', ')
+                  : item.numero_requisicao}
+              </span>
               {getStatusBadge(item.requisicao_status, item.requisicao_workflow_state)}
             </div>
             <div className="flex items-center gap-4 text-sm text-gray-600">

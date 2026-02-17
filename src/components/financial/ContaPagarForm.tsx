@@ -26,9 +26,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { format, addDays, addWeeks, addMonths, addYears, parseISO, startOfDay } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { ContaPagar, ContaPagarFormData, ContaPagarParcelaFormData } from '@/integrations/supabase/financial-types';
+import { ContaPagar, ContaPagarFormData, ContaPagarParcelaFormData, ContaPagarRateioItem } from '@/integrations/supabase/financial-types';
 import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
+import { useContasPagarRateio } from '@/hooks/financial/useContasPagarRateio';
 import { usePartners } from '@/hooks/usePartners';
 import { usePlanoContas } from '@/hooks/financial/usePlanoContas';
 import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
@@ -101,6 +102,10 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
   const [uploadingNotaFiscal, setUploadingNotaFiscal] = useState(false);
   const [boletoUrl, setBoletoUrl] = useState<string | null>(null);
   const [notaFiscalUrl, setNotaFiscalUrl] = useState<string | null>(null);
+  const [useRateio, setUseRateio] = useState(false);
+  const [rateioRows, setRateioRows] = useState<ContaPagarRateioItem[]>([]);
+
+  const { rateio: existingRateio, isLoading: loadingRateio } = useContasPagarRateio(conta?.id);
 
   const form = useForm<ContaPagarFormValues>({
     resolver: zodResolver(contaPagarSchema),
@@ -281,19 +286,78 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         anexo_nota_fiscal: conta.anexo_nota_fiscal || '',
         numero_nota_fiscal: conta.numero_nota_fiscal || '',
       });
-      
-      // Preencher URLs dos anexos específicos
-      if (conta.anexo_boleto) {
-        setBoletoUrl(conta.anexo_boleto);
-      }
-      if (conta.anexo_nota_fiscal) {
-        setNotaFiscalUrl(conta.anexo_nota_fiscal);
-      }
+      if (conta.anexo_boleto) setBoletoUrl(conta.anexo_boleto);
+      if (conta.anexo_nota_fiscal) setNotaFiscalUrl(conta.anexo_nota_fiscal);
     }
   }, [conta, form]);
 
+  // Carregar rateio existente ao editar
+  useEffect(() => {
+    if (conta && existingRateio?.length) {
+      setUseRateio(true);
+      setRateioRows(existingRateio.map((r) => ({
+        centro_custo_id: r.centro_custo_id,
+        projeto_id: r.projeto_id || undefined,
+        tipo_rateio: r.tipo_rateio,
+        valor_percentual: r.valor_percentual,
+        valor_monetario: r.valor_monetario,
+      })));
+    }
+  }, [conta?.id, existingRateio]);
+
+  const addRateioRow = () => {
+    setRateioRows((prev) => [
+      ...prev,
+      { centro_custo_id: '', projeto_id: '', tipo_rateio: 'percentual', valor_percentual: 0 },
+    ]);
+  };
+
+  const removeRateioRow = (index: number) => {
+    setRateioRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateRateioRow = (index: number, field: keyof ContaPagarRateioItem, value: string | number | undefined) => {
+    setRateioRows((prev) => {
+      const next = [...prev];
+      const row = { ...next[index] };
+      if (field === 'valor_percentual' || field === 'valor_monetario') {
+        row[field] = value as number;
+      } else if (field === 'centro_custo_id') {
+        row.centro_custo_id = (value as string) || undefined;
+        row.projeto_id = undefined;
+      } else if (field === 'projeto_id') {
+        row[field] = (value as string) || undefined;
+      } else if (field === 'tipo_rateio') {
+        row.tipo_rateio = value as 'percentual' | 'valor';
+        if (value === 'percentual') row.valor_monetario = undefined;
+        else row.valor_percentual = undefined;
+      }
+      next[index] = row;
+      return next;
+    });
+  };
+
   const onSubmit = async (data: ContaPagarFormValues) => {
     try {
+      if (useRateio && rateioRows.length > 0) {
+        const valorTotal = (data.valor_original || 0) - (data.valor_desconto || 0);
+        const hasPercentual = rateioRows.some((r) => r.tipo_rateio === 'percentual');
+        const sumPercentual = rateioRows.filter((r) => r.tipo_rateio === 'percentual').reduce((s, r) => s + (r.valor_percentual ?? 0), 0);
+        const sumValor = rateioRows.filter((r) => r.tipo_rateio === 'valor').reduce((s, r) => s + (r.valor_monetario ?? 0), 0);
+        const invalidCentro = rateioRows.some((r) => !r.centro_custo_id);
+        if (invalidCentro) {
+          form.setError('centro_custo_id', { message: 'Preencha o centro de custo em todas as linhas do rateio.' });
+          return;
+        }
+        if (hasPercentual && Math.abs(sumPercentual - 100) > 0.01) {
+          form.setError('centro_custo_id', { message: `A soma dos percentuais deve ser 100%. Atual: ${sumPercentual.toFixed(1)}%` });
+          return;
+        }
+        if (!hasPercentual && Math.abs(sumValor - valorTotal) > 0.02) {
+          form.setError('centro_custo_id', { message: `A soma dos valores deve ser igual ao valor total (${formatCurrency(valorTotal)}). Atual: ${formatCurrency(sumValor)}` });
+          return;
+        }
+      }
       setIsSubmitting(true);
       
       // Clean up special values before saving
@@ -304,17 +368,17 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         data_vencimento: data.data_vencimento,
         fornecedor_nome: data.fornecedor_nome,
         ...data,
-        centro_custo_id: data.centro_custo_id === 'none' || data.centro_custo_id === 'loading' ? '' : data.centro_custo_id,
+        centro_custo_id: useRateio && rateioRows.length > 0 ? '' : (data.centro_custo_id === 'none' || data.centro_custo_id === 'loading' ? '' : data.centro_custo_id),
+        projeto_id: useRateio && rateioRows.length > 0 ? '' : (data.projeto_id === 'none' || data.projeto_id === 'loading' ? '' : data.projeto_id),
         conta_bancaria_id: data.conta_bancaria_id === 'none' || data.conta_bancaria_id === 'loading' ? '' : data.conta_bancaria_id,
         is_parcelada: data.is_parcelada || false,
         numero_parcelas: data.numero_parcelas || 1,
         intervalo_parcelas: data.intervalo_parcelas || 'mensal',
         data_primeira_parcela: data.data_primeira_parcela || data.data_vencimento,
         parcelas: parcelas.length > 0 ? parcelas : undefined,
-        // Campos de anexos
+        rateio: useRateio && rateioRows.length > 0 ? rateioRows : undefined,
         anexo_boleto: boletoUrl || undefined,
         anexo_nota_fiscal: notaFiscalUrl || undefined,
-        // Campos de urgência (M2)
         is_urgente: data.is_urgente || false,
         motivo_urgencia: data.is_urgente ? data.motivo_urgencia : undefined,
       };
@@ -1025,35 +1089,6 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
-                      name="centro_custo_id"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Centro de Custo</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione o centro de custo" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {loadingCostCenters ? (
-                                <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                              ) : (
-                                (costCentersData?.data || []).map((centro) => (
-                                  <SelectItem key={centro.id} value={centro.id}>
-                                    {centro.nome}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
                       name="classe_financeira"
                       render={({ field }) => (
                         <FormItem>
@@ -1083,35 +1118,247 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                         </FormItem>
                       )}
                     />
+                  </div>
 
-                    <FormField
-                      control={form.control}
-                      name="projeto_id"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Projeto</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Selecione o projeto" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {loadingProjects ? (
-                                <SelectItem value="loading" disabled>Carregando...</SelectItem>
-                              ) : (
-                                (projectsData?.data || []).map((project) => (
-                                  <SelectItem key={project.id} value={project.id}>
-                                    {project.codigo} - {project.nome}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                  {/* Centro de custo e projeto: único OU rateio */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-4">
+                      <Label className="text-sm font-medium">Alocação</Label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="useRateio"
+                            checked={!useRateio}
+                            onChange={() => setUseRateio(false)}
+                            className="rounded border-input"
+                          />
+                          <span className="text-sm">Um centro de custo e um projeto</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="useRateio"
+                            checked={useRateio}
+                            onChange={() => setUseRateio(true)}
+                            className="rounded border-input"
+                          />
+                          <span className="text-sm">Rateio (vários centros/projetos)</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {!useRateio && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="centro_custo_id"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Centro de Custo</FormLabel>
+                              <Select
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  form.setValue('projeto_id', '');
+                                }}
+                                value={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Selecione o centro de custo" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {loadingCostCenters ? (
+                                    <SelectItem value="loading" disabled>Carregando...</SelectItem>
+                                  ) : (
+                                    (costCentersData?.data || []).map((centro) => (
+                                      <SelectItem key={centro.id} value={centro.id}>
+                                        {centro.nome}
+                                      </SelectItem>
+                                    ))
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="projeto_id"
+                          render={({ field }) => {
+                            const centroCustoId = form.watch('centro_custo_id');
+                            const todosProjetos = projectsData?.data || [];
+                            let projetosFiltrados = centroCustoId
+                              ? todosProjetos.filter(
+                                  (p: { cost_center_id?: string | null }) => p.cost_center_id === centroCustoId
+                                )
+                              : [];
+                            const projetoSelecionado = field.value && todosProjetos.find((p: { id: string }) => p.id === field.value);
+                            if (projetoSelecionado && centroCustoId && !projetosFiltrados.some((p: { id: string }) => p.id === field.value)) {
+                              projetosFiltrados = [...projetosFiltrados, projetoSelecionado];
+                            }
+                            return (
+                              <FormItem>
+                                <FormLabel>Projeto</FormLabel>
+                                <Select
+                                  onValueChange={field.onChange}
+                                  value={field.value}
+                                  disabled={!centroCustoId}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue
+                                        placeholder={
+                                          !centroCustoId
+                                            ? 'Selecione o centro de custo primeiro'
+                                            : 'Selecione o projeto'
+                                        }
+                                      />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {!centroCustoId ? (
+                                      <SelectItem value="__select_centro_first__" disabled>
+                                        Selecione o centro de custo primeiro
+                                      </SelectItem>
+                                    ) : loadingProjects ? (
+                                      <SelectItem value="loading" disabled>Carregando...</SelectItem>
+                                    ) : projetosFiltrados.length === 0 ? (
+                                      <SelectItem value="__no_projects__" disabled>
+                                        Nenhum projeto neste centro de custo
+                                      </SelectItem>
+                                    ) : (
+                                      projetosFiltrados.map((project: { id: string; codigo: string; nome: string }) => (
+                                        <SelectItem key={project.id} value={project.id}>
+                                          {project.codigo} - {project.nome}
+                                        </SelectItem>
+                                      ))
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            );
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {useRateio && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <Label>Rateio (percentual ou valor)</Label>
+                          <Button type="button" variant="outline" size="sm" onClick={addRateioRow}>
+                            <Plus className="h-4 w-4 mr-1" />
+                            Adicionar linha
+                          </Button>
+                        </div>
+                        <div className="border rounded-lg overflow-hidden">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Centro de Custo</TableHead>
+                                <TableHead>Projeto</TableHead>
+                                <TableHead>Tipo</TableHead>
+                                <TableHead>Valor (%) ou R$</TableHead>
+                                <TableHead className="w-10"></TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rateioRows.map((row, index) => (
+                                <TableRow key={index}>
+                                  <TableCell>
+                                    <Select
+                                      value={row.centro_custo_id || 'loading'}
+                                      onValueChange={(v) => updateRateioRow(index, 'centro_custo_id', v)}
+                                    >
+                                      <SelectTrigger className="h-9">
+                                        <SelectValue placeholder="Centro" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {(costCentersData?.data || []).map((c) => (
+                                          <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Select
+                                      value={row.projeto_id || 'none'}
+                                      onValueChange={(v) => updateRateioRow(index, 'projeto_id', v === 'none' ? '' : v)}
+                                    >
+                                      <SelectTrigger className="h-9">
+                                        <SelectValue placeholder={row.centro_custo_id ? 'Projeto' : 'Centro primeiro'} />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="none">— Nenhum —</SelectItem>
+                                        {(row.centro_custo_id
+                                          ? (projectsData?.data || []).filter(
+                                              (p: { cost_center_id?: string | null }) => p.cost_center_id === row.centro_custo_id
+                                            )
+                                          : []
+                                        ).map((p: { id: string; codigo: string; nome: string }) => (
+                                          <SelectItem key={p.id} value={p.id}>{p.codigo} - {p.nome}</SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Select
+                                      value={row.tipo_rateio}
+                                      onValueChange={(v) => updateRateioRow(index, 'tipo_rateio', v)}
+                                    >
+                                      <SelectTrigger className="h-9">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="percentual">Percentual</SelectItem>
+                                        <SelectItem value="valor">Valor (R$)</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    {row.tipo_rateio === 'percentual' ? (
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        step={0.01}
+                                        className="h-9 w-24"
+                                        value={row.valor_percentual ?? ''}
+                                        onChange={(e) => updateRateioRow(index, 'valor_percentual', parseFloat(e.target.value) || 0)}
+                                      />
+                                    ) : (
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        step={0.01}
+                                        className="h-9 w-28"
+                                        value={row.valor_monetario ?? ''}
+                                        onChange={(e) => updateRateioRow(index, 'valor_monetario', parseFloat(e.target.value) || 0)}
+                                      />
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button type="button" variant="ghost" size="sm" onClick={() => removeRateioRow(index)}>
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        {rateioRows.length === 0 && (
+                          <p className="text-sm text-muted-foreground">Adicione ao menos uma linha de rateio. Soma dos percentuais = 100% ou soma dos valores = valor total da conta.</p>
+                        )}
+                        {form.formState.errors.centro_custo_id?.message && (
+                          <p className="text-sm text-destructive">{form.formState.errors.centro_custo_id.message}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <FormField

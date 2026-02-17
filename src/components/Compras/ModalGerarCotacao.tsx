@@ -1869,13 +1869,27 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
       const requisicaoItemIds = Array.from(requisicaoItemIdsParaVerificar);
 
-      const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
-        requisicao_id: requisicoesIds[0],
+      const basePayload = {
         fornecedores: fornecedoresData,
-        prazo_resposta: formData.data_limite?.trim() || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 dias padrão se não informado
+        prazo_resposta: formData.data_limite?.trim() || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         observacoes: formData.observacoes_internas?.trim() || null,
         requisicao_item_ids: requisicaoItemIds.length > 0 ? requisicaoItemIds : undefined,
+      };
+
+      const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
+        ...basePayload,
+        requisicao_id: requisicoesIds[0],
       });
+
+      const numeroCotacao = cicloResponse?.ciclo?.numero_cotacao || cicloResponse?.numero_cotacao;
+      for (let i = 1; i < requisicoesIds.length; i++) {
+        await startQuoteCycleMutation.mutateAsync({
+          ...basePayload,
+          requisicao_id: requisicoesIds[i],
+          requisicao_item_ids: undefined,
+          numero_cotacao_existente: numeroCotacao,
+        });
+      }
 
       const fornecedoresCriados = cicloResponse?.fornecedores || [];
       const cicloId = cicloResponse?.ciclo?.id || cicloResponse?.id;
@@ -1960,6 +1974,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             companyId: selectedCompany!.id,
             id: cotacaoFornecedorId,
             data: valoresParaSalvar,
+            skipCompanyFilter: true, // cotacao_fornecedores não tem company_id
           });
           
           console.log(`[handleSalvarRascunho] ✅ Fornecedor ${cotacaoFornecedorId} atualizado com sucesso`);
@@ -2401,13 +2416,27 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
       // Coletar requisicao_item_ids dos itens selecionados para validação no modo explodido
       const requisicaoItemIds = Array.from(requisicaoItemIdsParaVerificar);
 
-      const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
-        requisicao_id: requisicoesIds[0], // Por enquanto, usar primeira requisição
+      const basePayload = {
         fornecedores: fornecedoresData,
         prazo_resposta: formData.data_limite.trim(),
         observacoes: formData.observacoes_internas?.trim() || null,
         requisicao_item_ids: requisicaoItemIds.length > 0 ? requisicaoItemIds : undefined,
+      };
+
+      const cicloResponse: any = await startQuoteCycleMutation.mutateAsync({
+        ...basePayload,
+        requisicao_id: requisicoesIds[0],
       });
+
+      const numeroCotacao = cicloResponse?.ciclo?.numero_cotacao || cicloResponse?.numero_cotacao;
+      for (let i = 1; i < requisicoesIds.length; i++) {
+        await startQuoteCycleMutation.mutateAsync({
+          ...basePayload,
+          requisicao_id: requisicoesIds[i],
+          requisicao_item_ids: undefined,
+          numero_cotacao_existente: numeroCotacao,
+        });
+      }
 
       const fornecedoresCriados = cicloResponse?.fornecedores || [];
       const cicloId = cicloResponse?.ciclo?.id || cicloResponse?.id;
@@ -2476,6 +2505,7 @@ export function ModalGerarCotacao({ isOpen, onClose, requisicoesIds = [], itemId
             companyId: selectedCompany!.id,
             id: cotacaoFornecedorId,
             data: valoresParaSalvar,
+            skipCompanyFilter: true, // cotacao_fornecedores não tem company_id
           });
           
           console.log(`[handleEnviarAprovacao] ✅ Fornecedor ${cotacaoFornecedorId} atualizado com sucesso`);
