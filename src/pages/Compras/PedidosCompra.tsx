@@ -72,6 +72,10 @@ function PedidosList() {
   const [editingPedido, setEditingPedido] = useState<any | null>(null);
   const [editDataEntrega, setEditDataEntrega] = useState('');
   const [editObservacoes, setEditObservacoes] = useState('');
+  const [editNumeroNotaFiscal, setEditNumeroNotaFiscal] = useState('');
+  const [editSerieNotaFiscal, setEditSerieNotaFiscal] = useState('');
+  const [editTipoDocumentoFiscal, setEditTipoDocumentoFiscal] = useState('');
+  const [editChaveAcesso, setEditChaveAcesso] = useState('');
 
   const { data: pedidoItems = [], isLoading: isLoadingItems } = useQuery({
     queryKey: ['compras', 'pedido-itens', selectedPedido?.id, selectedCompany?.id],
@@ -81,7 +85,15 @@ function PedidosList() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (input: { pedidoId: string; data_entrega_prevista?: string | null; observacoes?: string | null }) => {
+    mutationFn: async (input: {
+      pedidoId: string;
+      data_entrega_prevista?: string | null;
+      observacoes?: string | null;
+      numero_nota_fiscal?: string | null;
+      serie_nota_fiscal?: string | null;
+      tipo_documento_fiscal?: string | null;
+      chave_acesso?: string | null;
+    }) => {
       if (!selectedCompany?.id) {
         throw new Error('Empresa não selecionada');
       }
@@ -91,6 +103,10 @@ function PedidosList() {
         data: {
           data_entrega_prevista: input.data_entrega_prevista || null,
           observacoes: input.observacoes ?? null,
+          numero_nota_fiscal: input.numero_nota_fiscal || null,
+          serie_nota_fiscal: input.serie_nota_fiscal || null,
+          tipo_documento_fiscal: input.tipo_documento_fiscal || null,
+          chave_acesso: input.chave_acesso || null,
         },
       });
     },
@@ -153,6 +169,10 @@ function PedidosList() {
         : ''
     );
     setEditObservacoes(pedido.observacoes || '');
+    setEditNumeroNotaFiscal(pedido.numero_nota_fiscal || '');
+    setEditSerieNotaFiscal(pedido.serie_nota_fiscal || '');
+    setEditTipoDocumentoFiscal(pedido.tipo_documento_fiscal || '');
+    setEditChaveAcesso(pedido.chave_acesso || '');
   };
 
   const handleDelete = (pedido: any) => {
@@ -438,6 +458,57 @@ function PedidosList() {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="edit-numero-nota-fiscal">Número da Nota Fiscal</Label>
+                <Input
+                  id="edit-numero-nota-fiscal"
+                  value={editNumeroNotaFiscal}
+                  onChange={(e) => setEditNumeroNotaFiscal(e.target.value)}
+                  placeholder="Número da nota fiscal"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-serie-nota-fiscal">Série da Nota Fiscal</Label>
+                <Input
+                  id="edit-serie-nota-fiscal"
+                  value={editSerieNotaFiscal}
+                  onChange={(e) => setEditSerieNotaFiscal(e.target.value)}
+                  placeholder="Ex.: 1, 2"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-tipo-documento-fiscal">Tipo de Documento Fiscal</Label>
+                <Select
+                  value={editTipoDocumentoFiscal || 'none'}
+                  onValueChange={(v) => setEditTipoDocumentoFiscal(v === 'none' ? '' : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    <SelectItem value="NF-e">NF-e</SelectItem>
+                    <SelectItem value="NFC-e">NFC-e</SelectItem>
+                    <SelectItem value="CT-e">CT-e</SelectItem>
+                    <SelectItem value="NF">NF (modelo 1/1A)</SelectItem>
+                    <SelectItem value="Outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="edit-chave-acesso">Chave de acesso</Label>
+                <Input
+                  id="edit-chave-acesso"
+                  value={editChaveAcesso}
+                  onChange={(e) => setEditChaveAcesso(e.target.value.replace(/\D/g, '').slice(0, 44))}
+                  placeholder="44 dígitos da chave NF-e"
+                  maxLength={44}
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="edit-observacoes">Observações</Label>
                 <Textarea
                   id="edit-observacoes"
@@ -463,6 +534,10 @@ function PedidosList() {
                       pedidoId: editingPedido.id,
                       data_entrega_prevista: editDataEntrega || undefined,
                       observacoes: editObservacoes,
+                      numero_nota_fiscal: editNumeroNotaFiscal || undefined,
+                      serie_nota_fiscal: editSerieNotaFiscal || undefined,
+                      tipo_documento_fiscal: editTipoDocumentoFiscal || undefined,
+                      chave_acesso: editChaveAcesso || undefined,
                     })
                   }
                   disabled={updateMutation.isPending}

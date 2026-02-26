@@ -1,0 +1,31 @@
+-- Diagnóstico: diferença entre "Saldo Banco de Horas" no card e "Saldo até Janeiro/2026" no PDF
+-- Exemplo: ALEXSANDRO SANTOS - card +20h28, PDF 24h34 (jan/2026).
+--
+-- CAUSA:
+-- - Card (UI): usa RPC get_monthly_bank_hours_balance(employee, company, ano, mes)
+--   → Retorna o saldo APENAS do mês (impacto: extras 50% - horas negativas naquele mês).
+-- - PDF/CSV: usava getBankHoursBalanceUntilDate → RPC get_bank_hours_balance(employee, company)
+--   → Retorna current_balance da tabela rh.bank_hours_balance (saldo acumulado ATUAL).
+-- Por isso o PDF mostrava 24h34 (saldo de hoje) e o card 20h28 (só janeiro/2026).
+--
+-- CORREÇÃO:
+-- PDF e CSV passaram a usar get_monthly_bank_hours_balance para o mês do relatório,
+-- assim "Saldo até Mês/Ano" no PDF/CSV fica igual ao card.
+--
+-- Consultas para conferir no banco (substituir employee_id pelo do ALEXSANDRO):
+
+-- 1) Saldo atual (tabela) - era o que o PDF mostrava antes
+-- SELECT current_balance, last_calculation_date
+-- FROM rh.bank_hours_balance b
+-- WHERE b.employee_id = '<employee_id>' AND b.company_id = '<company_id>';
+
+-- 2) Saldo do mês Janeiro/2026 (o que o card mostra e o PDF passa a mostrar)
+-- SELECT public.get_monthly_bank_hours_balance(
+--   '<employee_id>'::uuid,
+--   '<company_id>'::uuid,
+--   2026,
+--   1
+-- ) AS saldo_jan_2026;
+
+-- 3) ALEXSANDRO SANTOS - ids (exemplo empresa ce390408)
+-- SELECT id, nome, matricula, company_id FROM rh.employees WHERE nome ILIKE '%ALEXSANDRO SANTOS%';

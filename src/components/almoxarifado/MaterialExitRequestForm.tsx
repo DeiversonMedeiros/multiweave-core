@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { 
   Package, 
   User, 
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react';
 import { MaterialExitRequest, MaterialExitRequestItem } from '@/services/approvals/approvalService';
 import { useUsers } from '@/hooks/useUsers';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useAuth } from '@/lib/auth-context';
@@ -48,11 +49,25 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
   const [isItemModalOpen, setIsItemModalOpen] = useState(false);
 
-  // Hooks para dados
-  const { data: users = [] } = useUsers();
-  const { data: costCenters = [] } = useCostCenters();
-  const { data: projects = [] } = useProjects();
-  const { data: almoxarifados = [] } = useAlmoxarifados();
+  // Hooks para dados (useUsers retorna { users }; EntityService.list retorna { data, total })
+  const { users = [] } = useUsers();
+  const { data: costCentersData } = useActiveCostCenters();
+  const { data: projectsData } = useProjects();
+  const { data: almoxarifadosRaw } = useAlmoxarifados();
+  const costCenters = costCentersData?.data ?? [];
+  const projects = projectsData?.data ?? [];
+  // useAlmoxarifados: queryFn retorna result.data (array) diretamente
+  const almoxarifados = Array.isArray(almoxarifadosRaw) ? almoxarifadosRaw : [];
+
+  const currentUserProfile = users.find((u) => u.id === user?.id);
+  const loggedUserName = currentUserProfile?.nome ?? (user?.email ?? '');
+
+  const almoxarifadosFiltrados = formData.centro_custo_id
+    ? almoxarifados.filter((a) => a.cost_center_id === formData.centro_custo_id)
+    : [];
+  const projectsFiltrados = formData.centro_custo_id
+    ? projects.filter((p: { cost_center_id?: string }) => p.cost_center_id === formData.centro_custo_id)
+    : [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,34 +150,16 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
               <CardTitle className="text-lg">Informações Básicas</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Funcionário Solicitante */}
+              {/* Funcionário Solicitante (usuário logado) */}
               <div className="space-y-2">
                 <Label htmlFor="funcionario_solicitante_id">Funcionário Solicitante *</Label>
-                <Select 
-                  value={formData.funcionario_solicitante_id} 
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, funcionario_solicitante_id: value }))}
-                  disabled={!!request} // Não permitir alterar após criação
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o funcionário" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4" />
-                          <span>{user.nome}</span>
-                          <span className="text-muted-foreground">({user.email})</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {request && (
-                  <p className="text-xs text-muted-foreground">
-                    O funcionário solicitante não pode ser alterado após a criação
-                  </p>
-                )}
+                <div className="flex items-center gap-2 rounded-md border px-3 py-2 bg-muted/50">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span>{loggedUserName || 'Carregando...'}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Usuário atualmente logado no sistema
+                </p>
               </div>
 
               {/* Funcionário Receptor */}
@@ -176,12 +173,12 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     <SelectValue placeholder="Selecione o funcionário que receberá o material" />
                   </SelectTrigger>
                   <SelectContent>
-                    {users.map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
                         <div className="flex items-center gap-2">
                           <User className="h-4 w-4" />
-                          <span>{user.nome}</span>
-                          <span className="text-muted-foreground">({user.email})</span>
+                          <span>{u.nome}</span>
+                          <span className="text-muted-foreground">({u.email})</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -192,33 +189,22 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                 </p>
               </div>
 
-              {/* Almoxarifado */}
-              <div className="space-y-2">
-                <Label htmlFor="almoxarifado_id">Almoxarifado *</Label>
-                <Select 
-                  value={formData.almoxarifado_id} 
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, almoxarifado_id: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o almoxarifado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* Aqui você pode adicionar a lista de almoxarifados */}
-                    <SelectItem value="almoxarifado-1">Almoxarifado Central</SelectItem>
-                    <SelectItem value="almoxarifado-2">Almoxarifado Secundário</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Centro de Custo */}
+              {/* Centro de Custo (vir antes de Almoxarifado) */}
               <div className="space-y-2">
                 <Label htmlFor="centro_custo_id">Centro de Custo</Label>
                 <Select 
                   value={formData.centro_custo_id} 
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, centro_custo_id: value }))}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      centro_custo_id: value,
+                      almoxarifado_id: '',
+                      projeto_id: '',
+                    }))
+                  }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o centro de custo (opcional)" />
+                    <SelectValue placeholder="Selecione o centro de custo" />
                   </SelectTrigger>
                   <SelectContent>
                     {costCenters.map((cc) => (
@@ -232,20 +218,63 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Almoxarifados e projetos serão filtrados pelo centro de custo selecionado
+                </p>
               </div>
 
-              {/* Projeto */}
+              {/* Almoxarifado (apenas os vinculados ao centro de custo) */}
+              <div className="space-y-2">
+                <Label htmlFor="almoxarifado_id">Almoxarifado *</Label>
+                <Select 
+                  value={formData.almoxarifado_id} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, almoxarifado_id: value }))}
+                  disabled={!formData.centro_custo_id}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        formData.centro_custo_id
+                          ? 'Selecione o almoxarifado'
+                          : 'Selecione primeiro o centro de custo'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {almoxarifadosFiltrados.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-4 w-4" />
+                          <span>{a.nome}</span>
+                          {a.codigo && (
+                            <span className="text-muted-foreground">({a.codigo})</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Projeto (apenas os vinculados ao centro de custo) */}
               <div className="space-y-2">
                 <Label htmlFor="projeto_id">Projeto</Label>
                 <Select 
                   value={formData.projeto_id} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, projeto_id: value }))}
+                  disabled={!formData.centro_custo_id}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o projeto (opcional)" />
+                    <SelectValue
+                      placeholder={
+                        formData.centro_custo_id
+                          ? 'Selecione o projeto (opcional)'
+                          : 'Selecione primeiro o centro de custo'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    {projects.map((project) => (
+                    {projectsFiltrados.map((project: { id: string; nome?: string }) => (
                       <SelectItem key={project.id} value={project.id}>
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4" />

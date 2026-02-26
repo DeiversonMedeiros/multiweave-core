@@ -40,7 +40,7 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import { useCreateLogisticsRequest, useCheckTripConflict } from '@/hooks/logistica/useLogisticaData';
 import { useVehicles } from '@/hooks/frota/useFrotaData';
 import { useProjects } from '@/hooks/useProjects';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { TransportType, RequestingSector, LogisticsRequestFormData } from '@/types/logistica';
 import { format } from 'date-fns';
 
@@ -110,7 +110,7 @@ export function SolicitarLogisticaModal({
   const checkConflict = useCheckTripConflict();
   const { data: vehicles } = useVehicles();
   const { data: projectsData } = useProjects();
-  const { data: costCentersData } = useCostCenters();
+  const { data: costCentersData } = useActiveCostCenters();
   
   const [conflictError, setConflictError] = useState<string | null>(null);
   const [isCheckingConflict, setIsCheckingConflict] = useState(false);

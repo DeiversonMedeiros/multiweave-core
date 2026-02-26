@@ -230,6 +230,32 @@ export const AttendanceCorrectionsService = {
   },
 
   /**
+   * Busca correções do gestor com filtro opcional de status (para alinhar lista aos cards).
+   * status: null = todas, 'pendente' | 'aprovado' | 'rejeitado' = filtrar.
+   * Se a RPC get_attendance_corrections_for_manager não existir (404), usa get_pending_attendance_corrections para pendentes.
+   */
+  getForManager: async (companyId: string, status: 'pendente' | 'aprovado' | 'rejeitado' | null): Promise<any[]> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) throw new Error('Usuário não autenticado');
+    const { data, error } = await supabase.rpc('get_attendance_corrections_for_manager', {
+      p_company_id: companyId,
+      p_user_id: user.id,
+      p_status: status || null
+    });
+    if (error) {
+      const is404 = error.code === 'PGRST202' || error.message?.includes('404') || (error as any).status === 404;
+      if (is404) {
+        if (status === 'pendente' || status === null) {
+          return AttendanceCorrectionsService.getPending(companyId);
+        }
+        return [];
+      }
+      throw new Error(`Erro ao buscar correções: ${error.message}`);
+    }
+    return data || [];
+  },
+
+  /**
    * Busca correções pendentes de uma empresa
    */
    getPending: async (companyId: string): Promise<any[]> => {

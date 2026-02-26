@@ -64,10 +64,14 @@ import {
   TimeRecordReportData,
   completeRecordsWithRestDays,
   getMonthDaysInfo,
+  getHolidayDatesForMonth,
+  getEmployeeDailyHours,
   DAY_NATURE_OPTIONS,
   getDayNatureFromRecord,
   getDayNatureLabel,
-  isDayNatureNoNegativeHours
+  isDayNatureNoNegativeHours,
+  getDebitHoursForDay,
+  isDayNatureDebitHours
 } from '@/services/rh/timeRecordReportService';
 import { toast } from 'sonner';
 import { TimeRecordsImportModal } from '@/components/rh/TimeRecordsImportModal';
@@ -308,8 +312,8 @@ export default function TimeRecordsPageNew() {
   // Cache de signed URLs geradas sob demanda
   const [signedUrlCache, setSignedUrlCache] = useState<Map<string, string>>(new Map());
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  // Estado para armazenar registros completos (com DSR, Férias, etc.) por funcionário
-  const [completeRecordsByEmployee, setCompleteRecordsByEmployee] = useState<Map<string, TimeRecord[]>>(new Map());
+  /** Registros completos (com DSR, faltas virtuais, etc.) + horas diárias do turno por funcionário (único estado para evitar race) */
+  const [employeeResumoData, setEmployeeResumoData] = useState<Map<string, { records: TimeRecord[]; employeeDailyHours: number }>>(new Map());
   /** Overrides de Natureza do Dia: chave `${employeeId}-${dateStr}` -> valor (normal, dsr, feriado, etc.) */
   const [dayNatureOverrides, setDayNatureOverrides] = useState<Record<string, string>>({});
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
@@ -415,40 +419,6 @@ export default function TimeRecordsPageNew() {
   const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
   const employees = employeesData?.data || [];
 
-  // Log para verificar se os funcionários estão sendo carregados
-  useEffect(() => {
-    console.group('[TimeRecordsPageNew] 👥 Funcionários');
-    console.log('📊 employeesData:', employeesData);
-    console.log('👥 employees (processado):', employees);
-    console.log('📈 Total de funcionários:', employees.length);
-    console.log('⏳ isLoadingEmployees:', isLoadingEmployees);
-    if (employees.length > 0) {
-      console.log('👤 Primeiros 3 funcionários:', employees.slice(0, 3).map(e => ({ id: e.id, nome: e.nome })));
-    }
-    console.groupEnd();
-  }, [employeesData, employees, isLoadingEmployees]);
-
-  // Monitorar mudanças no employeeFilter
-  useEffect(() => {
-    console.group('[TimeRecordsPageNew] 🔍 employeeFilter mudou');
-    console.log('👤 employeeFilter:', employeeFilter);
-    console.log('👤 Tipo:', typeof employeeFilter);
-    console.log('👤 Valor para Select:', employeeFilter || 'all');
-    console.groupEnd();
-  }, [employeeFilter]);
-
-  // Monitorar mudanças no estado filters
-  useEffect(() => {
-    console.group('[TimeRecordsPageNew] 📊 Estado filters mudou');
-    console.log('🔍 Estado completo:', filters);
-    console.log('👤 employeeId:', filters.employeeId);
-    console.log('📅 startDate:', filters.startDate);
-    console.log('📅 endDate:', filters.endDate);
-    console.log('📊 status:', filters.status);
-    console.log('🔍 search:', filters.search);
-    console.groupEnd();
-  }, [filters]);
-
   // Calcular datas do mês/ano selecionado para o resumo
   const summaryDateRange = useMemo(() => {
     if (summaryMonth && summaryYear) {
@@ -546,106 +516,10 @@ export default function TimeRecordsPageNew() {
   } = queryResult;
 
   // Log quando dados são atualizados
-  useEffect(() => {
-    if (dataUpdatedAt) {
-      console.log(`[TimeRecordsPageNew] 📊 Dados atualizados:`, {
-        dataUpdatedAt: new Date(dataUpdatedAt).toISOString(),
-        totalPages: data?.pages?.length || 0,
-        totalRecords: data?.pages?.flatMap(p => p.data).length || 0,
-        isRefetching,
-        isLoading,
-        timestamp: new Date().toISOString()
-      });
-    }
-  }, [dataUpdatedAt, data, isRefetching, isLoading]);
-
   // Combinar todas as páginas em um único array
   const records = useMemo(() => {
-    console.log(`[TimeRecordsPageNew] 🔄 Combinando páginas:`, {
-      totalPages: data?.pages?.length || 0,
-      totalRecords: data?.pages?.flatMap(p => p.data).length || 0,
-      isLoading,
-      isFetchingNextPage,
-      timestamp: new Date().toISOString()
-    });
-    const allRecords = data?.pages.flatMap(page => page.data) || [];
-    
-    // Log detalhado da combinação
-    if (data?.pages && data.pages.length > 0) {
-      console.log('[TimeRecordsPageNew] 🔄 Combinando páginas:', {
-        totalPages: data.pages.length,
-        totalRecords: allRecords.length,
-        recordsPorPagina: data.pages.map((p, idx) => ({
-          pagina: idx + 1,
-          count: p.data.length,
-          hasMore: p.hasMore,
-          nextCursor: p.nextCursor,
-          totalCount: p.totalCount
-        })),
-        idsUnicos: new Set(allRecords.map(r => r.id)).size,
-        idsDuplicados: allRecords.length - new Set(allRecords.map(r => r.id)).size
-      });
-    }
-    
-    return allRecords;
+    return data?.pages.flatMap(page => page.data) || [];
   }, [data?.pages]);
-  
-  // Log detalhado para debug
-  useEffect(() => {
-    if (activeTab === 'resumo' && summaryMonth && summaryYear) {
-      console.log('[TimeRecordsPageNew] 📊 DEBUG - Estado da paginação:', {
-        totalPages: data?.pages?.length || 0,
-        totalRecords: records.length,
-        hasNextPage,
-        isFetchingNextPage,
-        isLoading,
-        summaryMonth,
-        summaryYear,
-        dateRange: dateRangeForQuery,
-        queryParams: queryParams ? {
-          startDate: queryParams.startDate,
-          endDate: queryParams.endDate,
-          pageSize: queryParams.pageSize
-        } : null
-      });
-      
-      // Log das datas dos registros carregados
-      if (records.length > 0) {
-        const dates = records.map(r => r.data_registro).sort();
-        const registrosZerados = records.filter(r => !r.horas_trabalhadas || r.horas_trabalhadas === 0);
-        const registrosComDados = records.filter(r => r.horas_trabalhadas && r.horas_trabalhadas > 0);
-        
-        console.log('[TimeRecordsPageNew] 📅 DEBUG - Datas dos registros carregados:', {
-          total: records.length,
-          primeiraData: dates[0],
-          ultimaData: dates[dates.length - 1],
-          todasDatas: dates.slice(0, 20), // Primeiras 20 datas
-          registrosZerados: registrosZerados.length,
-          registrosComDados: registrosComDados.length,
-          sampleZerados: registrosZerados.slice(0, 3).map(r => ({
-            id: r.id,
-            data_registro: r.data_registro,
-            employee_nome: r.employee_nome,
-            horas_trabalhadas: r.horas_trabalhadas,
-            horas_extras_50: r.horas_extras_50,
-            horas_extras_100: r.horas_extras_100,
-            horas_noturnas: r.horas_noturnas,
-            tipo: typeof r.horas_trabalhadas,
-          })),
-          sampleComDados: registrosComDados.slice(0, 3).map(r => ({
-            id: r.id,
-            data_registro: r.data_registro,
-            employee_nome: r.employee_nome,
-            horas_trabalhadas: r.horas_trabalhadas,
-            horas_extras_50: r.horas_extras_50,
-            horas_extras_100: r.horas_extras_100,
-            horas_noturnas: r.horas_noturnas,
-            tipo: typeof r.horas_trabalhadas,
-          })),
-        });
-      }
-    }
-  }, [activeTab, summaryMonth, summaryYear, records.length, data?.pages?.length, hasNextPage, isFetchingNextPage, isLoading, dateRangeForQuery, queryParams]);
   const createRecord = useCreateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
   const queryClient = useQueryClient();
   const updateRecord = useUpdateEntity<TimeRecord>('rh', 'time_records', selectedCompany?.id || '');
@@ -931,103 +805,20 @@ export default function TimeRecordsPageNew() {
       const recordYear = parseInt(yearStr);
       const recordMonth = parseInt(monthStr);
       
-      const matches = recordMonth === month && recordYear === year;
-      
-      // Log apenas para alguns registros para não poluir o console
-      if (filteredRecords.length < 50 || Math.random() < 0.01) {
-        console.log(`[TimeRecordsPageNew] 🔍 Verificando registro: ${dateStr} -> ${recordMonth}/${recordYear} (esperado: ${month}/${year}) -> ${matches ? '✅' : '❌'}`);
-      }
-      
-      return matches;
+      return recordMonth === month && recordYear === year;
     });
-    
-    // Debug: Log detalhado
-    console.log(`[TimeRecordsPageNew] ✅ Filtro concluído: ${filtered.length} registros de ${filteredRecords.length} total para ${month}/${year}`);
-    
-    if (filtered.length > 0) {
-      const dates = filtered.map(r => r.data_registro).sort();
-      const uniqueDates = [...new Set(dates)];
-      console.log(`[TimeRecordsPageNew] 📅 Datas filtradas:`, {
-        total: filtered.length,
-        datasUnicas: uniqueDates.length,
-        primeiraData: dates[0],
-        ultimaData: dates[dates.length - 1],
-        todasDatasUnicas: uniqueDates
-      });
-    } else if (filteredRecords.length > 0) {
-      // Se não encontrou nenhum registro mas havia registros para filtrar, investigar
-      const sampleDates = filteredRecords.slice(0, 10).map(r => r.data_registro);
-      console.warn(`[TimeRecordsPageNew] ⚠️ Nenhum registro encontrado para ${month}/${year}, mas havia ${filteredRecords.length} registros. Amostra de datas:`, sampleDates);
-    }
     
     return filtered;
   }, [filteredRecords, summaryMonth, summaryYear]);
 
-  // Agrupar registros por funcionário e calcular totais
+  // Agrupar registros por funcionário e calcular totais.
+  // Inclui também funcionários que requerem registro de ponto mas não têm nenhum time_record no mês
+  // (ex.: apenas férias/atestado), para que a folha mostre férias, faltas e demais naturezas.
   const employeeSummary = useMemo(() => {
     // Só calcular resumo se houver mês/ano selecionado
     if (!summaryMonth || !summaryYear) {
       return [];
     }
-
-    // Log detalhado dos registros filtrados
-    const sampleRecords = filteredRecordsForSummary.slice(0, 10).map(r => ({
-      id: r.id,
-      data: (r as any).data_registro,
-      funcionario: (r as any).employee_nome,
-      horas_trabalhadas: r.horas_trabalhadas,
-      horas_extras_50: r.horas_extras_50,
-      horas_extras_100: r.horas_extras_100,
-      horas_noturnas: r.horas_noturnas,
-      horas_negativas: r.horas_negativas,
-      status: r.status
-    }));
-    
-    // Verificar quantos registros têm valores zerados
-    const registrosZerados = filteredRecordsForSummary.filter(r => 
-      (r.horas_trabalhadas || 0) === 0 && 
-      (r.horas_extras_50 || 0) === 0 && 
-      (r.horas_extras_100 || 0) === 0 && 
-      (r.horas_noturnas || 0) === 0 && 
-      (r.horas_negativas || 0) === 0
-    );
-    
-    console.log(`[TimeRecordsPageNew] 📊 Iniciando cálculo do resumo por funcionário:`, {
-      totalRegistrosFiltrados: filteredRecordsForSummary.length,
-      registrosZerados: registrosZerados.length,
-      registrosComDados: filteredRecordsForSummary.length - registrosZerados.length,
-      sampleRecords: sampleRecords.slice(0, 10).map(r => ({
-        id: r.id,
-        data_registro: (r as any).data,
-        employee_nome: (r as any).funcionario,
-        horas_trabalhadas: r.horas_trabalhadas,
-        horas_extras_50: r.horas_extras_50,
-        horas_extras_100: r.horas_extras_100,
-        horas_noturnas: r.horas_noturnas,
-        horas_negativas: r.horas_negativas,
-        tipo_horas_trabalhadas: typeof r.horas_trabalhadas,
-        tipo_horas_extras_50: typeof r.horas_extras_50,
-        tipo_horas_extras_100: typeof r.horas_extras_100,
-        tipo_horas_noturnas: typeof r.horas_noturnas,
-        status: r.status,
-        is_null: r.horas_trabalhadas === null,
-        is_zero: r.horas_trabalhadas === 0,
-      })),
-      registrosZeradosSample: registrosZerados.slice(0, 5).map(r => ({
-        id: r.id,
-        data_registro: r.data_registro,
-        employee_nome: r.employee_nome,
-        horas_trabalhadas: r.horas_trabalhadas,
-        horas_extras_50: r.horas_extras_50,
-        horas_extras_100: r.horas_extras_100,
-        horas_noturnas: r.horas_noturnas,
-        horas_negativas: r.horas_negativas,
-        tipo_horas_trabalhadas: typeof r.horas_trabalhadas,
-        status: r.status,
-        is_null: r.horas_trabalhadas === null,
-        is_zero: r.horas_trabalhadas === 0,
-      }))
-    });
 
     const grouped = new Map<string, {
       employeeId: string;
@@ -1076,42 +867,6 @@ export default function TimeRecordsPageNew() {
       const horasExtras100 = Number(record.horas_extras_100) || 0;
       const horasNoturnas = Number(record.horas_noturnas) || 0;
       
-      // Log detalhado para registros zerados ou com dados
-      const isZerado = horasTrabalhadas === 0 && horasNegativas === 0 && horasExtras50 === 0 && 
-                       horasExtras100 === 0 && horasNoturnas === 0;
-      
-      // Log todos os registros zerados e alguns com dados
-      if (isZerado || Math.random() < 0.1) {
-        console.log(`[TimeRecordsPageNew] 📝 Processando registro ${isZerado ? '(ZERADO)' : '(COM DADOS)'}:`, {
-          id: record.id,
-          data: record.data_registro,
-          funcionario: employeeName,
-          horas_trabalhadas_original: record.horas_trabalhadas,
-          horas_trabalhadas_convertida: horasTrabalhadas,
-          horas_extras_50_original: record.horas_extras_50,
-          horas_extras_50_convertida: horasExtras50,
-          horas_extras_100_original: record.horas_extras_100,
-          horas_extras_100_convertida: horasExtras100,
-          horas_noturnas_original: record.horas_noturnas,
-          horas_noturnas_convertida: horasNoturnas,
-          horas_negativas_original: record.horas_negativas,
-          horas_negativas_convertida: horasNegativas,
-          tipo_horas_trabalhadas: typeof record.horas_trabalhadas,
-          tipo_horas_extras_50: typeof record.horas_extras_50,
-          tipo_horas_extras_100: typeof record.horas_extras_100,
-          tipo_horas_noturnas: typeof record.horas_noturnas,
-          is_null: record.horas_trabalhadas === null,
-          is_zero: record.horas_trabalhadas === 0,
-          status: record.status,
-          antes_soma: {
-            totalHorasTrabalhadas: summary.totalHorasTrabalhadas,
-            totalHorasExtras50: summary.totalHorasExtras50,
-            totalHorasExtras100: summary.totalHorasExtras100,
-            totalHorasNoturnas: summary.totalHorasNoturnas,
-          }
-        });
-      }
-      
       // CORREÇÃO: Não incluir horas negativas de dias futuros no total
       const recordDate = new Date(record.data_registro);
       const today = new Date();
@@ -1126,98 +881,114 @@ export default function TimeRecordsPageNew() {
       summary.totalHorasExtras50 += horasExtras50;
       summary.totalHorasExtras100 += horasExtras100;
       summary.totalHorasNoturnas += horasNoturnas;
-      
-      // LOG DETALHADO: Verificar valores após somar (apenas para primeiros 3 registros de cada funcionário)
-      if (summary.records.length <= 3) {
-        console.log(`[TimeRecordsPageNew] 📊 Após somar registro ${summary.records.length}:`, {
-          id: record.id,
-          valores_somados: {
-            horasTrabalhadas,
-            horasNegativas,
-            horasExtras50,
-            horasExtras100,
-            horasNoturnas,
-          },
-          depois_soma: {
-            totalHorasTrabalhadas: summary.totalHorasTrabalhadas,
-            totalHorasExtras50: summary.totalHorasExtras50,
-            totalHorasExtras100: summary.totalHorasExtras100,
-            totalHorasNoturnas: summary.totalHorasNoturnas,
-          }
-        });
-      }
     });
 
-    const result = Array.from(grouped.values()).sort((a, b) => 
+    // A partir de jan/2026: incluir funcionários que requerem registro de ponto mas não têm
+    // nenhum registro no mês (ex.: férias o mês todo, atestado) para que a folha mostre
+    // férias, faltas e demais naturezas. Antes de jan/2026 mantém o comportamento anterior
+    // (apenas quem tem pelo menos um time_record no mês).
+    // Só incluir esses quando: (1) todas as páginas foram carregadas (!hasNextPage),
+    // (2) a query não está em loading/refetch, senão em refetch grouped fica vazio e
+    // incluímos todos com records: [], sobrescrevendo os dados corretos logo depois do filtro.
+    const month = parseInt(summaryMonth);
+    const year = parseInt(summaryYear);
+    const applyFromJan2026 = year > 2026 || (year === 2026 && month >= 1);
+    const allPagesLoaded = !hasNextPage;
+    const querySettled = !isLoading && !isRefetching;
+    if (applyFromJan2026 && allPagesLoaded && querySettled) {
+      const employeesRequiringPonto = (employees || []).filter(
+        (emp: { id?: string; nome?: string; matricula?: string; requer_registro_ponto?: boolean }) =>
+          emp.requer_registro_ponto !== false
+      );
+      // Se há filtro por funcionário, incluir só esse (evita processar todos e gerar log gigante)
+      const toAdd = employeeFilter
+        ? employeesRequiringPonto.filter((emp: { id: string }) => emp.id === employeeFilter)
+        : employeesRequiringPonto;
+      toAdd.forEach((emp: { id: string; nome?: string; matricula?: string }) => {
+        if (grouped.has(emp.id)) return;
+        grouped.set(emp.id, {
+          employeeId: emp.id,
+          employeeName: emp.nome || 'Funcionário sem nome',
+          employeeMatricula: emp.matricula,
+          records: [],
+          totalHorasTrabalhadas: 0,
+          totalHorasNegativas: 0,
+          totalHorasExtras50: 0,
+          totalHorasExtras100: 0,
+          totalHorasNoturnas: 0,
+        });
+      });
+    }
+
+    let result = Array.from(grouped.values()).sort((a, b) =>
       a.employeeName.localeCompare(b.employeeName)
     );
-    
-    // Debug: Log dos resultados
-    console.log('[TimeRecordsPageNew] Resumo calculado:', {
-      totalFuncionarios: result.length,
-      totalRegistros: filteredRecordsForSummary.length,
-      mes: summaryMonth,
-      ano: summaryYear,
-      exemplos: result.slice(0, 3).map(s => ({
-        nome: s.employeeName,
-        totalHoras: s.totalHorasTrabalhadas,
-        totalExtras50: s.totalHorasExtras50,
-        totalExtras100: s.totalHorasExtras100,
-        totalNegativas: s.totalHorasNegativas,
-        qtdRegistros: s.records.length
-      }))
-    });
-    
+    // Respeitar filtro "Funcionário": na aba Resumo processar e exibir só o selecionado
+    if (employeeFilter) {
+      result = result.filter((s) => s.employeeId === employeeFilter);
+    }
     return result;
-  }, [filteredRecordsForSummary, summaryMonth, summaryYear]);
+  }, [filteredRecordsForSummary, summaryMonth, summaryYear, employees, employeeFilter, hasNextPage, isLoading, isRefetching]);
+
+  // Assinatura estável da lista do resumo (evita loop: useEffects não dependem do array que muda de referência a cada render)
+  const employeeSummarySignature = useMemo(() => {
+    if (!summaryMonth || !summaryYear || employeeSummary.length === 0) return '';
+    return `${summaryMonth}-${summaryYear}-${employeeSummary.length}-${employeeSummary.map((s) => s.employeeId).sort().join(',')}`;
+  }, [summaryMonth, summaryYear, employeeSummary]);
 
   // Completar registros com DSR, Férias, Atestado, etc. para cada funcionário (retroativo)
   useEffect(() => {
     if (!summaryMonth || !summaryYear || !selectedCompany?.id || employeeSummary.length === 0) {
-      setCompleteRecordsByEmployee(new Map());
+      setEmployeeResumoData(new Map());
       return;
     }
 
     const month = parseInt(summaryMonth);
     const year = parseInt(summaryYear);
-    const newCompleteRecords = new Map<string, TimeRecord[]>();
+    const list = employeeSummary;
 
-    // Processar cada funcionário de forma assíncrona
+    // Processar cada funcionário com concorrência limitada para evitar ERR_INSUFFICIENT_RESOURCES
     const processEmployees = async () => {
-      const promises = employeeSummary.map(async (summary) => {
-        try {
-          // Buscar informações dos dias do mês (retroativo - funciona para qualquer mês/ano)
-          const daysInfo = await getMonthDaysInfo(
-            summary.employeeId,
-            selectedCompany.id,
-            month,
-            year
-          );
-
-          // Completar registros com DSR, Férias, Atestado, etc.
-          const completeRecords = await completeRecordsWithRestDays(
-            summary.records,
-            month,
-            year,
-            daysInfo,
-            summary.employeeId,
-            selectedCompany.id
-          );
-
-          newCompleteRecords.set(summary.employeeId, completeRecords);
-        } catch (err) {
-          console.error(`[TimeRecordsPageNew] Erro ao completar registros para ${summary.employeeName}:`, err);
-          // Em caso de erro, usar registros originais
-          newCompleteRecords.set(summary.employeeId, summary.records);
-        }
-      });
-
-      await Promise.all(promises);
-      setCompleteRecordsByEmployee(newCompleteRecords);
+      const newResumoData = new Map<string, { records: TimeRecord[]; employeeDailyHours: number }>();
+      // Feriados do mês uma vez só (evita dezenas de RPCs is_holiday por funcionário)
+      const holidayDatesSet = await getHolidayDatesForMonth(selectedCompany.id, month, year);
+      const EMPLOYEE_CHUNK_SIZE = 3;
+      for (let i = 0; i < list.length; i += EMPLOYEE_CHUNK_SIZE) {
+        const chunk = list.slice(i, i + EMPLOYEE_CHUNK_SIZE);
+        await Promise.all(
+          chunk.map(async (summary) => {
+            try {
+              const dailyHours = await getEmployeeDailyHours(summary.employeeId, selectedCompany.id);
+              console.log('[FOLGA-DEBITO] getEmployeeDailyHours retornou', { employeeId: summary.employeeId, employeeName: summary.employeeName, dailyHours });
+              const daysInfo = await getMonthDaysInfo(
+                summary.employeeId,
+                selectedCompany.id,
+                month,
+                year,
+                { holidayDatesSet }
+              );
+              const completeRecords = await completeRecordsWithRestDays(
+                summary.records,
+                month,
+                year,
+                daysInfo,
+                summary.employeeId,
+                selectedCompany.id
+              );
+              newResumoData.set(summary.employeeId, { records: completeRecords, employeeDailyHours: dailyHours });
+            } catch (err) {
+              console.error(`[TimeRecordsPageNew] Erro ao completar registros para ${summary.employeeName}:`, err);
+              newResumoData.set(summary.employeeId, { records: summary.records, employeeDailyHours: 8 });
+            }
+          })
+        );
+      }
+      console.log('[FOLGA-DEBITO] employeeResumoData preenchido', { totalFuncionarios: newResumoData.size, porEmployee: Array.from(newResumoData.entries()).map(([id, d]) => ({ employeeId: id, employeeDailyHours: d.employeeDailyHours, recordsCount: d.records.length })) });
+      setEmployeeResumoData(newResumoData);
     };
 
     processEmployees();
-  }, [employeeSummary, summaryMonth, summaryYear, selectedCompany?.id]);
+  }, [employeeSummarySignature, summaryMonth, summaryYear, selectedCompany?.id]);
 
   // Carregar overrides de Natureza do Dia do banco (registros virtuais: DSR, Férias, etc.)
   useEffect(() => {
@@ -1227,6 +998,7 @@ export default function TimeRecordsPageNew() {
     const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month, 0);
     const lastDayStr = lastDay.toISOString().split('T')[0];
+    const employeeIdsSet = new Set(employeeSummary.map((s) => s.employeeId));
 
     (async () => {
       try {
@@ -1237,7 +1009,6 @@ export default function TimeRecordsPageNew() {
           filters: { data_registro_gte: firstDay, data_registro_lte: lastDayStr },
           pageSize: 2000
         });
-        const employeeIdsSet = new Set(employeeSummary.map((s) => s.employeeId));
         const map: Record<string, string> = {};
         (rows || []).forEach((r) => {
           if (!employeeIdsSet.has(r.employee_id)) return;
@@ -1249,7 +1020,18 @@ export default function TimeRecordsPageNew() {
         console.warn('[TimeRecordsPageNew] Erro ao buscar overrides de natureza:', err);
       }
     })();
-  }, [employeeSummary, summaryMonth, summaryYear, selectedCompany?.id]);
+  }, [employeeSummarySignature, summaryMonth, summaryYear, selectedCompany?.id]);
+
+  // Log diagnóstico Folga Débito quando aba Resumo está ativa (sempre visível)
+  useEffect(() => {
+    if (activeTab !== 'resumo' || !summaryMonth || !summaryYear) return;
+    const folgaDebitoKeys = Object.entries(dayNatureOverrides).filter(([, v]) => v === 'folga_debito');
+    console.log('[FOLGA-DEBITO] Aba Resumo ativa', {
+      employeeResumoDataSize: employeeResumoData.size,
+      overridesFolgaDebito: folgaDebitoKeys.length,
+      chavesFolgaDebito: folgaDebitoKeys.map(([k]) => k),
+    });
+  }, [activeTab, summaryMonth, summaryYear, employeeResumoData.size, dayNatureOverrides]);
 
   const toggleEmployeeExpanded = (employeeId: string) => {
     setExpandedEmployees(prev => {
@@ -1270,22 +1052,8 @@ export default function TimeRecordsPageNew() {
   };
 
   const handleFilterChange = (key: string, value: string) => {
-    console.group(`[TimeRecordsPageNew] 🔄 handleFilterChange - ${key}`);
-    console.log('📥 Parâmetros recebidos:', { key, value });
     const newValue = value === 'all' ? undefined : value;
-    console.log('🔄 Valor processado:', { original: value, processed: newValue });
-    
-    setFilters(prev => {
-      console.log('📊 Estado anterior:', prev);
-      const updated = {
-        ...prev,
-        [key]: newValue
-      };
-      console.log('✅ Estado atualizado:', updated);
-      console.log('🔍 employeeId no estado:', updated.employeeId);
-      console.groupEnd();
-      return updated;
-    });
+    setFilters(prev => ({ ...prev, [key]: newValue }));
   };
 
   // Handler específico para o filtro de funcionário (exatamente como na página antiga)
@@ -1348,6 +1116,21 @@ export default function TimeRecordsPageNew() {
     }
   };
 
+  // Parseia valor do form: "YYYY-MM-DDTHH:MM" (datetime-local) ou "HH:MM" (time); baseDate usado quando só tem hora
+  const parseDateTimeField = (
+    value: string | undefined,
+    baseDate: string
+  ): { date: string; time: string } | null => {
+    const v = (value as string)?.trim();
+    if (!v) return null;
+    if (v.includes('T')) {
+      const [datePart, timePart] = v.split('T');
+      const time = timePart ? timePart.substring(0, 5) : '00:00'; // HH:MM
+      return { date: datePart || baseDate, time };
+    }
+    return { date: baseDate, time: v.length >= 5 ? v.substring(0, 5) : v };
+  };
+
   const handleModalSubmit = async (data: Partial<TimeRecord>) => {
     try {
       if (modalMode === 'create') {
@@ -1356,14 +1139,43 @@ export default function TimeRecordsPageNew() {
           company_id: selectedCompany?.id
         });
       } else if (modalMode === 'edit' && selectedRecord) {
-        await updateRecord.mutateAsync({
-          id: selectedRecord.id,
-          data: data
-        });
+        const baseDate = (data.data_registro as string) || selectedRecord.data_registro || '';
+        const entradaParsed = parseDateTimeField(data.entrada as string, baseDate);
+        const saidaParsed = parseDateTimeField(data.saida as string, baseDate);
+        const entradaAlmocoParsed = parseDateTimeField(data.entrada_almoco as string, baseDate);
+        const saidaAlmocoParsed = parseDateTimeField(data.saida_almoco as string, baseDate);
+        const entradaExtra1Parsed = parseDateTimeField(data.entrada_extra1 as string, baseDate);
+        const saidaExtra1Parsed = parseDateTimeField(data.saida_extra1 as string, baseDate);
+
+        const payload: Record<string, unknown> = {
+          p_time_record_id: selectedRecord.id,
+          p_data_registro: baseDate,
+          p_entrada: entradaParsed?.time ?? null,
+          p_saida: saidaParsed?.time ?? null,
+          p_entrada_almoco: entradaAlmocoParsed?.time ?? null,
+          p_saida_almoco: saidaAlmocoParsed?.time ?? null,
+          p_entrada_extra1: entradaExtra1Parsed?.time ?? null,
+          p_saida_extra1: saidaExtra1Parsed?.time ?? null,
+          p_observacoes: (data.observacoes as string)?.trim() || null,
+        };
+        // Enviar data por marcação só quando diferente da data do registro (ex.: saída no dia seguinte)
+        if (entradaParsed?.date && entradaParsed.date !== baseDate) payload.p_entrada_date = entradaParsed.date;
+        if (saidaParsed?.date && saidaParsed.date !== baseDate) payload.p_saida_date = saidaParsed.date;
+        if (entradaAlmocoParsed?.date && entradaAlmocoParsed.date !== baseDate) payload.p_entrada_almoco_date = entradaAlmocoParsed.date;
+        if (saidaAlmocoParsed?.date && saidaAlmocoParsed.date !== baseDate) payload.p_saida_almoco_date = saidaAlmocoParsed.date;
+        if (entradaExtra1Parsed?.date && entradaExtra1Parsed.date !== baseDate) payload.p_entrada_extra1_date = entradaExtra1Parsed.date;
+        if (saidaExtra1Parsed?.date && saidaExtra1Parsed.date !== baseDate) payload.p_saida_extra1_date = saidaExtra1Parsed.date;
+
+        const { error } = await supabase.rpc('update_time_record_manual', payload);
+        if (error) throw error;
+        queryClient.invalidateQueries({ queryKey: ['rh', 'time-records'] });
+        queryClient.invalidateQueries({ queryKey: ['monthly-time-records'] });
+        toast.success('Registro atualizado. Horas trabalhadas, extras e noturnas recalculadas.');
       }
       setIsModalOpen(false);
     } catch (error) {
       console.error('Erro ao salvar registro:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar registro');
     }
   };
 
@@ -1406,15 +1218,29 @@ export default function TimeRecordsPageNew() {
         });
       }
 
-      // Buscar saldo do banco de horas
-      const bankHoursBalance = await getBankHoursBalanceUntilDate(
-        summary.employeeId,
-        selectedCompany.id,
-        new Date(parseInt(summaryYear), parseInt(summaryMonth), 0) // Último dia do mês
-      );
+      // Usar registros completos (com dias virtuais) para o relatório, como no card
+      const recordsForReport = employeeResumoData.get(summary.employeeId)?.records || summary.records;
+      const employeeDailyHoursReport = employeeResumoData.get(summary.employeeId)?.employeeDailyHours;
+      const todayReport = new Date();
+      todayReport.setHours(0, 0, 0, 0);
+      const totalNegativasReport = recordsForReport.reduce((s: number, r: TimeRecord) => {
+        const recordDate = new Date(r.data_registro);
+        recordDate.setHours(0, 0, 0, 0);
+        if (recordDate > todayReport) return s;
+        const dateStr = r.data_registro.split('T')[0];
+        const overrideKey = `${summary.employeeId}-${dateStr}`;
+        const hasPunch = !!(r.entrada || r.saida);
+        const natureValue = hasPunch ? 'normal' : (dayNatureOverrides[overrideKey] ?? (r as TimeRecord).natureza_dia ?? getDayNatureFromRecord(r));
+        if (isDayNatureNoNegativeHours(natureValue)) return s;
+        const debit = getDebitHoursForDay(r as TimeRecord, natureValue, employeeDailyHoursReport != null ? { employeeDailyHours: employeeDailyHoursReport } : undefined);
+        return s + debit;
+      }, 0);
+      const totalExtras50Report = recordsForReport.reduce((s: number, r: TimeRecord) => s + (Number((r as TimeRecord).horas_extras_50) || 0), 0);
+      // Saldo do mês consistente com o card: Extras 50% − Horas Negativas
+      const bankHoursBalance = Math.round((totalExtras50Report - totalNegativasReport) * 100) / 100;
 
       // Calcular DSR
-      const dsr = calculateDSR(summary.records, parseInt(summaryMonth), parseInt(summaryYear));
+      const dsr = calculateDSR(recordsForReport, parseInt(summaryMonth), parseInt(summaryYear));
 
       // Overrides de Natureza do Dia para este funcionário (chave = dateStr para o relatório)
       const employeeDayOverrides: Record<string, string> = {};
@@ -1431,7 +1257,7 @@ export default function TimeRecordsPageNew() {
         employeeMatricula: summary.employeeMatricula,
         month: parseInt(summaryMonth),
         year: parseInt(summaryYear),
-        records: summary.records,
+        records: recordsForReport,
         bankHoursBalance,
         dsr,
         companyId: selectedCompany.id,
@@ -1485,15 +1311,28 @@ export default function TimeRecordsPageNew() {
     try {
       toast.loading('Gerando arquivo CSV...', { id: 'generate-time-record-csv' });
 
-      // Buscar saldo do banco de horas
-      const bankHoursBalance = await getBankHoursBalanceUntilDate(
-        summary.employeeId,
-        selectedCompany.id,
-        new Date(parseInt(summaryYear), parseInt(summaryMonth), 0) // Último dia do mês
-      );
+      // Mesma lógica do card e do PDF: registros completos e saldo = Extras 50% − Horas Negativas
+      const recordsForCsv = employeeResumoData.get(summary.employeeId)?.records || summary.records;
+      const employeeDailyHoursCsv = employeeResumoData.get(summary.employeeId)?.employeeDailyHours;
+      const todayCsv = new Date();
+      todayCsv.setHours(0, 0, 0, 0);
+      const totalNegativasCsv = recordsForCsv.reduce((s: number, r: TimeRecord) => {
+        const recordDate = new Date(r.data_registro);
+        recordDate.setHours(0, 0, 0, 0);
+        if (recordDate > todayCsv) return s;
+        const dateStr = r.data_registro.split('T')[0];
+        const overrideKey = `${summary.employeeId}-${dateStr}`;
+        const hasPunch = !!(r.entrada || r.saida);
+        const natureValue = hasPunch ? 'normal' : (dayNatureOverrides[overrideKey] ?? (r as TimeRecord).natureza_dia ?? getDayNatureFromRecord(r));
+        if (isDayNatureNoNegativeHours(natureValue)) return s;
+        const debit = getDebitHoursForDay(r as TimeRecord, natureValue, employeeDailyHoursCsv != null ? { employeeDailyHours: employeeDailyHoursCsv } : undefined);
+        return s + debit;
+      }, 0);
+      const totalExtras50Csv = recordsForCsv.reduce((s: number, r: TimeRecord) => s + (Number((r as TimeRecord).horas_extras_50) || 0), 0);
+      const bankHoursBalance = Math.round((totalExtras50Csv - totalNegativasCsv) * 100) / 100;
 
       // Calcular DSR
-      const dsr = calculateDSR(summary.records, parseInt(summaryMonth), parseInt(summaryYear));
+      const dsr = calculateDSR(recordsForCsv, parseInt(summaryMonth), parseInt(summaryYear));
 
       // Overrides de Natureza do Dia para este funcionário
       const employeeDayOverrides: Record<string, string> = {};
@@ -1510,7 +1349,7 @@ export default function TimeRecordsPageNew() {
         employeeMatricula: summary.employeeMatricula,
         month: parseInt(summaryMonth),
         year: parseInt(summaryYear),
-        records: summary.records,
+        records: recordsForCsv,
         bankHoursBalance,
         dsr,
         companyId: selectedCompany.id,
@@ -2533,12 +2372,13 @@ export default function TimeRecordsPageNew() {
                   {employeeSummary.map((summary) => {
                     const isExpanded = expandedEmployees.has(summary.employeeId);
                     // Usar completeRecords quando disponível para incluir faltas virtuais (dias úteis sem registro) nos totais
-                    const recordsForTotals = completeRecordsByEmployee.get(summary.employeeId) || summary.records;
+                    const recordsForTotals = employeeResumoData.get(summary.employeeId)?.records || summary.records;
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
                     
                     const totalHorasTrabalhadas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_trabalhadas) || 0), 0);
                     // CORREÇÃO: Não incluir horas negativas de dias futuros nem de Feriado/Compensação/Folga no total
+                    const employeeDailyHours = employeeResumoData.get(summary.employeeId)?.employeeDailyHours;
                     const totalHorasNegativas = recordsForTotals.reduce((s, r) => {
                       const recordDate = new Date(r.data_registro);
                       recordDate.setHours(0, 0, 0, 0);
@@ -2546,13 +2386,17 @@ export default function TimeRecordsPageNew() {
                       if (isFutureDate) return s;
                       const dateStr = r.data_registro.split('T')[0];
                       const overrideKey = `${summary.employeeId}-${dateStr}`;
-                      const natureValue = dayNatureOverrides[overrideKey] ?? (r as TimeRecord).natureza_dia ?? getDayNatureFromRecord(r);
+                      const hasPunch = !!(r.entrada || r.saida);
+                      const natureValue = hasPunch ? 'normal' : (dayNatureOverrides[overrideKey] ?? (r as TimeRecord).natureza_dia ?? getDayNatureFromRecord(r));
                       if (isDayNatureNoNegativeHours(natureValue)) return s;
-                      return s + (Number(r.horas_negativas) || 0);
+                      const debit = getDebitHoursForDay(r as TimeRecord, natureValue, employeeDailyHours != null ? { employeeDailyHours } : undefined);
+                      return s + debit;
                     }, 0);
                     const totalHorasExtras50 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_50) || 0), 0);
                     const totalHorasExtras100 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_100) || 0), 0);
                     const totalHorasNoturnas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_noturnas) || 0), 0);
+                    // Saldo do mês consistente com os totais exibidos: Extras 50% − Horas Negativas (apenas 50% vai para o banco)
+                    const saldoBancoHorasDoMes = totalHorasExtras50 - totalHorasNegativas;
                     return (
                       <Card key={summary.employeeId} className="overflow-hidden">
                         <CardHeader className="pb-3">
@@ -2635,14 +2479,16 @@ export default function TimeRecordsPageNew() {
                                 {formatDecimalHoursToHhMm(totalHorasNoturnas)}
                               </p>
                             </div>
-                            <EmployeeBankHoursBalanceInline 
-                              employeeId={summary.employeeId}
-                              companyId={selectedCompany?.id}
-                              year={summaryYear ? parseInt(summaryYear) : undefined}
-                              month={summaryMonth ? parseInt(summaryMonth) : undefined}
-                              startDate={summaryDateRange?.start || filters.startDate}
-                              endDate={summaryDateRange?.end || filters.endDate}
-                            />
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">Saldo Banco de Horas</p>
+                              <p className={`text-2xl font-bold ${
+                                saldoBancoHorasDoMes > 0 ? 'text-green-600' :
+                                saldoBancoHorasDoMes < 0 ? 'text-red-600' :
+                                'text-gray-500'
+                              }`}>
+                                {saldoBancoHorasDoMes >= 0 ? `+${formatDecimalHoursToHhMm(saldoBancoHorasDoMes)}` : formatDecimalHoursToHhMm(saldoBancoHorasDoMes)}
+                              </p>
+                            </div>
                           </div>
 
                           {/* Tabela de detalhes quando expandido */}
@@ -2664,7 +2510,7 @@ export default function TimeRecordsPageNew() {
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {(completeRecordsByEmployee.get(summary.employeeId) || summary.records)
+                                    {(employeeResumoData.get(summary.employeeId)?.records || summary.records)
                                       .sort((a, b) => {
                                         // Ordenar por data (sem problemas de timezone)
                                         const dateA = a.data_registro.split('T')[0];
@@ -2674,18 +2520,27 @@ export default function TimeRecordsPageNew() {
                                       .map((record) => {
                                         const dateStr = record.data_registro.split('T')[0];
                                         const overrideKey = `${summary.employeeId}-${dateStr}`;
-                                        // Prioridade: override local (virtual) > valor do banco (registro real) > detecção automática
-                                        const natureValue = dayNatureOverrides[overrideKey]
-                                          ?? (record as TimeRecord).natureza_dia
-                                          ?? getDayNatureFromRecord(record);
+                                        const overrideNature = dayNatureOverrides[overrideKey];
+                                        if (overrideNature === 'folga_debito') {
+                                          console.log('[FOLGA-DEBITO] Renderizando linha com override folga_debito', { employeeId: summary.employeeId, employeeName: summary.employeeName, dateStr });
+                                        }
+                                        // Prioridade: 1) Dia com registro de ponto → sempre Normal; 2) override > banco > detecção automática
+                                        const hasPunch = !!(record.entrada || record.saida);
+                                        const natureValue = hasPunch
+                                          ? 'normal'
+                                          : (dayNatureOverrides[overrideKey]
+                                              ?? (record as TimeRecord).natureza_dia
+                                              ?? getDayNatureFromRecord(record));
                                         const isVirtual = record.id.startsWith('virtual-');
                                         const isRestDay = (record as any).is_dia_folga || (isVirtual && record.id.includes('-dsr'));
                                         const isVacation = isVirtual && record.id.includes('-ferias');
                                         const isMedicalCertificate = isVirtual && record.id.includes('-atestado');
                                         const isCompensation = isVirtual && record.id.includes('-compensacao');
                                         const isFalta = isVirtual && record.id.includes('-falta');
+                                        const isFeriadoVirtual = isVirtual && record.id.includes('-feriado');
                                         
-                                        // Determinar label e cor
+                                        // Determinar label e cor (ordem: Férias > Atestado > Feriado > ...; feriado não sobrepõe dia com ponto)
+                                        const isFeriado = (record as any).is_feriado === true || natureValue === 'feriado' || isFeriadoVirtual;
                                         let displayLabel = '';
                                         let rowBgColor = '';
                                         if (isVacation) {
@@ -2700,13 +2555,53 @@ export default function TimeRecordsPageNew() {
                                         } else if (isFalta) {
                                           displayLabel = 'Falta';
                                           rowBgColor = 'bg-red-50';
+                                        } else if (isFeriado) {
+                                          displayLabel = 'Feriado';
+                                          rowBgColor = 'bg-pink-50';
                                         } else if (isRestDay && !record.entrada) {
-                                          displayLabel = 'DSR';
+                                          // Sábado = Folga, domingo = DSR (natureValue já vem do registro virtual)
+                                          displayLabel = getDayNatureLabel(natureValue) || 'DSR';
                                           rowBgColor = 'bg-blue-50';
+                                        } else if (natureValue === 'folga_debito') {
+                                          displayLabel = 'Folga Débito';
+                                          rowBgColor = 'bg-amber-50';
                                         }
                                         
                                         const effectiveNatureLabel = getDayNatureLabel(natureValue);
-                                        const hasNatureLabel = !!displayLabel; // dia com natureza especial (DSR, Férias, etc.)
+                                        const hasNatureLabel = !!displayLabel || natureValue === 'folga_debito'; // dia com natureza especial (DSR, Férias, Folga Débito, etc.)
+                                        const recordDate = new Date(record.data_registro);
+                                        const today = new Date();
+                                        today.setHours(0, 0, 0, 0);
+                                        const isFutureDate = recordDate > today;
+                                        // Horas do turno: por summary (card) ou por registro (employee_id) para cobrir todos os casos
+                                        const resumoEntry = employeeResumoData.get(summary.employeeId);
+                                        const employeeDailyHours = resumoEntry?.employeeDailyHours;
+                                        const debitHours = getDebitHoursForDay(record as TimeRecord, natureValue, employeeDailyHours != null ? { employeeDailyHours } : undefined);
+                                        if (natureValue === 'folga_debito') {
+                                          console.log('[FOLGA-DEBITO] Resumo linha', {
+                                            employeeId: summary.employeeId,
+                                            employeeName: summary.employeeName,
+                                            dateStr,
+                                            temResumoData: employeeResumoData.has(summary.employeeId),
+                                            employeeDailyHours,
+                                            record_horas_negativas: record.horas_negativas,
+                                            debitHours,
+                                            exibido: formatDecimalHoursToHhMm(-debitHours),
+                                          });
+                                          if (employeeDailyHours == null) {
+                                            console.warn('[FOLGA-DEBITO] employeeDailyHours indefinido na linha — possível race ou turno não encontrado', { employeeId: summary.employeeId, employeeName: summary.employeeName });
+                                          }
+                                        }
+                                        const horasNegativasCell = (() => {
+                                          if (isDayNatureNoNegativeHours(natureValue)) return <span className="text-muted-foreground">-</span>;
+                                          if (isFalta && isFutureDate) return <span className="text-muted-foreground">-</span>;
+                                          if (isFalta) return <span className="text-red-600 font-medium">{formatDecimalHoursToHhMm(-(record.horas_negativas || 0))}</span>;
+                                          if (isDayNatureDebitHours(natureValue) && !isFutureDate) return <span className="text-red-600 font-medium">{formatDecimalHoursToHhMm(-debitHours)}</span>;
+                                          if (isMedicalCertificate && record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) return <span className="text-red-600 font-medium">{formatDecimalHoursToHhMm(-record.horas_negativas)}</span>;
+                                          if (displayLabel && natureValue !== 'folga' && natureValue !== 'compensacao') return <span className="text-muted-foreground">-</span>;
+                                          if (record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) return <span className="text-red-600 font-medium">{formatDecimalHoursToHhMm(-record.horas_negativas)}</span>;
+                                          return <span className="text-muted-foreground">0h00</span>;
+                                        })();
                                         return (
                                         <TableRow key={record.id} className={rowBgColor}>
                                           <TableCell>
@@ -2797,56 +2692,7 @@ export default function TimeRecordsPageNew() {
                                             )}
                                           </TableCell>
                                           <TableCell>
-                                            {(() => {
-                                              // Feriado, Compensação e Folga não exibem horas negativas
-                                              if (isDayNatureNoNegativeHours(natureValue)) {
-                                                return <span className="text-muted-foreground">-</span>;
-                                              }
-                                              // CORREÇÃO: Não mostrar horas negativas para dias futuros
-                                              const recordDate = new Date(record.data_registro);
-                                              const today = new Date();
-                                              today.setHours(0, 0, 0, 0);
-                                              const isFutureDate = recordDate > today;
-                                              
-                                              // Se for falta em dia futuro, não mostrar horas negativas
-                                              if (isFalta && isFutureDate) {
-                                                return <span className="text-muted-foreground">-</span>;
-                                              }
-                                              
-                                              // Se for falta em dia passado/hoje, mostrar horas negativas
-                                              if (isFalta) {
-                                                return (
-                                                  <span className="text-red-600 font-medium">
-                                                    {formatDecimalHoursToHhMm(-(record.horas_negativas || 0))}
-                                                  </span>
-                                                );
-                                              }
-                                              
-                                              // Atestado de comparecimento pode ter horas negativas líquidas (ex.: -4h39)
-                                              if (isMedicalCertificate && record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) {
-                                                return (
-                                                  <span className="text-red-600 font-medium">
-                                                    {formatDecimalHoursToHhMm(-record.horas_negativas)}
-                                                  </span>
-                                                );
-                                              }
-                                              // Se não for falta mas tem displayLabel (DSR, Férias, etc)
-                                              if (displayLabel) {
-                                                return <span className="text-muted-foreground">-</span>;
-                                              }
-                                              
-                                              // Se tem horas negativas e não é dia futuro, mostrar
-                                              if (record.horas_negativas && record.horas_negativas > 0 && !isFutureDate) {
-                                                return (
-                                                  <span className="text-red-600 font-medium">
-                                                    {formatDecimalHoursToHhMm(-record.horas_negativas)}
-                                                  </span>
-                                                );
-                                              }
-                                              
-                                              // Caso padrão
-                                              return <span className="text-muted-foreground">0h00</span>;
-                                            })()}
+                                            {horasNegativasCell}
                                           </TableCell>
                                           <TableCell>
                                             {displayLabel ? (
@@ -2892,10 +2738,11 @@ export default function TimeRecordsPageNew() {
                                               }>
                                                 {effectiveNatureLabel}
                                               </Badge>
-                                            ) : isDayNatureNoNegativeHours(natureValue) ? (
+                                            ) : isDayNatureNoNegativeHours(natureValue) || natureValue === 'folga_debito' ? (
                                               <Badge className={
                                                 natureValue === 'feriado' ? 'bg-pink-100 text-pink-800' :
                                                 natureValue === 'folga' ? 'bg-sky-100 text-sky-800' :
+                                                natureValue === 'folga_debito' ? 'bg-amber-100 text-amber-800' :
                                                 'bg-purple-100 text-purple-800'
                                               }>
                                                 {effectiveNatureLabel}
@@ -2945,6 +2792,12 @@ export default function TimeRecordsPageNew() {
           modalMode === 'edit' ? 'Editar Registro de Ponto' :
           'Visualizar Registro de Ponto'
         }
+        description={
+          modalMode === 'view' ? undefined :
+          modalMode === 'edit' ? 'Altere data e horários e salve para recalcular as horas.' :
+          'Preencha os dados do registro de ponto.'
+        }
+        onSubmit={modalMode === 'view' ? undefined : () => {}}
         loading={createRecord.isPending || updateRecord.isPending}
         size="lg"
         submitLabel={modalMode === 'create' ? 'Criar Registro' : 'Salvar Alterações'}

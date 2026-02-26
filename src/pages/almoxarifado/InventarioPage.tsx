@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +29,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { useInventario, Inventario } from '@/hooks/almoxarifado/useInventarioQuery';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { toast } from 'sonner';
@@ -35,14 +44,22 @@ import { toast } from 'sonner';
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useAuth } from '@/lib/auth-context';
 
 const InventarioPage: React.FC = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
   const [filterAlmoxarifado, setFilterAlmoxarifado] = useState<string>('todos');
   const [selectedInventario, setSelectedInventario] = useState<Inventario | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showNovoInventarioModal, setShowNovoInventarioModal] = useState(false);
+  const [novoAlmoxarifadoId, setNovoAlmoxarifadoId] = useState<string>('');
+  const [novoTipo, setNovoTipo] = useState<'geral' | 'ciclico' | 'rotativo'>('geral');
+  const [novoObservacoes, setNovoObservacoes] = useState('');
+
+  const { user } = useAuth();
 
   // Hooks para dados
   const { 
@@ -54,7 +71,8 @@ const InventarioPage: React.FC = () => {
     iniciarInventario, 
     finalizarInventario, 
     cancelarInventario,
-    getResumoInventario
+    getResumoInventario,
+    isUpdating
   } = useInventario();
 
   const { data: almoxarifadosData } = useAlmoxarifados();
@@ -69,23 +87,38 @@ const InventarioPage: React.FC = () => {
     });
   }, [filterStatus, filterTipo, filterAlmoxarifado, refetch]);
 
+  const handleAbrirNovoInventario = () => {
+    setNovoAlmoxarifadoId(almoxarifados.length > 0 ? almoxarifados[0].id : '');
+    setNovoTipo('geral');
+    setNovoObservacoes('');
+    setShowNovoInventarioModal(true);
+  };
+
   const handleCriarInventario = async () => {
+    if (!user?.id) {
+      toast.error('Usuário não identificado. Faça login novamente.');
+      return;
+    }
     if (almoxarifados.length === 0) {
       toast.error('Nenhum almoxarifado disponível');
       return;
     }
-
-    const almoxarifadoId = almoxarifados[0].id; // TODO: Implementar seleção de almoxarifado
-    const responsavelId = 'current-user-id'; // TODO: Implementar obtenção do usuário atual
+    if (!novoAlmoxarifadoId) {
+      toast.error('Selecione o almoxarifado a ser inventariado.');
+      return;
+    }
 
     try {
       await createInventario({
-        almoxarifado_id: almoxarifadoId,
-        tipo: 'geral',
-        responsavel_id: responsavelId,
-        observacoes: 'Inventário criado via sistema'
+        almoxarifado_id: novoAlmoxarifadoId,
+        tipo: novoTipo,
+        data_inicio: new Date().toISOString().split('T')[0],
+        status: 'aberto',
+        responsavel_id: user.id,
+        observacoes: novoObservacoes.trim() || 'Inventário criado via sistema'
       });
       toast.success('Inventário criado com sucesso!');
+      setShowNovoInventarioModal(false);
     } catch (error) {
       toast.error('Erro ao criar inventário');
       console.error(error);
@@ -95,10 +128,12 @@ const InventarioPage: React.FC = () => {
   const handleIniciarInventario = async (inventarioId: string) => {
     try {
       await iniciarInventario(inventarioId);
-      toast.success('Inventário iniciado!');
-    } catch (error) {
-      toast.error('Erro ao iniciar inventário');
-      console.error(error);
+      toast.success('Inventário iniciado! Abrindo contagem...');
+      navigate(`/almoxarifado/inventario/${inventarioId}/contagem`);
+    } catch (err: any) {
+      const msg = err?.message || err?.error_description || 'Erro ao iniciar inventário';
+      toast.error(msg);
+      console.error('handleIniciarInventario', err);
     }
   };
 
@@ -193,7 +228,7 @@ const InventarioPage: React.FC = () => {
               <BarChart3 className="h-4 w-4 mr-2" />
               Relatórios
             </Button>
-            <Button className="bg-primary hover:bg-primary/90" onClick={handleCriarInventario}>
+            <Button className="bg-primary hover:bg-primary/90" onClick={handleAbrirNovoInventario}>
               <Plus className="h-4 w-4 mr-2" />
               Novo Inventário
             </Button>
@@ -296,7 +331,7 @@ const InventarioPage: React.FC = () => {
                 <p className="text-gray-600 mb-4">
                   Comece criando um novo inventário para controlar o estoque
                 </p>
-                <Button onClick={handleCriarInventario}>
+                <Button onClick={handleAbrirNovoInventario}>
                   <Plus className="h-4 w-4 mr-2" />
                   Novo Inventário
                 </Button>
@@ -338,22 +373,22 @@ const InventarioPage: React.FC = () => {
                           <div className="space-y-2">
                             <div className="flex justify-between text-sm">
                               <span>Progresso da Contagem:</span>
-                              <span>{resumo.percentual_concluido.toFixed(1)}%</span>
+                              <span>{(resumo.percentual_concluido ?? 0).toFixed(1)}%</span>
                             </div>
-                            <Progress value={resumo.percentual_concluido} className="h-2" />
+                            <Progress value={resumo.percentual_concluido ?? 0} className="h-2" />
                             
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
                               <div>
-                                <span className="font-medium">Total Itens:</span> {resumo.total_itens}
+                                <span className="font-medium">Total Itens:</span> {resumo.total_itens ?? 0}
                               </div>
                               <div>
-                                <span className="font-medium">Contados:</span> {resumo.itens_contados}
+                                <span className="font-medium">Contados:</span> {resumo.itens_contados ?? 0}
                               </div>
                               <div>
-                                <span className="font-medium">Divergentes:</span> {resumo.itens_divergentes}
+                                <span className="font-medium">Divergentes:</span> {resumo.itens_divergentes ?? 0}
                               </div>
                               <div>
-                                <span className="font-medium">Diferença:</span> {formatCurrency(resumo.diferenca_valor)}
+                                <span className="font-medium">Diferença:</span> {formatCurrency(resumo.diferenca_valor ?? 0)}
                               </div>
                             </div>
                           </div>
@@ -383,21 +418,33 @@ const InventarioPage: React.FC = () => {
                             variant="outline" 
                             size="sm"
                             className="text-green-600 hover:text-green-700"
+                            disabled={isUpdating}
                             onClick={() => handleIniciarInventario(inventario.id)}
                           >
-                            <Play className="h-4 w-4" />
+                            {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                           </Button>
                         )}
 
                         {inventario.status === 'em_andamento' && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            className="text-blue-600 hover:text-blue-700"
-                            onClick={() => handleFinalizarInventario(inventario.id)}
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
+                          <>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              title="Contar itens do inventário"
+                              className="text-blue-600 hover:text-blue-700"
+                              onClick={() => navigate(`/almoxarifado/inventario/${inventario.id}/contagem`)}
+                            >
+                              <Package className="h-4 w-4" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              className="text-green-600 hover:text-green-700"
+                              onClick={() => handleFinalizarInventario(inventario.id)}
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </Button>
+                          </>
                         )}
 
                         {(inventario.status === 'aberto' || inventario.status === 'em_andamento') && (
@@ -488,6 +535,66 @@ const InventarioPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal Novo Inventário */}
+      <Dialog open={showNovoInventarioModal} onOpenChange={setShowNovoInventarioModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo inventário</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="almoxarifado">Almoxarifado *</Label>
+              <Select
+                value={novoAlmoxarifadoId}
+                onValueChange={setNovoAlmoxarifadoId}
+              >
+                <SelectTrigger id="almoxarifado">
+                  <SelectValue placeholder="Selecione o almoxarifado" />
+                </SelectTrigger>
+                <SelectContent>
+                  {almoxarifados.map((alm) => (
+                    <SelectItem key={alm.id} value={alm.id}>
+                      {alm.nome}
+                      {alm.codigo ? ` (${alm.codigo})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="tipo">Tipo</Label>
+              <Select value={novoTipo} onValueChange={(v: 'geral' | 'ciclico' | 'rotativo') => setNovoTipo(v)}>
+                <SelectTrigger id="tipo">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="geral">Geral</SelectItem>
+                  <SelectItem value="ciclico">Cíclico</SelectItem>
+                  <SelectItem value="rotativo">Rotativo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="observacoes">Observações (opcional)</Label>
+              <Input
+                id="observacoes"
+                placeholder="Ex.: Inventário mensal"
+                value={novoObservacoes}
+                onChange={(e) => setNovoObservacoes(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNovoInventarioModal(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCriarInventario}>
+              Criar inventário
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </RequirePage>
   );

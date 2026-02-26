@@ -51,6 +51,7 @@ import EntradasMateriaisPage from "./pages/almoxarifado/EntradasMateriaisPage";
 import SaidasTransferenciasPage from "./pages/almoxarifado/SaidasTransferenciasPage";
 import HistoricoMovimentacoesPage from "./pages/almoxarifado/HistoricoMovimentacoesPage";
 import InventarioPage from "./pages/almoxarifado/InventarioPage";
+import InventarioContagemPage from "./pages/almoxarifado/InventarioContagemPage";
 import RelatoriosPage from "./pages/almoxarifado/RelatoriosPage";
 import EstoqueAtualPage from "./pages/almoxarifado/EstoqueAtualPage";
 import TestPage from "./pages/almoxarifado/TestPage";
@@ -332,6 +333,7 @@ function App() {
                 <Route path="/almoxarifado/entradas" element={<EntradasMateriaisPage />} />
                 <Route path="/almoxarifado/saidas" element={<SaidasTransferenciasPage />} />
                 <Route path="/almoxarifado/inventario" element={<InventarioPage />} />
+                <Route path="/almoxarifado/inventario/:inventarioId/contagem" element={<InventarioContagemPage />} />
                 <Route path="/almoxarifado/checklist" element={<div className="text-2xl font-bold">Checklist de Recebimento - Em desenvolvimento</div>} />
                 <Route path="/almoxarifado/historico" element={<HistoricoMovimentacoesPage />} />
                 <Route path="/almoxarifado/relatorios" element={<RelatoriosPage />} />

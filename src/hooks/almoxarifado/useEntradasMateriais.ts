@@ -406,9 +406,11 @@ export const useEntradasMateriais = () => {
         skipCompanyFilter: true
       });
 
-      const itens = itensResult.data || [];
+      const itens = (itensResult.data || []).filter(
+        (i: any) => !i.em_quarentena
+      );
 
-      // Atualizar estoque para cada item aprovado
+      // Atualizar estoque apenas para itens aprovados e não em quarentena
       for (const item of itens) {
         // Aqui seria necessário implementar a lógica de atualização do estoque
         // Por enquanto, apenas logamos

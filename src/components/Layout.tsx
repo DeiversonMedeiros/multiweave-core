@@ -46,7 +46,7 @@ export const Layout = () => {
             </div>
           </header>
           <TrainingNotificationScheduler />
-          <main className="flex-1 p-3 sm:p-6 min-w-0 overflow-x-hidden">
+          <main className="flex-1 min-h-0 p-3 sm:p-6 min-w-0 overflow-x-hidden overflow-y-auto">
             {selectedCompany ? (
               <Outlet />
             ) : (

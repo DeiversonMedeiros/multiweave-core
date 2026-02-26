@@ -35,6 +35,18 @@ export function usePendingAttendanceCorrections(companyId: string) {
   });
 }
 
+// Hook para buscar correções do gestor com filtro de status (lista alinhada aos cards)
+export function useAttendanceCorrectionsForManager(companyId: string, statusFilter: 'all' | 'pendente' | 'aprovado' | 'rejeitado') {
+  const statusParam = statusFilter === 'all' ? null : statusFilter;
+  return useQuery({
+    queryKey: ['attendance-corrections-for-manager', companyId, statusFilter],
+    queryFn: () => AttendanceCorrectionsService.getForManager(companyId, statusParam),
+    enabled: !!companyId,
+    staleTime: 1 * 60 * 1000,
+    refetchInterval: 30 * 1000,
+  });
+}
+
 // Hook para buscar correções de um funcionário
 export function useEmployeeAttendanceCorrections(employeeId: string, year?: number, month?: number) {
   return useQuery({
@@ -105,6 +117,7 @@ export function useApproveAttendanceCorrection() {
       // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['attendance-corrections'] });
       queryClient.invalidateQueries({ queryKey: ['pending-attendance-corrections'] });
+      queryClient.invalidateQueries({ queryKey: ['attendance-corrections-for-manager'] });
       queryClient.invalidateQueries({ queryKey: ['attendance-corrections-stats'] });
       queryClient.invalidateQueries({ queryKey: ['monthly-time-records'] });
     },
@@ -123,6 +136,7 @@ export function useRejectAttendanceCorrection() {
       // Invalidar queries relacionadas
       queryClient.invalidateQueries({ queryKey: ['attendance-corrections'] });
       queryClient.invalidateQueries({ queryKey: ['pending-attendance-corrections'] });
+      queryClient.invalidateQueries({ queryKey: ['attendance-corrections-for-manager'] });
       queryClient.invalidateQueries({ queryKey: ['attendance-corrections-stats'] });
     },
   });

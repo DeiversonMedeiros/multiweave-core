@@ -26,10 +26,23 @@ export interface TransferenciaItem {
   id: string;
   transferencia_id: string;
   material_equipamento_id: string;
-  quantidade: number;
+  quantidade_solicitada: number;
+  quantidade_aprovada?: number;
+  centro_custo_id?: string;
+  projeto_id?: string;
   observacoes?: string;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Dados para criar um item de transferência (após criar o cabeçalho) */
+export interface TransferenciaItemInsert {
+  transferencia_id: string;
+  material_equipamento_id: string;
+  quantidade_solicitada: number;
+  quantidade_aprovada?: number;
+  centro_custo_id?: string;
+  projeto_id?: string;
 }
 
 // =====================================================
@@ -78,9 +91,11 @@ export function useCreateTransferencia() {
     mutationFn: async (data: Omit<Transferencia, 'id' | 'created_at' | 'updated_at' | 'company_id'>) => {
       if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
       
-      return await EntityService.create<Transferencia>('almoxarifado', 'transferencias', {
-        ...data,
-        company_id: selectedCompany.id
+      return await EntityService.create<Transferencia>({
+        schema: 'almoxarifado',
+        table: 'transferencias',
+        companyId: selectedCompany.id,
+        data: { ...data, company_id: selectedCompany.id }
       });
     },
     onSuccess: () => {
@@ -114,6 +129,29 @@ export function useDeleteTransferencia() {
   return useMutation({
     mutationFn: async (id: string) => {
       return await EntityService.delete('almoxarifado', 'transferencias', id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['almoxarifado', 'transferencias'] });
+    },
+  });
+}
+
+/**
+ * Hook para criar item de transferência (almoxarifado.transferencia_itens)
+ */
+export function useCreateTransferenciaItem() {
+  const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+
+  return useMutation({
+    mutationFn: async (data: TransferenciaItemInsert) => {
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      return await EntityService.create<TransferenciaItem>({
+        schema: 'almoxarifado',
+        table: 'transferencia_itens',
+        companyId: selectedCompany.id,
+        data: { ...data, quantidade_aprovada: data.quantidade_aprovada ?? 0 },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['almoxarifado', 'transferencias'] });

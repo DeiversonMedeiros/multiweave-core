@@ -55,6 +55,7 @@ export type Database = {
       }
       cost_centers: {
         Row: {
+          aceita_lancamentos: boolean
           ativo: boolean | null
           codigo: string
           company_id: string | null
@@ -64,6 +65,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          aceita_lancamentos?: boolean
           ativo?: boolean | null
           codigo: string
           company_id?: string | null
@@ -73,6 +75,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          aceita_lancamentos?: boolean
           ativo?: boolean | null
           codigo?: string
           company_id?: string | null

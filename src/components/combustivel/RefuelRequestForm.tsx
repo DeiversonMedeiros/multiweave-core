@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useVehicles } from '@/hooks/frota/useFrotaData';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useFuelTypes } from '@/hooks/combustivel/useCombustivel';
 import { useQuery } from '@tanstack/react-query';
@@ -46,7 +46,7 @@ interface RefuelRequestFormProps {
 export function RefuelRequestForm({ request, onSubmit, onCancel, isLoading }: RefuelRequestFormProps) {
   const { selectedCompany } = useCompany();
   const { data: vehicles } = useVehicles({ situacao: 'ativo' });
-  const { data: costCenters } = useCostCenters();
+  const { data: costCenters } = useActiveCostCenters();
   const { data: projects } = useProjects();
   const { data: fuelTypes } = useFuelTypes({ ativo: true });
   

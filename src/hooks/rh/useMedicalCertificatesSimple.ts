@@ -31,7 +31,8 @@ export const useMedicalCertificatesSimple = (companyId?: string) => {
       const certificateIds = result.data.map(cert => cert.id);
       const approverIds = [...new Set(result.data.map(cert => cert.aprovado_por).filter(Boolean))];
       
-      // Buscar employees
+      // Buscar employees com pageSize alto para incluir todos os colaboradores dos atestados
+      // (EntityService.list usa default 100; com 100 só os primeiros por nome entravam no mapa e o card ficava sem nome/matrícula)
       let employeesMap = new Map<string, Employee>();
       if (employeeIds.length > 0) {
         const employeesResult = await EntityService.list<Employee>({
@@ -40,7 +41,8 @@ export const useMedicalCertificatesSimple = (companyId?: string) => {
           companyId: companyId,
           filters: {},
           orderBy: 'nome',
-          orderDirection: 'ASC'
+          orderDirection: 'ASC',
+          pageSize: 10000
         });
         
         employeesMap = new Map(

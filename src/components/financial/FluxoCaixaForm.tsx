@@ -19,7 +19,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { TrendingUp, TrendingDown, Save, X, AlertCircle, Calendar } from 'lucide-react';
 import { FluxoCaixa, FluxoCaixaFormData } from '@/integrations/supabase/financial-types';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useTesouraria } from '@/hooks/financial/useTesouraria';
 
 // Schema de validação
@@ -46,7 +46,7 @@ interface FluxoCaixaFormProps {
 }
 
 export function FluxoCaixaForm({ fluxo, onSave, onCancel, loading = false }: FluxoCaixaFormProps) {
-  const { data: costCentersData, isLoading: loadingCostCenters } = useCostCenters();
+  const { data: costCentersData, isLoading: loadingCostCenters } = useActiveCostCenters();
   const { contasBancarias } = useTesouraria();
   const [isSubmitting, setIsSubmitting] = useState(false);
 

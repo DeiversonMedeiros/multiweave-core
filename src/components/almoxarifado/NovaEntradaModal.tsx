@@ -25,18 +25,23 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Plus, X, Loader2, Trash2, Calculator, Check } from 'lucide-react';
+import { Plus, X, Loader2, Trash2, Calculator, Check, ShieldAlert, ShieldCheck, CheckCircle, Clock, XCircle, ClipboardCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCreateEntradaMaterial, useUpdateEntradaMaterial } from '@/hooks/almoxarifado/useEntradasMateriaisQuery';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useActivePartners } from '@/hooks/usePartners';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/lib/company-context';
+import { useAuth } from '@/lib/auth-context';
 import { EntityService } from '@/services/generic/entityService';
+import { useChecklistRecebimento } from '@/hooks/almoxarifado/useChecklistRecebimento';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
 
 interface NovaEntradaModalProps {
   isOpen: boolean;
@@ -54,9 +59,17 @@ interface EntradaItem {
   valor_total: number;
   centro_custo_id?: string;
   projeto_id?: string;
+  almoxarifado_id?: string;
   lote?: string;
   validade?: string;
   observacoes?: string;
+  /** Quarentena: item fora do padrão até correção */
+  em_quarentena?: boolean;
+  quarentena_motivo?: string;
+  quarentena_em?: string;
+  quarentena_retirada_em?: string;
+  /** Quando preenchido, o item já foi lançado no estoque e fica read-only */
+  entrada_estoque_em?: string;
 }
 
 const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
@@ -70,18 +83,32 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
     fornecedor_id: '',
     almoxarifado_id: '',
     numero_nota: '',
+    serie_nota_fiscal: '',
+    tipo_documento_fiscal: '',
+    chave_acesso: '',
     data_entrada: new Date().toISOString().split('T')[0],
     observacoes: '',
   });
   const [itens, setItens] = useState<EntradaItem[]>([]);
+  /** Em modo "confirmar pré-entrada": quais itens incluir nesta confirmação (entrada parcial). Id -> true = incluir. */
+  const [incluirNaEntradaAgora, setIncluirNaEntradaAgora] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [materialOpen, setMaterialOpen] = useState<{ [key: string]: boolean }>({});
+  const [retirarQuarentenaLoading, setRetirarQuarentenaLoading] = useState<string | null>(null);
 
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const createEntrada = useCreateEntradaMaterial();
   const updateEntrada = useUpdateEntradaMaterial();
   const { data: materiais = [] } = useMateriaisEquipamentos();
+  const {
+    checklistItems,
+    criterios,
+    createChecklistItem,
+    updateChecklistItem,
+  } = useChecklistRecebimento(entradaParaEditar?.id);
   const { data: partnersData } = useActivePartners();
-  const { data: costCentersData } = useCostCenters();
+  const { data: costCentersData } = useActiveCostCenters();
   const { data: projectsData } = useProjects();
   const { data: almoxarifadosData } = useAlmoxarifados();
 
@@ -91,7 +118,17 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
   );
   const costCenters = costCentersData?.data || [];
   const projects = projectsData?.data || [];
-  const almoxarifados = almoxarifadosData?.data || [];
+  // Em useAlmoxarifados, data já é um array de almoxarifados (não um objeto { data })
+  const almoxarifados = (almoxarifadosData as any[]) || [];
+
+  if (almoxarifados && (almoxarifados as any[]).length) {
+    console.log('[NovaEntradaModal] 🏬 almoxarifados carregados:', {
+      quantidade: (almoxarifados as any[]).length,
+      primeiros: (almoxarifados as any[]).slice(0, 3).map((a: any) => ({ id: a.id, nome: a.nome }))
+    });
+  } else {
+    console.log('[NovaEntradaModal] ⚠️ Nenhum almoxarifado carregado para o modal');
+  }
 
   useEffect(() => {
     if (isOpen) {
@@ -101,14 +138,19 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
           fornecedor_id: entradaParaEditar.fornecedor_id || '',
           almoxarifado_id: '',
           numero_nota: entradaParaEditar.numero_nota || '',
+          serie_nota_fiscal: entradaParaEditar.serie_nota_fiscal || '',
+          tipo_documento_fiscal: entradaParaEditar.tipo_documento_fiscal || '',
+          chave_acesso: entradaParaEditar.chave_acesso || '',
           data_entrada: entradaParaEditar.data_entrada || new Date().toISOString().split('T')[0],
           observacoes: entradaParaEditar.observacoes || '',
         });
         
-        // Carregar itens da entrada e buscar dados do pedido/requisição
-        loadEntradaItens(entradaParaEditar.id).then(() => {
+        // Carregar itens da entrada e buscar dados do pedido/requisição (passar itens para não perder almoxarifado_id do banco)
+        loadEntradaItens(entradaParaEditar.id).then((itensCarregados) => {
+          const list = itensCarregados ?? [];
+          if (list.length > 0) setItens(list);
           if (entradaParaEditar.pedido_id) {
-            loadDadosPedido(entradaParaEditar.pedido_id);
+            loadDadosPedido(entradaParaEditar.pedido_id, list);
           }
         });
       } else {
@@ -117,24 +159,41 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
           fornecedor_id: '',
           almoxarifado_id: '',
           numero_nota: '',
+          serie_nota_fiscal: '',
+          tipo_documento_fiscal: '',
+          chave_acesso: '',
           data_entrada: new Date().toISOString().split('T')[0],
           observacoes: '',
         });
         setItens([]);
+        setIncluirNaEntradaAgora({});
       }
     }
   }, [isOpen, entradaParaEditar]);
 
-  const loadEntradaItens = async (entradaId: string) => {
+  // Inicializar "incluir na entrada agora" quando os itens forem carregados no modo confirmar (entrada parcial)
+  useEffect(() => {
+    if (entradaParaEditar && itens.length > 0) {
+      setIncluirNaEntradaAgora((prev) => {
+        const next = { ...prev };
+        itens.forEach((i) => {
+          if (!i.entrada_estoque_em && next[i.id] === undefined) next[i.id] = true;
+        });
+        return next;
+      });
+    }
+  }, [entradaParaEditar?.id, itens.length]);
+
+  const loadEntradaItens = async (entradaId: string): Promise<EntradaItem[] | undefined> => {
     if (!selectedCompany?.id) {
       console.error('Empresa não selecionada');
-      return;
+      return undefined;
     }
 
     try {
       console.log('🔍 [loadEntradaItens] Carregando itens da entrada:', entradaId);
       
-      // Usar EntityService para buscar itens
+      // Usar RPC (EntityService): schema almoxarifado não é exposto no REST em alguns projetos Supabase (PGRST106), RPC retorna todas as colunas incluindo almoxarifado_id
       const result = await EntityService.list<any>({
         schema: 'almoxarifado',
         table: 'entrada_itens',
@@ -142,13 +201,17 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
         filters: { entrada_id: entradaId },
         orderBy: 'created_at',
         orderDirection: 'ASC',
-        skipCompanyFilter: true // A tabela não tem company_id diretamente, mas validamos via entrada_id
+        skipCompanyFilter: true,
       });
+      const rawItens = result.data || [];
+      console.log('✅ [loadEntradaItens] Itens encontrados:', rawItens.length);
+      if (rawItens.length) {
+        const primeiro = rawItens[0] as any;
+        console.log('[NovaEntradaModal] 📋 loadEntradaItens raw almoxarifado_id=', primeiro?.almoxarifado_id);
+      }
       
-      console.log('✅ [loadEntradaItens] Itens encontrados:', result.data?.length || 0);
-      
-      if (result.data) {
-        const itensMapeados = result.data.map((item: any) => ({
+      if (rawItens.length > 0) {
+        const itensMapeados: EntradaItem[] = rawItens.map((item: any) => ({
           id: item.id,
           material_equipamento_id: item.material_equipamento_id,
           quantidade_recebida: item.quantidade_recebida,
@@ -157,28 +220,38 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
           valor_total: item.valor_total || 0,
           centro_custo_id: item.centro_custo_id || '',
           projeto_id: item.projeto_id || '',
+          almoxarifado_id: item.almoxarifado_id || '',
           lote: item.lote || '',
           validade: item.validade || '',
           observacoes: item.observacoes || '',
+          em_quarentena: item.em_quarentena ?? false,
+          quarentena_motivo: item.quarentena_motivo || '',
+          quarentena_em: item.quarentena_em || undefined,
+          quarentena_retirada_em: item.quarentena_retirada_em || undefined,
+          entrada_estoque_em: item.entrada_estoque_em || undefined,
         }));
         
-        console.log('📋 [loadEntradaItens] Itens mapeados:', itensMapeados);
+        console.log('[NovaEntradaModal] 📋 loadEntradaItens mapeados almoxarifado_id:', itensMapeados.map(i => ({ id: i.id, almoxarifado_id: i.almoxarifado_id })));
         setItens(itensMapeados);
+        return itensMapeados;
       }
+      return undefined;
     } catch (error) {
       console.error('❌ [loadEntradaItens] Erro ao carregar itens da entrada:', error);
       toast.error('Erro ao carregar itens da entrada');
+      return undefined;
     }
   };
 
-  // Buscar dados do pedido e requisição para preencher automaticamente centro_custo, projeto e almoxarifado
-  const loadDadosPedido = async (pedidoId: string) => {
+  // Buscar dados do pedido e requisição para preencher automaticamente centro_custo, projeto e almoxarifado.
+  // itensCarregados: itens já carregados do banco (ex.: com almoxarifado_id do backfill) para não serem sobrescritos pelo estado assíncrono.
+  const loadDadosPedido = async (pedidoId: string, itensCarregados?: EntradaItem[]) => {
     if (!selectedCompany?.id) {
       return;
     }
 
     try {
-      console.log('🔍 [loadDadosPedido] Iniciando busca de dados do pedido:', pedidoId);
+      console.log('[NovaEntradaModal] 🔍 loadDadosPedido inicio:', { pedidoId, itensCarregados_qtd: itensCarregados?.length, almoxarifado_ids: itensCarregados?.map(i => i.almoxarifado_id) });
       
       // Buscar pedido de compra
       const pedido = await EntityService.getById<any>({
@@ -206,6 +279,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
       let requisicaoId: string | null = null;
 
       // Priorizar cotacao_ciclo_id (novo sistema)
+      let numeroCotacao: string | null = null;
       if (pedido.cotacao_ciclo_id) {
         cotacaoCiclo = await EntityService.getById<any>({
           schema: 'compras',
@@ -217,7 +291,8 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
         
         if (cotacaoCiclo) {
           requisicaoId = cotacaoCiclo.requisicao_id;
-          console.log('📋 [loadDadosPedido] Requisição ID do cotacao_ciclos:', requisicaoId);
+          numeroCotacao = cotacaoCiclo.numero_cotacao || null;
+          console.log('📋 [loadDadosPedido] Requisição ID e numero_cotacao:', requisicaoId, numeroCotacao);
         }
       } else if (pedido.cotacao_id) {
         // Sistema antigo: buscar cotacao e depois requisicao através dela
@@ -240,7 +315,8 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
             });
             if (cotacaoCiclo) {
               requisicaoId = cotacaoCiclo.requisicao_id;
-              console.log('📋 [loadDadosPedido] Requisição ID via cotacao.cotacao_ciclo_id:', requisicaoId);
+              numeroCotacao = cotacaoCiclo.numero_cotacao || null;
+              console.log('📋 [loadDadosPedido] Requisição ID e numero_cotacao via cotacao.cotacao_ciclo_id:', requisicaoId, numeroCotacao);
             }
           } else if (cotacao.requisicao_id) {
             // Sistema muito antigo: cotação tem requisicao_id diretamente
@@ -292,14 +368,135 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
           destino_almoxarifado_id: requisicao.destino_almoxarifado_id
         });
 
-        // Preencher centro_custo_id e projeto_id da requisição nos itens
+        // Garantir destino_almoxarifado_id: às vezes o getById não retorna a coluna; buscar direto do banco
+        if (!requisicao.destino_almoxarifado_id) {
+          try {
+            const { data: reqRow } = await supabase
+              .schema('compras')
+              .from('requisicoes_compra')
+              .select('destino_almoxarifado_id')
+              .eq('id', requisicaoId)
+              .single();
+            if (reqRow?.destino_almoxarifado_id) {
+              requisicao.destino_almoxarifado_id = reqRow.destino_almoxarifado_id;
+              console.log('✅ [loadDadosPedido] destino_almoxarifado_id obtido via Supabase:', requisicao.destino_almoxarifado_id);
+            }
+          } catch (_) {
+            // ignora
+          }
+        }
+
+        // Cotação com múltiplos centros de custo: buscar todas as requisições da mesma cotação (numero_cotacao)
+        if (numeroCotacao && !requisicao.destino_almoxarifado_id) {
+          try {
+            const { data: ciclos } = await supabase
+              .schema('compras')
+              .from('cotacao_ciclos')
+              .select('requisicao_id')
+              .eq('numero_cotacao', numeroCotacao);
+            const reqIdsCotacao = [...new Set((ciclos || []).map((c: any) => c.requisicao_id).filter(Boolean))];
+            for (const rid of reqIdsCotacao) {
+              const { data: r2 } = await supabase
+                .schema('compras')
+                .from('requisicoes_compra')
+                .select('destino_almoxarifado_id')
+                .eq('id', rid)
+                .single();
+              if (r2?.destino_almoxarifado_id) {
+                requisicao.destino_almoxarifado_id = r2.destino_almoxarifado_id;
+                console.log('✅ [loadDadosPedido] destino_almoxarifado_id de requisição da cotação:', numeroCotacao, rid, requisicao.destino_almoxarifado_id);
+                break;
+              }
+            }
+          } catch (_) {
+            // ignora
+          }
+        }
+
+        // Se ainda não tem almoxarifado, tentar outras requisições vinculadas ao pedido (itens em comum)
+        if (!requisicao.destino_almoxarifado_id) {
+          try {
+            const { data: pedidoItens } = await supabase
+              .schema('compras')
+              .from('pedido_itens')
+              .select('material_id')
+              .eq('pedido_id', pedidoId);
+            const materialIds = (pedidoItens || []).map((pi: any) => pi.material_id).filter(Boolean);
+            if (materialIds.length > 0) {
+              const { data: riRows } = await supabase
+                .schema('compras')
+                .from('requisicao_itens')
+                .select('requisicao_id')
+                .in('material_id', materialIds);
+              const reqIds = [...new Set((riRows || []).map((r: any) => r.requisicao_id))];
+              for (const rid of reqIds) {
+                const { data: r2 } = await supabase
+                  .schema('compras')
+                  .from('requisicoes_compra')
+                  .select('destino_almoxarifado_id')
+                  .eq('id', rid)
+                  .single();
+                if (r2?.destino_almoxarifado_id) {
+                  requisicao.destino_almoxarifado_id = r2.destino_almoxarifado_id;
+                  console.log('✅ [loadDadosPedido] destino_almoxarifado_id de outra requisição vinculada:', rid, requisicao.destino_almoxarifado_id);
+                  break;
+                }
+              }
+            }
+          } catch (_) {
+            // ignora
+          }
+        }
+
+        // Mapa material_id -> almoxarifado_id a partir de TODAS as requisições da cotação (múltiplos centros de custo)
+        let materialToAlmox = new Map<string, string>();
+        if (numeroCotacao) {
+          try {
+            const { data: ciclos } = await supabase
+              .schema('compras')
+              .from('cotacao_ciclos')
+              .select('requisicao_id')
+              .eq('numero_cotacao', numeroCotacao);
+            const reqIdsAll = [...new Set((ciclos || []).map((c: any) => c.requisicao_id).filter(Boolean))];
+            for (const rid of reqIdsAll) {
+              const { data: riList } = await supabase
+                .schema('compras')
+                .from('requisicao_itens')
+                .select('material_id, almoxarifado_id')
+                .eq('requisicao_id', rid);
+              const { data: rcRow } = await supabase
+                .schema('compras')
+                .from('requisicoes_compra')
+                .select('destino_almoxarifado_id')
+                .eq('id', rid)
+                .single();
+              const fallbackAlmox = rcRow?.destino_almoxarifado_id || null;
+              (riList || []).forEach((ri: any) => {
+                if (ri.material_id && !materialToAlmox.has(ri.material_id)) {
+                  const almoxId = ri.almoxarifado_id || fallbackAlmox;
+                  if (almoxId) materialToAlmox.set(ri.material_id, almoxId);
+                }
+              });
+            }
+          } catch (_) {
+            // ignora
+          }
+        }
+        const almoxGerais = requisicao.destino_almoxarifado_id || '';
+
+        // Preencher centro_custo_id, projeto_id e almoxarifado_id nos itens (usar itensCarregados para preservar almoxarifado_id do banco)
         setItens(prevItens => {
-          const novosItens = prevItens.map(item => ({
+          const base = (itensCarregados !== undefined && itensCarregados.length > 0) ? itensCarregados : prevItens;
+          const novosItens = base.map(item => ({
             ...item,
             centro_custo_id: requisicao.centro_custo_id || item.centro_custo_id || '',
             projeto_id: requisicao.projeto_id || item.projeto_id || '',
+            // Preservar almoxarifado_id já vindo do banco (backfill); senão preencher da cotação/requisição
+            almoxarifado_id: item.almoxarifado_id || (item.material_equipamento_id
+              ? (materialToAlmox.get(item.material_equipamento_id) || almoxGerais || '')
+              : almoxGerais),
           }));
-          console.log('✅ [loadDadosPedido] Itens atualizados com centro_custo e projeto:', novosItens);
+          console.log('✅ [loadDadosPedido] Itens atualizados com centro_custo, projeto e almoxarifado:', novosItens.map(i => ({ almoxarifado_id: i.almoxarifado_id })));
           return novosItens;
         });
       } else {
@@ -307,11 +504,10 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
         return;
       }
 
-      // Buscar almoxarifado_id dos itens da requisição
+      // Buscar almoxarifado_id: priorizar destino_almoxarifado_id da requisição (já garantido acima)
       if (requisicao?.id) {
         console.log('🔍 [loadDadosPedido] Verificando destino_almoxarifado_id na requisição:', requisicao.destino_almoxarifado_id);
         
-        // Primeiro, verificar se a requisição tem destino_almoxarifado_id (fallback)
         if (requisicao.destino_almoxarifado_id) {
           console.log('✅ [loadDadosPedido] Almoxarifado encontrado na requisição (destino_almoxarifado_id):', requisicao.destino_almoxarifado_id);
           setFormData(prev => ({
@@ -507,9 +703,11 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
       valor_total: 0,
       centro_custo_id: '',
       projeto_id: '',
+      almoxarifado_id: formData.almoxarifado_id || '',
       lote: '',
       validade: '',
       observacoes: '',
+      em_quarentena: false,
     };
     setItens([...itens, novoItem]);
   };
@@ -542,14 +740,34 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
     e.preventDefault();
 
     // Validações
-    if (!formData.fornecedor_id) {
+    if (!formData.fornecedor_id && !entradaParaEditar) {
       toast.error('Selecione um fornecedor');
       return;
     }
 
-    if (!formData.numero_nota) {
-      toast.error('Informe o número da nota');
-      return;
+    // No modo "Confirmar recebimento" (entradaParaEditar), Dados Gerais obrigatórios
+    if (entradaParaEditar) {
+      if (!formData.numero_nota?.trim()) {
+        toast.error('Informe o número da nota');
+        return;
+      }
+      if (!formData.serie_nota_fiscal?.trim()) {
+        toast.error('Informe a série da nota fiscal');
+        return;
+      }
+      if (!formData.tipo_documento_fiscal?.trim()) {
+        toast.error('Selecione o tipo de documento fiscal');
+        return;
+      }
+      if (!formData.chave_acesso?.trim()) {
+        toast.error('Informe a chave de acesso');
+        return;
+      }
+    } else {
+      if (!formData.numero_nota?.trim()) {
+        toast.error('Informe o número da nota');
+        return;
+      }
     }
 
     if (itens.length === 0) {
@@ -559,6 +777,9 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
 
     // Validar itens
     for (const item of itens) {
+      const incluirEste = incluirNaEntradaAgora[item.id] !== false;
+      const itemReadOnly = !!item.entrada_estoque_em;
+
       if (!item.material_equipamento_id) {
         toast.error('Selecione o material para todos os itens');
         return;
@@ -571,6 +792,25 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
         toast.error('O valor unitário não pode ser negativo');
         return;
       }
+
+      // Quando "Incluir na Entrada Agora" está marcado (modo confirmar recebimento, item não read-only)
+      if (entradaParaEditar && incluirEste && !itemReadOnly) {
+        if (!item.validade?.trim()) {
+          toast.error(`Informe a validade do item "${getMaterialNome(item.material_equipamento_id) || 'item'}"`);
+          return;
+        }
+        // Checklist de Recebimento: todos os critérios devem estar respondidos para este item
+        if (criterios.length > 0) {
+          const itemChecklist = checklistItems.filter((ci) => ci.item_id === item.id);
+          const criteriosRespondidos = new Set(itemChecklist.map((ci) => ci.criterio));
+          const faltando = criterios.filter((c) => !criteriosRespondidos.has(c.nome));
+          if (faltando.length > 0) {
+            const nomes = faltando.map((c) => c.nome).join(', ');
+            toast.error(`Conclua o checklist de recebimento do item "${getMaterialNome(item.material_equipamento_id) || 'item'}": ${nomes}`);
+            return;
+          }
+        }
+      }
     }
 
     try {
@@ -580,9 +820,15 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
         // Atualizar entrada existente (confirmar pré-entrada)
         const entradaData: any = {
           numero_nota: formData.numero_nota || null,
+          serie_nota_fiscal: formData.serie_nota_fiscal || null,
+          tipo_documento_fiscal: formData.tipo_documento_fiscal || null,
+          chave_acesso: formData.chave_acesso || null,
           data_entrada: formData.data_entrada,
           valor_total: calcularValorTotal(),
-          status: 'inspecao', // Muda para inspeção após confirmar recebimento
+          // Após checklist concluído no modal, a entrada já está inspecionada.
+          // Atualizar diretamente para "aprovado" e marcar checklist_aprovado.
+          status: 'aprovado',
+          checklist_aprovado: true,
           observacoes: formData.observacoes || null,
         };
 
@@ -591,12 +837,20 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
           data: entradaData
         });
 
-        // Atualizar itens da entrada usando EntityService
-        if (!selectedCompany?.id) {
-          throw new Error('Empresa não selecionada');
+        // Atualizar itens da entrada e dar entrada no estoque para itens não quarentena
+        if (!selectedCompany?.id || !user?.id) {
+          throw new Error('Empresa ou usuário não identificado');
         }
 
+        const now = new Date().toISOString();
+
         for (const item of itens) {
+          const emQuarentena = item.em_quarentena ?? false;
+          const qtdAprovada = (item.quantidade_aprovada ?? 0) || item.quantidade_recebida || 0;
+          const jaDeuEntrada = !!item.entrada_estoque_em;
+          const incluirEste = incluirNaEntradaAgora[item.id] !== false;
+          const deveDarEntrada = incluirEste && !emQuarentena && qtdAprovada > 0 && !!item.almoxarifado_id && !jaDeuEntrada;
+
           await EntityService.update<any>({
             schema: 'almoxarifado',
             table: 'entrada_itens',
@@ -604,20 +858,86 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
             id: item.id,
             data: {
               quantidade_recebida: item.quantidade_recebida,
-              quantidade_aprovada: item.quantidade_aprovada,
+              quantidade_aprovada: deveDarEntrada ? qtdAprovada : (incluirEste ? (item.quantidade_aprovada ?? qtdAprovada) : 0),
               valor_unitario: item.valor_unitario,
               valor_total: item.valor_total,
               centro_custo_id: item.centro_custo_id || null,
               projeto_id: item.projeto_id || null,
+              almoxarifado_id: item.almoxarifado_id || null,
               lote: item.lote || null,
               validade: item.validade || null,
               observacoes: item.observacoes || null,
+              em_quarentena: emQuarentena,
+              quarentena_motivo: item.quarentena_motivo || null,
+              quarentena_em: emQuarentena ? (item.quarentena_em || now) : null,
+              quarentena_retirada_em: item.quarentena_retirada_em || null,
+              entrada_estoque_em: deveDarEntrada ? now : (item.entrada_estoque_em || null),
             },
-            skipCompanyFilter: true // A tabela não tem company_id diretamente
+            skipCompanyFilter: true
           });
+
+          if (deveDarEntrada) {
+            const listEstoque = await EntityService.list<any>({
+              schema: 'almoxarifado',
+              table: 'estoque_atual',
+              companyId: selectedCompany.id,
+              filters: { material_equipamento_id: item.material_equipamento_id, almoxarifado_id: item.almoxarifado_id },
+            });
+            const rowEstoque = listEstoque.data?.[0];
+            const valorTotalItem = Number(item.valor_total) || (Number(item.valor_unitario) || 0) * qtdAprovada;
+
+            if (rowEstoque) {
+              await EntityService.update<any>({
+                schema: 'almoxarifado',
+                table: 'estoque_atual',
+                companyId: selectedCompany.id,
+                id: rowEstoque.id,
+                data: {
+                  quantidade_atual: (rowEstoque.quantidade_atual ?? 0) + qtdAprovada,
+                  valor_total: (Number(rowEstoque.valor_total) || 0) + valorTotalItem,
+                },
+                skipCompanyFilter: true,
+              });
+            } else {
+              await EntityService.create<any>({
+                schema: 'almoxarifado',
+                table: 'estoque_atual',
+                companyId: selectedCompany.id,
+                data: {
+                  material_equipamento_id: item.material_equipamento_id,
+                  almoxarifado_id: item.almoxarifado_id,
+                  quantidade_atual: qtdAprovada,
+                  quantidade_reservada: 0,
+                  valor_total: valorTotalItem,
+                },
+              });
+            }
+
+            await EntityService.create<any>({
+              schema: 'almoxarifado',
+              table: 'movimentacoes_estoque',
+              companyId: selectedCompany.id,
+              data: {
+                company_id: selectedCompany.id,
+                material_equipamento_id: item.material_equipamento_id,
+                almoxarifado_origem_id: null,
+                almoxarifado_destino_id: item.almoxarifado_id,
+                tipo_movimentacao: 'entrada',
+                quantidade: qtdAprovada,
+                valor_unitario: item.valor_unitario ?? null,
+                valor_total: item.valor_total ?? null,
+                centro_custo_id: item.centro_custo_id || null,
+                projeto_id: item.projeto_id || null,
+                observacoes: `Entrada ${entradaParaEditar.id} - Confirmação de recebimento`,
+                usuario_id: user.id,
+                status: 'confirmado',
+              },
+            });
+          }
         }
 
-        toast.success('Pré-entrada confirmada com sucesso!');
+        queryClient.invalidateQueries({ queryKey: ['almoxarifado', 'estoque_atual'] });
+        toast.success('Recebimento confirmado. Itens não quarentena foram lançados no estoque.');
         onSuccess?.(entradaParaEditar.id);
         onClose();
         return;
@@ -627,6 +947,9 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
       const entradaData: any = {
         fornecedor_id: formData.fornecedor_id || null,
         numero_nota: formData.numero_nota,
+        serie_nota_fiscal: formData.serie_nota_fiscal || null,
+        tipo_documento_fiscal: formData.tipo_documento_fiscal || null,
+        chave_acesso: formData.chave_acesso || null,
         data_entrada: formData.data_entrada,
         valor_total: calcularValorTotal(),
         status: 'pendente',
@@ -655,6 +978,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
               valor_total: item.valor_total,
               centro_custo_id: item.centro_custo_id || null,
               projeto_id: item.projeto_id || null,
+              almoxarifado_id: item.almoxarifado_id || null,
               lote: item.lote || null,
               validade: item.validade || null,
               observacoes: item.observacoes || null,
@@ -676,6 +1000,104 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
     }
   };
 
+  /** Retira o item da quarentena e lança a quantidade aprovada no estoque. */
+  const retirarDaQuarentena = async (item: EntradaItem) => {
+    if (!entradaParaEditar || !selectedCompany?.id || !user?.id) {
+      toast.error('Dados incompletos para retirar da quarentena');
+      return;
+    }
+    if (!item.almoxarifado_id) {
+      toast.error('Item sem almoxarifado de destino definido');
+      return;
+    }
+    const qtd = item.quantidade_aprovada || 0;
+    if (qtd <= 0) {
+      toast.error('Quantidade aprovada deve ser maior que zero para lançar no estoque');
+      return;
+    }
+    setRetirarQuarentenaLoading(item.id);
+    try {
+      const now = new Date().toISOString();
+      await EntityService.update<any>({
+        schema: 'almoxarifado',
+        table: 'entrada_itens',
+        companyId: selectedCompany.id,
+        id: item.id,
+        data: {
+          em_quarentena: false,
+          quarentena_retirada_em: now,
+          entrada_estoque_em: now,
+        },
+        skipCompanyFilter: true,
+      });
+      setItens(prev => prev.map(i => i.id === item.id ? { ...i, em_quarentena: false, quarentena_retirada_em: now, entrada_estoque_em: now } : i));
+
+      const listEstoque = await EntityService.list<any>({
+        schema: 'almoxarifado',
+        table: 'estoque_atual',
+        companyId: selectedCompany.id,
+        filters: { material_equipamento_id: item.material_equipamento_id, almoxarifado_id: item.almoxarifado_id },
+      });
+      const rowEstoque = listEstoque.data?.[0];
+      const valorTotalItem = Number(item.valor_total) || (Number(item.valor_unitario) || 0) * qtd;
+
+      if (rowEstoque) {
+        await EntityService.update<any>({
+          schema: 'almoxarifado',
+          table: 'estoque_atual',
+          companyId: selectedCompany.id,
+          id: rowEstoque.id,
+          data: {
+            quantidade_atual: (rowEstoque.quantidade_atual ?? 0) + qtd,
+            valor_total: (Number(rowEstoque.valor_total) || 0) + valorTotalItem,
+          },
+        });
+      } else {
+        await EntityService.create<any>({
+          schema: 'almoxarifado',
+          table: 'estoque_atual',
+          companyId: selectedCompany.id,
+          data: {
+            material_equipamento_id: item.material_equipamento_id,
+            almoxarifado_id: item.almoxarifado_id,
+            quantidade_atual: qtd,
+            quantidade_reservada: 0,
+            valor_total: valorTotalItem,
+          },
+        });
+      }
+
+      await EntityService.create<any>({
+        schema: 'almoxarifado',
+        table: 'movimentacoes_estoque',
+        companyId: selectedCompany.id,
+        data: {
+          company_id: selectedCompany.id,
+          material_equipamento_id: item.material_equipamento_id,
+          almoxarifado_origem_id: null,
+          almoxarifado_destino_id: item.almoxarifado_id,
+          tipo_movimentacao: 'entrada',
+          quantidade: qtd,
+          valor_unitario: item.valor_unitario ?? null,
+          valor_total: item.valor_total ?? null,
+          centro_custo_id: item.centro_custo_id || null,
+          projeto_id: item.projeto_id || null,
+          observacoes: `Liberado da quarentena - Entrada ${entradaParaEditar.id}`,
+          usuario_id: user.id,
+          status: 'confirmado',
+        },
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['almoxarifado', 'estoque_atual'] });
+      toast.success('Item retirado da quarentena e quantidade lançada no estoque.');
+    } catch (err: any) {
+      console.error('Erro ao retirar da quarentena:', err);
+      toast.error(err?.message || 'Erro ao retirar da quarentena');
+    } finally {
+      setRetirarQuarentenaLoading(null);
+    }
+  };
+
   const getMaterialNome = (materialId: string) => {
     const material = materiais.find(m => m.id === materialId);
     return material ? `${material.codigo_interno} - ${material.nome}` : '';
@@ -692,11 +1114,11 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center">
             <Plus className="h-5 w-5 mr-2" />
-            {entradaParaEditar ? 'Confirmar Recebimento de Materiais' : 'Nova Entrada de Materiais'}
+            {entradaParaEditar ? 'Confirmar recebimento de materiais' : 'Nova Entrada de Materiais'}
           </DialogTitle>
           <DialogDescription>
             {entradaParaEditar 
-              ? 'Confirme os itens recebidos e suas quantidades. Ajuste conforme necessário.'
+              ? 'Marque apenas os itens que chegaram nesta remessa. Itens desmarcados poderão ser confirmados depois (entrada parcial).'
               : 'Preencha os dados da entrada de materiais no almoxarifado'
             }
           </DialogDescription>
@@ -732,13 +1154,56 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="numero_nota">Número da Nota {entradaParaEditar ? '' : '*'}</Label>
+                  <Label htmlFor="numero_nota">Número da Nota *</Label>
                   <Input
                     id="numero_nota"
                     value={formData.numero_nota}
                     onChange={(e) => setFormData({ ...formData, numero_nota: e.target.value })}
                     placeholder="Número da nota fiscal"
-                    required={!entradaParaEditar}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="serie_nota_fiscal">Série da Nota Fiscal {entradaParaEditar ? '*' : ''}</Label>
+                  <Input
+                    id="serie_nota_fiscal"
+                    value={formData.serie_nota_fiscal}
+                    onChange={(e) => setFormData({ ...formData, serie_nota_fiscal: e.target.value })}
+                    placeholder="Ex.: 1, 2"
+                    required={!!entradaParaEditar}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="tipo_documento_fiscal">Tipo de Documento Fiscal {entradaParaEditar ? '*' : ''}</Label>
+                  <Select
+                    value={formData.tipo_documento_fiscal || 'none'}
+                    onValueChange={(v) => setFormData({ ...formData, tipo_documento_fiscal: v === 'none' ? '' : v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhum</SelectItem>
+                      <SelectItem value="NF-e">NF-e</SelectItem>
+                      <SelectItem value="NFC-e">NFC-e</SelectItem>
+                      <SelectItem value="CT-e">CT-e</SelectItem>
+                      <SelectItem value="NF">NF (modelo 1/1A)</SelectItem>
+                      <SelectItem value="Outro">Outro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="chave_acesso">Chave de acesso {entradaParaEditar ? '*' : ''}</Label>
+                  <Input
+                    id="chave_acesso"
+                    value={formData.chave_acesso}
+                    onChange={(e) => setFormData({ ...formData, chave_acesso: e.target.value.replace(/\D/g, '').slice(0, 44) })}
+                    placeholder="44 dígitos da chave NF-e"
+                    maxLength={44}
+                    required={!!entradaParaEditar}
                   />
                 </div>
 
@@ -808,22 +1273,66 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                 </div>
               ) : (
                 <>
-                  {itens.map((item, index) => (
-                    <Card key={item.id} className="border-2">
-                      <CardHeader className="pb-3">
-                        <div className="flex justify-between items-center">
-                          <CardTitle className="text-sm">Item {index + 1}</CardTitle>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removerItem(item.id)}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
+                  <Accordion type="multiple" className="w-full space-y-2">
+                    {itens.map((item, index) => {
+                      const itemReadOnly = !!item.entrada_estoque_em;
+                      const nomeItem = item.material_equipamento_id ? getMaterialNome(item.material_equipamento_id) : `Item ${index + 1}`;
+                      return (
+                        <AccordionItem
+                          key={item.id}
+                          value={item.id}
+                          className={cn('border rounded-lg px-4 bg-card', itemReadOnly && 'opacity-95 bg-muted/30')}
+                        >
+                          <AccordionTrigger className="py-3 hover:no-underline [&[data-state=open]>svg]:rotate-180">
+                            <div className="flex flex-1 items-center justify-between gap-4 text-left flex-wrap">
+                              <span className="font-medium text-sm">{nomeItem}</span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {itemReadOnly ? (
+                                  <Badge variant="secondary" className="gap-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
+                                    <CheckCircle className="h-3 w-3" />
+                                    Entrada lançada
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 dark:text-amber-300">
+                                    <Clock className="h-3 w-3" />
+                                    Pendente
+                                  </Badge>
+                                )}
+                                {entradaParaEditar && !itemReadOnly && (
+                                  <label
+                                    className="flex items-center gap-2 cursor-pointer text-sm font-medium text-primary"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={incluirNaEntradaAgora[item.id] !== false}
+                                      onChange={(e) =>
+                                        setIncluirNaEntradaAgora((prev) => ({ ...prev, [item.id]: e.target.checked }))
+                                      }
+                                      className="rounded border-gray-300"
+                                    />
+                                    Incluir na entrada agora
+                                  </label>
+                                )}
+                              </div>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent className="pt-0 pb-4">
+                            <div className="flex justify-end mb-2">
+                              {!itemReadOnly && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removerItem(item.id)}
+                                  className="text-red-500 hover:text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-1" />
+                                  Remover item
+                                </Button>
+                              )}
+                            </div>
+                            <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <Label>Material *</Label>
@@ -838,6 +1347,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                                   variant="outline"
                                   role="combobox"
                                   className="w-full justify-between"
+                                  disabled={itemReadOnly}
                                 >
                                   {item.material_equipamento_id
                                     ? getMaterialNome(item.material_equipamento_id)
@@ -887,6 +1397,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                                 atualizarItem(item.id, 'quantidade_recebida', parseFloat(e.target.value) || 0)
                               }
                               required
+                              disabled={itemReadOnly}
                             />
                           </div>
 
@@ -900,6 +1411,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                               onChange={(e) =>
                                 atualizarItem(item.id, 'valor_unitario', parseFloat(e.target.value) || 0)
                               }
+                              disabled={itemReadOnly}
                             />
                           </div>
 
@@ -921,7 +1433,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                               onValueChange={(value) =>
                                 atualizarItem(item.id, 'centro_custo_id', value === 'none' ? undefined : value)
                               }
-                              disabled={!!entradaParaEditar}
+                              disabled={!!entradaParaEditar || itemReadOnly}
                             >
                               <SelectTrigger className={entradaParaEditar ? 'bg-gray-50' : ''}>
                                 <SelectValue placeholder="Selecione o centro de custo" />
@@ -944,7 +1456,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                               onValueChange={(value) =>
                                 atualizarItem(item.id, 'projeto_id', value === 'none' ? undefined : value)
                               }
-                              disabled={!!entradaParaEditar}
+                              disabled={!!entradaParaEditar || itemReadOnly}
                             >
                               <SelectTrigger className={entradaParaEditar ? 'bg-gray-50' : ''}>
                                 <SelectValue placeholder="Selecione o projeto" />
@@ -961,6 +1473,29 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                           </div>
 
                           <div className="space-y-2">
+                            <Label>Almoxarifado (destino do item)</Label>
+                            <Select
+                              value={item.almoxarifado_id || 'none'}
+                              onValueChange={(value) =>
+                                atualizarItem(item.id, 'almoxarifado_id', value === 'none' ? '' : value)
+                              }
+                              disabled={itemReadOnly || !!entradaParaEditar}
+                            >
+                              <SelectTrigger className={entradaParaEditar ? 'bg-muted' : ''}>
+                                <SelectValue placeholder="Selecione o almoxarifado" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Nenhum</SelectItem>
+                                {almoxarifados.map((a: any) => (
+                                  <SelectItem key={a.id} value={a.id}>
+                                    {a.nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
                             <Label>Lote</Label>
                             <Input
                               value={item.lote || ''}
@@ -968,17 +1503,23 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                                 atualizarItem(item.id, 'lote', e.target.value || undefined)
                               }
                               placeholder="Número do lote"
+                              disabled={itemReadOnly}
                             />
                           </div>
 
                           <div className="space-y-2">
-                            <Label>Validade</Label>
+                            <Label>
+                              Validade
+                              {entradaParaEditar && !itemReadOnly && incluirNaEntradaAgora[item.id] !== false && ' *'}
+                            </Label>
                             <Input
                               type="date"
                               value={item.validade || ''}
                               onChange={(e) =>
                                 atualizarItem(item.id, 'validade', e.target.value || undefined)
                               }
+                              disabled={itemReadOnly}
+                              required={!!entradaParaEditar && !itemReadOnly && incluirNaEntradaAgora[item.id] !== false}
                             />
                           </div>
                         </div>
@@ -992,11 +1533,242 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
                             }
                             placeholder="Observações sobre este item"
                             rows={2}
+                            disabled={itemReadOnly}
                           />
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+
+                        {/* Checklist de Recebimento (por item) - apenas no modal Confirmar Recebimento */}
+                        {entradaParaEditar && criterios.length > 0 && !itemReadOnly && (
+                          <div className="mt-6 rounded-xl border border-border bg-muted/20 p-5 shadow-sm">
+                            <div className="flex items-center gap-2 mb-4">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                <ClipboardCheck className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <h4 className="text-sm font-semibold tracking-tight">
+                                  Checklist de Recebimento
+                                  {incluirNaEntradaAgora[item.id] !== false && ' *'}
+                                </h4>
+                                <p className="text-xs text-muted-foreground">
+                                  {incluirNaEntradaAgora[item.id] !== false
+                                    ? 'Obrigatório quando "Incluir na entrada agora" está marcado. Avalie cada critério.'
+                                    : 'Avalie cada critério para este item'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="space-y-3">
+                              {criterios.map((criterio) => {
+                                const itemChecklist = checklistItems.filter((ci) => ci.item_id === item.id);
+                                const checklistItem = itemChecklist.find((ci) => ci.criterio === criterio.nome);
+                                const isConforme = checklistItem == null ? null : checklistItem.aprovado;
+                                const isNaoConforme = checklistItem != null && !checklistItem.aprovado;
+                                return (
+                                  <div
+                                    key={criterio.id}
+                                    className={cn(
+                                      'rounded-lg border bg-card p-4 transition-colors',
+                                      isConforme === true && 'border-green-200 dark:border-green-800/50 bg-green-50/50 dark:bg-green-950/20',
+                                      isNaoConforme && 'border-red-200 dark:border-red-800/50 bg-red-50/30 dark:bg-red-950/20'
+                                    )}
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="text-sm font-medium text-foreground">{criterio.nome}</span>
+                                        {criterio.obrigatorio && (
+                                          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                                            Obrigatório
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            try {
+                                              if (checklistItem) {
+                                                await updateChecklistItem(checklistItem.id, {
+                                                  aprovado: true,
+                                                  observacoes: undefined,
+                                                });
+                                              } else {
+                                                if (!user?.id) {
+                                                  toast.error('Usuário não identificado');
+                                                  return;
+                                                }
+                                                await createChecklistItem({
+                                                  entrada_id: entradaParaEditar.id,
+                                                  item_id: item.id,
+                                                  criterio: criterio.nome,
+                                                  aprovado: true,
+                                                  usuario_id: user.id,
+                                                });
+                                              }
+                                            } catch (err) {
+                                              console.error('Erro ao atualizar checklist:', err);
+                                              toast.error('Erro ao atualizar checklist');
+                                            }
+                                          }}
+                                          className={cn(
+                                            'inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                                            isConforme === true
+                                              ? 'border-green-500 bg-green-600 text-white shadow-sm hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800'
+                                              : 'border-border bg-background text-green-700 hover:bg-green-50 hover:border-green-300 dark:text-green-400 dark:hover:bg-green-950/30 dark:hover:border-green-700'
+                                          )}
+                                        >
+                                          <CheckCircle className="h-4 w-4" />
+                                          Conforme
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            try {
+                                              if (checklistItem) {
+                                                await updateChecklistItem(checklistItem.id, {
+                                                  aprovado: false,
+                                                });
+                                              } else {
+                                                if (!user?.id) {
+                                                  toast.error('Usuário não identificado');
+                                                  return;
+                                                }
+                                                await createChecklistItem({
+                                                  entrada_id: entradaParaEditar.id,
+                                                  item_id: item.id,
+                                                  criterio: criterio.nome,
+                                                  aprovado: false,
+                                                  usuario_id: user.id,
+                                                });
+                                              }
+                                            } catch (err) {
+                                              console.error('Erro ao atualizar checklist:', err);
+                                              toast.error('Erro ao atualizar checklist');
+                                            }
+                                          }}
+                                          className={cn(
+                                            'inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                                            isNaoConforme
+                                              ? 'border-red-500 bg-red-600 text-white shadow-sm hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800'
+                                              : 'border-border bg-background text-red-700 hover:bg-red-50 hover:border-red-300 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:border-red-700'
+                                          )}
+                                        >
+                                          <XCircle className="h-4 w-4" />
+                                          Não Conforme
+                                        </button>
+                                      </div>
+                                    </div>
+                                    {isNaoConforme && (
+                                      <div className="mt-4 pt-4 border-t border-red-200/50 dark:border-red-800/30">
+                                        <Label htmlFor={`motivo-${item.id}-${criterio.id}`} className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-2">
+                                          <XCircle className="h-3.5 w-3.5" />
+                                          Motivo (obrigatório quando não conforme)
+                                        </Label>
+                                        <Textarea
+                                          id={`motivo-${item.id}-${criterio.id}`}
+                                          className="min-h-[88px] rounded-lg border-red-200/70 bg-background focus-visible:ring-red-500/30 dark:border-red-800/50"
+                                          placeholder="Descreva o motivo da não conformidade..."
+                                          defaultValue={checklistItem?.observacoes ?? ''}
+                                          onBlur={async (e) => {
+                                            const motivo = e.target.value?.trim() ?? '';
+                                            if (checklistItem && motivo !== (checklistItem.observacoes ?? '')) {
+                                              try {
+                                                await updateChecklistItem(checklistItem.id, { observacoes: motivo || undefined });
+                                              } catch (err) {
+                                                console.error('Erro ao salvar motivo:', err);
+                                                toast.error('Erro ao salvar motivo');
+                                              }
+                                            }
+                                          }}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Quarentena: exibida quando há "Não Conforme" no checklist ou item já está/esteve em quarentena */}
+                        {entradaParaEditar && (() => {
+                          if (itemReadOnly) return null;
+                          const itemChecklistForItem = checklistItems.filter((ci) => ci.item_id === item.id);
+                          const hasNaoConforme = itemChecklistForItem.some((ci) => !ci.aprovado);
+                          const showQuarentenaSection = hasNaoConforme || item.em_quarentena || item.quarentena_retirada_em;
+                          if (!showQuarentenaSection) return null;
+                          return (
+                            <div className="mt-4 pt-4 border-t space-y-3">
+                              <Label className="text-sm font-semibold flex items-center gap-2">
+                                <ShieldAlert className="h-4 w-4" />
+                                Quarentena
+                              </Label>
+                              {item.em_quarentena && !item.quarentena_retirada_em ? (
+                                <div className="space-y-2 rounded-md bg-amber-50 dark:bg-amber-950/30 p-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-200 dark:bg-amber-800 px-2 py-0.5 text-xs font-medium text-amber-900 dark:text-amber-100">
+                                      <ShieldAlert className="h-3 w-3" /> Em quarentena
+                                    </span>
+                                    {item.quarentena_motivo && (
+                                      <span className="text-sm text-muted-foreground">
+                                        Motivo: {item.quarentena_motivo}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-green-600 text-green-700 hover:bg-green-50 dark:hover:bg-green-950/30"
+                                    disabled={!!retirarQuarentenaLoading || (item.quantidade_aprovada ?? 0) <= 0 || !item.almoxarifado_id}
+                                    onClick={() => retirarDaQuarentena(item)}
+                                  >
+                                    {retirarQuarentenaLoading === item.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    ) : (
+                                      <ShieldCheck className="h-4 w-4 mr-2" />
+                                    )}
+                                    Retirar da quarentena e lançar no estoque
+                                  </Button>
+                                </div>
+                              ) : item.quarentena_retirada_em ? (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <ShieldCheck className="h-3 w-3 text-green-600" />
+                                  Liberado da quarentena
+                                </p>
+                              ) : hasNaoConforme ? (
+                                <div className="space-y-2">
+                                  <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={item.em_quarentena ?? false}
+                                      onChange={(e) =>
+                                        atualizarItem(item.id, 'em_quarentena', e.target.checked)
+                                      }
+                                      className="rounded border-gray-300"
+                                    />
+                                    <span className="text-sm">Colocar este item em quarentena</span>
+                                  </label>
+                                  {(item.em_quarentena ?? false) && (
+                                    <Textarea
+                                      value={item.quarentena_motivo || ''}
+                                      onChange={(e) =>
+                                        atualizarItem(item.id, 'quarentena_motivo', e.target.value || undefined)
+                                      }
+                                      placeholder="Motivo da quarentena"
+                                      rows={2}
+                                      className="mt-1"
+                                    />
+                                  )}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      );
+                    })}
+                  </Accordion>
 
                   {/* Resumo */}
                   <Card className="bg-gray-50">
@@ -1031,7 +1803,7 @@ const NovaEntradaModal: React.FC<NovaEntradaModalProps> = ({
               ) : (
                 <>
                   <Plus className="h-4 w-4 mr-2" />
-                  {entradaParaEditar ? 'Confirmar Recebimento' : 'Criar Entrada'}
+                  {entradaParaEditar ? 'Confirmar' : 'Criar Entrada'}
                 </>
               )}
             </Button>

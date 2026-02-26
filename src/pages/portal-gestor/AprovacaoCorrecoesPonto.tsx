@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
-import { usePendingAttendanceCorrections, useApproveAttendanceCorrection, useRejectAttendanceCorrection, useAttendanceCorrectionsStats } from '@/hooks/rh/useAttendanceCorrections';
+import { useAttendanceCorrectionsForManager, useApproveAttendanceCorrection, useRejectAttendanceCorrection, useAttendanceCorrectionsStats } from '@/hooks/rh/useAttendanceCorrections';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -56,20 +56,20 @@ export default function AprovacaoCorrecoesPonto() {
   const [isRejeicaoDialogOpen, setIsRejeicaoDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
 
-  // Hooks de dados
-  const { data: pendingCorrections, isLoading: pendingLoading, error: pendingError } = usePendingAttendanceCorrections(selectedCompany?.id || '');
+  // Lista de correções do gestor (com filtro de status alinhado aos cards)
+  const statusFilterKey = (statusFilter === 'all' ? 'all' : statusFilter) as 'all' | 'pendente' | 'aprovado' | 'rejeitado';
+  const { data: correctionsForManager, isLoading: pendingLoading, error: pendingError } = useAttendanceCorrectionsForManager(selectedCompany?.id || '', statusFilterKey);
   const { data: stats, isLoading: statsLoading } = useAttendanceCorrectionsStats(selectedCompany?.id || '');
   
   // Mutations
   const approveMutation = useApproveAttendanceCorrection();
   const rejectMutation = useRejectAttendanceCorrection();
 
-  // Filtrar correções
-  const filteredCorrections = pendingCorrections?.filter(correction => {
+  // Filtrar correções apenas por busca (status já aplicado na API)
+  const filteredCorrections = correctionsForManager?.filter(correction => {
     const matchesSearch = correction.funcionario_nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          correction.funcionario_matricula?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || correction.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    return matchesSearch;
   }) || [];
 
   const getStatusColor = (status: string) => {
@@ -154,9 +154,11 @@ export default function AprovacaoCorrecoesPonto() {
         description: `A correção de ponto foi aprovada com sucesso.`,
       });
 
+      // Fechar e limpar imediatamente para evitar estado inconsistente após vários ciclos
       setIsAprovacaoDialogOpen(false);
       setAprovacaoObservacoes('');
       setSelectedCorrection(null);
+      approveMutation.reset();
     } catch (error) {
       toast({
         title: "Erro ao aprovar correção",
@@ -183,6 +185,7 @@ export default function AprovacaoCorrecoesPonto() {
       setIsRejeicaoDialogOpen(false);
       setRejeicaoObservacoes('');
       setSelectedCorrection(null);
+      rejectMutation.reset();
     } catch (error) {
       toast({
         title: "Erro ao rejeitar correção",
@@ -193,12 +196,14 @@ export default function AprovacaoCorrecoesPonto() {
   };
 
   const openAprovacaoDialog = (correction: CorrectionDetails) => {
+    approveMutation.reset();
     setSelectedCorrection(correction);
     setAprovacaoObservacoes('');
     setIsAprovacaoDialogOpen(true);
   };
 
   const openRejeicaoDialog = (correction: CorrectionDetails) => {
+    rejectMutation.reset();
     setSelectedCorrection(correction);
     setRejeicaoObservacoes('');
     setIsRejeicaoDialogOpen(true);
@@ -437,8 +442,19 @@ export default function AprovacaoCorrecoesPonto() {
         </CardContent>
       </Card>
 
-      {/* Dialog de Aprovação */}
-      <Dialog open={isAprovacaoDialogOpen} onOpenChange={setIsAprovacaoDialogOpen}>
+      {/* Dialog de Aprovação - key força nova instância a cada abertura/fechamento para evitar overlay preso (Radix) em alguns navegadores */}
+      <Dialog
+        key={isAprovacaoDialogOpen ? `approve-${selectedCorrection?.id ?? 'open'}` : 'approve-closed'}
+        open={isAprovacaoDialogOpen}
+        onOpenChange={(open) => {
+          setIsAprovacaoDialogOpen(open);
+          if (!open) {
+            setAprovacaoObservacoes('');
+            setSelectedCorrection(null);
+            approveMutation.reset();
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -483,8 +499,19 @@ export default function AprovacaoCorrecoesPonto() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de Rejeição */}
-      <Dialog open={isRejeicaoDialogOpen} onOpenChange={setIsRejeicaoDialogOpen}>
+      {/* Dialog de Rejeição - key força nova instância a cada ciclo para evitar overlay preso em alguns navegadores */}
+      <Dialog
+        key={isRejeicaoDialogOpen ? `reject-${selectedCorrection?.id ?? 'open'}` : 'reject-closed'}
+        open={isRejeicaoDialogOpen}
+        onOpenChange={(open) => {
+          setIsRejeicaoDialogOpen(open);
+          if (!open) {
+            setRejeicaoObservacoes('');
+            setSelectedCorrection(null);
+            rejectMutation.reset();
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

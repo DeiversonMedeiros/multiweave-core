@@ -21,7 +21,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { FileText, Save, X, AlertCircle, File } from 'lucide-react';
 import { format } from 'date-fns';
 import { ContaReceber, ContaReceberFormData } from '@/integrations/supabase/financial-types';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { usePartners } from '@/hooks/usePartners';
 import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
@@ -71,7 +71,7 @@ interface ContaReceberFormProps {
 
 export function ContaReceberForm({ conta, onSave, onCancel, loading = false }: ContaReceberFormProps) {
   const { selectedCompany } = useCompany();
-  const { data: costCentersData, isLoading: loadingCostCenters } = useCostCenters();
+  const { data: costCentersData, isLoading: loadingCostCenters } = useActiveCostCenters();
   const { data: projectsData, isLoading: loadingProjects } = useProjects();
   const { data: partnersData, isLoading: loadingPartners } = usePartners();
   const { data: classesFinanceirasData, isLoading: loadingClassesFinanceiras } = useActiveClassesFinanceiras();

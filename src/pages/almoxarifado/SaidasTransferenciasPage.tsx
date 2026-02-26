@@ -27,16 +27,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useTransferencias, Transferencia } from '@/hooks/almoxarifado/useTransferenciasQuery';
+import { useTransferencias, useCreateTransferencia, useUpdateTransferencia, useCreateTransferenciaItem, Transferencia } from '@/hooks/almoxarifado/useTransferenciasQuery';
 import { useMovimentacoesEstoque } from '@/hooks/almoxarifado/useMovimentacoesEstoqueQuery';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
 import { useCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useMaterialExitRequests } from '@/hooks/approvals/useMaterialExitRequests';
-import { usePendingApprovals } from '@/hooks/approvals/useApprovals';
+import { usePendingApprovals, useCreateApprovalsForProcess } from '@/hooks/approvals/useApprovals';
 import { MaterialExitRequest } from '@/services/approvals/approvalService';
+import { useCompany } from '@/lib/company-context';
 import { MaterialExitRequestForm } from '@/components/almoxarifado/MaterialExitRequestForm';
+import { TransferenciaMaterialForm } from '@/components/almoxarifado/TransferenciaMaterialForm';
+import type { SelectedItem } from '@/components/almoxarifado/ItemSelectionModal';
+import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
 
 import { RequirePage } from '@/components/RequireAuth';
@@ -51,20 +55,26 @@ const SaidasTransferenciasPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('transferencias');
   const [selectedSaidaMaterial, setSelectedSaidaMaterial] = useState<MaterialExitRequest | null>(null);
   const [isSaidaModalOpen, setIsSaidaModalOpen] = useState(false);
+  const [isTransferenciaModalOpen, setIsTransferenciaModalOpen] = useState(false);
 
-  // Hooks para dados
-  const { 
+  const { user } = useAuth();
+  const transferenciaFilters = {
+    status: filterStatus !== 'todos' ? filterStatus : undefined,
+    almoxarifado_origem_id: filterAlmoxarifado !== 'todos' ? filterAlmoxarifado : undefined,
+  };
+
+  // Hooks para transferências (lista + mutações)
+  const {
     data: transferenciasData,
-    loading: transferenciasLoading, 
-    error: transferenciasError, 
-    refetch: refetchTransferencias, 
-    createTransferencia, 
-    aprovarTransferencia, 
-    rejeitarTransferencia, 
-    executarTransferencia 
-  } = useTransferencias();
-  
-  const transferencias = transferenciasData || [];
+    isLoading: transferenciasLoading,
+    error: transferenciasError,
+    refetch: refetchTransferencias,
+  } = useTransferencias(transferenciaFilters);
+  const createTransferenciaMutation = useCreateTransferencia();
+  const updateTransferenciaMutation = useUpdateTransferencia();
+  const createTransferenciaItemMutation = useCreateTransferenciaItem();
+
+  const transferencias = Array.isArray(transferenciasData) ? transferenciasData : [];
 
   const { 
     movimentacoes, 
@@ -89,10 +99,10 @@ const SaidasTransferenciasPage: React.FC = () => {
   } = useMaterialExitRequests();
 
   // Hooks para aprovações
-  const { 
-    data: pendingApprovals = []
-  } = usePendingApprovals();
-  
+  const { data: pendingApprovals = [] } = usePendingApprovals();
+  const createApprovalsForProcess = useCreateApprovalsForProcess();
+  const { selectedCompany } = useCompany();
+
   const almoxarifados = almoxarifadosData || [];
   const materiais = materiaisData || [];
   const { data: costCentersData } = useCostCenters();
@@ -101,26 +111,27 @@ const SaidasTransferenciasPage: React.FC = () => {
   const costCenters = costCentersData?.data || [];
   const projects = projectsData?.data || [];
 
-  // Aplicar filtros
+  // Aplicar filtros (movimentações)
   useEffect(() => {
-    if (activeTab === 'transferencias') {
-      refetchTransferencias({
-        status: filterStatus !== 'todos' ? filterStatus : undefined,
-        almoxarifado_origem_id: filterAlmoxarifado !== 'todos' ? filterAlmoxarifado : undefined
-      });
-    } else {
+    if (activeTab !== 'transferencias') {
       refetchMovimentacoes({
         tipo_movimentacao: filterTipo !== 'todos' ? filterTipo : undefined,
         status: filterStatus !== 'todos' ? filterStatus : undefined,
         almoxarifado_id: filterAlmoxarifado !== 'todos' ? filterAlmoxarifado : undefined
       });
     }
-  }, [filterStatus, filterTipo, filterAlmoxarifado, activeTab, refetchTransferencias, refetchMovimentacoes]);
+  }, [filterStatus, filterTipo, filterAlmoxarifado, activeTab, refetchMovimentacoes]);
 
   const handleAprovarTransferencia = async (transferenciaId: string) => {
     try {
-      const aprovadorId = 'current-user-id'; // TODO: Implementar obtenção do usuário atual
-      await aprovarTransferencia(transferenciaId, aprovadorId);
+      await updateTransferenciaMutation.mutateAsync({
+        id: transferenciaId,
+        data: {
+          status: 'aprovada',
+          data_aprovacao: new Date().toISOString(),
+          aprovador_id: user?.id,
+        },
+      });
       toast.success('Transferência aprovada com sucesso!');
     } catch (error) {
       toast.error('Erro ao aprovar transferência');
@@ -131,9 +142,11 @@ const SaidasTransferenciasPage: React.FC = () => {
   const handleRejeitarTransferencia = async (transferenciaId: string) => {
     const motivo = prompt('Motivo da rejeição:');
     if (!motivo) return;
-
     try {
-      await rejeitarTransferencia(transferenciaId, motivo);
+      await updateTransferenciaMutation.mutateAsync({
+        id: transferenciaId,
+        data: { status: 'rejeitada', observacoes: motivo },
+      });
       toast.success('Transferência rejeitada');
     } catch (error) {
       toast.error('Erro ao rejeitar transferência');
@@ -143,7 +156,13 @@ const SaidasTransferenciasPage: React.FC = () => {
 
   const handleExecutarTransferencia = async (transferenciaId: string) => {
     try {
-      await executarTransferencia(transferenciaId);
+      await updateTransferenciaMutation.mutateAsync({
+        id: transferenciaId,
+        data: {
+          status: 'transferida',
+          data_transferencia: new Date().toISOString(),
+        },
+      });
       toast.success('Transferência executada com sucesso!');
     } catch (error) {
       toast.error('Erro ao executar transferência');
@@ -151,12 +170,65 @@ const SaidasTransferenciasPage: React.FC = () => {
     }
   };
 
+  const openTransferenciaModal = () => setIsTransferenciaModalOpen(true);
+  const closeTransferenciaModal = () => setIsTransferenciaModalOpen(false);
+
+  const handleCriarTransferencia = async (
+    data: { almoxarifado_origem_id: string; almoxarifado_destino_id: string; centro_custo_saida_id: string; centro_custo_entrada_id: string; projeto_id: string; observacoes: string },
+    items: SelectedItem[]
+  ) => {
+    if (!user?.id || !selectedCompany?.id) {
+      toast.error('Usuário ou empresa não identificados.');
+      return;
+    }
+    try {
+      const created = await createTransferenciaMutation.mutateAsync({
+        almoxarifado_origem_id: data.almoxarifado_origem_id,
+        almoxarifado_destino_id: data.almoxarifado_destino_id,
+        solicitante_id: user.id,
+        data_solicitacao: new Date().toISOString(),
+        status: 'pendente',
+        observacoes: data.observacoes || undefined,
+      });
+      if (!created?.id) {
+        toast.error('Erro ao criar o cabeçalho da transferência.');
+        return;
+      }
+      for (const item of items) {
+        await createTransferenciaItemMutation.mutateAsync({
+          transferencia_id: created.id,
+          material_equipamento_id: item.material_id,
+          quantidade_solicitada: item.quantidade_solicitada,
+          centro_custo_id: data.centro_custo_entrada_id || undefined,
+          projeto_id: data.projeto_id || undefined,
+        });
+      }
+      try {
+        await createApprovalsForProcess.mutateAsync({
+          processo_tipo: 'solicitacao_transferencia_material',
+          processo_id: created.id,
+        });
+      } catch (err) {
+        console.error('Erro ao criar fluxo de aprovação da transferência:', err);
+        toast.error('Transferência criada, mas o fluxo de aprovação não foi iniciado.');
+      }
+      toast.success('Transferência criada com sucesso!');
+      closeTransferenciaModal();
+    } catch (error) {
+      toast.error('Erro ao criar transferência');
+      console.error(error);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
-    const statusConfig = {
+    const statusConfig: Record<string, { color: string; icon: typeof Clock; text: string }> = {
       pendente: { color: 'bg-yellow-100 text-yellow-800', icon: Clock, text: 'Pendente' },
       aprovado: { color: 'bg-blue-100 text-blue-800', icon: CheckCircle, text: 'Aprovado' },
+      aprovada: { color: 'bg-blue-100 text-blue-800', icon: CheckCircle, text: 'Aprovada' },
       rejeitado: { color: 'bg-red-100 text-red-800', icon: XCircle, text: 'Rejeitado' },
+      rejeitada: { color: 'bg-red-100 text-red-800', icon: XCircle, text: 'Rejeitada' },
       transferido: { color: 'bg-green-100 text-green-800', icon: CheckCircle, text: 'Transferido' },
+      transferida: { color: 'bg-green-100 text-green-800', icon: CheckCircle, text: 'Transferida' },
       confirmado: { color: 'bg-green-100 text-green-800', icon: CheckCircle, text: 'Confirmado' },
       cancelado: { color: 'bg-gray-100 text-gray-800', icon: XCircle, text: 'Cancelado' }
     };
@@ -216,7 +288,11 @@ const SaidasTransferenciasPage: React.FC = () => {
             </p>
           </div>
           <div className="flex space-x-2">
-            <Button className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-md shadow-sm transition-colors duration-200 whitespace-nowrap flex items-center">
+            <Button
+              type="button"
+              className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-md shadow-sm transition-colors duration-200 whitespace-nowrap flex items-center"
+              onClick={openTransferenciaModal}
+            >
               <ArrowRightLeft className="h-4 w-4 mr-2" />
               Nova Transferência
             </Button>
@@ -382,7 +458,7 @@ const SaidasTransferenciasPage: React.FC = () => {
                     <p className="text-gray-600 mb-4">
                       Comece criando uma nova transferência entre almoxarifados
                     </p>
-                    <Button>
+                    <Button type="button" onClick={openTransferenciaModal}>
                       <Plus className="h-4 w-4 mr-2" />
                       Nova Transferência
                     </Button>
@@ -777,14 +853,27 @@ const SaidasTransferenciasPage: React.FC = () => {
           onSubmit={async (data, items) => {
             try {
               if (selectedSaidaMaterial) {
-                await updateRequest.mutateAsync({ 
-                  id: selectedSaidaMaterial.id, 
-                  data 
+                await updateRequest.mutateAsync({
+                  id: selectedSaidaMaterial.id,
+                  data,
                 });
               } else {
-                await createRequest.mutateAsync(data);
-                // TODO: Salvar itens da solicitação
-                console.log('Itens selecionados:', items);
+                const created = await createRequest.mutateAsync(data);
+                // Trigger em almoxarifado.solicitacoes_saida_materiais já chama create_approvals_for_process.
+                // Chamada abaixo é redundante mas segura (a RPC é idempotente: DELETE antes de INSERT).
+                if (created?.id && selectedCompany?.id) {
+                  try {
+                    await createApprovalsForProcess.mutateAsync({
+                      processo_tipo: 'solicitacao_saida_material',
+                      processo_id: created.id,
+                    });
+                  } catch (approvalError) {
+                    console.error('Erro ao criar fluxo de aprovação:', approvalError);
+                    toast.error('Solicitação criada, mas o fluxo de aprovação não foi iniciado. Tente reenviar para aprovação.');
+                  }
+                }
+                // TODO: Salvar itens da solicitação (itens da saída)
+                if (items?.length) console.log('Itens selecionados:', items);
               }
               setIsSaidaModalOpen(false);
               setSelectedSaidaMaterial(null);
@@ -799,6 +888,15 @@ const SaidasTransferenciasPage: React.FC = () => {
           isLoading={createRequest.isPending || updateRequest.isPending}
         />
       )}
+
+      {/* Modal Nova Transferência de Materiais */}
+      <TransferenciaMaterialForm
+        open={isTransferenciaModalOpen}
+        onOpenChange={setIsTransferenciaModalOpen}
+        onSubmit={handleCriarTransferencia}
+        onCancel={closeTransferenciaModal}
+        isLoading={createTransferenciaMutation.isPending || createTransferenciaItemMutation.isPending}
+      />
     </div>
     </RequirePage>
   );

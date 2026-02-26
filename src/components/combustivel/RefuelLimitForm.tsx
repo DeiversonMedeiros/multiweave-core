@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useVehicles } from '@/hooks/frota/useFrotaData';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useQuery } from '@tanstack/react-query';
 import { EntityService } from '@/services/generic/entityService';
@@ -41,7 +41,7 @@ interface RefuelLimitFormProps {
 export function RefuelLimitForm({ limit, onSubmit, onCancel, isLoading }: RefuelLimitFormProps) {
   const { selectedCompany } = useCompany();
   const { data: vehicles } = useVehicles({ situacao: 'ativo' });
-  const { data: costCenters } = useCostCenters();
+  const { data: costCenters } = useActiveCostCenters();
   const { data: projects } = useProjects();
   
   // Hook para buscar profiles

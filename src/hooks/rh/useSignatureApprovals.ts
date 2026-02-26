@@ -59,6 +59,26 @@ export function useRejectSignature() {
 }
 
 /**
+ * Hook para buscar lista de funcionários do gestor com status de assinatura (mês/ano)
+ */
+export function useEmployeeSignatureListForManager(monthYear: string | null) {
+  const { selectedCompany } = useCompany();
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ['employee-signature-list-manager', selectedCompany?.id, user?.id, monthYear],
+    queryFn: () =>
+      timeRecordSignatureService.getEmployeeSignatureListForManager(
+        selectedCompany?.id || '',
+        monthYear!,
+        user?.id || ''
+      ),
+    enabled: !!selectedCompany?.id && !!user?.id && !!monthYear && monthYear.length === 7,
+    staleTime: 1 * 60 * 1000,
+  });
+}
+
+/**
  * Hook para buscar estatísticas de assinaturas pendentes
  */
 export function useSignatureApprovalsStats() {

@@ -30,36 +30,66 @@ export function TimeRecordSignatureModal({
   const [hasSignature, setHasSignature] = useState(false);
   const [signatureData, setSignatureData] = useState<any>(null);
 
-  useEffect(() => {
+  // Coordenadas em pixels lógicos (espaço do canvas após scale(dpr)):
+  // sempre usa o rect atual do elemento para evitar offset com scroll/transform do modal
+  const getCanvasCoords = (
+    canvas: HTMLCanvasElement,
+    clientX: number,
+    clientY: number
+  ): { x: number; y: number } => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  };
+
+  const initCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Configurar canvas
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(rect.width));
+    const h = Math.max(1, Math.floor(rect.height));
+    const dpr = window.devicePixelRatio || 1;
+    // Tamanho interno = tamanho exibido × DPR; estilo fixa o tamanho exibido para não esticar
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+  };
 
-    // Ajustar tamanho do canvas
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * window.devicePixelRatio;
-    canvas.height = rect.height * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  useEffect(() => {
+    // Inicializar após o layout (modal pode ainda estar animando no primeiro frame)
+    const raf = requestAnimationFrame(() => {
+      initCanvas();
+    });
+    const canvas = canvasRef.current;
+    if (!canvas) return () => cancelAnimationFrame(raf);
+    const ro = new ResizeObserver(() => initCanvas());
+    ro.observe(canvas);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, []);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const { x, y } = getCanvasCoords(canvas, e.clientX, e.clientY);
+    setIsDrawing(true);
     ctx.beginPath();
     ctx.moveTo(x, y);
   };
@@ -68,11 +98,9 @@ export function TimeRecordSignatureModal({
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const { x, y } = getCanvasCoords(canvas, e.clientX, e.clientY);
     ctx.lineTo(x, y);
     ctx.stroke();
   };
@@ -114,7 +142,8 @@ export function TimeRecordSignatureModal({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const dpr = window.devicePixelRatio || 1;
+    ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
     setHasSignature(false);
     setSignatureData(null);
   };
@@ -200,15 +229,13 @@ export function TimeRecordSignatureModal({
                     onTouchStart={(e) => {
                       e.preventDefault();
                       if (e.touches.length !== 1) return;
-                      setIsDrawing(true);
                       const canvas = canvasRef.current;
                       if (!canvas) return;
-                      const rect = canvas.getBoundingClientRect();
                       const touch = e.touches[0];
-                      const x = touch.clientX - rect.left;
-                      const y = touch.clientY - rect.top;
+                      const { x, y } = getCanvasCoords(canvas, touch.clientX, touch.clientY);
                       const ctx = canvas.getContext('2d');
                       if (!ctx) return;
+                      setIsDrawing(true);
                       ctx.beginPath();
                       ctx.moveTo(x, y);
                     }}
@@ -217,10 +244,8 @@ export function TimeRecordSignatureModal({
                       if (!isDrawing || e.touches.length !== 1) return;
                       const canvas = canvasRef.current;
                       if (!canvas) return;
-                      const rect = canvas.getBoundingClientRect();
                       const touch = e.touches[0];
-                      const x = touch.clientX - rect.left;
-                      const y = touch.clientY - rect.top;
+                      const { x, y } = getCanvasCoords(canvas, touch.clientX, touch.clientY);
                       const ctx = canvas.getContext('2d');
                       if (!ctx) return;
                       ctx.lineTo(x, y);

@@ -66,7 +66,7 @@ export function useActiveCostCenters() {
         schema: 'public',
         table: 'cost_centers',
         companyId: selectedCompany?.id || '',
-        filters: { ativo: true },
+        filters: { ativo: true, aceita_lancamentos: true },
         page: 1,
         pageSize: 100
       });

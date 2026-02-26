@@ -30,6 +30,8 @@ type Service = {
   descricao?: string | null;
   project_id?: string | null;
   partner_id?: string | null;
+  custo?: number | null;
+  receita?: number | null;
   ativo: boolean;
   created_at?: string;
   updated_at?: string;
@@ -43,6 +45,8 @@ const serviceSchema = z.object({
   descricao: z.string().optional(),
   project_id: z.string().optional().nullable().transform((val) => val === "none" ? null : val),
   partner_id: z.string().optional().nullable().transform((val) => val === "none" ? null : val),
+  custo: z.number().min(0, "Custo deve ser maior ou igual a zero").nullable().optional(),
+  receita: z.number().min(0, "Receita deve ser maior ou igual a zero").nullable().optional(),
   ativo: z.boolean().default(true),
 });
 
@@ -66,6 +70,8 @@ export default function Servicos() {
       descricao: "",
       project_id: null,
       partner_id: null,
+      custo: null,
+      receita: null,
       ativo: true,
     },
   });
@@ -169,6 +175,8 @@ export default function Servicos() {
           descricao: "",
           project_id: null, 
           partner_id: null,
+          custo: null,
+          receita: null,
           ativo: true 
         });
       } catch (error: any) {
@@ -179,6 +187,8 @@ export default function Servicos() {
           descricao: "",
           project_id: null, 
           partner_id: null,
+          custo: null,
+          receita: null,
           ativo: true 
         });
       }
@@ -189,6 +199,8 @@ export default function Servicos() {
         descricao: "",
         project_id: null, 
         partner_id: null,
+        custo: null,
+        receita: null,
         ativo: true 
       });
     }
@@ -204,6 +216,8 @@ export default function Servicos() {
       descricao: servico.descricao || "",
       project_id: servico.project_id || "none",
       partner_id: servico.partner_id || "none",
+      custo: servico.custo ?? null,
+      receita: servico.receita ?? null,
       ativo: servico.ativo,
     });
     setIsDialogOpen(true);
@@ -236,6 +250,8 @@ export default function Servicos() {
         descricao: data.descricao || null,
         project_id: data.project_id || null,
         partner_id: data.partner_id || null,
+        custo: data.custo ?? null,
+        receita: data.receita ?? null,
         ativo: data.ativo,
         company_id: selectedCompany.id,
       };
@@ -392,6 +408,64 @@ export default function Servicos() {
                   </FormItem>
                 )}
               />
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="custo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Custo</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0,00"
+                          value={field.value ?? ""}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === "") {
+                              field.onChange(null);
+                            } else {
+                              const parsed = parseFloat(value.replace(",", "."));
+                              field.onChange(isNaN(parsed) ? null : parsed);
+                            }
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="receita"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Receita</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0,00"
+                          value={field.value ?? ""}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === "") {
+                              field.onChange(null);
+                            } else {
+                              const parsed = parseFloat(value.replace(",", "."));
+                              field.onChange(isNaN(parsed) ? null : parsed);
+                            }
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <FormField
                 control={form.control}

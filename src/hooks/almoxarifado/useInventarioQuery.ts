@@ -35,6 +35,15 @@ export interface InventarioItem {
   updated_at: string;
 }
 
+/** Resumo por inventário (contagem/itens). A API não retorna esses campos; usar defaults quando ausentes. */
+export interface ResumoInventario {
+  percentual_concluido: number;
+  total_itens: number;
+  itens_contados: number;
+  itens_divergentes: number;
+  diferenca_valor: number;
+}
+
 // =====================================================
 // HOOKS DE CONSULTA
 // =====================================================
@@ -81,9 +90,11 @@ export function useCreateInventario() {
     mutationFn: async (data: Omit<Inventario, 'id' | 'created_at' | 'updated_at' | 'company_id'>) => {
       if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
       
-      return await EntityService.create<Inventario>('almoxarifado', 'inventarios', {
-        ...data,
-        company_id: selectedCompany.id
+      return await EntityService.create<Inventario>({
+        schema: 'almoxarifado',
+        table: 'inventarios',
+        companyId: selectedCompany.id,
+        data: { ...data, company_id: selectedCompany.id }
       });
     },
     onSuccess: () => {
@@ -97,10 +108,18 @@ export function useCreateInventario() {
  */
 export function useUpdateInventario() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Inventario> }) => {
-      return await EntityService.update<Inventario>('almoxarifado', 'inventarios', id, data);
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      return await EntityService.update<Inventario>({
+        schema: 'almoxarifado',
+        table: 'inventarios',
+        companyId: selectedCompany.id,
+        id,
+        data
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['almoxarifado', 'inventarios'] });
@@ -166,19 +185,23 @@ export function useInventario() {
     });
   };
 
-  const getResumoInventario = () => {
-    const resumo = {
-      total_inventarios: inventarios.length,
-      inventarios_abertos: inventarios.filter(i => i.status === 'aberto').length,
-      inventarios_em_andamento: inventarios.filter(i => i.status === 'em_andamento').length,
-      inventarios_concluidos: inventarios.filter(i => i.status === 'concluido').length,
-      inventarios_cancelados: inventarios.filter(i => i.status === 'cancelado').length,
-      total_itens: inventarios.reduce((sum, i) => sum + i.total_itens, 0),
-      itens_contados: inventarios.reduce((sum, i) => sum + i.itens_contados, 0),
-      total_divergencias: inventarios.reduce((sum, i) => sum + i.divergencias, 0)
-    };
-
-    return resumo;
+  /** Resumo global (sem id) ou por inventário (com id). Por inventário usa dados do item quando existirem; senão defaults seguros. */
+  const getResumoInventario = (inventarioId?: string): ResumoInventario | null => {
+    if (inventarioId) {
+      const inv = inventarios.find(i => i.id === inventarioId);
+      const total = Number(inv?.total_itens) || 0;
+      const contados = Number(inv?.itens_contados) || 0;
+      const divergencias = Number(inv?.divergencias) ?? 0;
+      const percentual = total > 0 ? (contados / total) * 100 : 0;
+      return {
+        percentual_concluido: percentual,
+        total_itens: total,
+        itens_contados: contados,
+        itens_divergentes: divergencias,
+        diferenca_valor: 0
+      };
+    }
+    return null;
   };
 
   return {
@@ -190,6 +213,7 @@ export function useInventario() {
     iniciarInventario,
     finalizarInventario,
     cancelarInventario,
-    getResumoInventario
+    getResumoInventario,
+    isUpdating: updateInventarioMutation.isPending
   };
 }

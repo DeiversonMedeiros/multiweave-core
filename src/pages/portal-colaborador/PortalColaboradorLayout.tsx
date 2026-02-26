@@ -139,7 +139,7 @@ export default function PortalColaboradorLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-full min-h-0 flex flex-col bg-gray-50">
       {/* Mobile sidebar */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent 
@@ -224,10 +224,10 @@ export default function PortalColaboradorLayout() {
         </SheetContent>
       </Sheet>
 
-      {/* Desktop layout */}
-      <div className="flex h-screen">
+      {/* Desktop layout: usa altura disponível (não 100vh) para não cortar atrás do header global */}
+      <div className="flex-1 flex flex-col min-h-0 lg:flex-row">
         {/* Desktop sidebar */}
-        <div className="hidden lg:flex lg:w-72 lg:flex-col lg:fixed lg:inset-y-0">
+        <div className="hidden lg:flex lg:w-72 lg:flex-col lg:flex-shrink-0 lg:min-h-0">
           <div className="flex flex-col flex-grow bg-white border-r border-gray-200">
             {/* Header */}
             <div className="p-6 border-b">
@@ -281,8 +281,8 @@ export default function PortalColaboradorLayout() {
           </div>
         </div>
 
-        {/* Main content */}
-        <div className="lg:pl-72 flex flex-col flex-1">
+        {/* Main content (lg:pl-72 não necessário: sidebar está no fluxo) */}
+        <div className="flex flex-col flex-1 min-h-0 min-w-0">
           {/* Desktop header */}
           <div className="hidden lg:flex items-center justify-between p-4 bg-white border-b">
             <h1 className="text-lg font-semibold">Portal do Colaborador</h1>
@@ -379,8 +379,8 @@ export default function PortalColaboradorLayout() {
             <NotificationCenter />
           </div>
 
-          {/* Page content */}
-          <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6">
+          {/* Page content - área rolável para ver tabela e botão de assinatura no mobile */}
+          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-4 sm:py-6">
             <Outlet />
           </main>
         </div>

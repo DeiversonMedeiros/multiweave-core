@@ -11,6 +11,8 @@ export interface Service {
   descricao?: string;
   project_id?: string;
   partner_id?: string;
+  custo?: number | null;
+  receita?: number | null;
   ativo: boolean;
   created_at: string;
   updated_at: string;

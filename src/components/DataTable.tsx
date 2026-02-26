@@ -25,6 +25,8 @@ type DataTableProps<T> = {
   searchPlaceholder?: string;
   newButtonLabel?: string;
   showNewButton?: boolean;
+  /** Classe CSS aplicada a cada linha (TableRow) com base no item */
+  getRowClassName?: (item: T) => string;
 };
 
 export function DataTable<T extends { id: string }>({
@@ -35,6 +37,7 @@ export function DataTable<T extends { id: string }>({
   searchPlaceholder = "Buscar...",
   newButtonLabel = "Novo",
   showNewButton = true,
+  getRowClassName,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
 
@@ -115,7 +118,10 @@ export function DataTable<T extends { id: string }>({
               </TableRow>
             ) : (
               filteredData.map((item) => (
-                <TableRow key={item.id} className="hover:bg-muted/50">
+                <TableRow
+                  key={item.id}
+                  className={getRowClassName ? getRowClassName(item) : "hover:bg-muted/50"}
+                >
                   {columns.map((column, index) => (
                     <TableCell key={index} className={column.className}>
                       {typeof column.accessor === "function"

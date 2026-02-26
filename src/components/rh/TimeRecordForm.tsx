@@ -1,11 +1,42 @@
-import React from 'react';
-import { useForm } from 'react-hook-form';
+import React, { useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TimeRecord } from '@/integrations/supabase/rh-types';
+
+/** Formata valor TIME (HH:MM ou HH:MM:SS) para HH:MM no input type="time" */
+function formatTimeForInput(time: string | null | undefined): string {
+  if (!time) return '';
+  if (time.length === 5) return time;
+  if (time.length >= 8) return time.substring(0, 5);
+  return time;
+}
+
+/** Converte data (YYYY-MM-DD) + hora (HH:MM) para valor datetime-local (YYYY-MM-DDTHH:MM) */
+function toDateTimeLocalValue(date: string, time: string): string {
+  if (!date) return '';
+  const t = formatTimeForInput(time) || '00:00';
+  return `${date}T${t}`;
+}
+
+/** Garante data no formato YYYY-MM-DD para input type="date" */
+function formatDateForInput(date: string | null | undefined): string {
+  if (!date) return '';
+  const d = typeof date === 'string' ? date : (date as unknown as string);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  try {
+    const parsed = new Date(d);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+}
 
 // =====================================================
 // SCHEMA DE VALIDAÇÃO
@@ -37,35 +68,73 @@ interface TimeRecordFormProps {
   mode: 'create' | 'edit' | 'view';
 }
 
+export interface TimeRecordFormRef {
+  submit: () => void;
+}
+
 // =====================================================
 // COMPONENTE PRINCIPAL
 // =====================================================
 
-export function TimeRecordForm({ timeRecord, onSubmit, mode }: TimeRecordFormProps) {
+export const TimeRecordForm = forwardRef<TimeRecordFormRef, TimeRecordFormProps>(function TimeRecordForm(
+  { timeRecord, onSubmit, mode },
+  ref
+) {
   const {
     register,
     handleSubmit,
+    control,
     setValue,
     watch,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<TimeRecordFormData>({
     resolver: zodResolver(timeRecordFormSchema),
     defaultValues: {
-      data_registro: timeRecord?.data_registro || new Date().toISOString().split('T')[0],
-      entrada: timeRecord?.entrada || '',
-      saida: timeRecord?.saida || '',
-      entrada_almoco: timeRecord?.entrada_almoco || '',
-      saida_almoco: timeRecord?.saida_almoco || '',
-      horas_trabalhadas: timeRecord?.horas_trabalhadas || 0,
-      horas_extras: timeRecord?.horas_extras || 0,
-      status: timeRecord?.status || 'pendente',
+      data_registro: formatDateForInput(timeRecord?.data_registro) || new Date().toISOString().split('T')[0],
+      entrada: formatTimeForInput(timeRecord?.entrada) || '',
+      saida: formatTimeForInput(timeRecord?.saida) || '',
+      entrada_almoco: formatTimeForInput(timeRecord?.entrada_almoco) || '',
+      saida_almoco: formatTimeForInput(timeRecord?.saida_almoco) || '',
+      entrada_extra1: formatTimeForInput(timeRecord?.entrada_extra1) || '',
+      saida_extra1: formatTimeForInput(timeRecord?.saida_extra1) || '',
+      horas_trabalhadas: timeRecord?.horas_trabalhadas ?? 0,
+      horas_extras: timeRecord?.horas_extras ?? 0,
+      status: (timeRecord?.status as 'pendente' | 'aprovado' | 'rejeitado') || 'pendente',
       observacoes: timeRecord?.observacoes || '',
     },
   });
 
+  // Ao abrir em modo edição/visualização, preencher com o registro selecionado (data e hora editáveis)
+  useEffect(() => {
+    if (timeRecord && (mode === 'edit' || mode === 'view')) {
+      const baseDate = formatDateForInput(timeRecord.data_registro) || new Date().toISOString().split('T')[0];
+      const toDt = (t: string | null | undefined) => toDateTimeLocalValue(baseDate, t || '');
+      reset({
+        data_registro: baseDate,
+        entrada: timeRecord.entrada ? toDt(timeRecord.entrada) : '',
+        saida: timeRecord.saida ? toDt(timeRecord.saida) : '',
+        entrada_almoco: timeRecord.entrada_almoco ? toDt(timeRecord.entrada_almoco) : '',
+        saida_almoco: timeRecord.saida_almoco ? toDt(timeRecord.saida_almoco) : '',
+        entrada_extra1: timeRecord.entrada_extra1 ? toDt(timeRecord.entrada_extra1) : '',
+        saida_extra1: timeRecord.saida_extra1 ? toDt(timeRecord.saida_extra1) : '',
+        horas_trabalhadas: timeRecord.horas_trabalhadas ?? 0,
+        horas_extras: timeRecord.horas_extras ?? 0,
+        status: (timeRecord.status as 'pendente' | 'aprovado' | 'rejeitado') || 'pendente',
+        observacoes: timeRecord.observacoes || '',
+      });
+    }
+  }, [timeRecord?.id, mode, reset, timeRecord]);
+
   const handleFormSubmit = (data: TimeRecordFormData) => {
     onSubmit(data);
   };
+
+  useImperativeHandle(ref, () => ({
+    submit: () => {
+      handleSubmit(handleFormSubmit)();
+    },
+  }), [handleSubmit]);
 
   return (
     <form id="form-modal-form" onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
@@ -86,29 +155,62 @@ export function TimeRecordForm({ timeRecord, onSubmit, mode }: TimeRecordFormPro
         )}
       </div>
 
-      {/* Horários de Trabalho */}
+      {/* Horários de Trabalho - em edição: data e hora (datetime-local); em criação: só hora */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <label htmlFor="entrada" className="text-sm font-medium">
             Entrada
           </label>
-          <Input
-            id="entrada"
-            type="time"
-            disabled={mode === 'view'}
-            {...register('entrada')}
-          />
+          {mode === 'edit' ? (
+            <Controller
+              name="entrada"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="entrada"
+                  type="datetime-local"
+                  disabled={mode === 'view'}
+                  value={field.value || toDateTimeLocalValue(watch('data_registro'), '08:00')}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                  step={60}
+                  className={errors.entrada ? 'border-red-500' : ''}
+                />
+              )}
+            />
+          ) : (
+            <Input
+              id="entrada"
+              type="time"
+              disabled={mode === 'view'}
+              {...register('entrada')}
+            />
+          )}
         </div>
         <div className="space-y-2">
           <label htmlFor="saida" className="text-sm font-medium">
             Saída
           </label>
-          <Input
-            id="saida"
-            type="time"
-            disabled={mode === 'view'}
-            {...register('saida')}
-          />
+          {mode === 'edit' ? (
+            <Controller
+              name="saida"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="saida"
+                  type="datetime-local"
+                  disabled={mode === 'view'}
+                  value={field.value || toDateTimeLocalValue(watch('data_registro'), '18:00')}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                  step={60}
+                  className={errors.saida ? 'border-red-500' : ''}
+                />
+              )}
+            />
+          ) : (
+            <Input id="saida" type="time" disabled={mode === 'view'} {...register('saida')} />
+          )}
         </div>
       </div>
 
@@ -118,23 +220,59 @@ export function TimeRecordForm({ timeRecord, onSubmit, mode }: TimeRecordFormPro
           <label htmlFor="entrada_almoco" className="text-sm font-medium">
             Entrada Almoço
           </label>
-          <Input
-            id="entrada_almoco"
-            type="time"
-            disabled={mode === 'view'}
-            {...register('entrada_almoco')}
-          />
+          {mode === 'edit' ? (
+            <Controller
+              name="entrada_almoco"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="entrada_almoco"
+                  type="datetime-local"
+                  disabled={mode === 'view'}
+                  value={field.value || ''}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                  step={60}
+                />
+              )}
+            />
+          ) : (
+            <Input
+              id="entrada_almoco"
+              type="time"
+              disabled={mode === 'view'}
+              {...register('entrada_almoco')}
+            />
+          )}
         </div>
         <div className="space-y-2">
           <label htmlFor="saida_almoco" className="text-sm font-medium">
             Saída Almoço
           </label>
-          <Input
-            id="saida_almoco"
-            type="time"
-            disabled={mode === 'view'}
-            {...register('saida_almoco')}
-          />
+          {mode === 'edit' ? (
+            <Controller
+              name="saida_almoco"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="saida_almoco"
+                  type="datetime-local"
+                  disabled={mode === 'view'}
+                  value={field.value || ''}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                  step={60}
+                />
+              )}
+            />
+          ) : (
+            <Input
+              id="saida_almoco"
+              type="time"
+              disabled={mode === 'view'}
+              {...register('saida_almoco')}
+            />
+          )}
         </div>
       </div>
 
@@ -144,23 +282,59 @@ export function TimeRecordForm({ timeRecord, onSubmit, mode }: TimeRecordFormPro
           <label htmlFor="entrada_extra1" className="text-sm font-medium text-purple-600">
             Entrada Extra
           </label>
-          <Input
-            id="entrada_extra1"
-            type="time"
-            disabled={mode === 'view'}
-            {...register('entrada_extra1')}
-          />
+          {mode === 'edit' ? (
+            <Controller
+              name="entrada_extra1"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="entrada_extra1"
+                  type="datetime-local"
+                  disabled={mode === 'view'}
+                  value={field.value || ''}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                  step={60}
+                />
+              )}
+            />
+          ) : (
+            <Input
+              id="entrada_extra1"
+              type="time"
+              disabled={mode === 'view'}
+              {...register('entrada_extra1')}
+            />
+          )}
         </div>
         <div className="space-y-2">
           <label htmlFor="saida_extra1" className="text-sm font-medium text-purple-600">
             Saída Extra
           </label>
-          <Input
-            id="saida_extra1"
-            type="time"
-            disabled={mode === 'view'}
-            {...register('saida_extra1')}
-          />
+          {mode === 'edit' ? (
+            <Controller
+              name="saida_extra1"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="saida_extra1"
+                  type="datetime-local"
+                  disabled={mode === 'view'}
+                  value={field.value || ''}
+                  onChange={(e) => field.onChange(e.target.value)}
+                  onBlur={field.onBlur}
+                  step={60}
+                />
+              )}
+            />
+          ) : (
+            <Input
+              id="saida_extra1"
+              type="time"
+              disabled={mode === 'view'}
+              {...register('saida_extra1')}
+            />
+          )}
         </div>
       </div>
 
@@ -231,4 +405,4 @@ export function TimeRecordForm({ timeRecord, onSubmit, mode }: TimeRecordFormPro
       </div>
     </form>
   );
-}
+});

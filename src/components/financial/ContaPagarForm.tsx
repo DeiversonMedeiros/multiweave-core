@@ -27,7 +27,7 @@ import { format, addDays, addWeeks, addMonths, addYears, parseISO, startOfDay } 
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { ContaPagar, ContaPagarFormData, ContaPagarParcelaFormData, ContaPagarRateioItem } from '@/integrations/supabase/financial-types';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useContasPagarRateio } from '@/hooks/financial/useContasPagarRateio';
 import { usePartners } from '@/hooks/usePartners';
@@ -60,6 +60,9 @@ const contaPagarSchema = z.object({
   anexo_boleto: z.string().optional(),
   anexo_nota_fiscal: z.string().optional(),
   numero_nota_fiscal: z.string().optional(),
+  serie_nota_fiscal: z.string().optional(),
+  tipo_documento_fiscal: z.string().optional(),
+  chave_acesso: z.string().optional(),
   // Campos de parcelamento
   is_parcelada: z.boolean().optional(),
   numero_parcelas: z.number().min(1).max(360).optional(),
@@ -90,7 +93,7 @@ interface ContaPagarFormProps {
 
 export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: ContaPagarFormProps) {
   const { selectedCompany } = useCompany();
-  const { data: costCentersData, isLoading: loadingCostCenters } = useCostCenters();
+  const { data: costCentersData, isLoading: loadingCostCenters } = useActiveCostCenters();
   const { data: projectsData, isLoading: loadingProjects } = useProjects();
   const { data: partnersData, isLoading: loadingPartners } = usePartners();
   const { data: planoContasData, isLoading: loadingPlanoContas } = usePlanoContas();
@@ -130,6 +133,9 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
       observacoes: '',
       anexos: [],
       numero_nota_fiscal: '',
+      serie_nota_fiscal: '',
+      tipo_documento_fiscal: '',
+      chave_acesso: '',
       is_parcelada: false,
       numero_parcelas: 1,
       intervalo_parcelas: 'mensal',
@@ -285,6 +291,9 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
         anexo_boleto: conta.anexo_boleto || '',
         anexo_nota_fiscal: conta.anexo_nota_fiscal || '',
         numero_nota_fiscal: conta.numero_nota_fiscal || '',
+        serie_nota_fiscal: conta.serie_nota_fiscal || '',
+        tipo_documento_fiscal: conta.tipo_documento_fiscal || '',
+        chave_acesso: conta.chave_acesso || '',
       });
       if (conta.anexo_boleto) setBoletoUrl(conta.anexo_boleto);
       if (conta.anexo_nota_fiscal) setNotaFiscalUrl(conta.anexo_nota_fiscal);
@@ -544,6 +553,68 @@ export function ContaPagarForm({ conta, onSave, onCancel, loading = false }: Con
                           <FormDescription>
                             Número da nota fiscal relacionada a esta conta
                           </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="serie_nota_fiscal"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Série da Nota Fiscal</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Ex.: 1, 2" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="tipo_documento_fiscal"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Tipo de Documento Fiscal</FormLabel>
+                          <Select
+                            value={field.value || 'none'}
+                            onValueChange={(v) => field.onChange(v === 'none' ? '' : v)}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Selecione o tipo" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">Nenhum</SelectItem>
+                              <SelectItem value="NF-e">NF-e</SelectItem>
+                              <SelectItem value="NFC-e">NFC-e</SelectItem>
+                              <SelectItem value="CT-e">CT-e</SelectItem>
+                              <SelectItem value="NF">NF (modelo 1/1A)</SelectItem>
+                              <SelectItem value="Outro">Outro</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="chave_acesso"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Chave de acesso</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="44 dígitos da chave NF-e"
+                              maxLength={44}
+                              {...field}
+                              onChange={(e) => field.onChange(e.target.value.replace(/\D/g, '').slice(0, 44))}
+                            />
+                          </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { ApprovalConfig } from '@/services/approvals/approvalService';
 import { useUsers } from '@/hooks/useUsers';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
 import { useActiveProjects } from '@/hooks/useProjects';
 
@@ -59,7 +59,7 @@ export function ApprovalConfigForm({ config, onSubmit, onCancel, isLoading }: Ap
 
   // Hooks para dados
   const { users = [] } = useUsers();
-  const { data: costCentersData } = useCostCenters();
+  const { data: costCentersData } = useActiveCostCenters();
   const costCenters = costCentersData?.data || [];
   const { data: classesFinanceirasData, isLoading: loadingClassesFinanceiras } = useActiveClassesFinanceiras();
   const classesFinanceiras = classesFinanceirasData?.data || [];

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { useQuery } from '@tanstack/react-query';
 import { EntityService } from '@/services/generic/entityService';
@@ -37,7 +37,7 @@ interface BudgetFormProps {
 
 export function BudgetForm({ budget, mes, ano, onSubmit, onCancel, isLoading }: BudgetFormProps) {
   const { selectedCompany } = useCompany();
-  const { data: costCenters } = useCostCenters();
+  const { data: costCenters } = useActiveCostCenters();
   const { data: projects } = useProjects();
   
   // Hook para buscar profiles

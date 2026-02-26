@@ -371,12 +371,22 @@ export default function TimeRecordSignaturePage() {
     return new Date(expiresAt) < new Date();
   };
 
+  // Primeira assinatura pendente (para botão fixo no mobile)
+  const firstPendingSignature = useMemo(() => (
+    signatures.find(
+      (s) =>
+        s.status === 'pending' &&
+        !isExpired(s.expires_at) &&
+        monthLockedMap[s.month_year] !== true
+    ) ?? null
+  ), [signatures, monthLockedMap]);
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 w-full min-w-0 max-w-full overflow-x-hidden">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Assinatura de Ponto</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Assinatura de Ponto</h1>
+          <p className="text-muted-foreground text-sm sm:text-base">
             Assine seus registros de ponto mensais
           </p>
         </div>
@@ -420,6 +430,22 @@ export default function TimeRecordSignaturePage() {
           Após o vencimento, não será mais possível assinar e será necessário entrar em contato com o RH.
         </AlertDescription>
       </Alert>
+
+      {/* Botão fixo no mobile para assinatura sempre visível */}
+      {firstPendingSignature && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-background border-t shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:hidden">
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={() => handleSign(firstPendingSignature.id)}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Assinar Folha de Ponto
+          </Button>
+        </div>
+      )}
+      {/* Espaço para não ficar escondido atrás do botão fixo no mobile */}
+      {firstPendingSignature && <div className="h-16 md:h-0" aria-hidden />}
 
       {signatureToSign && (
         <TimeRecordSignatureModal
@@ -841,7 +867,7 @@ function SignatureCardWithRecords({
 
         {/* Tabela de registros */}
         {showRecords && (
-          <div className="border rounded-lg overflow-hidden">
+          <div className="border rounded-lg min-w-0">
             {recordsLoading ? (
               <div className="flex items-center justify-center p-8">
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -853,8 +879,11 @@ function SignatureCardWithRecords({
                 <p>Nenhum registro de ponto encontrado para este mês.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
+              <div 
+                className="w-full min-w-0 overflow-x-auto [-webkit-overflow-scrolling:touch]"
+                style={{ maxWidth: '100%' }}
+              >
+                <Table className="min-w-[800px] w-full">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Data</TableHead>

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useCreateEntradaMaterial } from '@/hooks/almoxarifado/useEntradasMateriaisQuery';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useProjects } from '@/hooks/useProjects';
 import { toast } from 'sonner';
 
@@ -74,7 +74,7 @@ const XMLUploadModal: React.FC<XMLUploadModalProps> = ({
 
   const createEntrada = useCreateEntradaMaterial();
   const { data: materiais = [] } = useMateriaisEquipamentos();
-  const { data: costCentersData } = useCostCenters();
+  const { data: costCentersData } = useActiveCostCenters();
   const { data: projectsData } = useProjects();
   
   const costCenters = costCentersData?.data || [];

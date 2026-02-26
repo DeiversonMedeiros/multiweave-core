@@ -24,6 +24,7 @@ import { SimpleDataTable } from '@/components/rh/SimpleDataTable';
 import { FormModal } from '@/components/rh/FormModal';
 import { TableActions } from '@/components/rh/TableActions';
 import { EmployeeForm, EmployeeFormRef } from '@/components/rh/EmployeeForm';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRHData, useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { Employee, EmployeeFilters } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
@@ -39,6 +40,7 @@ import { formatDateOnly } from '@/lib/utils';
 // =====================================================
 
 export default function EmployeesPageNew() {
+  const queryClient = useQueryClient();
   const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
   const { selectedCompany } = useCompany();
   const navigate = useNavigate();
@@ -188,6 +190,12 @@ export default function EmployeesPageNew() {
           id: selectedEmployee.id,
           data
         });
+        
+        // Invalidar listagem de correções de ponto pendentes para que o novo gestor veja as solicitações
+        // (e o gestor antigo deixe de vê-las) quando o Gestor Imediato for alterado
+        await queryClient.invalidateQueries({ queryKey: ['pending-attendance-corrections'] });
+        await queryClient.invalidateQueries({ queryKey: ['attendance-corrections-for-manager'] });
+        await queryClient.invalidateQueries({ queryKey: ['attendance-corrections-stats'] });
         
         // Sincronizar zonas de localização após atualizar o funcionário
         if (selectedEmployee.id && selectedCompany?.id && (data as any).location_zone_ids) {

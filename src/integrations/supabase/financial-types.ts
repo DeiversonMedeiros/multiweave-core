@@ -31,6 +31,9 @@ export interface ContaPagar {
   anexo_boleto?: string;
   anexo_nota_fiscal?: string;
   numero_nota_fiscal?: string;
+  serie_nota_fiscal?: string;
+  tipo_documento_fiscal?: string;
+  chave_acesso?: string;
   valor_desconto: number;
   valor_juros: number;
   valor_multa: number;
@@ -384,6 +387,9 @@ export interface ContaPagarFormData {
   anexo_boleto?: string;
   anexo_nota_fiscal?: string;
   numero_nota_fiscal?: string;
+  serie_nota_fiscal?: string;
+  tipo_documento_fiscal?: string;
+  chave_acesso?: string;
   // Campos de parcelamento
   is_parcelada?: boolean;
   numero_parcelas?: number;

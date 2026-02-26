@@ -27,7 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { useRHData } from '@/hooks/generic/useEntityData';
-import { useCostCenters } from '@/hooks/useCostCenters';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useCompany } from '@/lib/company-context';
 import { useEmployeeUser } from '@/hooks/rh/useEmployeeUser';
 import { useLocationZones } from '@/hooks/rh/useLocationZones';
@@ -246,7 +246,7 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
   const { data: positionsData, isLoading: positionsLoading } = useRHData('positions', selectedCompany?.id || '');
   const { data: unitsData, isLoading: unitsLoading } = useRHData('units', selectedCompany?.id || '');
   const { data: workShiftsData, isLoading: workShiftsLoading } = useRHData('work_shifts', selectedCompany?.id || '');
-  const { data: costCentersData, isLoading: costCentersLoading } = useCostCenters();
+  const { data: costCentersData, isLoading: costCentersLoading } = useActiveCostCenters();
   const { data: employeesData, isLoading: employeesLoading } = useRHData('employees', selectedCompany?.id || '');
   const { data: locationZonesData, isLoading: locationZonesLoading } = useLocationZones({ ativo: true });
   const { data: deficiencyTypesData } = useDeficiencyTypes();
@@ -537,10 +537,13 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
     setIsSubmitting(true);
     
     try {
-      // Converter "none" para null para o user_id
+      // Converter "none" e string vazia para null em user_id e gestor_imediato_id
       const submitData = {
         ...data,
-        user_id: data.user_id === 'none' ? null : data.user_id
+        user_id: data.user_id === 'none' ? null : data.user_id,
+        gestor_imediato_id: (data.gestor_imediato_id === 'none' || data.gestor_imediato_id === '' || !data.gestor_imediato_id)
+          ? null
+          : data.gestor_imediato_id
       };
       
       // Enviar todos os dados incluindo location_zone_ids

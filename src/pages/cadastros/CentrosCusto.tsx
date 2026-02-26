@@ -15,9 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useCompany } from "@/lib/company-context";
-import { Employee } from "@/integrations/supabase/rh-types";
 import { ChevronRight, ChevronDown } from "lucide-react";
-import { useRHData } from "@/hooks/generic/useEntityData";
+import { useUsers } from "@/hooks/useUsers";
 
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -35,6 +34,7 @@ const costCenterSchema = z.object({
   observacoes: z.string().max(1000).optional(),
   parent_id: z.string().uuid().optional().nullable(),
   ativo: z.boolean().default(true),
+  aceita_lancamentos: z.boolean().default(true),
 });
 
 type CostCenterFormData = z.infer<typeof costCenterSchema>;
@@ -55,18 +55,7 @@ export default function CentrosCusto() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'table' | 'tree'>('tree');
   const { selectedCompany } = useCompany();
-
-  const { data: employeesData = [], isLoading: employeesLoading } = useRHData<Employee>(
-    'employees',
-    selectedCompany?.id || '',
-    undefined
-  );
-
-  const employees = useMemo(() => {
-    const list = (employeesData as Employee[]) || [];
-    const active = list.filter((emp) => (emp as any).status === 'ativo');
-    return active.length > 0 ? active : list;
-  }, [employeesData]);
+  const { users, loading: usersLoading } = useUsers();
 
   const form = useForm<CostCenterFormData>({
     resolver: zodResolver(costCenterSchema),
@@ -82,6 +71,7 @@ export default function CentrosCusto() {
       observacoes: "",
       parent_id: null,
       ativo: true,
+      aceita_lancamentos: true,
     },
   });
 
@@ -168,6 +158,7 @@ export default function CentrosCusto() {
       observacoes: "",
       parent_id: null,
       ativo: true,
+      aceita_lancamentos: true,
     });
     setIsDialogOpen(true);
   };
@@ -186,6 +177,7 @@ export default function CentrosCusto() {
       observacoes: (centro as any).observacoes || "",
       parent_id: (centro as any).parent_id || null,
       ativo: centro.ativo ?? true,
+      aceita_lancamentos: (centro as any).aceita_lancamentos ?? true,
     });
     setIsDialogOpen(true);
   };
@@ -212,6 +204,7 @@ export default function CentrosCusto() {
         observacoes: data.observacoes || null,
         parent_id: data.parent_id || null,
         ativo: data.ativo,
+        aceita_lancamentos: data.aceita_lancamentos ?? true,
         company_id: selectedCompany.id,
       };
 
@@ -250,11 +243,19 @@ export default function CentrosCusto() {
     const hasChildren = centro.children && centro.children.length > 0;
     const isExpanded = expandedNodes.has(centro.id);
     const indent = nivel * 24;
+    const aceitaLancamentos = (centro as any).aceita_lancamentos !== false;
+    const rowBg = aceitaLancamentos
+      ? "bg-green-50 dark:bg-green-950/20 hover:bg-green-100 dark:hover:bg-green-950/30"
+      : "bg-gray-100 dark:bg-muted/50 hover:bg-gray-200 dark:hover:bg-muted/70";
+
+    const responsavel = users.find((u) => u.id === (centro as any).responsavel_id);
 
     return (
       <div key={centro.id}>
         <div
-          className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
+          className={`flex items-center gap-2 p-2 rounded-md ${rowBg} ${
+            nivel > 0 ? "border-l border-border/60" : ""
+          }`}
           style={{ paddingLeft: `${indent + 8}px` }}
         >
           {hasChildren ? (
@@ -271,21 +272,30 @@ export default function CentrosCusto() {
           ) : (
             <div className="w-6" />
           )}
-          <div className="flex-1 grid grid-cols-12 gap-4 items-center">
+          <div className="flex-1 grid grid-cols-12 gap-4 items-center min-w-0">
             <div className="col-span-2 font-mono text-sm">{centro.codigo}</div>
-            <div className="col-span-4">{centro.nome}</div>
+            <div className="col-span-3">{centro.nome}</div>
             <div className="col-span-2">
               <Badge variant="outline">
-                {((centro as any).tipo || 'outros').charAt(0).toUpperCase() + ((centro as any).tipo || 'outros').slice(1)}
+                {((centro as any).tipo || "outros").charAt(0).toUpperCase() +
+                  ((centro as any).tipo || "outros").slice(1)}
               </Badge>
             </div>
             <div className="col-span-2">
+              {responsavel ? responsavel.nome : "-"}
+            </div>
+            <div className="col-span-1">
+              <Badge variant={aceitaLancamentos ? "default" : "secondary"}>
+                {aceitaLancamentos ? "Sim" : "Não"}
+              </Badge>
+            </div>
+            <div className="col-span-1">
               <Badge variant={centro.ativo ? "default" : "secondary"}>
                 {centro.ativo ? "Ativo" : "Inativo"}
               </Badge>
             </div>
-            <div className="col-span-2 flex gap-2 justify-end">
-              {canEditPage('/cadastros/centros-custo*') && (
+            <div className="col-span-1">
+              {canEditPage("/cadastros/centros-custo*") && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -321,6 +331,24 @@ export default function CentrosCusto() {
       },
     },
     {
+      header: "Responsável",
+      accessor: (item: CostCenter) => {
+        const responsavel = users.find((u) => u.id === (item as any).responsavel_id);
+        return responsavel ? responsavel.nome : "-";
+      },
+    },
+    {
+      header: "Aceita Lançamentos",
+      accessor: (item: CostCenter) => {
+        const aceita = (item as any).aceita_lancamentos !== false;
+        return (
+          <Badge variant={aceita ? "default" : "secondary"}>
+            {aceita ? "Sim" : "Não"}
+          </Badge>
+        );
+      },
+    },
+    {
       header: "Status",
       accessor: (item: CostCenter) => (
         <Badge variant={item.ativo ? "default" : "secondary"}>
@@ -329,6 +357,13 @@ export default function CentrosCusto() {
       ),
     },
   ];
+
+  const getRowClassName = (item: CostCenter) => {
+    const aceita = (item as any).aceita_lancamentos !== false;
+    return aceita
+      ? "bg-green-50 dark:bg-green-950/20 hover:bg-green-100 dark:hover:bg-green-950/30"
+      : "bg-gray-100 dark:bg-muted/50 hover:bg-gray-200 dark:hover:bg-muted/70";
+  };
 
   // Filtrar centros disponíveis para parent (excluir o próprio centro se estiver editando)
   const availableParents = useMemo(() => {
@@ -347,38 +382,44 @@ export default function CentrosCusto() {
               Gerencie os centros de custo da empresa com hierarquia e informações detalhadas
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant={viewMode === 'tree' ? 'default' : 'outline'}
-              onClick={() => setViewMode('tree')}
-            >
-              Árvore
-            </Button>
-            <Button
-              variant={viewMode === 'table' ? 'default' : 'outline'}
-              onClick={() => setViewMode('table')}
-            >
-              Tabela
-            </Button>
+          <div className="flex items-center gap-3">
+            <div className="flex gap-2">
+              <Button
+                variant={viewMode === 'tree' ? 'default' : 'outline'}
+                onClick={() => setViewMode('tree')}
+              >
+                Árvore
+              </Button>
+              <Button
+                variant={viewMode === 'table' ? 'default' : 'outline'}
+                onClick={() => setViewMode('table')}
+              >
+                Tabela
+              </Button>
+            </div>
+            {canCreatePage('/cadastros/centros-custo*') && (
+              <Button onClick={handleNew}>
+                Novo Centro de Custo
+              </Button>
+            )}
           </div>
         </div>
 
         {viewMode === 'tree' ? (
-          <div className="border rounded-lg p-4">
-            <div className="flex justify-between items-center mb-4">
-              <div className="grid grid-cols-12 gap-4 pb-2 border-b font-semibold text-sm flex-1">
+          <div className="border rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 pb-2 border-b font-semibold text-sm">
+              <div className="w-6 shrink-0" aria-hidden />
+              <div className="flex-1 grid grid-cols-12 gap-4 min-w-0">
                 <div className="col-span-2">Código</div>
-                <div className="col-span-4">Nome</div>
+                <div className="col-span-3">Nome</div>
                 <div className="col-span-2">Tipo</div>
-                <div className="col-span-2">Status</div>
-                <div className="col-span-2"></div>
+                <div className="col-span-2">Responsável</div>
+                <div className="col-span-1">Aceita Lanç.</div>
+                <div className="col-span-1">Status</div>
+                <div className="col-span-1">Ações</div>
               </div>
-              {canCreatePage('/cadastros/centros-custo*') && (
-                <Button onClick={handleNew} className="ml-4">
-                  Novo Centro de Custo
-                </Button>
-              )}
             </div>
+
             <div className="space-y-1">
               {centrosHierarquicos.map(centro => renderTreeItem(centro))}
             </div>
@@ -396,6 +437,8 @@ export default function CentrosCusto() {
             onExport={() => toast.info("Exportação em desenvolvimento")}
             searchPlaceholder="Buscar por código ou nome..."
             newButtonLabel="Novo Centro de Custo"
+            getRowClassName={getRowClassName}
+            showNewButton={false}
           />
         )}
 
@@ -526,24 +569,24 @@ export default function CentrosCusto() {
                         <Select
                           onValueChange={(value) => field.onChange(value === "none" ? null : value)}
                           value={field.value || "none"}
-                          disabled={employeesLoading}
+                          disabled={usersLoading}
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder={employeesLoading ? "Carregando..." : "Selecione o responsável"} />
+                              <SelectValue placeholder={usersLoading ? "Carregando..." : "Selecione o responsável"} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="none">Nenhum</SelectItem>
-                            {employees.length > 0 ? (
-                              employees.map((emp) => (
-                                <SelectItem key={emp.id} value={emp.id}>
-                                  {emp.nome} {emp.matricula ? `(${emp.matricula})` : ''}
+                            {users.length > 0 ? (
+                              users.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.nome} {user.email ? `(${user.email})` : ''}
                                 </SelectItem>
                               ))
                             ) : (
                               <SelectItem value="no-employees" disabled>
-                                {employeesLoading ? "Carregando..." : "Nenhum funcionário encontrado"}
+                                {usersLoading ? "Carregando..." : "Nenhum usuário encontrado"}
                               </SelectItem>
                             )}
                           </SelectContent>
@@ -630,18 +673,35 @@ export default function CentrosCusto() {
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="ativo"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center gap-2">
-                        <FormControl>
-                          <Switch checked={field.value} onCheckedChange={field.onChange} />
-                        </FormControl>
-                        <FormLabel className="!mt-0">Ativo</FormLabel>
-                      </FormItem>
-                    )}
-                  />
+                  <div className="flex flex-wrap gap-6">
+                    <FormField
+                      control={form.control}
+                      name="ativo"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2">
+                          <FormControl>
+                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <FormLabel className="!mt-0">Ativo</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="aceita_lancamentos"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2">
+                          <FormControl>
+                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <FormLabel className="!mt-0">Aceita Lançamentos</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Se &quot;Aceita Lançamentos&quot; estiver desligado, o centro de custo ficará apenas para organização (hierarquia) e não aparecerá em requisições, cotações, contas a pagar/receber, vínculo a funcionários, almoxarifados, etc.
+                  </p>
 
                   <div className="flex gap-2 justify-end pt-4">
                     <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>

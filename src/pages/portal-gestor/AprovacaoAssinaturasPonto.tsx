@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useCompany } from '@/lib/company-context';
-import { usePendingSignatures, useApproveSignature, useRejectSignature, useSignatureApprovalsStats } from '@/hooks/rh/useSignatureApprovals';
+import { usePendingSignatures, useApproveSignature, useRejectSignature, useSignatureApprovalsStats, useEmployeeSignatureListForManager } from '@/hooks/rh/useSignatureApprovals';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,10 +11,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CheckCircle, XCircle, Search, Eye, Check, X, AlertTriangle, FileSignature, RefreshCw, Calendar, User } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CheckCircle, XCircle, Search, Eye, Check, X, AlertTriangle, FileSignature, RefreshCw, Calendar, User, Users, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+type FilterTypeAcompanhar = 'all' | 'signed' | 'not_signed' | 'pending';
 
 export interface SignatureDetails {
   id: string;
@@ -43,10 +47,24 @@ export default function AprovacaoAssinaturasPonto() {
   const [isAprovacaoDialogOpen, setIsAprovacaoDialogOpen] = useState(false);
   const [isRejeicaoDialogOpen, setIsRejeicaoDialogOpen] = useState(false);
 
+  // Aba Acompanhar Assinatura
+  const [selectedMonth, setSelectedMonth] = useState<string>(() =>
+    (new Date().getMonth() + 1).toString().padStart(2, '0')
+  );
+  const [selectedYear, setSelectedYear] = useState<string>(() =>
+    new Date().getFullYear().toString()
+  );
+  const [filterTypeAcompanhar, setFilterTypeAcompanhar] = useState<FilterTypeAcompanhar>('all');
+  const monthYearAcompanhar = useMemo(
+    () => (selectedMonth && selectedYear ? `${selectedYear}-${selectedMonth}` : null),
+    [selectedMonth, selectedYear]
+  );
+
   // Hooks de dados
   const { data: pendingSignatures, isLoading: pendingLoading, error: pendingError } = usePendingSignatures();
   const { data: stats, isLoading: statsLoading } = useSignatureApprovalsStats();
-  
+  const { data: employeeListAcompanhar, isLoading: loadingAcompanhar } = useEmployeeSignatureListForManager(monthYearAcompanhar);
+
   // Mutations
   const approveMutation = useApproveSignature();
   const rejectMutation = useRejectSignature();
@@ -80,6 +98,45 @@ export default function AprovacaoAssinaturasPonto() {
       return monthYear;
     }
   };
+
+  // Apenas dois status da assinatura do colaborador: Pendente (não assinou) e Aprovado (assinou)
+  const getStatusBadgeAcompanhar = (hasSigned: boolean) => {
+    if (hasSigned) {
+      return (
+        <Badge className="bg-green-500 text-white border-0">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Aprovado
+        </Badge>
+      );
+    }
+    return (
+      <Badge className="bg-yellow-500 text-white border-0">
+        <AlertCircle className="h-3 w-3 mr-1" />
+        Pendente
+      </Badge>
+    );
+  };
+
+  const employeeList = employeeListAcompanhar ?? [];
+  const filteredEmployeesAcompanhar = employeeList.filter((emp: any) => {
+    if (filterTypeAcompanhar === 'all') return true;
+    if (filterTypeAcompanhar === 'signed') return emp.has_signed;   // Aprovados (colaborador assinou)
+    if (filterTypeAcompanhar === 'not_signed') return !emp.has_signed; // Pendentes (colaborador não assinou)
+    if (filterTypeAcompanhar === 'pending') return !emp.has_signed;     // Pendentes = mesmo que not_signed
+    return true;
+  });
+
+  const monthsSelect = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const month = (i + 1).toString().padStart(2, '0');
+      const monthName = format(new Date(2024, i, 1), 'MMMM', { locale: ptBR });
+      return { value: month, label: monthName.charAt(0).toUpperCase() + monthName.slice(1) };
+    });
+  }, []);
+  const yearsSelect = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 4 }, (_, i) => (currentYear - i).toString());
+  }, []);
 
   const handleApprove = async () => {
     if (!selectedSignature) return;
@@ -183,6 +240,20 @@ export default function AprovacaoAssinaturasPonto() {
           Atualizar
         </Button>
       </div>
+
+      <Tabs defaultValue="aprovar" className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="aprovar" className="flex items-center gap-2">
+            <FileSignature className="h-4 w-4" />
+            Aprovações
+          </TabsTrigger>
+          <TabsTrigger value="acompanhar" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Acompanhar Assinatura
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="aprovar" className="space-y-6 mt-6">
 
       {/* Estatísticas */}
       {stats && (
@@ -321,6 +392,139 @@ export default function AprovacaoAssinaturasPonto() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="acompanhar" className="space-y-6 mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Período
+              </CardTitle>
+              <CardDescription>
+                Selecione o mês e ano para ver o status das assinaturas dos seus funcionários
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-md">
+                <div className="space-y-2">
+                  <Label>Mês</Label>
+                  <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o mês" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {monthsSelect.map((month) => (
+                        <SelectItem key={month.value} value={month.value}>
+                          {month.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Ano</Label>
+                  <Select value={selectedYear} onValueChange={setSelectedYear}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o ano" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {yearsSelect.map((year) => (
+                        <SelectItem key={year} value={year}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {loadingAcompanhar ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            </div>
+          ) : (
+            monthYearAcompanhar && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Lista de Funcionários
+                  </CardTitle>
+                  <CardDescription>
+                    Status das assinaturas de ponto em {formatMonthYear(monthYearAcompanhar)}. Pendente = colaborador ainda não assinou; Aprovado = colaborador assinou.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <Button
+                      variant={filterTypeAcompanhar === 'all' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFilterTypeAcompanhar('all')}
+                      className={filterTypeAcompanhar === 'all' ? 'bg-green-600 hover:bg-green-700' : ''}
+                    >
+                      Todos ({employeeList.length})
+                    </Button>
+                    <Button
+                      variant={filterTypeAcompanhar === 'signed' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFilterTypeAcompanhar('signed')}
+                      className={filterTypeAcompanhar === 'signed' ? 'bg-green-600 hover:bg-green-700' : ''}
+                    >
+                      Aprovados ({employeeList.filter((e: any) => e.has_signed).length})
+                    </Button>
+                    <Button
+                      variant={filterTypeAcompanhar === 'not_signed' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFilterTypeAcompanhar('not_signed')}
+                      className={filterTypeAcompanhar === 'not_signed' ? 'bg-green-600 hover:bg-green-700' : ''}
+                    >
+                      Pendentes ({employeeList.filter((e: any) => !e.has_signed).length})
+                    </Button>
+                  </div>
+
+                  {filteredEmployeesAcompanhar.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      Nenhum funcionário encontrado para o período selecionado.
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Matrícula</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Data da Assinatura</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredEmployeesAcompanhar.map((employee: any) => (
+                            <TableRow key={employee.employee_id}>
+                              <TableCell className="font-medium">{employee.employee_name}</TableCell>
+                              <TableCell>{employee.employee_matricula || '-'}</TableCell>
+                              <TableCell>
+                                {getStatusBadgeAcompanhar(employee.has_signed)}
+                              </TableCell>
+                              <TableCell>
+                                {employee.signature_timestamp
+                                  ? format(new Date(employee.signature_timestamp), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                                  : '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Dialog de Aprovação */}
       <Dialog open={isAprovacaoDialogOpen} onOpenChange={setIsAprovacaoDialogOpen}>

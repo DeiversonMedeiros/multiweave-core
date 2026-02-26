@@ -92,7 +92,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // scope: 'local' evita 403 no endpoint de logout (problema conhecido com CORS/sessão no Supabase).
+    // Remove a sessão apenas neste dispositivo; para revogar em todos, corrigir URL/CORS no projeto Supabase.
+    await supabase.auth.signOut({ scope: 'local' });
+    clearAuthCache();
+    setSession(null);
+    setUser(null);
     navigate("/login");
   };
 

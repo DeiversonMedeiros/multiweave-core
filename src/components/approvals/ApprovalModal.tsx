@@ -19,6 +19,7 @@ import { Approval } from '@/services/approvals/approvalService';
 import { RequisicaoCompraDetails } from './RequisicaoCompraDetails';
 import { ContaPagarDetails } from './ContaPagarDetails';
 import { CotacaoDetails } from './CotacaoDetails';
+import { MaterialExitDetails } from './MaterialExitDetails';
 import { useCotacaoApprovalInfo } from '@/hooks/approvals/useCotacaoApprovalInfo';
 import { useContaPagarApprovalInfo } from '@/hooks/approvals/useContaPagarApprovalInfo';
 
@@ -226,6 +227,11 @@ export function ApprovalModal({ approval, isOpen, onClose, onProcess, isLoading 
             <div className="border-t pt-6">
               <CotacaoDetails cotacaoId={approval.processo_id} />
             </div>
+          )}
+
+          {/* Detalhes da Saída de Material */}
+          {approval.processo_tipo === 'solicitacao_saida_material' && (
+            <MaterialExitDetails requestId={approval.processo_id} />
           )}
 
           {/* Transferência de Aprovação */}

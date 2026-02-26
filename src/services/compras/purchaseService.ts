@@ -741,6 +741,10 @@ export const purchaseService = {
     data: {
       data_entrega_prevista?: string | null;
       observacoes?: string | null;
+      numero_nota_fiscal?: string | null;
+      serie_nota_fiscal?: string | null;
+      tipo_documento_fiscal?: string | null;
+      chave_acesso?: string | null;
     };
   }) {
     const { companyId, pedidoId, data } = params;

@@ -468,6 +468,28 @@ class TimeRecordSignatureService {
   }
 
   /**
+   * Lista funcionários do gestor que assinaram/não assinaram para um mês/ano (para aba Acompanhar Assinatura).
+   */
+  async getEmployeeSignatureListForManager(
+    companyId: string,
+    monthYear: string,
+    userId: string
+  ): Promise<any[]> {
+    const { data, error } = await (supabase.rpc as any)('get_signature_employee_list_for_manager', {
+      p_company_id: companyId,
+      p_month_year: monthYear,
+      p_user_id: userId
+    });
+
+    if (error) {
+      console.error('Erro ao buscar lista de funcionários do gestor:', error);
+      throw new Error(`Erro ao buscar lista de funcionários: ${error.message}`);
+    }
+
+    return (data || []) as any[];
+  }
+
+  /**
    * Busca apenas o status de liberação/bloqueio de um mês/ano
    */
   async getMonthStatus(companyId: string, monthYear: string): Promise<any> {
