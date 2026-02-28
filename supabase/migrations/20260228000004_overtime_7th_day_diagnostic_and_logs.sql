@@ -1,31 +1,120 @@
 -- =====================================================
--- Regras de hora extra 100% para escalas flexíveis
+-- Diagnóstico e logs para hora extra 100% (7º dia após DSR)
 -- =====================================================
--- Data: 2026-02-26
+-- Data: 2026-02-28
 --
--- Objetivo:
--- - Ajustar a função rh.calculate_overtime_by_scale para que, em escalas flexíveis
---   (ex.: flexivel_6x1), as horas extras 100% sejam aplicadas apenas quando:
---     1) Houver feriado (regra já existente no bloco principal);
---     2) O funcionário trabalhar no 7º dia consecutivo após o último DSR
---        (ou seja, após 6 dias consecutivos de trabalho sem descanso).
+-- 1) Função rh.diagnose_overtime_7th_day(employee_id, company_id, data)
+--    Retorna uma tabela com o passo a passo do cálculo (tipo_escala, contagem de dias, motivo de parada).
 --
--- Regra específica implementada aqui (flexível 6x1):
--- - Contar quantos dias consecutivos de trabalho existem imediatamente
---   ANTES da data do registro (v_date), olhando para rh.time_records.
--- - Se houver 6 ou mais dias consecutivos de trabalho antes de v_date,
---   então o dia atual é tratado como o "7º dia após o último DSR" e
---   TODAS as horas trabalhadas nesse dia vão para horas_extras_100.
--- - Caso contrário, o excedente (v_excedente_limitado) continua indo
---   para horas_extras_50 (banco), como hoje.
---
--- Observação:
--- - Este ajuste é restrito à escala flexível 6x1 (tipo_escala = 'flexivel_6x1').
---   Escalas fixas e outras continuam com a regra já existente.
--- - Feriados continuam tratados no bloco principal (antes deste IF),
---   sem alteração neste arquivo.
+-- 2) Logs (RAISE NOTICE) em calculate_overtime_by_scale quando excedente > 0,
+--    com prefixo [OVERTIME_7TH] para filtrar no cliente.
 -- =====================================================
 
+-- 1) Função de diagnóstico: simula a lógica do 7º dia para um (employee, company, data)
+CREATE OR REPLACE FUNCTION rh.diagnose_overtime_7th_day(
+  p_employee_id UUID,
+  p_company_id UUID,
+  p_date DATE
+)
+RETURNS TABLE(
+  etapa TEXT,
+  valor TEXT
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+  v_tipo_escala VARCHAR(50);
+  v_work_shift_id UUID;
+  v_horas_diarias NUMERIC;
+  v_horas_trabalhadas NUMERIC;
+  v_excedente NUMERIC;
+  v_check_date DATE;
+  v_consecutive_work_days INT := 0;
+  v_trabalhadas_antes NUMERIC;
+  v_is_rest BOOLEAN;
+  v_is_virtual_dsr BOOLEAN;
+  v_has_record BOOLEAN;
+  v_reason TEXT;
+BEGIN
+  -- Tipo de escala (mesma lógica que calculate_overtime)
+  v_tipo_escala := rh.get_employee_work_shift_type(p_employee_id, p_company_id, p_date);
+  RETURN QUERY SELECT '1_tipo_escala'::TEXT, COALESCE(v_tipo_escala, 'NULL')::TEXT;
+
+  SELECT tr.horas_trabalhadas INTO v_horas_trabalhadas
+  FROM rh.time_records tr
+  WHERE tr.employee_id = p_employee_id AND tr.company_id = p_company_id AND tr.data_registro = p_date
+  LIMIT 1;
+  RETURN QUERY SELECT '2_horas_trabalhadas_no_dia'::TEXT, COALESCE(v_horas_trabalhadas::TEXT, 'sem registro')::TEXT;
+
+  -- Horas diárias esperadas (simplificado: via employee_shifts ou employees)
+  SELECT es.turno_id, ws.horas_diarias INTO v_work_shift_id, v_horas_diarias
+  FROM rh.employee_shifts es
+  INNER JOIN rh.work_shifts ws ON ws.id = es.turno_id
+  WHERE es.funcionario_id = p_employee_id AND es.company_id = p_company_id AND es.ativo = true
+    AND es.data_inicio <= p_date AND (es.data_fim IS NULL OR es.data_fim >= p_date)
+  ORDER BY es.data_inicio DESC LIMIT 1;
+  IF v_work_shift_id IS NULL OR v_horas_diarias IS NULL THEN
+    SELECT e.work_shift_id, ws.horas_diarias INTO v_work_shift_id, v_horas_diarias
+    FROM rh.employees e
+    LEFT JOIN rh.work_shifts ws ON ws.id = e.work_shift_id
+    WHERE e.id = p_employee_id AND e.company_id = p_company_id;
+  END IF;
+  v_horas_diarias := COALESCE(v_horas_diarias, 8.0);
+  RETURN QUERY SELECT '3_horas_diarias_esperadas'::TEXT, v_horas_diarias::TEXT;
+
+  v_excedente := COALESCE(v_horas_trabalhadas, 0) - v_horas_diarias;
+  RETURN QUERY SELECT '4_excedente'::TEXT, v_excedente::TEXT;
+
+  IF v_tipo_escala <> 'flexivel_6x1' THEN
+    RETURN QUERY SELECT '5_entra_bloco_flexivel_6x1'::TEXT, 'NAO (tipo=' || COALESCE(v_tipo_escala, 'NULL') || ')'::TEXT;
+    RETURN;
+  END IF;
+  RETURN QUERY SELECT '5_entra_bloco_flexivel_6x1'::TEXT, 'SIM'::TEXT;
+
+  -- Contagem dia a dia (igual ao loop em calculate_overtime_by_scale)
+  v_check_date := p_date - 1;
+  WHILE v_check_date >= p_date - 14 LOOP
+    v_is_rest := rh.is_rest_day(p_employee_id, p_company_id, v_check_date);
+    v_is_virtual_dsr := rh.is_virtual_dsr(p_employee_id, p_company_id, v_check_date);
+    SELECT tr.horas_trabalhadas INTO v_trabalhadas_antes
+    FROM rh.time_records tr
+    WHERE tr.employee_id = p_employee_id AND tr.company_id = p_company_id AND tr.data_registro = v_check_date;
+    v_has_record := FOUND;
+
+    IF v_is_rest THEN
+      v_reason := 'is_rest_day=TRUE';
+      RETURN QUERY SELECT ('dia_' || v_check_date::TEXT)::TEXT, ('QUEBRA: ' || v_reason)::TEXT;
+      EXIT;
+    END IF;
+    IF v_is_virtual_dsr THEN
+      v_reason := 'is_virtual_dsr=TRUE';
+      RETURN QUERY SELECT ('dia_' || v_check_date::TEXT)::TEXT, ('QUEBRA: ' || v_reason)::TEXT;
+      EXIT;
+    END IF;
+    IF NOT v_has_record THEN
+      v_reason := 'sem registro em time_records';
+      RETURN QUERY SELECT ('dia_' || v_check_date::TEXT)::TEXT, ('QUEBRA: ' || v_reason)::TEXT;
+      EXIT;
+    END IF;
+
+    v_consecutive_work_days := v_consecutive_work_days + 1;
+    RETURN QUERY SELECT ('dia_' || v_check_date::TEXT)::TEXT,
+      ('conta+1 -> total=' || v_consecutive_work_days || ', horas=' || COALESCE(v_trabalhadas_antes::TEXT, 'NULL'))::TEXT;
+    v_check_date := v_check_date - 1;
+  END LOOP;
+
+  RETURN QUERY SELECT '6_consecutive_work_days'::TEXT, v_consecutive_work_days::TEXT;
+  RETURN QUERY SELECT '7_aplica_100_percent'::TEXT, (v_consecutive_work_days >= 6)::TEXT;
+END;
+$$;
+
+COMMENT ON FUNCTION rh.diagnose_overtime_7th_day(UUID, UUID, DATE) IS
+'Diagnóstico da regra de 7º dia (hora extra 100%). Retorna etapas e valores para um (employee_id, company_id, data). Use: SELECT * FROM rh.diagnose_overtime_7th_day(''uuid'', ''uuid'', ''2026-01-11''::date);';
+
+
+-- 2) Adicionar logs em calculate_overtime_by_scale (redeclarar variáveis de log e incluir RAISE NOTICE)
+-- Como não podemos alterar apenas um trecho, recriamos a função com os NOTICEs no bloco flexivel_6x1.
 CREATE OR REPLACE FUNCTION rh.calculate_overtime_by_scale(
   p_time_record_id UUID
 )
@@ -64,10 +153,10 @@ DECLARE
   v_saida_date DATE;
   v_timezone text := 'America/Sao_Paulo';
   v_horas_extras_sum DECIMAL(4,2);
-  -- Novas variáveis para regra de 7º dia após DSR em escalas flexíveis
   v_consecutive_work_days INTEGER := 0;
   v_check_date DATE;
   v_trabalhadas_antes NUMERIC(10,2);
+  v_exit_reason TEXT;
 BEGIN
   SELECT 
     tr.employee_id,
@@ -166,7 +255,6 @@ BEGIN
   v_is_domingo := rh.is_sunday(v_date);
   v_is_dia_folga := rh.is_rest_day(v_employee_id, v_company_id, v_date);
 
-  -- Escala fixa: em dia NÃO marcado em "Dias da Semana" = 0h esperadas (não gera horas negativas)
   IF v_tipo_escala = 'fixa' AND v_is_dia_folga THEN
     v_horas_diarias := 0;
   END IF;
@@ -191,7 +279,6 @@ BEGIN
   v_excedente := GREATEST(-99.99, LEAST(99.99, v_excedente));
   v_excedente_limitado := LEAST(v_excedente, v_janela_horas);
 
-  -- Feriado (todas as escalas): regra já existente (excedente 100% limitado pela janela)
   IF v_is_feriado AND v_horas_trabalhadas > 0 THEN
     v_horas_extras_100 := LEAST(99.99, v_excedente_limitado);
     v_horas_para_pagamento := LEAST(99.99, v_excedente_limitado);
@@ -208,27 +295,20 @@ BEGIN
       END IF;
 
     ELSIF v_tipo_escala = 'flexivel_6x1' THEN
-      -- =====================================================
-      -- Regra para escalas flexíveis (flexivel_6x1):
-      -- Extras 100% somente quando o funcionário trabalha
-      -- no 7º dia consecutivo após o último DSR
-      -- (ou seja, após 6 dias seguidos de trabalho, sem dia de folga no ciclo).
-      --
-      -- Correção:
-      -- - A sequência de dias é quebrada sempre que houver um dia de folga da escala
-      --   (rh.is_rest_day = true), mesmo que o funcionário tenha trabalhado nesse dia.
-      --   Assim, trabalhar no próprio DSR gera 100% naquele dia, mas NÃO arrasta 100%
-      --   para os dias seguintes (novo ciclo após o DSR).
-      -- =====================================================
       v_consecutive_work_days := 0;
       v_check_date := v_date - 1;
+      v_exit_reason := 'loop_completo';
 
       WHILE v_check_date >= v_date - 14 LOOP
         v_trabalhadas_antes := NULL;
 
-        -- Quebrar a sequência sempre que o dia anterior for dia de folga da escala
-        -- (DSR), independentemente de ter havido trabalho ou não.
         IF rh.is_rest_day(v_employee_id, v_company_id, v_check_date) THEN
+          v_exit_reason := 'is_rest_day em ' || v_check_date::TEXT;
+          EXIT;
+        END IF;
+
+        IF rh.is_virtual_dsr(v_employee_id, v_company_id, v_check_date) THEN
+          v_exit_reason := 'is_virtual_dsr em ' || v_check_date::TEXT;
           EXIT;
         END IF;
 
@@ -239,8 +319,8 @@ BEGIN
           AND tr.company_id = v_company_id
           AND tr.data_registro = v_check_date;
 
-        -- Sem registro ou sem horas trabalhadas também quebra a sequência
-        IF NOT FOUND OR COALESCE(v_trabalhadas_antes, 0) = 0 THEN
+        IF NOT FOUND THEN
+          v_exit_reason := 'sem_registro em ' || v_check_date::TEXT;
           EXIT;
         END IF;
 
@@ -248,22 +328,22 @@ BEGIN
         v_check_date := v_check_date - 1;
       END LOOP;
 
+      RAISE NOTICE '[OVERTIME_7TH] employee_id=% company_id=% data=% tipo_escala=% excedente=% consecutive_work_days=% exit_reason=%',
+        v_employee_id, v_company_id, v_date, v_tipo_escala, v_excedente, v_consecutive_work_days, v_exit_reason;
+
       IF v_consecutive_work_days >= 6 THEN
-        -- 7º dia consecutivo após o último DSR:
-        -- todas as horas trabalhadas do dia são tratadas como 100%.
         v_horas_extras_100 := LEAST(99.99, GREATEST(0, COALESCE(v_horas_trabalhadas, 0)));
         v_horas_para_pagamento := v_horas_extras_100;
         v_horas_extras_50 := 0;
         v_horas_para_banco := 0;
+        RAISE NOTICE '[OVERTIME_7TH] APLICOU 100%% -> horas_extras_100=%', v_horas_extras_100;
       ELSE
-        -- Demais dias em escala flexível: excedente vai para banco (50%)
         v_horas_extras_50 := LEAST(99.99, v_excedente_limitado);
         v_horas_para_banco := LEAST(99.99, v_excedente_limitado);
+        RAISE NOTICE '[OVERTIME_7TH] NAO aplicou 100%% (precisa 6 dias) -> horas_extras_50=%', v_horas_extras_50;
       END IF;
 
     ELSE
-      -- Escala fixa e demais: Extras 100% APENAS em domingo;
-      -- sábado/outros dias de folga e dia útil = Extras 50%
       IF v_is_domingo THEN
         v_horas_extras_100 := LEAST(99.99, v_excedente_limitado);
         v_horas_para_pagamento := LEAST(99.99, v_excedente_limitado);
@@ -271,6 +351,7 @@ BEGIN
         v_horas_extras_50 := LEAST(99.99, v_excedente_limitado);
         v_horas_para_banco := LEAST(99.99, v_excedente_limitado);
       END IF;
+      RAISE NOTICE '[OVERTIME_7TH] escala nao flexivel_6x1 (tipo=%) -> data=% employee_id=%', v_tipo_escala, v_date, v_employee_id;
     END IF;
     v_horas_negativas := 0;
     
@@ -318,12 +399,5 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION rh.calculate_overtime_by_scale(UUID) IS 
-'Calcula horas extras conforme tipo de escala e regras CLT.
-Extras 100%:
-- Feriados (todas as escalas), conforme excedente limitado pela janela;
-- Escala fixa: domingos com excedente;
-- Escalas flexíveis (flexivel_6x1): todas as horas trabalhadas no 7º dia
-  consecutivo após o último DSR (após 6 dias seguidos de trabalho).
-Demais casos seguem como horas extras 50% ou horas negativas, conforme excedente.';
-
+COMMENT ON FUNCTION rh.calculate_overtime_by_scale(UUID) IS
+'Calcula horas extras conforme tipo de escala e regras CLT. Flexivel_6x1: 7º dia após DSR = 100%. Emite NOTICE [OVERTIME_7TH] para diagnóstico.';

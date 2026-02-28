@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -45,11 +45,15 @@ import { TimeRecord } from '@/integrations/supabase/rh-types';
 import { useCompany } from '@/lib/company-context';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useTimeRecordsPaginated, useDeleteTimeRecord, useApproveTimeRecord, useRejectTimeRecord } from '@/hooks/rh/useTimeRecords';
+import { useAttendanceCorrections } from '@/hooks/rh/useAttendanceCorrections';
+import { AttendanceCorrection } from '@/services/rh/attendanceCorrectionsService';
 import { useCreateEntity, useUpdateEntity, useDeleteEntity } from '@/hooks/generic/useEntityData';
 import { RequirePage } from '@/components/RequireAuth';
 import { TimeRecordForm } from '@/components/rh/TimeRecordForm';
 import { useTimeRecordEvents } from '@/hooks/rh/useTimeRecordEvents';
 import { useEmployees } from '@/hooks/rh/useEmployees';
+import { useEmployeeUser } from '@/hooks/rh/useEmployeeUser';
+import { getByEmployeeId as getEmployeePontoGestoresByEmployeeId } from '@/services/rh/employeePontoGestoresService';
 import { formatDateOnly, formatDateToISO, formatDecimalHoursToHhMm } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -75,6 +79,27 @@ import {
 } from '@/services/rh/timeRecordReportService';
 import { toast } from 'sonner';
 import { TimeRecordsImportModal } from '@/components/rh/TimeRecordsImportModal';
+
+// =====================================================
+// HELPERS DE REGRA DE HORAS 100% (FLEXÍVEL 6x1)
+// =====================================================
+
+type DayNatureOverrides = Record<string, string>;
+
+/**
+ * Total de horas extras 100% a partir dos registros.
+ * Usa sempre os valores já calculados no banco (rh.calculate_overtime_by_scale), que aplicam
+ * as regras: dia com registro = normal, DSR virtual quebra ciclo, 7º dia consecutivo = 100%.
+ * PDF, CSV e banco de horas refletem os mesmos cálculos do backend.
+ */
+function getAdjustedTotalExtras100(
+  _employeeId: string,
+  records: TimeRecord[],
+  _dayNatureOverrides: DayNatureOverrides,
+  _employeeScaleType?: string
+): number {
+  return records.reduce((sum, r) => sum + (Number(r.horas_extras_100) || 0), 0);
+}
 
 // =====================================================
 // COMPONENTE DE IMAGEM DO MODAL COM TRATAMENTO DE ERRO
@@ -298,6 +323,8 @@ export default function TimeRecordsPageNew() {
   const [searchTerm, setSearchTerm] = useState('');
   // Estado separado para o filtro de funcionário (como na página antiga)
   const [employeeFilter, setEmployeeFilter] = useState<string>('');
+  // Filtro de gestor (filtra funcionários pelo gestor_imediato_id)
+  const [managerFilter, setManagerFilter] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<TimeRecord | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>('create');
@@ -317,6 +344,13 @@ export default function TimeRecordsPageNew() {
   /** Overrides de Natureza do Dia: chave `${employeeId}-${dateStr}` -> valor (normal, dsr, feriado, etc.) */
   const [dayNatureOverrides, setDayNatureOverrides] = useState<Record<string, string>>({});
   const { data: eventsData } = useTimeRecordEvents(selectedRecord?.id || undefined);
+
+  // Detalhes de correção de ponto (aba Correções - visão RH)
+  const [selectedCorrectionForRh, setSelectedCorrectionForRh] = useState<AttendanceCorrection | null>(null);
+  const [isRhCorrectionDetailsOpen, setIsRhCorrectionDetailsOpen] = useState(false);
+
+  // Usuários vinculados à empresa (para filtro de Gestor por usuário)
+  const { users: companyUsers } = useEmployeeUser();
 
   // Helper para extrair path relativo do photo_url
   const extractPhotoPath = useCallback((photoUrl: string): string | null => {
@@ -419,6 +453,181 @@ export default function TimeRecordsPageNew() {
   const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
   const employees = employeesData?.data || [];
 
+  // Mapa rápido de funcionários por ID
+  const employeesMap = useMemo(() => {
+    const map = new Map<string, any>();
+    employees.forEach((emp: any) => {
+      if (emp && emp.id) {
+        map.set(emp.id, emp);
+      }
+    });
+    return map;
+  }, [employees]);
+
+  // Conjunto de employee_ids gerenciados pelo gestor selecionado (managerFilter = user_id do gestor).
+  // Replica a mesma regra da função SQL get_time_records_paginated para uso na aba "Correção de Ponto".
+  const [managedEmployeeIdsForSelectedManager, setManagedEmployeeIdsForSelectedManager] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    const computeManagedEmployees = async () => {
+      if (!managerFilter) {
+        console.log('[TimeRecordsPageNew] 🔍 Nenhum gestor selecionado, managedEmployeeIdsForSelectedManager = null');
+        setManagedEmployeeIdsForSelectedManager(null);
+        return;
+      }
+
+      if (!selectedCompany?.id || employees.length === 0) {
+        console.log('[TimeRecordsPageNew] 🔍 Sem company ou employees para calcular managedEmployeeIds', {
+          managerFilter,
+          hasCompany: !!selectedCompany?.id,
+          totalEmployees: employees.length,
+        });
+        setManagedEmployeeIdsForSelectedManager(null);
+        return;
+      }
+
+      console.log('[TimeRecordsPageNew] 🔍 Calculando managedEmployeeIds (front) para gestor (user_id):', managerFilter, {
+        totalEmployees: employees.length,
+      });
+
+      try {
+        const employeeUserIdMap = new Map<string, string | null | undefined>();
+        employees.forEach((emp: any) => {
+          if (emp && emp.id) {
+            employeeUserIdMap.set(emp.id, emp.user_id);
+          }
+        });
+
+        const managedIds = new Set<string>();
+
+        // Regras 1 e 2 com base em employees / gestor_imediato_id
+        employees.forEach((emp: any) => {
+          if (!emp) return;
+          const gestorId = emp.gestor_imediato_id;
+          if (!gestorId) return;
+
+          // Caso 1: gestor_imediato_id é o próprio user_id do gestor
+          if (gestorId === managerFilter) {
+            managedIds.add(emp.id);
+            return;
+          }
+
+          // Caso 2: gestor_imediato_id é um employee_id cujo user_id corresponde ao gestor
+          const gestorUserId = employeeUserIdMap.get(gestorId);
+          if (gestorUserId === managerFilter) {
+            managedIds.add(emp.id);
+          }
+        });
+
+        // Regra 3: employee_ponto_gestores (RPC por funcionário)
+        await Promise.all(
+          employees.map(async (emp: any) => {
+            if (!emp || !emp.id) return;
+            try {
+              const rows = await getEmployeePontoGestoresByEmployeeId(emp.id, selectedCompany.id);
+              const isManaged = rows.some((row) => row.user_id === managerFilter);
+              if (isManaged) {
+                managedIds.add(emp.id);
+              }
+            } catch (error) {
+              console.error('[TimeRecordsPageNew] ❌ Erro ao buscar employee_ponto_gestores para funcionário:', {
+                employeeId: emp.id,
+                error,
+              });
+            }
+          })
+        );
+
+        console.log('[TimeRecordsPageNew] ✅ managedEmployeeIds calculado (front):', {
+          managerFilter,
+          managedCount: managedIds.size,
+          managedSample: Array.from(managedIds).slice(0, 10),
+        });
+
+        setManagedEmployeeIdsForSelectedManager(managedIds);
+      } catch (error) {
+        console.error('[TimeRecordsPageNew] ❌ Erro geral ao calcular managedEmployeeIdsForSelectedManager:', error);
+        setManagedEmployeeIdsForSelectedManager(null);
+      }
+    };
+
+    computeManagedEmployees();
+  }, [managerFilter, employees, selectedCompany?.id]);
+
+  // Lista de gestores baseada em usuários vinculados à empresa.
+  // Isso permite que um gestor seja apenas usuário (sem ser funcionário).
+  const managers = useMemo(() => {
+    return companyUsers || [];
+  }, [companyUsers]);
+
+  // Estado e dados para aba de Correção de Ponto (visão RH, sem filtro por gestor)
+  const [correctionsStatusFilter, setCorrectionsStatusFilter] = useState<'all' | 'pendente' | 'aprovado' | 'rejeitado'>('all');
+  const {
+    data: correctionsResponse,
+    isLoading: correctionsLoading,
+    error: correctionsError,
+  } = useAttendanceCorrections({
+    company_id: selectedCompany?.id,
+    status: correctionsStatusFilter === 'all' ? undefined : correctionsStatusFilter,
+    data_inicio: filters.startDate,
+    data_fim: filters.endDate,
+    limit: 200,
+  });
+
+  const allCorrections: AttendanceCorrection[] = correctionsResponse?.data || [];
+
+  const filteredCorrectionsForRh = useMemo(() => {
+    const search = (searchTerm || '').toLowerCase();
+    return allCorrections.filter((correction) => {
+      // Se houver gestor selecionado e o conjunto de funcionários gerenciados estiver definido,
+      // filtrar correções apenas desses funcionários (espelha a regra do get_time_records_paginated).
+      if (managedEmployeeIdsForSelectedManager && managedEmployeeIdsForSelectedManager.size > 0) {
+        if (!managedEmployeeIdsForSelectedManager.has(correction.employee_id)) {
+          return false;
+        }
+      }
+
+      // Se houver um funcionário selecionado no filtro global,
+      // aplicar também nas correções de ponto (aba Correção de Ponto).
+      if (employeeFilter && correction.employee_id !== employeeFilter) {
+        return false;
+      }
+
+      const name = (correction.funcionario_nome || '').toLowerCase();
+      const matricula = (correction.funcionario_matricula || '').toLowerCase();
+      const matchesSearch = !search || name.includes(search) || matricula.includes(search);
+      return matchesSearch;
+    });
+  }, [allCorrections, searchTerm, managedEmployeeIdsForSelectedManager, employeeFilter]);
+
+  useEffect(() => {
+    console.log('[TimeRecordsPageNew] 📊 Dados após filtro Gestor+busca (correções de ponto):', {
+      managerFilter,
+      hasManagedSet: !!managedEmployeeIdsForSelectedManager,
+      managedCount: managedEmployeeIdsForSelectedManager?.size ?? 0,
+      totalCorrections: allCorrections.length,
+      filteredCorrections: filteredCorrectionsForRh.length,
+      sampleCorrections: filteredCorrectionsForRh.slice(0, 5).map(c => ({
+        id: c.id,
+        employee_id: c.employee_id,
+        funcionario_nome: c.funcionario_nome,
+      }))
+    });
+  }, [managerFilter, managedEmployeeIdsForSelectedManager, allCorrections.length, filteredCorrectionsForRh.length]);
+
+  const correctionsStatsForRh = useMemo(() => {
+    return filteredCorrectionsForRh.reduce(
+      (acc, c) => {
+        acc.total += 1;
+        if (c.status === 'pendente') acc.pendentes += 1;
+        if (c.status === 'aprovado') acc.aprovadas += 1;
+        if (c.status === 'rejeitado') acc.rejeitadas += 1;
+        return acc;
+      },
+      { total: 0, pendentes: 0, aprovadas: 0, rejeitadas: 0 }
+    );
+  }, [filteredCorrectionsForRh]);
+
   // Calcular datas do mês/ano selecionado para o resumo
   const summaryDateRange = useMemo(() => {
     if (summaryMonth && summaryYear) {
@@ -473,6 +682,7 @@ export default function TimeRecordsPageNew() {
       status?: string;
       pageSize: number;
       employeeId?: string;
+      managerUserId?: string;
     } = {
       startDate: dateRangeForQuery.start,
       endDate: dateRangeForQuery.end,
@@ -484,9 +694,24 @@ export default function TimeRecordsPageNew() {
     if (employeeFilter) {
       params.employeeId = employeeFilter;
     }
+
+    // Delegar filtro de gestor para o backend via managerUserId (user_id do gestor selecionado)
+    if (managerFilter) {
+      params.managerUserId = managerFilter;
+    }
+
+    console.log('[TimeRecordsPageNew] 🔍 queryParams para useTimeRecordsPaginated:', {
+      activeTab,
+      summaryMonth,
+      summaryYear,
+      managerFilter,
+      employeeFilter,
+      dateRangeForQuery,
+      params,
+    });
     
     return params;
-  }, [dateRangeForQuery, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear]);
+  }, [dateRangeForQuery, filters.status, employeeFilter, activeTab, summaryMonth, summaryYear, managerFilter]);
 
   // Usar paginação infinita otimizada
   // Se estiver na aba resumo sem mês/ano selecionado, não executar query
@@ -765,7 +990,8 @@ export default function TimeRecordsPageNew() {
     }
   }, [activeTab, summaryMonth, summaryYear, hasNextPage, isFetchingNextPage, isLoading, fetchNextPage, data, records]);
 
-  // Filtrar registros por termo de busca
+  // Filtrar registros apenas por termo de busca.
+  // O filtro de gestor (managerUserId) é aplicado diretamente no backend pela RPC get_time_records_paginated.
   const filteredRecords = useMemo(() => {
     if (!searchTerm) return records;
     const searchLower = searchTerm.toLowerCase();
@@ -778,6 +1004,19 @@ export default function TimeRecordsPageNew() {
              observacoes.includes(searchLower);
     });
   }, [records, searchTerm]);
+
+  useEffect(() => {
+    console.log('[TimeRecordsPageNew] 📊 Dados após filtro de busca (controle de ponto):', {
+      managerFilter,
+      totalRecords: records.length,
+      filteredRecords: filteredRecords.length,
+      sampleRecords: filteredRecords.slice(0, 5).map(r => ({
+        id: r.id,
+        employee_id: r.employee_id,
+        employee_nome: r.employee_nome,
+      }))
+    });
+  }, [managerFilter, records.length, filteredRecords.length]);
 
   // Filtrar registros por mês e ano para o resumo
   const filteredRecordsForSummary = useMemo(() => {
@@ -1236,6 +1475,14 @@ export default function TimeRecordsPageNew() {
         return s + debit;
       }, 0);
       const totalExtras50Report = recordsForReport.reduce((s: number, r: TimeRecord) => s + (Number((r as TimeRecord).horas_extras_50) || 0), 0);
+      const employeeDataForReport = employeesMap.get(summary.employeeId);
+      const employeeScaleTypeReport = (employeeDataForReport as any)?.work_shift?.tipo_escala as string | undefined;
+      const totalExtras100Report = getAdjustedTotalExtras100(
+        summary.employeeId,
+        recordsForReport as TimeRecord[],
+        dayNatureOverrides,
+        employeeScaleTypeReport
+      );
       // Saldo do mês consistente com o card: Extras 50% − Horas Negativas
       const bankHoursBalance = Math.round((totalExtras50Report - totalNegativasReport) * 100) / 100;
 
@@ -1329,6 +1576,14 @@ export default function TimeRecordsPageNew() {
         return s + debit;
       }, 0);
       const totalExtras50Csv = recordsForCsv.reduce((s: number, r: TimeRecord) => s + (Number((r as TimeRecord).horas_extras_50) || 0), 0);
+      const employeeDataForCsv = employeesMap.get(summary.employeeId);
+      const employeeScaleTypeCsv = (employeeDataForCsv as any)?.work_shift?.tipo_escala as string | undefined;
+      const totalExtras100Csv = getAdjustedTotalExtras100(
+        summary.employeeId,
+        recordsForCsv as TimeRecord[],
+        dayNatureOverrides,
+        employeeScaleTypeCsv
+      );
       const bankHoursBalance = Math.round((totalExtras50Csv - totalNegativasCsv) * 100) / 100;
 
       // Calcular DSR
@@ -1567,6 +1822,7 @@ export default function TimeRecordsPageNew() {
       endDate: new Date().toISOString().split('T')[0]
     });
     setEmployeeFilter('');
+     setManagerFilter('');
     setSearchTerm('');
   };
 
@@ -1626,7 +1882,7 @@ export default function TimeRecordsPageNew() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Buscar</label>
               <div className="relative">
@@ -1669,7 +1925,29 @@ export default function TimeRecordsPageNew() {
                 <p className="text-xs text-muted-foreground">Nenhum funcionário encontrado</p>
               )}
             </div>
-            
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Gestor</label>
+              <Select
+                value={managerFilter || 'all'}
+                onValueChange={(value) => {
+                  setManagerFilter(value === 'all' ? '' : value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Todos os gestores" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os gestores</SelectItem>
+                  {managers.map((manager: any) => (
+                    <SelectItem key={manager.id} value={manager.id}>
+                      {manager.nome || manager.email || manager.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Status</label>
               <Select
@@ -1728,7 +2006,7 @@ export default function TimeRecordsPageNew() {
 
       {/* Tabs de Navegação */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="registros" className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
             Registros de Ponto
@@ -1736,6 +2014,10 @@ export default function TimeRecordsPageNew() {
           <TabsTrigger value="resumo" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
             Resumo por Funcionário
+          </TabsTrigger>
+          <TabsTrigger value="correcoes" className="flex items-center gap-2">
+            <Edit className="h-4 w-4" />
+            Correção de Ponto
           </TabsTrigger>
         </TabsList>
 
@@ -2276,6 +2558,401 @@ export default function TimeRecordsPageNew() {
       </Card>
         </TabsContent>
 
+        {/* Aba: Correção de Ponto (visão RH, independente do gestor) */}
+        <TabsContent value="correcoes" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Edit className="h-4 w-4" />
+                Correção de Ponto
+              </CardTitle>
+              <CardDescription>
+                Visão consolidada das correções de ponto da empresa no período filtrado, independente do gestor.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {correctionsError && (
+                <div className="mb-4 text-sm text-red-600">
+                  {(correctionsError as Error).message ?? 'Erro ao carregar correções de ponto.'}
+                </div>
+              )}
+
+              {/* Filtros específicos da aba de correções */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Status da Correção</label>
+                  <Select
+                    value={correctionsStatusFilter}
+                    onValueChange={(value: 'all' | 'pendente' | 'aprovado' | 'rejeitado') =>
+                      setCorrectionsStatusFilter(value)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos os status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="pendente">Pendentes</SelectItem>
+                      <SelectItem value="aprovado">Aprovadas</SelectItem>
+                      <SelectItem value="rejeitado">Rejeitadas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Resumo</label>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <Badge variant="outline">
+                      Total: {correctionsStatsForRh.total}
+                    </Badge>
+                    <Badge variant="outline" className="bg-yellow-50 text-yellow-800 border-yellow-200">
+                      Pendentes: {correctionsStatsForRh.pendentes}
+                    </Badge>
+                    <Badge variant="outline" className="bg-green-50 text-green-800 border-green-200">
+                      Aprovadas: {correctionsStatsForRh.aprovadas}
+                    </Badge>
+                    <Badge variant="outline" className="bg-red-50 text-red-800 border-red-200">
+                      Rejeitadas: {correctionsStatsForRh.rejeitadas}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              {correctionsLoading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-6 w-6 animate-spin" />
+                    <span>Carregando correções de ponto...</span>
+                  </div>
+                </div>
+              ) : filteredCorrectionsForRh.length === 0 ? (
+                <div className="text-center py-8">
+                  <Clock className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Nenhuma correção encontrada para o período e filtros selecionados.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Funcionário</TableHead>
+                        <TableHead>Data</TableHead>
+                        <TableHead>Horário Original</TableHead>
+                        <TableHead>Horário Corrigido</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Solicitado em</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredCorrectionsForRh.map((correction) => {
+                        const employee = employees.find((e) => e.id === correction.employee_id);
+                        const displayName =
+                          correction.funcionario_nome || employee?.nome || 'Funcionário não encontrado';
+                        const displayMatricula =
+                          correction.funcionario_matricula || employee?.matricula || '';
+
+                        return (
+                          <TableRow key={correction.id}>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{displayName}</p>
+                                {displayMatricula && (
+                                  <p className="text-xs text-gray-500">{displayMatricula}</p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>{formatDateOnly(correction.data_original)}</TableCell>
+                            <TableCell>
+                              <div className="text-xs leading-snug">
+                                <p>Entrada: {correction.entrada_original?.substring(0, 5) || '-'}</p>
+                                <p>Saída: {correction.saida_original?.substring(0, 5) || '-'}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-xs leading-snug">
+                                <p>Entrada: {correction.entrada_corrigida?.substring(0, 5) || '-'}</p>
+                                <p>Saída: {correction.saida_corrigida?.substring(0, 5) || '-'}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                className={
+                                  correction.status === 'aprovado'
+                                    ? 'bg-green-100 text-green-800 border-green-200'
+                                    : correction.status === 'pendente'
+                                    ? 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                                    : correction.status === 'rejeitado'
+                                    ? 'bg-red-100 text-red-800 border-red-200'
+                                    : 'bg-gray-100 text-gray-800 border-gray-200'
+                                }
+                              >
+                                {correction.status.charAt(0).toUpperCase() + correction.status.slice(1)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {correction.created_at
+                                ? new Date(correction.created_at).toLocaleDateString('pt-BR')
+                                : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedCorrectionForRh(correction);
+                                  setIsRhCorrectionDetailsOpen(true);
+                                }}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Modal de detalhes da correção de ponto (visão RH) */}
+        <Dialog open={isRhCorrectionDetailsOpen} onOpenChange={setIsRhCorrectionDetailsOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-primary" />
+                Detalhes da Correção de Ponto
+              </DialogTitle>
+              <DialogDescription>
+                Comparação entre o horário original e o horário solicitado na correção.
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedCorrectionForRh && (
+              <div className="space-y-5">
+                {/* Funcionário e Data */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b pb-4">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Funcionário
+                    </p>
+                    <p className="font-semibold text-foreground">
+                      {selectedCorrectionForRh.funcionario_nome ||
+                        employees.find((e) => e.id === selectedCorrectionForRh.employee_id)?.nome ||
+                        'Funcionário não encontrado'}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedCorrectionForRh.funcionario_matricula ||
+                        employees.find((e) => e.id === selectedCorrectionForRh.employee_id)?.matricula ||
+                        ''}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Data
+                    </p>
+                    <p className="font-semibold text-foreground">
+                      {formatDateOnly(selectedCorrectionForRh.data_original)}
+                    </p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <Badge
+                      className={
+                        selectedCorrectionForRh.status === 'aprovado'
+                          ? 'bg-green-100 text-green-800 border-green-200'
+                          : selectedCorrectionForRh.status === 'pendente'
+                          ? 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                          : selectedCorrectionForRh.status === 'rejeitado'
+                          ? 'bg-red-100 text-red-800 border-red-200'
+                          : 'bg-gray-100 text-gray-800 border-gray-200'
+                      }
+                    >
+                      {selectedCorrectionForRh.status.charAt(0).toUpperCase() +
+                        selectedCorrectionForRh.status.slice(1)}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Comparação Original x Corrigido */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Horário Original */}
+                  <div className="rounded-xl border-2 border-amber-200 bg-amber-50/80 dark:bg-amber-950/20 dark:border-amber-800/60 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-amber-100 dark:bg-amber-900/40 border-b border-amber-200 dark:border-amber-800/60">
+                      <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2">
+                        <Clock className="w-4 h-4" />
+                        Horário Original
+                      </p>
+                      <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                        Registro antes da correção
+                      </p>
+                    </div>
+                    <div className="p-4">
+                      <Table>
+                        <TableBody className="text-sm">
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground w-40">
+                              Entrada
+                            </TableCell>
+                            <TableCell className="py-2 font-mono font-semibold">
+                              {selectedCorrectionForRh.entrada_original || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Saída
+                            </TableCell>
+                            <TableCell className="py-2 font-mono font-semibold">
+                              {selectedCorrectionForRh.saida_original || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Almoço (entrada)
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.entrada_almoco_original || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Almoço (saída)
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.saida_almoco_original || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Entrada Hora Extra
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.entrada_extra1_original || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Saída Hora Extra
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.saida_extra1_original || '-'}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+
+                  {/* Horário Corrigido */}
+                  <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/80 dark:bg-emerald-950/20 dark:border-emerald-800/60 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-emerald-100 dark:bg-emerald-900/40 border-b border-emerald-200 dark:border-emerald-800/60">
+                      <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 flex items-center gap-2">
+                        <Clock className="w-4 h-4" />
+                        Horário Corrigido
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5">
+                        Horário solicitado na correção
+                      </p>
+                    </div>
+                    <div className="p-4">
+                      <Table>
+                        <TableBody className="text-sm">
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground w-40">
+                              Entrada
+                            </TableCell>
+                            <TableCell className="py-2 font-mono font-semibold">
+                              {selectedCorrectionForRh.entrada_corrigida || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Saída
+                            </TableCell>
+                            <TableCell className="py-2 font-mono font-semibold">
+                              {selectedCorrectionForRh.saida_corrigida || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Almoço (entrada)
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.entrada_almoco_corrigida || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Almoço (saída)
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.saida_almoco_corrigida || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Entrada Hora Extra
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.entrada_extra1_corrigida || '-'}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="py-2 font-medium text-muted-foreground">
+                              Saída Hora Extra
+                            </TableCell>
+                            <TableCell className="py-2 font-mono">
+                              {selectedCorrectionForRh.saida_extra1_corrigida || '-'}
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Justificativa e observações */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Justificativa
+                    </p>
+                    <p className="text-sm text-foreground whitespace-pre-wrap">
+                      {selectedCorrectionForRh.justificativa || '—'}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Observações
+                    </p>
+                    <p className="text-sm text-foreground whitespace-pre-wrap">
+                      {selectedCorrectionForRh.observacoes || '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Rodapé com datas de criação/aprovação */}
+                <div className="text-xs text-muted-foreground border-t pt-3 flex flex-wrap gap-4">
+                  <span>
+                    Solicitado em:{' '}
+                    {selectedCorrectionForRh.created_at
+                      ? new Date(selectedCorrectionForRh.created_at).toLocaleString('pt-BR')
+                      : '—'}
+                  </span>
+                  {selectedCorrectionForRh.aprovado_por && (
+                    <span>
+                      Aprovado por: {selectedCorrectionForRh.aprovado_por}{' '}
+                      {selectedCorrectionForRh.aprovado_em &&
+                        `em ${new Date(selectedCorrectionForRh.aprovado_em).toLocaleString('pt-BR')}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Aba: Resumo por Funcionário */}
         <TabsContent value="resumo" className="mt-6">
           {/* Filtros de Mês e Ano */}
@@ -2379,6 +3056,8 @@ export default function TimeRecordsPageNew() {
                     const totalHorasTrabalhadas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_trabalhadas) || 0), 0);
                     // CORREÇÃO: Não incluir horas negativas de dias futuros nem de Feriado/Compensação/Folga no total
                     const employeeDailyHours = employeeResumoData.get(summary.employeeId)?.employeeDailyHours;
+                    const employeeDataForSummary = employeesMap.get(summary.employeeId);
+                    const employeeScaleType = (employeeDataForSummary as any)?.work_shift?.tipo_escala as string | undefined;
                     const totalHorasNegativas = recordsForTotals.reduce((s, r) => {
                       const recordDate = new Date(r.data_registro);
                       recordDate.setHours(0, 0, 0, 0);
@@ -2393,7 +3072,12 @@ export default function TimeRecordsPageNew() {
                       return s + debit;
                     }, 0);
                     const totalHorasExtras50 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_50) || 0), 0);
-                    const totalHorasExtras100 = recordsForTotals.reduce((s, r) => s + (Number(r.horas_extras_100) || 0), 0);
+                    const totalHorasExtras100 = getAdjustedTotalExtras100(
+                      summary.employeeId,
+                      recordsForTotals as TimeRecord[],
+                      dayNatureOverrides,
+                      employeeScaleType
+                    );
                     const totalHorasNoturnas = recordsForTotals.reduce((s, r) => s + (Number(r.horas_noturnas) || 0), 0);
                     // Saldo do mês consistente com os totais exibidos: Extras 50% − Horas Negativas (apenas 50% vai para o banco)
                     const saldoBancoHorasDoMes = totalHorasExtras50 - totalHorasNegativas;

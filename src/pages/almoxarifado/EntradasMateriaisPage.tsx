@@ -277,6 +277,10 @@ const EntradasMateriaisPage: React.FC = () => {
                 ? (entrada.itens as { entrada_estoque_em?: string }[]).filter((i) => !!i.entrada_estoque_em).length
                 : 0;
               const totalItens = entrada.itens?.length ?? 0;
+              const displayStatus = getDisplayStatus(entrada);
+              const canConfirm =
+                (entrada as any).pedido_id &&
+                (displayStatus === 'pendente' || displayStatus === 'inspecao' || displayStatus === 'parcial');
               return (
               <Card key={entrada.id} className="overflow-hidden rounded-xl border shadow-sm transition-all hover:shadow-md">
                 <CardContent className="p-0">
@@ -296,9 +300,9 @@ const EntradasMateriaisPage: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
-                      {getStatusBadge(getDisplayStatus(entrada))}
+                      {getStatusBadge(displayStatus)}
                       <TooltipProvider>
-                        {(entrada as any).pedido_id && (entrada.status === 'pendente' || entrada.status === 'inspecao') && (
+                        {canConfirm && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button

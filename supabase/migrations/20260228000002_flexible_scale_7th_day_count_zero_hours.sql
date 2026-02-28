@@ -1,29 +1,22 @@
 -- =====================================================
--- Regras de hora extra 100% para escalas flexíveis
+-- Correção: 7º dia após DSR – contar dia com 0h como dia do ciclo
 -- =====================================================
--- Data: 2026-02-26
+-- Data: 2026-02-28
 --
--- Objetivo:
--- - Ajustar a função rh.calculate_overtime_by_scale para que, em escalas flexíveis
---   (ex.: flexivel_6x1), as horas extras 100% sejam aplicadas apenas quando:
---     1) Houver feriado (regra já existente no bloco principal);
---     2) O funcionário trabalhar no 7º dia consecutivo após o último DSR
---        (ou seja, após 6 dias consecutivos de trabalho sem descanso).
+-- Problema: Na contagem de "dias consecutivos de trabalho" para aplicar hora extra 100%
+-- no 7º dia após o DSR, o código quebrava a sequência quando o dia tinha 0 horas
+-- (ex.: 05/01 com 0h00). Assim, 11/01 ficava com apenas 5 dias contados e não
+-- recebia 100%.
 --
--- Regra específica implementada aqui (flexível 6x1):
--- - Contar quantos dias consecutivos de trabalho existem imediatamente
---   ANTES da data do registro (v_date), olhando para rh.time_records.
--- - Se houver 6 ou mais dias consecutivos de trabalho antes de v_date,
---   então o dia atual é tratado como o "7º dia após o último DSR" e
---   TODAS as horas trabalhadas nesse dia vão para horas_extras_100.
--- - Caso contrário, o excedente (v_excedente_limitado) continua indo
---   para horas_extras_50 (banco), como hoje.
+-- Regra correta: O "7º dia" é o sétimo dia do ciclo após o último DSR (escala ou virtual).
+-- Um dia com registro de ponto mas 0h (ex.: falta de marcação, dia útil sem bater) ainda
+-- é um dia do ciclo (1º, 2º, ... 7º). Só quebramos a sequência em:
+-- - is_rest_day (folga da escala)
+-- - is_virtual_dsr (natureza do dia = DSR)
+-- - ausência de registro (NOT FOUND) para a data.
 --
--- Observação:
--- - Este ajuste é restrito à escala flexível 6x1 (tipo_escala = 'flexivel_6x1').
---   Escalas fixas e outras continuam com a regra já existente.
--- - Feriados continuam tratados no bloco principal (antes deste IF),
---   sem alteração neste arquivo.
+-- Alteração: Remover a condição "OR COALESCE(v_trabalhadas_antes, 0) = 0" no loop;
+-- contar todo dia que tenha registro em time_records (mesmo com 0h) como dia do ciclo.
 -- =====================================================
 
 CREATE OR REPLACE FUNCTION rh.calculate_overtime_by_scale(
@@ -64,7 +57,6 @@ DECLARE
   v_saida_date DATE;
   v_timezone text := 'America/Sao_Paulo';
   v_horas_extras_sum DECIMAL(4,2);
-  -- Novas variáveis para regra de 7º dia após DSR em escalas flexíveis
   v_consecutive_work_days INTEGER := 0;
   v_check_date DATE;
   v_trabalhadas_antes NUMERIC(10,2);
@@ -166,7 +158,6 @@ BEGIN
   v_is_domingo := rh.is_sunday(v_date);
   v_is_dia_folga := rh.is_rest_day(v_employee_id, v_company_id, v_date);
 
-  -- Escala fixa: em dia NÃO marcado em "Dias da Semana" = 0h esperadas (não gera horas negativas)
   IF v_tipo_escala = 'fixa' AND v_is_dia_folga THEN
     v_horas_diarias := 0;
   END IF;
@@ -191,7 +182,6 @@ BEGIN
   v_excedente := GREATEST(-99.99, LEAST(99.99, v_excedente));
   v_excedente_limitado := LEAST(v_excedente, v_janela_horas);
 
-  -- Feriado (todas as escalas): regra já existente (excedente 100% limitado pela janela)
   IF v_is_feriado AND v_horas_trabalhadas > 0 THEN
     v_horas_extras_100 := LEAST(99.99, v_excedente_limitado);
     v_horas_para_pagamento := LEAST(99.99, v_excedente_limitado);
@@ -208,27 +198,19 @@ BEGIN
       END IF;
 
     ELSIF v_tipo_escala = 'flexivel_6x1' THEN
-      -- =====================================================
-      -- Regra para escalas flexíveis (flexivel_6x1):
-      -- Extras 100% somente quando o funcionário trabalha
-      -- no 7º dia consecutivo após o último DSR
-      -- (ou seja, após 6 dias seguidos de trabalho, sem dia de folga no ciclo).
-      --
-      -- Correção:
-      -- - A sequência de dias é quebrada sempre que houver um dia de folga da escala
-      --   (rh.is_rest_day = true), mesmo que o funcionário tenha trabalhado nesse dia.
-      --   Assim, trabalhar no próprio DSR gera 100% naquele dia, mas NÃO arrasta 100%
-      --   para os dias seguintes (novo ciclo após o DSR).
-      -- =====================================================
+      -- 7º dia após DSR (escala ou virtual) = 100%. Quebra: is_rest_day, is_virtual_dsr ou sem registro.
+      -- Dia com registro e 0h conta como dia do ciclo (não quebra).
       v_consecutive_work_days := 0;
       v_check_date := v_date - 1;
 
       WHILE v_check_date >= v_date - 14 LOOP
         v_trabalhadas_antes := NULL;
 
-        -- Quebrar a sequência sempre que o dia anterior for dia de folga da escala
-        -- (DSR), independentemente de ter havido trabalho ou não.
         IF rh.is_rest_day(v_employee_id, v_company_id, v_check_date) THEN
+          EXIT;
+        END IF;
+
+        IF rh.is_virtual_dsr(v_employee_id, v_company_id, v_check_date) THEN
           EXIT;
         END IF;
 
@@ -239,8 +221,7 @@ BEGIN
           AND tr.company_id = v_company_id
           AND tr.data_registro = v_check_date;
 
-        -- Sem registro ou sem horas trabalhadas também quebra a sequência
-        IF NOT FOUND OR COALESCE(v_trabalhadas_antes, 0) = 0 THEN
+        IF NOT FOUND THEN
           EXIT;
         END IF;
 
@@ -249,21 +230,16 @@ BEGIN
       END LOOP;
 
       IF v_consecutive_work_days >= 6 THEN
-        -- 7º dia consecutivo após o último DSR:
-        -- todas as horas trabalhadas do dia são tratadas como 100%.
         v_horas_extras_100 := LEAST(99.99, GREATEST(0, COALESCE(v_horas_trabalhadas, 0)));
         v_horas_para_pagamento := v_horas_extras_100;
         v_horas_extras_50 := 0;
         v_horas_para_banco := 0;
       ELSE
-        -- Demais dias em escala flexível: excedente vai para banco (50%)
         v_horas_extras_50 := LEAST(99.99, v_excedente_limitado);
         v_horas_para_banco := LEAST(99.99, v_excedente_limitado);
       END IF;
 
     ELSE
-      -- Escala fixa e demais: Extras 100% APENAS em domingo;
-      -- sábado/outros dias de folga e dia útil = Extras 50%
       IF v_is_domingo THEN
         v_horas_extras_100 := LEAST(99.99, v_excedente_limitado);
         v_horas_para_pagamento := LEAST(99.99, v_excedente_limitado);
@@ -318,12 +294,5 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION rh.calculate_overtime_by_scale(UUID) IS 
-'Calcula horas extras conforme tipo de escala e regras CLT.
-Extras 100%:
-- Feriados (todas as escalas), conforme excedente limitado pela janela;
-- Escala fixa: domingos com excedente;
-- Escalas flexíveis (flexivel_6x1): todas as horas trabalhadas no 7º dia
-  consecutivo após o último DSR (após 6 dias seguidos de trabalho).
-Demais casos seguem como horas extras 50% ou horas negativas, conforme excedente.';
-
+COMMENT ON FUNCTION rh.calculate_overtime_by_scale(UUID) IS
+'Calcula horas extras conforme tipo de escala e regras CLT. Flexivel_6x1: 7º dia após DSR (escala ou virtual) = 100%; conta dias do ciclo mesmo com 0h.';

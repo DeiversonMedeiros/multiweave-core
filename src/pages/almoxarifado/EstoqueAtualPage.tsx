@@ -24,13 +24,17 @@ import {
 } from '@/components/ui/select';
 import { useEstoqueAtual } from '@/hooks/almoxarifado/useEstoqueAtualQuery';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
+import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 const EstoqueAtualPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterAlmoxarifado, setFilterAlmoxarifado] = useState<string>('todos');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   // Hooks para dados
   const { 
@@ -41,12 +45,55 @@ const EstoqueAtualPage: React.FC = () => {
   } = useEstoqueAtual();
 
   const { data: almoxarifados = [] } = useAlmoxarifados();
+  const { data: materiais = [] } = useMateriaisEquipamentos();
+
+  const openImageDialog = (url: string) => {
+    setImagePreviewUrl(url);
+    setImageDialogOpen(true);
+  };
+
+  // Enriquecer itens de estoque com dados de material e almoxarifado,
+  // e calcular valor_unitario/estoque_minimo quando não vierem do back-end.
+  const materialMap = new Map<string, any>((materiais as any[]).map((m) => [m.id, m]));
+  const almoxMap = new Map<string, any>((almoxarifados as any[]).map((a) => [a.id, a]));
+
+  const enrichedEstoque = (estoque as any[]).map((item) => {
+    const material = item.material || materialMap.get(item.material_equipamento_id);
+    const almoxarifado = item.almoxarifado || almoxMap.get(item.almoxarifado_id);
+
+    const estoqueMinimo =
+      item.estoque_minimo ??
+      material?.estoque_minimo ??
+      0;
+
+    const quantidadeAtual = Number(item.quantidade_atual || 0);
+    const valorTotal = item.valor_total != null ? Number(item.valor_total) : undefined;
+
+    const valorUnitario =
+      item.valor_unitario ??
+      (quantidadeAtual > 0 && valorTotal !== undefined
+        ? valorTotal / quantidadeAtual
+        : undefined);
+
+    return {
+      ...item,
+      material,
+      almoxarifado,
+      estoque_minimo: estoqueMinimo,
+      valor_unitario: valorUnitario,
+    };
+  });
 
   // Filtrar dados
-  const filteredEstoque = estoque.filter(item => {
-    const matchesSearch = item.material?.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.material?.codigo_interno?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.almoxarifado?.nome?.toLowerCase().includes(searchTerm.toLowerCase());
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  const filteredEstoque = enrichedEstoque.filter(item => {
+    const matchesSearch =
+      !normalizedSearch ||
+      item.material?.nome?.toLowerCase().includes(normalizedSearch) ||
+      item.material?.descricao?.toLowerCase().includes(normalizedSearch) ||
+      item.material?.codigo_interno?.toLowerCase().includes(normalizedSearch) ||
+      item.almoxarifado?.nome?.toLowerCase().includes(normalizedSearch);
     
     const matchesAlmoxarifado = filterAlmoxarifado === 'todos' || item.almoxarifado_id === filterAlmoxarifado;
     
@@ -227,9 +274,26 @@ const EstoqueAtualPage: React.FC = () => {
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <Package className="h-5 w-5" />
+                            {item.material?.imagem_url ? (
+                              <button
+                                type="button"
+                                onClick={() => openImageDialog(item.material.imagem_url)}
+                                className="relative h-12 w-12 rounded-md overflow-hidden border bg-muted flex-shrink-0"
+                                title="Ver imagem do material"
+                              >
+                                <img
+                                  src={item.material.imagem_url}
+                                  alt={item.material.nome || item.material.descricao || 'Imagem do material'}
+                                  className="h-full w-full object-cover"
+                                />
+                              </button>
+                            ) : (
+                              <Package className="h-5 w-5" />
+                            )}
                             <div>
-                              <CardTitle className="text-lg">{item.material?.descricao || 'Material'}</CardTitle>
+                              <CardTitle className="text-lg">
+                                {item.material?.nome || item.material?.descricao || 'Material'}
+                              </CardTitle>
                               <CardDescription>
                                 Código: {item.material?.codigo_interno || 'N/A'}
                               </CardDescription>
@@ -290,6 +354,26 @@ const EstoqueAtualPage: React.FC = () => {
             )}
           </div>
         )}
+
+        <Dialog
+          open={imageDialogOpen && !!imagePreviewUrl}
+          onOpenChange={(open) => {
+            if (!open) {
+              setImageDialogOpen(false);
+              setImagePreviewUrl(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            {imagePreviewUrl && (
+              <img
+                src={imagePreviewUrl}
+                alt="Imagem do material"
+                className="w-full h-auto rounded-md"
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </RequirePage>
   );

@@ -1204,6 +1204,14 @@ export const useMenu = () => {
               requiresPermission: { type: 'page', name: '/rh/fgts-config*', action: 'read' }
             },
             {
+              id: 'rh-income-statements',
+              title: 'Imposto de Renda',
+              url: '/rh/income-statements',
+              icon: FileText,
+              description: 'Informes de rendimentos para declaração de IR',
+              requiresPermission: { type: 'module', name: 'rh', action: 'read' }
+            },
+            {
               id: 'rh-financial-integration',
               title: 'Integração Financeira',
               url: '/rh/financial-integration-config',

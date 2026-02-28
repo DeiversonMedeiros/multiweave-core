@@ -105,6 +105,9 @@ import OnlineTrainingsListPage from './OnlineTrainingsListPage';
 // Importar página de Escala de Folga
 import RestDaySchedulePage from './RestDaySchedulePage';
 
+// Importar página de Informes de Rendimentos / Imposto de Renda
+import IncomeStatementsPage from './IncomeStatementsPage';
+
 // =====================================================
 // ROTAS DO MÓDULO RH - NOVA ABORDAGEM
 // =====================================================
@@ -234,6 +237,9 @@ export function RHRoutesNew() {
       <Route path="/irrf-brackets/new" element={<IrrfBracketsPage />} />
       <Route path="/irrf-brackets/:id" element={<IrrfBracketsPage />} />
       <Route path="/irrf-brackets/:id/edit" element={<IrrfBracketsPage />} />
+
+      {/* Informes de Rendimentos / Imposto de Renda */}
+      <Route path="/income-statements" element={<IncomeStatementsPage />} />
 
       {/* Configurações FGTS */}
       <Route path="/fgts-config" element={<FgtsConfigPage />} />

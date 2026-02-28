@@ -1788,9 +1788,9 @@ export async function generateTimeRecordReportCSV(data: TimeRecordReportData): P
   const employeeDailyHours = (employeeId && companyId) ? await getEmployeeDailyHours(employeeId, companyId) : DEFAULT_DEBIT_HOURS_FOLGA_DEBITO;
   const debitOptions: DebitHoursOptions = { employeeDailyHours };
   
-  // Cabeçalho (incluindo Horas Negativas; Folga e Compensação devem exibir o valor)
+  // Cabeçalho (incluindo Extras 50%, Extras 100%, Horas Negativas; valores do banco)
   const lines: string[] = [];
-  lines.push('Funcionário,Data,Natureza do Dia,Entrada,Início Almoço,Fim Almoço,Saída,Horas Negativas');
+  lines.push('Funcionário,Data,Natureza do Dia,Entrada,Início Almoço,Fim Almoço,Saída,Extras 50%,Extras 100%,Horas Negativas');
   
   // Função auxiliar para formatar data sem problemas de timezone
   const formatDateForCSV = (dateStr: string): string => {
@@ -1852,10 +1852,26 @@ export async function generateTimeRecordReportCSV(data: TimeRecordReportData): P
         : isDayNatureDebitHours(natureValue) || (debitHours > 0)
           ? `-${formatDecimalHoursToHhMm(debitHours)}`
           : '0h00';
+      const extras50Cell = displayLabel ? '-' : formatDecimalHoursToHhMm(record.horas_extras_50 || 0);
+      const extras100Cell = displayLabel ? '-' : formatDecimalHoursToHhMm(record.horas_extras_100 || 0);
       
       const escapeCsv = (s: string) => (s && s.includes(',')) ? `"${s.replace(/"/g, '""')}"` : (s || '');
-      lines.push(`${escapeCsv(employeeName)},${date},${escapeCsv(natureLabel)},${entrada},${entradaAlmoco},${saidaAlmoco},${saida},${escapeCsv(horasNegativasCell)}`);
+      lines.push(`${escapeCsv(employeeName)},${date},${escapeCsv(natureLabel)},${entrada},${entradaAlmoco},${saidaAlmoco},${saida},${extras50Cell},${extras100Cell},${escapeCsv(horasNegativasCell)}`);
     });
+  
+  // Totais e saldo do banco de horas (valores do banco, mesmas regras do backend)
+  const totalExtras50 = completeRecords.reduce((sum, r) => sum + (r.horas_extras_50 || 0), 0);
+  const totalExtras100 = completeRecords.reduce((sum, r) => sum + (r.horas_extras_100 || 0), 0);
+  const totalHorasNegativas = completeRecords.reduce((sum, r) => {
+    const dateStr = r.data_registro.split('T')[0];
+    const natureValue = data.dayNatureOverrides?.[dateStr] ?? (r as any).natureza_dia ?? getDayNatureFromRecord(r);
+    if (isDayNatureNoNegativeHours(natureValue)) return sum;
+    return sum + getDebitHoursForDay(r, natureValue, debitOptions);
+  }, 0);
+  const bankHoursBalance = Math.round((totalExtras50 - totalHorasNegativas) * 100) / 100;
+  lines.push('');
+  lines.push(`TOTAIS,,,.,.,.,.,${formatDecimalHoursToHhMm(totalExtras50)},${formatDecimalHoursToHhMm(totalExtras100)},-${formatDecimalHoursToHhMm(totalHorasNegativas)}`);
+  lines.push(`Saldo Banco de Horas (Extras 50% - Horas Negativas),,,,,,,,,${formatDecimalHoursToHhMm(bankHoursBalance)}`);
   
   return lines.join('\n');
 }

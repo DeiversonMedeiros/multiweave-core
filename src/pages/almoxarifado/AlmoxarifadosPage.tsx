@@ -52,6 +52,25 @@ export default function AlmoxarifadosPage() {
   const updateMutation = useUpdateAlmoxarifado();
   const deleteMutation = useDeleteAlmoxarifado();
 
+  const getNextAlmoxarifadoCodigo = () => {
+    const prefix = "ALM-";
+
+    const numeros = almoxarifados
+      .map((almoxarifado) => {
+        if (!almoxarifado.codigo?.startsWith(prefix)) return null;
+
+        const numericPart = almoxarifado.codigo.slice(prefix.length);
+        if (!/^\d+$/.test(numericPart)) return null;
+
+        return parseInt(numericPart, 10);
+      })
+      .filter((num): num is number => num !== null);
+
+    const nextNumber = numeros.length > 0 ? Math.max(...numeros) + 1 : 1;
+
+    return `${prefix}${String(nextNumber).padStart(3, "0")}`;
+  };
+
   const form = useForm<AlmoxarifadoFormData>({
     resolver: zodResolver(almoxarifadoSchema),
     defaultValues: {
@@ -89,7 +108,7 @@ export default function AlmoxarifadosPage() {
     setEditingAlmoxarifado(null);
     form.reset({
       nome: "",
-      codigo: "",
+      codigo: getNextAlmoxarifadoCodigo(),
       endereco: "",
       responsavel_id: "",
       cost_center_id: "",
@@ -128,9 +147,8 @@ export default function AlmoxarifadosPage() {
     if (!selectedCompany) return;
 
     try {
-      const almoxarifadoData = {
+      const almoxarifadoBaseData = {
         nome: data.nome,
-        codigo: data.codigo,
         endereco: data.endereco || null,
         responsavel_id: data.responsavel_id && data.responsavel_id !== "" ? data.responsavel_id : null,
         cost_center_id: data.cost_center_id && data.cost_center_id !== "" ? data.cost_center_id : null,
@@ -140,11 +158,15 @@ export default function AlmoxarifadosPage() {
       if (editingAlmoxarifado) {
         await updateMutation.mutateAsync({
           id: editingAlmoxarifado.id,
-          data: almoxarifadoData,
+          // Nunca permitir alteração de código via edição
+          data: almoxarifadoBaseData,
         });
         toast.success("Almoxarifado atualizado!");
       } else {
-        await createMutation.mutateAsync(almoxarifadoData);
+        await createMutation.mutateAsync({
+          ...almoxarifadoBaseData,
+          codigo: data.codigo,
+        });
         toast.success("Almoxarifado cadastrado!");
       }
 
@@ -257,8 +279,18 @@ export default function AlmoxarifadosPage() {
                         <FormItem>
                           <FormLabel>Código *</FormLabel>
                           <FormControl>
-                            <Input {...field} placeholder="Ex: ALM-001" />
+                            <Input
+                              {...field}
+                              placeholder="Ex: ALM-001"
+                              readOnly
+                              disabled
+                              className="bg-muted cursor-not-allowed"
+                              title="O código é gerado automaticamente e não pode ser alterado"
+                            />
                           </FormControl>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Código gerado automaticamente pelo sistema e não editável.
+                          </p>
                           <FormMessage />
                         </FormItem>
                       )}

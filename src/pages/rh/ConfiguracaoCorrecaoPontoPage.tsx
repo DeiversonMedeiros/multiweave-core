@@ -214,6 +214,30 @@ export default function ConfiguracaoCorrecaoPontoPage() {
     setIsPermissionsDialogOpen(true);
   };
 
+  // Sempre que o mês/ano ou as permissões do mês mudarem com o modal aberto,
+  // recarregar a lista de permissões exibida no grid.
+  useEffect(() => {
+    if (!isPermissionsDialogOpen || !employees) return;
+
+    const updatedPermissions: EmployeePermissionWithDetails[] = employees.map(employee => {
+      const existingPermission = monthPermissions?.find(p => p.employee_id === employee.id);
+      return {
+        id: existingPermission?.id || '',
+        employee_id: employee.id,
+        company_id: selectedCompany?.id || '',
+        employee_name: employee.nome,
+        employee_matricula: employee.matricula,
+        mes_ano: selectedMonth,
+        liberado: existingPermission?.liberado || false,
+        liberado_por: existingPermission?.liberado_por,
+        liberado_em: existingPermission?.liberado_em,
+        observacoes: existingPermission?.observacoes || ''
+      };
+    });
+
+    setPermissions(updatedPermissions);
+  }, [isPermissionsDialogOpen, selectedMonth, employees, monthPermissions, selectedCompany?.id]);
+
   const handleSavePermissions = () => {
     // Converter para o tipo correto removendo os campos extras
     const permissionsToSave: EmployeePermission[] = permissions.map(p => ({
