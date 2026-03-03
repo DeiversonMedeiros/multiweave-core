@@ -27,7 +27,8 @@ import {
   History,
   Edit,
   Fuel,
-  BookOpen
+  BookOpen,
+  Package
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NotificationCenter } from '@/components/NotificationCenter';
@@ -116,6 +117,12 @@ const menuItems = [
     href: '/portal-colaborador/treinamentos',
     icon: BookOpen,
     description: 'Acesse seus treinamentos online'
+  },
+  {
+    title: 'Meus Materiais',
+    href: '/portal-colaborador/meus-materiais',
+    icon: Package,
+    description: 'Solicitações de saída de material e aceite'
   }
 ];
 

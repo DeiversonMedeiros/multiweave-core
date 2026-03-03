@@ -41,6 +41,7 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
     data_solicitacao: request?.data_solicitacao || new Date().toISOString(),
     data_aprovacao: request?.data_aprovacao || '',
     data_saida: request?.data_saida || '',
+    data_prevista_saida: request?.data_prevista_saida || '',
     status: request?.status || 'pendente',
     valor_total: request?.valor_total || '',
     observacoes: request?.observacoes || ''
@@ -88,6 +89,11 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
       return;
     }
 
+    if (!formData.projeto_id) {
+      alert('Selecione o projeto que receberá os materiais');
+      return;
+    }
+
     if (selectedItems.length === 0) {
       alert('Selecione pelo menos um item do estoque');
       return;
@@ -104,10 +110,11 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
       funcionario_receptor_id: formData.funcionario_receptor_id,
       almoxarifado_id: formData.almoxarifado_id,
       centro_custo_id: formData.centro_custo_id || undefined,
-      projeto_id: formData.projeto_id || undefined,
+      projeto_id: formData.projeto_id,
       data_solicitacao: formData.data_solicitacao,
       data_aprovacao: formData.data_aprovacao || undefined,
       data_saida: formData.data_saida || undefined,
+      data_prevista_saida: formData.data_prevista_saida || undefined,
       status: formData.status as any,
       valor_total: valorTotal,
       observacoes: formData.observacoes || undefined
@@ -120,9 +127,11 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
     const labels: Record<string, string> = {
       'pendente': 'Pendente',
       'aprovado': 'Aprovado',
+      'separado': 'Material separado',
+      'aceito_tecnico': 'Aceito pelo técnico',
+      'entregue': 'Entregue',
       'rejeitado': 'Rejeitado',
-      'cancelado': 'Cancelado',
-      'entregue': 'Entregue'
+      'cancelado': 'Cancelado'
     };
     return labels[status] || status;
   };
@@ -189,9 +198,9 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                 </p>
               </div>
 
-              {/* Centro de Custo (vir antes de Almoxarifado) */}
+              {/* Centro de Custo de origem (de onde sairá o material) */}
               <div className="space-y-2">
-                <Label htmlFor="centro_custo_id">Centro de Custo</Label>
+                <Label htmlFor="centro_custo_id">Centro de Custo (origem da saída) *</Label>
                 <Select 
                   value={formData.centro_custo_id} 
                   onValueChange={(value) =>
@@ -204,7 +213,7 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o centro de custo" />
+                    <SelectValue placeholder="Selecione o centro de custo de onde sairá o material" />
                   </SelectTrigger>
                   <SelectContent>
                     {costCenters.map((cc) => (
@@ -219,13 +228,13 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Almoxarifados e projetos serão filtrados pelo centro de custo selecionado
+                  Centro de custo ao qual pertence o almoxarifado de onde o material será retirado
                 </p>
               </div>
 
-              {/* Almoxarifado (apenas os vinculados ao centro de custo) */}
+              {/* Almoxarifado de origem (de onde sairá o material) */}
               <div className="space-y-2">
-                <Label htmlFor="almoxarifado_id">Almoxarifado *</Label>
+                <Label htmlFor="almoxarifado_id">Almoxarifado (de onde sairá o material) *</Label>
                 <Select 
                   value={formData.almoxarifado_id} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, almoxarifado_id: value }))}
@@ -235,7 +244,7 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     <SelectValue
                       placeholder={
                         formData.centro_custo_id
-                          ? 'Selecione o almoxarifado'
+                          ? 'Selecione o almoxarifado de origem'
                           : 'Selecione primeiro o centro de custo'
                       }
                     />
@@ -254,11 +263,14 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Os itens disponíveis em estoque serão exibidos conforme o almoxarifado selecionado
+                </p>
               </div>
 
-              {/* Projeto (apenas os vinculados ao centro de custo) */}
+              {/* Projeto que receberá os materiais (vinculado ao centro de custo) */}
               <div className="space-y-2">
-                <Label htmlFor="projeto_id">Projeto</Label>
+                <Label htmlFor="projeto_id">Projeto (que receberá os materiais) *</Label>
                 <Select 
                   value={formData.projeto_id} 
                   onValueChange={(value) => setFormData(prev => ({ ...prev, projeto_id: value }))}
@@ -268,7 +280,7 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     <SelectValue
                       placeholder={
                         formData.centro_custo_id
-                          ? 'Selecione o projeto (opcional)'
+                          ? 'Selecione o projeto que receberá os materiais'
                           : 'Selecione primeiro o centro de custo'
                       }
                     />
@@ -284,16 +296,21 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Projeto relacionado ao centro de custo selecionado que irá receber os materiais
+                </p>
               </div>
             </CardContent>
           </Card>
 
-          {/* Itens Selecionados */}
+          {/* Itens do Estoque (do almoxarifado de origem selecionado) */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Itens do Estoque</CardTitle>
               <CardDescription>
-                Selecione os materiais e equipamentos que serão solicitados
+                {formData.almoxarifado_id
+                  ? 'Selecione os materiais disponíveis em estoque no almoxarifado de origem escolhido acima'
+                  : 'Selecione primeiro o almoxarifado de origem para listar os itens disponíveis'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -324,7 +341,7 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
               {!formData.almoxarifado_id && (
                 <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-md">
                   <AlertTriangle className="h-4 w-4 inline mr-2" />
-                  Selecione um almoxarifado para escolher os itens
+                  Selecione o almoxarifado de origem (de onde sairá o material) para escolher os itens disponíveis em estoque
                 </div>
               )}
 
@@ -392,6 +409,20 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     />
                   </div>
                 </div>
+                {/* Data prevista de saída (para o almoxarife) */}
+                <div className="space-y-2">
+                  <Label htmlFor="data_prevista_saida">Data prevista de saída (opcional)</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                    <Input
+                      id="data_prevista_saida"
+                      type="datetime-local"
+                      value={formData.data_prevista_saida ? new Date(formData.data_prevista_saida).toISOString().slice(0, 16) : ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, data_prevista_saida: e.target.value ? new Date(e.target.value).toISOString() : '' }))}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Status (apenas para edição) */}
@@ -408,9 +439,11 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                     <SelectContent>
                       <SelectItem value="pendente">Pendente</SelectItem>
                       <SelectItem value="aprovado">Aprovado</SelectItem>
+                      <SelectItem value="separado">Material separado</SelectItem>
+                      <SelectItem value="aceito_tecnico">Aceito pelo técnico</SelectItem>
+                      <SelectItem value="entregue">Entregue</SelectItem>
                       <SelectItem value="rejeitado">Rejeitado</SelectItem>
                       <SelectItem value="cancelado">Cancelado</SelectItem>
-                      <SelectItem value="entregue">Entregue</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

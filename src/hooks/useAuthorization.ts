@@ -325,19 +325,30 @@ export const useAuthorization = () => {
     }
 
     console.log('[useAuthorization] Permissões de módulo disponíveis:', permissions.map(p => p.module_name));
-    const permission = permissions.find(p => p.module_name === moduleName);
-    
-    if (!permission) {
+
+    // Buscar todas as permissões para este módulo (usuário pode ter mais de um perfil)
+    const matchingPermissions = permissions.filter(p => p.module_name === moduleName);
+
+    if (!matchingPermissions.length) {
       console.log('[useAuthorization] Permissão não encontrada para módulo:', moduleName);
       return false;
     }
 
+    // Agregar permissões de todos os perfis: se qualquer perfil permitir, o módulo é permitido
+    const aggregatedPermission = matchingPermissions.reduce((acc, p) => ({
+      module_name: p.module_name,
+      can_read: acc.can_read || p.can_read,
+      can_create: acc.can_create || p.can_create,
+      can_edit: acc.can_edit || p.can_edit,
+      can_delete: acc.can_delete || p.can_delete
+    }), { module_name: moduleName, can_read: false, can_create: false, can_edit: false, can_delete: false } as UserPermission);
+
     const result = (() => {
       switch (action) {
-        case 'read': return permission.can_read;
-        case 'create': return permission.can_create;
-        case 'edit': return permission.can_edit;
-        case 'delete': return permission.can_delete;
+        case 'read': return aggregatedPermission.can_read;
+        case 'create': return aggregatedPermission.can_create;
+        case 'edit': return aggregatedPermission.can_edit;
+        case 'delete': return aggregatedPermission.can_delete;
         default: return false;
       }
     })();
@@ -346,10 +357,10 @@ export const useAuthorization = () => {
       moduleName,
       action,
       permission: {
-        can_read: permission.can_read,
-        can_create: permission.can_create,
-        can_edit: permission.can_edit,
-        can_delete: permission.can_delete
+        can_read: aggregatedPermission.can_read,
+        can_create: aggregatedPermission.can_create,
+        can_edit: aggregatedPermission.can_edit,
+        can_delete: aggregatedPermission.can_delete
       },
       result
     });
@@ -364,11 +375,13 @@ export const useAuthorization = () => {
     if (isAdmin) return true;
     if (!permissions.length) return false;
 
-    const permission = permissions.find(p => p.module_name === moduleName);
-    if (!permission) return false;
+    // Considerar todas as permissões do módulo (multi-perfil)
+    const matchingPermissions = permissions.filter(p => p.module_name === moduleName);
+    if (!matchingPermissions.length) return false;
 
-    return permission.can_read || permission.can_create || 
-           permission.can_edit || permission.can_delete;
+    return matchingPermissions.some(p =>
+      p.can_read || p.can_create || p.can_edit || p.can_delete
+    );
   }, [isAdmin, permissions]);
 
   // Verificar permissão de página (assíncrono)
@@ -452,8 +465,8 @@ export const useAuthorization = () => {
       });
     }
 
-    // Buscar permissão - primeiro exata, depois com wildcard
-    let permission = pagePermissions.find(p => {
+    // Buscar todas as permissões correspondentes (exata ou com wildcard)
+    const matchingPermissions = pagePermissions.filter(p => {
       // Comparação exata (com ou sem wildcard)
       if (p.page_path === normalizedPath) {
         if (isTrainingPath) {
@@ -461,7 +474,7 @@ export const useAuthorization = () => {
         }
         return true;
       }
-      
+
       // Se a permissão tem wildcard, verificar se o caminho normalizado começa com o padrão
       if (p.page_path.endsWith('*')) {
         const pattern = p.page_path.slice(0, -1);
@@ -472,7 +485,7 @@ export const useAuthorization = () => {
         }
         return matches;
       }
-      
+
       // Se o caminho normalizado tem wildcard, verificar se a permissão começa com o padrão
       if (normalizedPath.endsWith('*')) {
         const pattern = normalizedPath.slice(0, -1);
@@ -483,11 +496,11 @@ export const useAuthorization = () => {
         }
         return matches;
       }
-      
+
       return false;
     });
-    
-    if (!permission) {
+
+    if (!matchingPermissions.length) {
       if (isTrainingPath) {
         console.log('[useAuthorization] ❌ TREINAMENTO - Nenhuma permissão encontrada para:', normalizedPath);
         console.log('[useAuthorization] 🔍 TREINAMENTO - Permissões disponíveis:', pagePermissions.map(p => p.page_path));
@@ -495,21 +508,30 @@ export const useAuthorization = () => {
       return false;
     }
 
+    // Agregar permissões quando o usuário possui mais de um perfil
+    const aggregatedPermission = matchingPermissions.reduce((acc, p) => ({
+      can_read: acc.can_read || p.can_read,
+      can_create: acc.can_create || p.can_create,
+      can_edit: acc.can_edit || p.can_edit,
+      can_delete: acc.can_delete || p.can_delete,
+      page_path: acc.page_path || p.page_path
+    }), { can_read: false, can_create: false, can_edit: false, can_delete: false, page_path: normalizedPath } as PagePermission);
+
     const result = (() => {
       switch (action) {
-        case 'read': return permission.can_read;
-        case 'create': return permission.can_create;
-        case 'edit': return permission.can_edit;
-        case 'delete': return permission.can_delete;
+        case 'read': return aggregatedPermission.can_read;
+        case 'create': return aggregatedPermission.can_create;
+        case 'edit': return aggregatedPermission.can_edit;
+        case 'delete': return aggregatedPermission.can_delete;
         default: return false;
       }
     })();
     
     if (isTrainingPath) {
       console.log('[useAuthorization] ✅ TREINAMENTO - Resultado:', {
-        permissionPath: permission.page_path,
+        permissionPath: aggregatedPermission.page_path,
         action,
-        canRead: permission.can_read,
+        canRead: aggregatedPermission.can_read,
         result
       });
     }

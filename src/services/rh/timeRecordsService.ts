@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { EntityService } from '@/services/generic/entityService';
 import { 
   TimeRecord, 
   TimeRecordInsert, 
@@ -653,13 +654,15 @@ export const TimeRecordsService = {
   /**
    * Remove um registro de ponto
    */
-  delete: async (id: string): Promise<void> => {
-    const { error } = await supabase
-      .from('time_records')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
+  delete: async (id: string, companyId: string): Promise<void> => {
+    try {
+      await EntityService.delete({
+        schema: 'rh',
+        table: 'time_records',
+        companyId,
+        id,
+      });
+    } catch (error) {
       console.error('Erro ao remover registro de ponto:', error);
       throw error;
     }

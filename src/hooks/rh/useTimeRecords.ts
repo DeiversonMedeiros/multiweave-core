@@ -523,9 +523,16 @@ export function useUpdateTimeRecord() {
  */
 export function useDeleteTimeRecord() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
-    mutationFn: (id: string) => TimeRecordsService.delete(id),
+    mutationFn: (id: string) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+
+      return TimeRecordsService.delete(id, selectedCompany.id);
+    },
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ['rh', 'time-records'] });
       queryClient.removeQueries({ queryKey: ['rh', 'time-records', id] });

@@ -112,11 +112,20 @@ export function MaterialExitDetails({ requestId }: MaterialExitDetailsProps) {
                 <span className="font-medium">{formatDate(request.data_solicitacao)}</span>
               </div>
             </div>
+            {request.data_prevista_saida && (
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div>
+                  <span className="text-muted-foreground block">Data prevista saída</span>
+                  <span className="font-medium">{formatDate(request.data_prevista_saida)}</span>
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground text-sm">Status:</span>
-            <Badge variant={request.status === 'aprovado' ? 'default' : request.status === 'rejeitado' ? 'destructive' : 'secondary'}>
-              {request.status}
+            <Badge variant={request.status === 'aprovado' || request.status === 'entregue' ? 'default' : request.status === 'rejeitado' ? 'destructive' : 'secondary'}>
+              {request.status === 'separado' ? 'Material separado' : request.status === 'aceito_tecnico' ? 'Aceito pelo técnico' : request.status}
             </Badge>
           </div>
           {request.observacoes && (

@@ -18,12 +18,14 @@ import TreinamentoDetalhesPage from './TreinamentoDetalhesPage';
 import TrainingExamPage from './TrainingExamPage';
 import TrainingExamResultPage from './TrainingExamResultPage';
 import TrainingCompletionPage from './TrainingCompletionPage';
+import MeusMateriaisPage from './MeusMateriaisPage';
 
 export default function PortalColaboradorRoutes() {
   return (
     <Routes>
       <Route path="/" element={<PortalColaboradorLayout />}>
         <Route index element={<ColaboradorDashboard />} />
+        <Route path="meus-materiais" element={<MeusMateriaisPage />} />
         <Route path="registro-ponto" element={<RegistroPontoPage />} />
         <Route path="correcao-ponto" element={<CorrecaoPontoPage />} />
         <Route path="assinatura-ponto" element={<TimeRecordSignaturePage />} />

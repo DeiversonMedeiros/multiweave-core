@@ -225,6 +225,9 @@ const SaidasTransferenciasPage: React.FC = () => {
       pendente: { color: 'bg-yellow-100 text-yellow-800', icon: Clock, text: 'Pendente' },
       aprovado: { color: 'bg-blue-100 text-blue-800', icon: CheckCircle, text: 'Aprovado' },
       aprovada: { color: 'bg-blue-100 text-blue-800', icon: CheckCircle, text: 'Aprovada' },
+      separado: { color: 'bg-indigo-100 text-indigo-800', icon: Package, text: 'Material separado' },
+      aceito_tecnico: { color: 'bg-cyan-100 text-cyan-800', icon: CheckCircle, text: 'Aceito pelo técnico' },
+      entregue: { color: 'bg-green-100 text-green-800', icon: CheckCircle, text: 'Entregue' },
       rejeitado: { color: 'bg-red-100 text-red-800', icon: XCircle, text: 'Rejeitado' },
       rejeitada: { color: 'bg-red-100 text-red-800', icon: XCircle, text: 'Rejeitada' },
       transferido: { color: 'bg-green-100 text-green-800', icon: CheckCircle, text: 'Transferido' },
@@ -611,9 +614,11 @@ const SaidasTransferenciasPage: React.FC = () => {
                           <SelectItem value="todos">Todos os status</SelectItem>
                           <SelectItem value="pendente">Pendente</SelectItem>
                           <SelectItem value="aprovado">Aprovado</SelectItem>
+                          <SelectItem value="separado">Material separado</SelectItem>
+                          <SelectItem value="aceito_tecnico">Aceito pelo técnico</SelectItem>
+                          <SelectItem value="entregue">Entregue</SelectItem>
                           <SelectItem value="rejeitado">Rejeitado</SelectItem>
                           <SelectItem value="cancelado">Cancelado</SelectItem>
-                          <SelectItem value="entregue">Entregue</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>

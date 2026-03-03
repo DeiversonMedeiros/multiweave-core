@@ -9,7 +9,8 @@ import {
   ClipboardList, 
   History, 
   CheckSquare,
-  BarChart3
+  BarChart3,
+  Truck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { RequireModule } from '@/components/RequireAuth';
@@ -45,6 +46,13 @@ const AlmoxarifadoPage: React.FC = () => {
       icon: ArrowUpFromLine,
       path: '/almoxarifado/saidas',
       color: 'bg-orange-500'
+    },
+    {
+      title: 'Controle de Movimentações',
+      description: 'Solicitações de saída: data prevista, aprovação, separação e entrega',
+      icon: Truck,
+      path: '/almoxarifado/controle-movimentacoes',
+      color: 'bg-teal-500'
     },
     {
       title: 'Inventário',

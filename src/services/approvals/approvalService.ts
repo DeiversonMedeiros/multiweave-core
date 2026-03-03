@@ -59,7 +59,10 @@ export interface MaterialExitRequest {
   data_solicitacao: string;
   data_aprovacao?: string;
   data_saida?: string;
-  status: 'pendente' | 'aprovado' | 'rejeitado' | 'cancelado' | 'entregue';
+  data_prevista_saida?: string;
+  data_separacao?: string;
+  data_aceite_tecnico?: string;
+  status: 'pendente' | 'aprovado' | 'rejeitado' | 'cancelado' | 'entregue' | 'separado' | 'aceito_tecnico';
   valor_total?: number;
   observacoes?: string;
   created_at: string;
@@ -1148,6 +1151,7 @@ export class ApprovalService {
 
   static async getMaterialExitRequests(companyId: string, filters?: {
     funcionario_solicitante_id?: string;
+    funcionario_receptor_id?: string;
     almoxarifado_id?: string;
     status?: string;
   }): Promise<MaterialExitRequest[]> {

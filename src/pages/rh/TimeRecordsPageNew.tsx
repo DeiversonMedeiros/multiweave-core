@@ -1422,6 +1422,51 @@ export default function TimeRecordsPageNew() {
     console.log('Exportando registros de ponto para CSV...');
   };
 
+  // Recalcular registros de ponto do período filtrado (usa RPC no banco)
+  const handleRecalculateTimeRecords = async () => {
+    if (!selectedCompany?.id) {
+      toast.error('Selecione uma empresa para recalcular os registros de ponto');
+      return;
+    }
+
+    const { startDate, endDate } = filters;
+
+    if (!startDate || !endDate) {
+      toast.error('Defina Data Inicial e Data Final para recalcular os registros de ponto');
+      return;
+    }
+
+    if (!confirm(`Recalcular registros de ponto de ${startDate} até ${endDate}${employeeFilter ? ' para o funcionário selecionado' : ''}?`)) {
+      return;
+    }
+
+    try {
+      toast.loading('Recalculando registros de ponto...', { id: 'recalculate-time-records' });
+
+      const { data, error } = await supabase.rpc('recalculate_time_records_period', {
+        p_company_id: selectedCompany.id,
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_employee_id: employeeFilter && employeeFilter !== 'all' ? employeeFilter : null,
+      });
+
+      if (error) {
+        console.error('[TimeRecordsPageNew] Erro ao recalcular registros de ponto:', error);
+        throw error;
+      }
+
+      console.log('[TimeRecordsPageNew] Resultado do recálculo de registros de ponto:', data);
+
+      toast.success('Registros de ponto recalculados com sucesso!', { id: 'recalculate-time-records' });
+
+      // Atualizar listagem após o recálculo
+      await refetch();
+    } catch (err: any) {
+      console.error('[TimeRecordsPageNew] Erro inesperado ao recalcular registros de ponto:', err);
+      toast.error(err?.message || 'Erro ao recalcular registros de ponto', { id: 'recalculate-time-records' });
+    }
+  };
+
   // Handler para download de folha de ponto em PDF
   const handleDownloadTimeRecordPDF = async (summary: typeof employeeSummary[0]) => {
     if (!summaryMonth || !summaryYear || !selectedCompany?.id) {
@@ -1999,6 +2044,13 @@ export default function TimeRecordsPageNew() {
             >
               <Download className="h-4 w-4 mr-2" />
               Exportar
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleRecalculateTimeRecords}
+            >
+              <Clock className="h-4 w-4 mr-2" />
+              Recalcular Registros
             </Button>
           </div>
         </CardContent>

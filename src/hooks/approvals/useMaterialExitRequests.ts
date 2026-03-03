@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 export function useMaterialExitRequests(filters?: {
   funcionario_solicitante_id?: string;
+  funcionario_receptor_id?: string;
   almoxarifado_id?: string;
   status?: string;
 }) {

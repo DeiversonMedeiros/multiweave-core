@@ -27,7 +27,8 @@ import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
 
 const EstoqueAtualPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,6 +36,7 @@ const EstoqueAtualPage: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState<string>('todos');
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [viewingItem, setViewingItem] = useState<any>(null);
 
   // Hooks para dados
   const { 
@@ -46,6 +48,8 @@ const EstoqueAtualPage: React.FC = () => {
 
   const { data: almoxarifados = [] } = useAlmoxarifados();
   const { data: materiais = [] } = useMateriaisEquipamentos();
+  const { data: classesFinanceirasResult } = useActiveClassesFinanceiras();
+  const classesFinanceiras = (classesFinanceirasResult?.data ?? []) as { id: string; codigo?: string; nome?: string }[];
 
   const openImageDialog = (url: string) => {
     setImagePreviewUrl(url);
@@ -299,10 +303,26 @@ const EstoqueAtualPage: React.FC = () => {
                               </CardDescription>
                             </div>
                           </div>
-                          <Badge className={statusConfig.color}>
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {statusConfig.text}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setViewingItem(item);
+                              }}
+                              title="Visualizar mais informações"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Badge className={statusConfig.color}>
+                              <StatusIcon className="h-3 w-3 mr-1" />
+                              {statusConfig.text}
+                            </Badge>
+                          </div>
                         </div>
                       </CardHeader>
                       <CardContent>
@@ -371,6 +391,116 @@ const EstoqueAtualPage: React.FC = () => {
                 alt="Imagem do material"
                 className="w-full h-auto rounded-md"
               />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog: mais informações do item (mesmo conteúdo do modal "Selecionar itens do estoque") */}
+        <Dialog open={!!viewingItem} onOpenChange={(open) => !open && setViewingItem(null)}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            {viewingItem && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {viewingItem.material?.nome || viewingItem.material?.descricao || 'Material'}
+                  </DialogTitle>
+                  {viewingItem.material?.nome && viewingItem.material?.descricao && (
+                    <DialogDescription className="mt-1">
+                      {viewingItem.material.descricao}
+                    </DialogDescription>
+                  )}
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="flex gap-2 flex-wrap">
+                    <Badge variant="outline">
+                      {viewingItem.material?.tipo === 'equipamento' ? 'Equipamento' :
+                       viewingItem.material?.tipo === 'produto' ? 'Produto' :
+                       viewingItem.material?.tipo === 'servico' ? 'Serviço' : 'Material'}
+                    </Badge>
+                    <Badge variant={viewingItem.material?.status === 'ativo' ? 'default' : 'secondary'}>
+                      {viewingItem.material?.status === 'ativo' ? 'Ativo' : 'Inativo'}
+                    </Badge>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold mb-2">Informações Básicas</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">Descrição:</span>
+                        <p className="font-medium mt-0.5">{viewingItem.material?.descricao ?? viewingItem.material?.nome ?? '—'}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Código:</span>
+                        <p className="font-medium">{viewingItem.material?.codigo_interno ?? 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Grupo de Materiais:</span>
+                        <p className="font-medium">{viewingItem.material?.classe ?? '—'}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Unidade de Medida:</span>
+                        <p className="font-medium">{viewingItem.material?.unidade_medida ?? 'un'}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Classe Financeira:</span>
+                        <p className="font-medium">
+                          {(() => {
+                            const cfId = viewingItem.material?.classe_financeira_id;
+                            if (!cfId) return '—';
+                            const cf = classesFinanceiras.find((c) => c.id === cfId);
+                            return cf ? [cf.codigo, cf.nome].filter(Boolean).join(' – ') || cf.nome || '—' : '—';
+                          })()}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Valor unitário:</span>
+                        <p className="font-medium">{formatCurrency(viewingItem.valor_unitario ?? 0)}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Estoque mínimo:</span>
+                        <p className="font-medium">{formatNumber(viewingItem.material?.estoque_minimo ?? 0)}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold mb-2">Neste almoxarifado</h3>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Almoxarifado:</span>
+                        <p className="font-medium">{viewingItem.almoxarifado?.nome ?? 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Quantidade disponível:</span>
+                        <p className="font-medium">{formatNumber(viewingItem.quantidade_atual ?? 0)} {viewingItem.material?.unidade_medida ?? 'un'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  {viewingItem.material?.observacoes && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2">Observações</h3>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{viewingItem.material.observacoes}</p>
+                    </div>
+                  )}
+                  {viewingItem.material?.imagem_url && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2">Imagem</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViewingItem(null);
+                          setImagePreviewUrl(viewingItem.material.imagem_url);
+                        }}
+                        className="rounded-md overflow-hidden border block"
+                      >
+                        <img
+                          src={viewingItem.material.imagem_url}
+                          alt={viewingItem.material?.nome || viewingItem.material?.descricao || 'Material'}
+                          className="max-w-xs max-h-48 object-contain w-full"
+                        />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </DialogContent>
         </Dialog>
