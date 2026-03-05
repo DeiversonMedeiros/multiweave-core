@@ -6,8 +6,9 @@ import { OnlineTrainingService, TrainingContent, TrainingProgress, TrainingExam,
 // HOOK PRINCIPAL DE TREINAMENTOS ONLINE
 // =====================================================
 
-export const useOnlineTraining = (trainingId?: string) => {
+export const useOnlineTraining = (trainingId?: string, trainingCompanyId?: string) => {
   const { selectedCompany } = useCompany();
+  const effectiveCompanyId = trainingCompanyId || selectedCompany?.id;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,71 +20,71 @@ export const useOnlineTraining = (trainingId?: string) => {
 
   // Carregar conteúdo
   const loadContent = useCallback(async () => {
-    if (!selectedCompany?.id || !trainingId) return;
+    if (!effectiveCompanyId || !trainingId) return;
 
     setLoading(true);
     setError(null);
     try {
-      const data = await OnlineTrainingService.listContent(selectedCompany.id, trainingId);
+      const data = await OnlineTrainingService.listContent(effectiveCompanyId, trainingId);
       setContent(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar conteúdo');
     } finally {
       setLoading(false);
     }
-  }, [selectedCompany?.id, trainingId]);
+  }, [effectiveCompanyId, trainingId]);
 
   // Carregar progresso
   const loadProgress = useCallback(async (employeeId: string) => {
-    if (!selectedCompany?.id || !trainingId) return;
+    if (!effectiveCompanyId || !trainingId) return;
 
     setLoading(true);
     setError(null);
     try {
-      const data = await OnlineTrainingService.getProgress(selectedCompany.id, trainingId, employeeId);
+      const data = await OnlineTrainingService.getProgress(effectiveCompanyId, trainingId, employeeId);
       setProgress(data);
       
       // Carregar estatísticas
-      const stats = await OnlineTrainingService.getProgressStats(selectedCompany.id, trainingId, employeeId);
+      const stats = await OnlineTrainingService.getProgressStats(effectiveCompanyId, trainingId, employeeId);
       setProgressStats(stats);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar progresso');
     } finally {
       setLoading(false);
     }
-  }, [selectedCompany?.id, trainingId]);
+  }, [effectiveCompanyId, trainingId]);
 
   // Carregar provas
   const loadExams = useCallback(async () => {
-    if (!selectedCompany?.id || !trainingId) return;
+    if (!effectiveCompanyId || !trainingId) return;
 
     setLoading(true);
     setError(null);
     try {
-      const data = await OnlineTrainingService.listExams(selectedCompany.id, trainingId);
+      const data = await OnlineTrainingService.listExams(effectiveCompanyId, trainingId);
       setExams(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar provas');
     } finally {
       setLoading(false);
     }
-  }, [selectedCompany?.id, trainingId]);
+  }, [effectiveCompanyId, trainingId]);
 
   // Carregar estatísticas do dashboard
   const loadDashboardStats = useCallback(async () => {
-    if (!selectedCompany?.id) return;
+    if (!effectiveCompanyId) return;
 
     setLoading(true);
     setError(null);
     try {
-      const data = await OnlineTrainingService.getDashboardStats(selectedCompany.id, trainingId);
+      const data = await OnlineTrainingService.getDashboardStats(effectiveCompanyId, trainingId);
       setDashboardStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar estatísticas');
     } finally {
       setLoading(false);
     }
-  }, [selectedCompany?.id, trainingId]);
+  }, [effectiveCompanyId, trainingId]);
 
   return {
     // Estado
@@ -107,8 +108,9 @@ export const useOnlineTraining = (trainingId?: string) => {
 // HOOK PARA PROGRESSO DO USUÁRIO
 // =====================================================
 
-export const useTrainingProgress = (trainingId: string, employeeId: string) => {
+export const useTrainingProgress = (trainingId: string, employeeId: string, trainingCompanyId?: string) => {
   const { selectedCompany } = useCompany();
+  const effectiveCompanyId = trainingCompanyId || selectedCompany?.id;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<TrainingProgress[]>([]);
@@ -116,13 +118,13 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
 
   const loadProgress = useCallback(async () => {
     console.log('[useTrainingProgress.loadProgress] INÍCIO', {
-      companyId: selectedCompany?.id,
+      companyId: effectiveCompanyId,
       trainingId,
       employeeId,
       timestamp: new Date().toISOString()
     });
 
-    if (!selectedCompany?.id || !trainingId || !employeeId) {
+    if (!effectiveCompanyId || !trainingId || !employeeId) {
       console.log('[useTrainingProgress.loadProgress] ABORTADO: parâmetros faltando');
       setProgress([]);
       setStats(null);
@@ -133,7 +135,7 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
     setError(null);
     try {
       console.log('[useTrainingProgress.loadProgress] Buscando progresso...');
-      const progressData = await OnlineTrainingService.getProgress(selectedCompany.id, trainingId, employeeId);
+      const progressData = await OnlineTrainingService.getProgress(effectiveCompanyId, trainingId, employeeId);
       console.log('[useTrainingProgress.loadProgress] Progresso recebido', {
         count: progressData.length,
         items: progressData.map(p => ({ content_id: p.content_id, concluido: p.concluido }))
@@ -141,7 +143,7 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
       setProgress(progressData);
 
       console.log('[useTrainingProgress.loadProgress] Buscando stats...');
-      const statsData = await OnlineTrainingService.getProgressStats(selectedCompany.id, trainingId, employeeId);
+      const statsData = await OnlineTrainingService.getProgressStats(effectiveCompanyId, trainingId, employeeId);
       console.log('[useTrainingProgress.loadProgress] Stats recebidos', statsData);
       setStats(statsData);
     } catch (err) {
@@ -151,7 +153,7 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
       setLoading(false);
       console.log('[useTrainingProgress.loadProgress] FIM');
     }
-  }, [selectedCompany?.id, trainingId, employeeId]);
+  }, [effectiveCompanyId, trainingId, employeeId]);
 
   const updateProgress = useCallback(async (
     contentId: string,
@@ -170,7 +172,7 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
       timestamp: new Date().toISOString()
     });
 
-    if (!selectedCompany?.id) {
+    if (!effectiveCompanyId) {
       console.log('[useTrainingProgress.updateProgress] ABORTADO: sem company_id');
       return;
     }
@@ -179,7 +181,7 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
     let isMounted = true;
 
     // Atualizar estado local imediatamente para feedback visual
-    // Mas apenas se os dados realmente mudaram para evitar loops
+    // Se não existir progresso local ainda, criar um registro mínimo
     setProgress(prev => {
       const existingIndex = prev.findIndex(p => p.content_id === contentId);
       if (existingIndex >= 0) {
@@ -215,15 +217,37 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
         };
         return updated;
       }
-      console.log('[useTrainingProgress.updateProgress] Conteúdo não encontrado no progresso local');
-      return prev;
+
+      console.log('[useTrainingProgress.updateProgress] Conteúdo não encontrado no progresso local, criando registro em memória');
+      const nowIso = new Date().toISOString();
+
+      const newProgress: TrainingProgress = {
+        id: `temp-${contentId}-${Date.now()}`, // id temporário só para UI
+        company_id: effectiveCompanyId,
+        training_id: trainingId,
+        employee_id: employeeId,
+        content_id: contentId,
+        enrollment_id: '', // será definido corretamente no backend
+        status: data.concluido ? 'concluido' : 'em_andamento',
+        percentual_concluido: data.percentual_concluido ?? 0,
+        tempo_assistido_segundos: data.tempo_assistido_segundos ?? 0,
+        data_inicio: nowIso,
+        data_ultima_atualizacao: nowIso,
+        data_conclusao: data.concluido ? nowIso : undefined,
+        ultima_posicao_segundos: data.ultima_posicao_segundos ?? 0,
+        concluido: data.concluido ?? false,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      return [...prev, newProgress];
     });
 
     // Atualizar no backend sem setLoading para não bloquear UI
     try {
       console.log('[useTrainingProgress.updateProgress] Chamando OnlineTrainingService.updateProgress');
       await OnlineTrainingService.updateProgress(
-        selectedCompany.id,
+        effectiveCompanyId,
         trainingId,
         contentId,
         employeeId,
@@ -256,16 +280,16 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
       throw err;
     }
     console.log('[useTrainingProgress.updateProgress] FIM');
-  }, [selectedCompany?.id, trainingId, employeeId]);
+  }, [effectiveCompanyId, trainingId, employeeId]);
 
   const markAsCompleted = useCallback(async (contentId: string, tempoAssistidoSegundos: number = 0) => {
-    if (!selectedCompany?.id) return;
+    if (!effectiveCompanyId) return;
 
     setLoading(true);
     setError(null);
     try {
       await OnlineTrainingService.markContentAsCompleted(
-        selectedCompany.id,
+        effectiveCompanyId,
         trainingId,
         contentId,
         employeeId,
@@ -283,24 +307,24 @@ export const useTrainingProgress = (trainingId: string, employeeId: string) => {
     } finally {
       setLoading(false);
     }
-  }, [selectedCompany?.id, trainingId, employeeId, loadProgress]);
+  }, [effectiveCompanyId, trainingId, employeeId, loadProgress]);
 
   useEffect(() => {
     console.log('[useTrainingProgress.useEffect] Executado', {
       trainingId,
       employeeId,
-      companyId: selectedCompany?.id,
+      companyId: effectiveCompanyId,
       timestamp: new Date().toISOString()
     });
     
-    if (trainingId && employeeId && selectedCompany?.id) {
+    if (trainingId && employeeId && effectiveCompanyId) {
       console.log('[useTrainingProgress.useEffect] Chamando loadProgress');
       loadProgress();
     } else {
       console.log('[useTrainingProgress.useEffect] Condições não atendidas, não carregando');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trainingId, employeeId, selectedCompany?.id]);
+  }, [trainingId, employeeId, effectiveCompanyId]);
 
   return {
     progress,

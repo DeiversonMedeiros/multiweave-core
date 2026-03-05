@@ -1172,14 +1172,14 @@ export class ApprovalService {
 
   static async getMaterialExitRequest(id: string, companyId: string): Promise<MaterialExitRequest | null> {
     try {
-      const result = await EntityService.get({
+      const result = await EntityService.getById<MaterialExitRequest>({
         schema: 'almoxarifado',
         table: 'solicitacoes_saida_materiais',
-        companyId,
-        id
+        id,
+        companyId
       });
       
-      return result.data || null;
+      return result || null;
     } catch (error) {
       console.error('Erro na função getMaterialExitRequest:', error);
       throw error;
@@ -1188,14 +1188,14 @@ export class ApprovalService {
 
   static async createMaterialExitRequest(data: Omit<MaterialExitRequest, 'id' | 'created_at' | 'updated_at'>, companyId: string): Promise<MaterialExitRequest> {
     try {
-      const result = await EntityService.create({
+      const result = await EntityService.create<MaterialExitRequest>({
         schema: 'almoxarifado',
         table: 'solicitacoes_saida_materiais',
         companyId,
         data: { ...data, company_id: companyId }
       });
       
-      return result.data;
+      return result;
     } catch (error) {
       console.error('Erro na função createMaterialExitRequest:', error);
       throw error;
@@ -1204,7 +1204,7 @@ export class ApprovalService {
 
   static async updateMaterialExitRequest(id: string, data: Partial<MaterialExitRequest>, companyId: string): Promise<MaterialExitRequest> {
     try {
-      const result = await EntityService.update({
+      const result = await EntityService.update<MaterialExitRequest>({
         schema: 'almoxarifado',
         table: 'solicitacoes_saida_materiais',
         companyId,
@@ -1212,7 +1212,7 @@ export class ApprovalService {
         data
       });
       
-      return result.data;
+      return result;
     } catch (error) {
       console.error('Erro na função updateMaterialExitRequest:', error);
       throw error;

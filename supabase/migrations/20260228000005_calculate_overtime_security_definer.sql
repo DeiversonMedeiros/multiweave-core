@@ -228,7 +228,7 @@ BEGIN
       RAISE NOTICE '[OVERTIME_7TH] employee_id=% company_id=% data=% tipo_escala=% excedente=% consecutive_work_days=% exit_reason=%',
         v_employee_id, v_company_id, v_date, v_tipo_escala, v_excedente, v_consecutive_work_days, v_exit_reason;
 
-      IF v_consecutive_work_days >= 6 THEN
+      IF v_consecutive_work_days = 6 THEN
         v_horas_extras_100 := LEAST(99.99, GREATEST(0, COALESCE(v_horas_trabalhadas, 0)));
         v_horas_para_pagamento := v_horas_extras_100;
         v_horas_extras_50 := 0;

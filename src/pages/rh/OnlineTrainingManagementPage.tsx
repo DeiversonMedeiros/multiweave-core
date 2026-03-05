@@ -52,6 +52,9 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CalendarIcon, User, Briefcase, Building2, Filter } from 'lucide-react';
 import { format } from 'date-fns';
+import { EmployeesService } from '@/services/rh/employeesService';
+import { EntityService } from '@/services/generic/entityService';
+import { useActiveCostCenters } from '@/hooks/useCostCenters';
 
 export default function OnlineTrainingManagementPage() {
   const { trainingId } = useParams<{ trainingId: string }>();
@@ -71,7 +74,7 @@ export default function OnlineTrainingManagementPage() {
   const [assignmentFilter, setAssignmentFilter] = useState<'all' | 'obrigatorio' | 'opcional' | 'publica'>('all');
   
   const { trainings, loading: trainingsLoading } = useTraining();
-  const { content, loading: contentLoading, loadContent } = useOnlineTraining(trainingId);
+  const { content, loading: contentLoading, loadContent } = useOnlineTraining(trainingId, selectedCompany?.id);
   
   const currentTraining = trainings.find(t => t.id === trainingId);
 
@@ -438,11 +441,16 @@ export default function OnlineTrainingManagementPage() {
                 setShowAssignmentForm(true);
               }}
               onDelete={async (assignmentId) => {
-                if (!selectedCompany?.id) return;
                 if (!confirm('Tem certeza que deseja excluir esta atribuição?')) return;
                 
                 try {
-                  await OnlineTrainingService.deleteAssignment(selectedCompany.id, assignmentId);
+                  // Para garantir que usamos a empresa correta da atribuição,
+                  // buscamos nos dados atuais antes de deletar
+                  const assignmentToDelete = assignments.find(a => a.id === assignmentId);
+                  const companyIdForDelete = assignmentToDelete?.company_id || selectedCompany?.id;
+                  if (!companyIdForDelete) return;
+
+                  await OnlineTrainingService.deleteAssignment(companyIdForDelete, assignmentId);
                   toast({
                     title: 'Sucesso',
                     description: 'Atribuição excluída com sucesso!',
@@ -468,17 +476,18 @@ export default function OnlineTrainingManagementPage() {
                 trainingId={trainingId}
                 assignment={editingAssignment}
                 onSave={async (data) => {
-                  if (!selectedCompany?.id) return;
+                  const targetCompanyId = data.company_id || selectedCompany?.id;
+                  if (!targetCompanyId) return;
                   
                   try {
                     if (editingAssignment) {
                       // Atualizar atribuição existente
-                      await OnlineTrainingService.deleteAssignment(selectedCompany.id, editingAssignment.id);
+                      await OnlineTrainingService.deleteAssignment(editingAssignment.company_id, editingAssignment.id);
                     }
-                    await OnlineTrainingService.createAssignment(selectedCompany.id, {
+                    await OnlineTrainingService.createAssignment(targetCompanyId, {
                       ...data,
                       training_id: trainingId,
-                      company_id: selectedCompany.id
+                      company_id: targetCompanyId
                     });
                     
                     toast({
@@ -781,11 +790,11 @@ const TrainingAssignmentsManager: React.FC<TrainingAssignmentsManagerProps> = ({
   const { selectedCompany } = useCompany();
   const { data: employeesData } = useEmployees();
   const { data: positionsData } = useRHData('positions', selectedCompany?.id || '', {}, 10000);
-  const { data: unitsData } = useRHData('units', selectedCompany?.id || '', {}, 10000);
+  const { data: activeCostCentersData } = useActiveCostCenters();
 
   const employees = employeesData?.data || [];
   const positions = positionsData || [];
-  const units = unitsData || [];
+  const costCenters = activeCostCentersData?.data || [];
 
   const filteredAssignments = useMemo(() => {
     if (filter === 'all') return assignments;
@@ -814,11 +823,18 @@ const TrainingAssignmentsManager: React.FC<TrainingAssignmentsManagerProps> = ({
         label: position ? position.nome : 'Cargo não encontrado',
         icon: <Briefcase className="h-4 w-4" />
       };
+    } else if (assignment.cost_center_id) {
+      const costCenter = costCenters.find((cc: any) => cc.id === assignment.cost_center_id);
+      return {
+        type: 'cost_center',
+        label: costCenter ? `${costCenter.nome} (${costCenter.codigo})` : 'Centro de custo não encontrado',
+        icon: <Building2 className="h-4 w-4" />
+      };
     } else if (assignment.unit_id) {
-      const unit = units.find((u: any) => u.id === assignment.unit_id);
+      // Suporte legado para atribuições antigas por departamento (units)
       return {
         type: 'unit',
-        label: unit ? unit.nome : 'Departamento não encontrado',
+        label: 'Departamento (legado)',
         icon: <Building2 className="h-4 w-4" />
       };
     }
@@ -943,23 +959,35 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
   onSave,
   onCancel
 }) => {
-  const { selectedCompany } = useCompany();
-  const { data: employeesData } = useEmployees();
-  const { data: positionsData } = useRHData('positions', selectedCompany?.id || '', {}, 10000);
-  const { data: unitsData } = useRHData('units', selectedCompany?.id || '', {}, 10000);
+  const { selectedCompany, companies } = useCompany();
 
-  const employees = employeesData?.data || [];
-  const positions = positionsData || [];
-  const units = unitsData || [];
-
-  const [assignmentType, setAssignmentType] = useState<'employee' | 'position' | 'unit' | 'publica'>(
-    assignment?.tipo_atribuicao === 'publica' ? 'publica' : 
-    assignment?.employee_id ? 'employee' : 
-    assignment?.position_id ? 'position' : 'unit'
+  // Empresa alvo da atribuição
+  const [selectedAssignmentCompanyId, setSelectedAssignmentCompanyId] = useState<string>(
+    assignment?.company_id || selectedCompany?.id || (companies[0]?.id ?? '')
   );
+
+  // Dados carregados dinamicamente com base na empresa selecionada
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [positions, setPositions] = useState<any[]>([]);
+  const [costCenters, setCostCenters] = useState<any[]>([]);
+  const [loadingTargets, setLoadingTargets] = useState(false);
+
+  // Tipo de alvo da atribuição
+  const [assignmentType, setAssignmentType] = useState<'employee' | 'position' | 'cost_center' | 'publica'>(
+    assignment?.tipo_atribuicao === 'publica'
+      ? 'publica'
+      : assignment?.employee_id
+        ? 'employee'
+        : assignment?.position_id
+          ? 'position'
+          : assignment?.cost_center_id
+            ? 'cost_center'
+            : 'employee'
+  );
+
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(assignment?.employee_id || '');
   const [selectedPositionId, setSelectedPositionId] = useState<string>(assignment?.position_id || '');
-  const [selectedUnitId, setSelectedUnitId] = useState<string>(assignment?.unit_id || '');
+  const [selectedCostCenterId, setSelectedCostCenterId] = useState<string>(assignment?.cost_center_id || '');
   const [tipoAtribuicao, setTipoAtribuicao] = useState<'obrigatorio' | 'opcional' | 'publica'>(
     assignment?.tipo_atribuicao || 'obrigatorio'
   );
@@ -969,10 +997,81 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
   const [notificar, setNotificar] = useState<boolean>(assignment?.notificar ?? true);
   const [openDatePicker, setOpenDatePicker] = useState(false);
 
+  // Carregar funcionários, cargos e centros de custo da empresa selecionada
+  useEffect(() => {
+    const companyId = selectedAssignmentCompanyId;
+
+    if (!companyId) {
+      setEmployees([]);
+      setPositions([]);
+      setCostCenters([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingTargets(true);
+
+    const loadData = async () => {
+      try {
+        const [employeesResult, positionsResult, costCentersResult] = await Promise.all([
+          EmployeesService.list(companyId, { status: 'ativo' }),
+          EntityService.list<any>({
+            schema: 'rh',
+            table: 'positions',
+            companyId,
+            page: 1,
+            pageSize: 10000,
+            orderBy: 'nome',
+            orderDirection: 'ASC'
+          }),
+          EntityService.list<any>({
+            schema: 'public',
+            table: 'cost_centers',
+            companyId,
+            page: 1,
+            pageSize: 500,
+            filters: { ativo: true, aceita_lancamentos: true },
+            orderBy: 'nome',
+            orderDirection: 'ASC'
+          })
+        ]);
+
+        if (cancelled) return;
+
+        setEmployees(employeesResult.data || []);
+        setPositions(positionsResult.data || []);
+        setCostCenters(costCentersResult.data || []);
+      } catch (error) {
+        console.error('[AssignmentFormModal] Erro ao carregar dados de destino da atribuição:', error);
+        if (!cancelled) {
+          setEmployees([]);
+          setPositions([]);
+          setCostCenters([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingTargets(false);
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAssignmentCompanyId]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Se for pública, não precisa validar seleção de funcionário/cargo/departamento
+    // Empresa é obrigatória para qualquer tipo
+    if (!selectedAssignmentCompanyId) {
+      alert('Selecione uma empresa');
+      return;
+    }
+
+    // Se for pública, não precisa validar seleção de funcionário/cargo/centro de custo
     if (assignmentType !== 'publica') {
       if (assignmentType === 'employee' && !selectedEmployeeId) {
         alert('Selecione um funcionário');
@@ -982,18 +1081,19 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
         alert('Selecione um cargo');
         return;
       }
-      if (assignmentType === 'unit' && !selectedUnitId) {
-        alert('Selecione um departamento');
+      if (assignmentType === 'cost_center' && !selectedCostCenterId) {
+        alert('Selecione um centro de custo');
         return;
       }
     }
 
     const data: Omit<TrainingAssignment, 'id' | 'created_at' | 'updated_at'> = {
-      company_id: selectedCompany?.id || '',
+      company_id: selectedAssignmentCompanyId,
       training_id: '',
       employee_id: assignmentType === 'employee' ? selectedEmployeeId : undefined,
       position_id: assignmentType === 'position' ? selectedPositionId : undefined,
-      unit_id: assignmentType === 'unit' ? selectedUnitId : undefined,
+      unit_id: undefined,
+      cost_center_id: assignmentType === 'cost_center' ? selectedCostCenterId : undefined,
       tipo_atribuicao: assignmentType === 'publica' ? 'publica' : tipoAtribuicao,
       data_limite: dataLimite ? format(dataLimite, 'yyyy-MM-dd') : undefined,
       notificar: notificar
@@ -1015,17 +1115,41 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
+            <Label>Empresa *</Label>
+            <Select
+              value={selectedAssignmentCompanyId}
+              onValueChange={(value) => {
+                setSelectedAssignmentCompanyId(value);
+                setSelectedEmployeeId('');
+                setSelectedPositionId('');
+                setSelectedCostCenterId('');
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma empresa" />
+              </SelectTrigger>
+              <SelectContent>
+                {companies.map((company) => (
+                  <SelectItem key={company.id} value={company.id}>
+                    {company.nome_fantasia || company.razao_social}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label>Tipo de Atribuição *</Label>
             <Select
               value={assignmentType}
-              onValueChange={(value: 'employee' | 'position' | 'unit' | 'publica') => {
+              onValueChange={(value: 'employee' | 'position' | 'cost_center' | 'publica') => {
                 setAssignmentType(value);
                 if (value === 'publica') {
                   setTipoAtribuicao('publica');
                 }
                 setSelectedEmployeeId('');
                 setSelectedPositionId('');
-                setSelectedUnitId('');
+                setSelectedCostCenterId('');
               }}
             >
               <SelectTrigger>
@@ -1050,10 +1174,10 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
                     Por Cargo
                   </div>
                 </SelectItem>
-                <SelectItem value="unit">
+                <SelectItem value="cost_center">
                   <div className="flex items-center gap-2">
                     <Building2 className="h-4 w-4" />
-                    Por Departamento
+                    Por Centro de Custo
                   </div>
                 </SelectItem>
               </SelectContent>
@@ -1073,7 +1197,7 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
               <Label>Funcionário *</Label>
               <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione um funcionário" />
+                  <SelectValue placeholder={loadingTargets ? 'Carregando funcionários...' : 'Selecione um funcionário'} />
                 </SelectTrigger>
                 <SelectContent>
                   {employees.map((emp: any) => (
@@ -1091,7 +1215,7 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
               <Label>Cargo *</Label>
               <Select value={selectedPositionId} onValueChange={setSelectedPositionId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione um cargo" />
+                  <SelectValue placeholder={loadingTargets ? 'Carregando cargos...' : 'Selecione um cargo'} />
                 </SelectTrigger>
                 <SelectContent>
                   {positions.map((pos: any) => (
@@ -1104,17 +1228,17 @@ const AssignmentFormModal: React.FC<AssignmentFormModalProps> = ({
             </div>
           )}
 
-          {assignmentType === 'unit' && (
+          {assignmentType === 'cost_center' && (
             <div className="space-y-2">
-              <Label>Departamento *</Label>
-              <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
+              <Label>Centro de Custo *</Label>
+              <Select value={selectedCostCenterId} onValueChange={setSelectedCostCenterId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione um departamento" />
+                  <SelectValue placeholder={loadingTargets ? 'Carregando centros de custo...' : 'Selecione um centro de custo'} />
                 </SelectTrigger>
                 <SelectContent>
-                  {units.map((unit: any) => (
-                    <SelectItem key={unit.id} value={unit.id}>
-                      {unit.nome}
+                  {costCenters.map((cc: any) => (
+                    <SelectItem key={cc.id} value={cc.id}>
+                      {cc.nome} {cc.codigo && `(${cc.codigo})`}
                     </SelectItem>
                   ))}
                 </SelectContent>

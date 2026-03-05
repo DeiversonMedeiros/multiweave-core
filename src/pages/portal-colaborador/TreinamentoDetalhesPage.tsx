@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -36,6 +36,8 @@ export default function TreinamentoDetalhesPage() {
   const { selectedCompany } = useCompany();
   const { user } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
+  const locationState = (location.state || {}) as { trainingCompanyId?: string };
   
   const [currentContentIndex, setCurrentContentIndex] = useState(0);
   const [canAdvance, setCanAdvance] = useState(true);
@@ -56,17 +58,21 @@ export default function TreinamentoDetalhesPage() {
   const employee = employees.find((e: any) => e?.user_id === user?.id);
   const employeeId = employee?.id;
 
-  const { content, progress, progressStats, loading, error, loadContent, exams, loadExams } = useOnlineTraining(trainingId);
+  const { trainings, enrollments } = useTraining();
+  const currentTraining = trainings.find(t => t.id === trainingId);
+  const effectiveTrainingCompanyId =
+    locationState.trainingCompanyId || currentTraining?.company_id || selectedCompany?.id;
+
+  const { content, progress, progressStats, loading, error, loadContent, exams, loadExams } =
+    useOnlineTraining(trainingId, effectiveTrainingCompanyId);
   const { 
     progress: userProgress, 
     stats, 
     updateProgress, 
     markAsCompleted,
     refresh: refreshProgress 
-  } = useTrainingProgress(trainingId || '', employeeId || '');
+  } = useTrainingProgress(trainingId || '', employeeId || '', effectiveTrainingCompanyId);
   
-  const { trainings, enrollments } = useTraining();
-  const currentTraining = trainings.find(t => t.id === trainingId);
   const enrollment = enrollments.find(e => e.training_id === trainingId && e.employee_id === employeeId);
   
   // Carregar provas do treinamento
@@ -123,7 +129,11 @@ export default function TreinamentoDetalhesPage() {
           // Se a prova foi aprovada e todas as aulas estão concluídas, redirecionar para conclusão
           console.log('[TreinamentoDetalhesPage] Treinamento concluído, redirecionando para página de conclusão');
           hasCheckedCompletionRef.current = true;
-          navigate(`/portal-colaborador/treinamentos/${trainingId}/conclusao`);
+          navigate(`/portal-colaborador/treinamentos/${trainingId}/conclusao`, {
+            state: {
+              trainingCompanyId: effectiveTrainingCompanyId
+            }
+          });
         }
       } catch (err) {
         console.error('[TreinamentoDetalhesPage] Erro ao verificar status da prova final:', err);
@@ -574,8 +584,12 @@ export default function TreinamentoDetalhesPage() {
         examTitle: finalExam.titulo
       });
       
-      // Navegar para a página da prova final
-      navigate(`/portal-colaborador/treinamentos/${trainingId}/prova/${finalExam.id}`);
+      // Navegar para a página da prova final, garantindo o company_id correto do treinamento
+      navigate(`/portal-colaborador/treinamentos/${trainingId}/prova/${finalExam.id}`, {
+        state: {
+          trainingCompanyId: effectiveTrainingCompanyId
+        }
+      });
       return;
     }
 

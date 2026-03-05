@@ -63,6 +63,7 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPdfExpanded, setIsPdfExpanded] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
   const { toast } = useToast();
 
@@ -76,6 +77,7 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
   const [timeTrackingInterval, setTimeTrackingInterval] = useState<NodeJS.Timeout | null>(null);
   const [contentViewStartTime, setContentViewStartTime] = useState<number | null>(null);
+  const hasRestoredMediaPositionRef = useRef(false);
 
   // Carregar URL do arquivo (signed URL se estiver no Storage)
   useEffect(() => {
@@ -128,7 +130,7 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
     });
 
     const needsTimeTracking = ['texto', 'pdf', 'link_externo'].includes(content.tipo_conteudo);
-    
+
     if (needsTimeTracking) {
       console.log('[OnlineTrainingContentPlayer] Iniciando rastreamento de tempo');
       // Iniciar rastreamento quando o componente monta
@@ -178,7 +180,12 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
       setTimeSpentSeconds(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content.tipo_conteudo, content.id, watchedTime]);
+  }, [content.tipo_conteudo, content.id]);
+
+  // Sempre que o conteúdo de mídia (vídeo/áudio) mudar, permitir uma nova restauração de posição
+  useEffect(() => {
+    hasRestoredMediaPositionRef.current = false;
+  }, [content.id, content.tipo_conteudo]);
 
   useEffect(() => {
     console.log('[OnlineTrainingContentPlayer] useEffect media executado', {
@@ -196,10 +203,6 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
     
     if (mediaElement && (content.tipo_conteudo === 'video' || content.tipo_conteudo === 'audio')) {
       console.log('[OnlineTrainingContentPlayer] Configurando event listeners para mídia');
-      // Restaurar posição anterior
-      if (startPosition > 0) {
-        mediaElement.currentTime = startPosition;
-      }
 
       // Event listeners
       const handleLoadedMetadata = () => {
@@ -210,8 +213,17 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
       const handleTimeUpdate = () => {
         const current = mediaElement.currentTime;
         setCurrentTime(current);
-        
-        const percent = duration > 0 ? (current / duration) * 100 : 0;
+
+        // Garantir que a duração esteja sempre atualizada
+        const effectiveDuration = mediaElement.duration && !isNaN(mediaElement.duration)
+          ? mediaElement.duration
+          : duration;
+
+        if (mediaElement.duration && mediaElement.duration !== duration) {
+          setDuration(mediaElement.duration);
+        }
+
+        const percent = effectiveDuration > 0 ? (current / effectiveDuration) * 100 : 0;
         setProgressPercent(percent);
 
         // Atualizar progresso a cada 10 segundos, mas com proteção contra chamadas muito frequentes
@@ -272,10 +284,37 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
         lastProgressUpdateRef.current = { time: 0, timestamp: 0 };
       };
     } else {
-      console.log('[OnlineTrainingContentPlayer] Não é mídia ou elemento não encontrado');
+      console.log('[OnlineTrainingContentPlayer] Não é mídia ou elemento não encontrado ou ainda não montou', {
+        hasVideoRef: !!videoRef.current,
+        hasAudioRef: !!audioRef.current,
+        fileUrl
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content.id, content.tipo_conteudo]); // Remover watchedTime, duration, isCompleted das dependências para evitar re-execuções
+  }, [content.id, content.tipo_conteudo, fileUrl]); // Reexecutar quando o arquivo (vídeo/áudio) estiver disponível
+
+  // Restaurar posição da mídia quando o progresso carregar do backend (apenas uma vez por conteúdo)
+  useEffect(() => {
+    if (content.tipo_conteudo !== 'video' && content.tipo_conteudo !== 'audio') return;
+    if (hasRestoredMediaPositionRef.current) return;
+    if (!startPosition || startPosition <= 0) return;
+
+    const mediaElement =
+      content.tipo_conteudo === 'video' ? videoRef.current :
+      content.tipo_conteudo === 'audio' ? audioRef.current :
+      null;
+
+    if (mediaElement) {
+      console.log('[OnlineTrainingContentPlayer] Restaurando posição da mídia a partir do progresso salvo', {
+        content_id: content.id,
+        tipo_conteudo: content.tipo_conteudo,
+        startPosition
+      });
+      mediaElement.currentTime = startPosition;
+      setCurrentTime(startPosition);
+      hasRestoredMediaPositionRef.current = true;
+    }
+  }, [content.id, content.tipo_conteudo, startPosition, fileUrl]);
 
   const togglePlay = () => {
     const mediaElement = content.tipo_conteudo === 'video' ? videoRef.current : 
@@ -366,8 +405,7 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
               {/* Barra de progresso */}
               <div 
-                className="w-full h-2 bg-white/20 rounded-full mb-2 cursor-pointer"
-                onClick={handleSeek}
+                className="w-full h-2 bg-white/20 rounded-full mb-2"
               >
                 <div 
                   className="h-full bg-primary rounded-full transition-all"
@@ -451,8 +489,7 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
               <div className="space-y-4">
                 {/* Barra de progresso */}
                 <div 
-                  className="w-full h-2 bg-white/40 rounded-full cursor-pointer"
-                  onClick={handleSeek}
+                  className="w-full h-2 bg-white/40 rounded-full"
                 >
                   <div 
                     className="h-full bg-primary rounded-full transition-all"
@@ -512,13 +549,81 @@ export const OnlineTrainingContentPlayer: React.FC<OnlineTrainingContentPlayerPr
           );
         }
         return (
-          <div className="w-full h-[600px] border rounded-lg overflow-hidden">
-            <iframe
-              src={fileUrl}
-              className="w-full h-full"
-              title={content.titulo}
-            />
-          </div>
+          <>
+            {/* Visualização padrão dentro do card */}
+            <div className="border rounded-lg overflow-hidden w-full h-[600px]">
+              <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/60">
+                <span className="text-xs text-muted-foreground">
+                  Visualizando PDF — use o botão ao lado para ver em tela cheia.
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsPdfExpanded(true)}
+                  >
+                    <Maximize className="h-4 w-4 mr-1" />
+                    Tela cheia
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                  >
+                    <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4 mr-1" />
+                      Abrir em nova aba
+                    </a>
+                  </Button>
+                </div>
+              </div>
+              <iframe
+                src={fileUrl}
+                className="w-full h-full"
+                title={content.titulo}
+              />
+            </div>
+
+            {/* Overlay em tela cheia para o PDF */}
+            {isPdfExpanded && (
+              <div className="fixed inset-0 z-50 bg-background/95 flex flex-col">
+                <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/80">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-primary" />
+                    <span className="font-semibold text-sm line-clamp-1">
+                      {content.titulo}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                    >
+                      <a href={fileUrl} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-4 w-4 mr-1" />
+                        Abrir em nova aba
+                      </a>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsPdfExpanded(false)}
+                    >
+                      Fechar
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <iframe
+                    src={fileUrl}
+                    className="w-full h-full"
+                    title={content.titulo}
+                  />
+                </div>
+              </div>
+            )}
+          </>
         );
 
       case 'texto':

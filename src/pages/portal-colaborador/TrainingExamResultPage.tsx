@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +27,10 @@ export default function TrainingExamResultPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   
+  const location = useLocation();
+  const locationState = (location.state || {}) as { trainingCompanyId?: string };
+  const effectiveCompanyId = locationState.trainingCompanyId || selectedCompany?.id || null;
+
   const [attempt, setAttempt] = useState<TrainingExamAttempt | null>(null);
   const [exam, setExam] = useState<TrainingExam | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,14 +57,14 @@ export default function TrainingExamResultPage() {
     }
     
     const loadResult = async () => {
-      if (!selectedCompany?.id || !examId || !attemptId || !employeeId) return;
+      if (!effectiveCompanyId || !examId || !attemptId || !employeeId) return;
       
       console.log('[TrainingExamResultPage] Carregando resultado da prova');
       hasLoadedRef.current = true;
       setLoading(true);
       try {
         // Carregar tentativa
-        const attemptData = await OnlineTrainingService.getExamAttempt(selectedCompany.id, attemptId);
+        const attemptData = await OnlineTrainingService.getExamAttempt(effectiveCompanyId, attemptId);
         if (!attemptData) {
           console.error('[TrainingExamResultPage] Tentativa não encontrada');
           toast({
@@ -75,7 +79,7 @@ export default function TrainingExamResultPage() {
         console.log('[TrainingExamResultPage] Tentativa carregada:', attemptData.id);
 
         // Carregar prova
-        const examData = await OnlineTrainingService.getExam(selectedCompany.id, examId);
+        const examData = await OnlineTrainingService.getExam(effectiveCompanyId, examId);
         setExam(examData);
         console.log('[TrainingExamResultPage] Prova carregada:', examData?.titulo);
       } catch (err) {
@@ -92,7 +96,7 @@ export default function TrainingExamResultPage() {
 
     loadResult();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCompany?.id, examId, attemptId, employeeId, trainingId]); // Removido navigate e toast das dependências
+  }, [effectiveCompanyId, examId, attemptId, employeeId, trainingId]); // Removido navigate e toast das dependências
 
   const handleRetakeTraining = () => {
     // Navegar para a primeira aula do treinamento
@@ -100,8 +104,12 @@ export default function TrainingExamResultPage() {
   };
 
   const handleViewCompletion = () => {
-    // Navegar para a página de conclusão do treinamento
-    navigate(`/portal-colaborador/treinamentos/${trainingId}/conclusao`);
+    // Navegar para a página de conclusão do treinamento, garantindo o company_id correto
+    navigate(`/portal-colaborador/treinamentos/${trainingId}/conclusao`, {
+      state: {
+        trainingCompanyId: effectiveCompanyId
+      }
+    });
   };
 
   if (isLoadingEmployees || loading) {

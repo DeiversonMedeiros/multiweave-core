@@ -645,6 +645,14 @@ export const useMenu = () => {
           requiresPermission: { type: 'module', name: 'compras', action: 'read' }
         },
         {
+          id: 'compras-kits',
+          title: 'Kits de Materiais',
+          url: '/compras/kits',
+          icon: Package,
+          description: 'Kits de materiais para solicitações de compra',
+          requiresPermission: { type: 'module', name: 'compras', action: 'read' }
+        },
+        {
           id: 'compras-cotacoes',
           title: 'Cotações',
           url: '/compras/cotacoes',

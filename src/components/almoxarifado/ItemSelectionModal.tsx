@@ -57,6 +57,7 @@ export function ItemSelectionModal({
   const [items, setItems] = useState<SelectedItem[]>(selectedItems);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [viewingItem, setViewingItem] = useState<any>(null);
+  const [isAddItemsDialogOpen, setIsAddItemsDialogOpen] = useState(false);
 
   // Buscar todo o estoque (sem filtro na API, como EstoqueAtualPage/InventarioContagemPage);
   // depois enriquecer e filtrar no cliente para evitar dependência do filtro get_entity_data.
@@ -203,174 +204,18 @@ export function ItemSelectionModal({
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Filtros: quando almoxarifadoId vem do formulário, exibir apenas busca (almoxarifado fixo) */}
-          <div className={`grid grid-cols-1 gap-4 ${almoxarifadoId ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
-            <div className="space-y-2">
-              <Label htmlFor="search">Buscar</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                <Input
-                  placeholder="Buscar por nome ou código..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            
-            {!almoxarifadoId && (
-              <div className="space-y-2">
-                <Label htmlFor="almoxarifado">Almoxarifado</Label>
-                <select
-                  value={filterAlmoxarifado}
-                  onChange={(e) => setFilterAlmoxarifado(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="todos">Todos os almoxarifados</option>
-                  {almoxarifados.map((almoxarifado) => (
-                    <option key={almoxarifado.id} value={almoxarifado.id}>
-                      {almoxarifado.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            
-            {almoxarifadoId && (
-              <div className="space-y-2">
-                <Label>Almoxarifado</Label>
-                <div className="px-3 py-2 rounded-md border bg-muted/50 text-sm">
-                  {almoxarifados.find((a) => a.id === almoxarifadoId)?.nome ?? 'Almoxarifado de origem'}
-                </div>
-                <p className="text-xs text-muted-foreground">Exibindo apenas itens disponíveis neste almoxarifado</p>
-              </div>
-            )}
-            
-            <div className="space-y-2">
-              <Label>&nbsp;</Label>
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setSearchTerm('');
-                  setFilterAlmoxarifado(almoxarifadoId || 'todos');
-                }}
-                className="w-full"
-              >
-                Limpar Filtros
-              </Button>
-            </div>
-          </div>
-
-          {/* Lista de Itens Disponíveis */}
-          <div className="space-y-4">
+          {/* Orientação e ação para adicionar itens */}
+          <div className="space-y-3">
             <h3 className="text-lg font-semibold">
               {almoxarifadoId ? 'Itens disponíveis em estoque no almoxarifado selecionado' : 'Itens Disponíveis em Estoque'}
             </h3>
-            
-            {estoqueLoading && (
-              <div className="text-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-                <p>Carregando estoque...</p>
-              </div>
-            )}
-
-            {estoqueError && (
-              <div className="text-center py-8">
-                <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-4" />
-                <p className="text-red-600">Erro ao carregar estoque</p>
-              </div>
-            )}
-
-            {!estoqueLoading && !estoqueError && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
-                {filteredEstoque.map((item) => {
-                  const statusConfig = getStatusBadge(item);
-                  const StatusIcon = statusConfig.icon;
-                  const isSelected = items.some(selected => 
-                    selected.material_id === item.material_equipamento_id && 
-                    selected.almoxarifado_id === item.almoxarifado_id
-                  );
-                  
-                  return (
-                    <Card key={`${item.material_equipamento_id}-${item.almoxarifado_id}`} className={isSelected ? 'ring-2 ring-blue-500' : ''}>
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {item.material?.imagem_url ? (
-                              <button
-                                type="button"
-                                onClick={() => setImagePreviewUrl(item.material.imagem_url)}
-                                className="relative h-12 w-12 rounded-md overflow-hidden border bg-muted flex-shrink-0"
-                                title="Ver imagem do material"
-                              >
-                                <img
-                                  src={item.material.imagem_url}
-                                  alt={item.material?.nome || item.material?.descricao || 'Imagem do material'}
-                                  className="h-full w-full object-cover"
-                                />
-                              </button>
-                            ) : (
-                              <Package className="h-5 w-5 flex-shrink-0" />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <CardTitle className="text-sm">{item.material?.nome || item.material?.descricao || 'Material'}</CardTitle>
-                              <p className="text-xs text-muted-foreground">
-                                Código: {item.material?.codigo_interno || 'N/A'} | {item.almoxarifado?.nome || 'Almoxarifado'}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 flex-shrink-0">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setViewingItem(item);
-                              }}
-                              title="Visualizar mais informações"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Badge className={statusConfig.color}>
-                              <StatusIcon className="h-3 w-3 mr-1" />
-                              {statusConfig.text}
-                            </Badge>
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span>Disponível:</span>
-                            <span className="font-medium">
-                              {formatNumber(item.quantidade_atual)} {item.material?.unidade_medida || 'un'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Valor Unitário:</span>
-                            <span className="font-medium">
-                              {formatCurrency(item.valor_unitario || 0)}
-                            </span>
-                          </div>
-                        </div>
-                        <Button
-                          size="sm"
-                          className="w-full mt-3"
-                          onClick={() => handleAddItem(item)}
-                          disabled={item.quantidade_atual === 0}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          {isSelected ? 'Adicionar Mais' : 'Adicionar'}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+            <p className="text-sm text-muted-foreground">
+              Clique no botão abaixo para adicionar itens do estoque à solicitação. Após adicionar, eles aparecerão na lista de &quot;Itens Selecionados&quot;.
+            </p>
+            <Button type="button" onClick={() => setIsAddItemsDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Adicionar Itens
+            </Button>
           </div>
 
           {/* Itens Selecionados */}
@@ -459,6 +304,196 @@ export function ItemSelectionModal({
             Confirmar Seleção ({items.length} itens)
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Modal interno para buscar e adicionar itens do estoque */}
+    <Dialog open={isAddItemsDialogOpen} onOpenChange={setIsAddItemsDialogOpen}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            Adicionar Itens do Estoque
+          </DialogTitle>
+          <DialogDescription>
+            {almoxarifadoId
+              ? 'Busque e adicione itens disponíveis no almoxarifado de origem selecionado.'
+              : 'Busque e adicione itens disponíveis em estoque nos almoxarifados.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6">
+          {/* Filtros e busca */}
+          <div className={`grid grid-cols-1 gap-4 ${almoxarifadoId ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+            <div className="space-y-2">
+              <Label htmlFor="search">Buscar</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  placeholder="Buscar por nome ou código..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            {!almoxarifadoId && (
+              <div className="space-y-2">
+                <Label htmlFor="almoxarifado">Almoxarifado</Label>
+                <select
+                  value={filterAlmoxarifado}
+                  onChange={(e) => setFilterAlmoxarifado(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="todos">Todos os almoxarifados</option>
+                  {almoxarifados.map((almoxarifado) => (
+                    <option key={almoxarifado.id} value={almoxarifado.id}>
+                      {almoxarifado.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {almoxarifadoId && (
+              <div className="space-y-2">
+                <Label>Almoxarifado</Label>
+                <div className="px-3 py-2 rounded-md border bg-muted/50 text-sm">
+                  {almoxarifados.find((a) => a.id === almoxarifadoId)?.nome ?? 'Almoxarifado de origem'}
+                </div>
+                <p className="text-xs text-muted-foreground">Exibindo apenas itens disponíveis neste almoxarifado</p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>&nbsp;</Label>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSearchTerm('');
+                  setFilterAlmoxarifado(almoxarifadoId || 'todos');
+                }}
+                className="w-full"
+              >
+                Limpar Filtros
+              </Button>
+            </div>
+          </div>
+
+          {/* Lista de Itens Disponíveis para adicionar */}
+          <div className="space-y-4">
+            {estoqueLoading && (
+              <div className="text-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+                <p>Carregando estoque...</p>
+              </div>
+            )}
+
+            {estoqueError && (
+              <div className="text-center py-8">
+                <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-4" />
+                <p className="text-red-600">Erro ao carregar estoque</p>
+              </div>
+            )}
+
+            {!estoqueLoading && !estoqueError && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                {filteredEstoque.map((item) => {
+                  const statusConfig = getStatusBadge(item);
+                  const StatusIcon = statusConfig.icon;
+                  const isSelected = items.some(selected =>
+                    selected.material_id === item.material_equipamento_id &&
+                    selected.almoxarifado_id === getAlmoxarifadoIdFromItem(item)
+                  );
+
+                  return (
+                    <Card
+                      key={`${item.material_equipamento_id}-${getAlmoxarifadoIdFromItem(item)}`}
+                      className={isSelected ? 'ring-2 ring-blue-500' : ''}
+                    >
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {item.material?.imagem_url ? (
+                              <button
+                                type="button"
+                                onClick={() => setImagePreviewUrl(item.material.imagem_url)}
+                                className="relative h-12 w-12 rounded-md overflow-hidden border bg-muted flex-shrink-0"
+                                title="Ver imagem do material"
+                              >
+                                <img
+                                  src={item.material.imagem_url}
+                                  alt={item.material?.nome || item.material?.descricao || 'Imagem do material'}
+                                  className="h-full w-full object-cover"
+                                />
+                              </button>
+                            ) : (
+                              <Package className="h-5 w-5 flex-shrink-0" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <CardTitle className="text-sm">
+                                {item.material?.nome || item.material?.descricao || 'Material'}
+                              </CardTitle>
+                              <p className="text-xs text-muted-foreground">
+                                Código: {item.material?.codigo_interno || 'N/A'} | {item.almoxarifado?.nome || 'Almoxarifado'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setViewingItem(item);
+                              }}
+                              title="Visualizar mais informações"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Badge className={statusConfig.color}>
+                              <StatusIcon className="h-3 w-3 mr-1" />
+                              {statusConfig.text}
+                            </Badge>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span>Disponível:</span>
+                            <span className="font-medium">
+                              {formatNumber(item.quantidade_atual)} {item.material?.unidade_medida || 'un'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Valor Unitário:</span>
+                            <span className="font-medium">
+                              {formatCurrency(item.valor_unitario || 0)}
+                            </span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full mt-3"
+                          onClick={() => handleAddItem(item)}
+                          disabled={item.quantidade_atual === 0}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          {isSelected ? 'Adicionar Mais' : 'Adicionar'}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
 

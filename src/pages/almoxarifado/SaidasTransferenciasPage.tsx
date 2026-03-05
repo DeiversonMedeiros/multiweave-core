@@ -42,6 +42,7 @@ import { TransferenciaMaterialForm } from '@/components/almoxarifado/Transferenc
 import type { SelectedItem } from '@/components/almoxarifado/ItemSelectionModal';
 import { useAuth } from '@/lib/auth-context';
 import { toast } from 'sonner';
+import { EntityService } from '@/services/generic/entityService';
 
 import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
@@ -867,6 +868,24 @@ const SaidasTransferenciasPage: React.FC = () => {
                 // Trigger em almoxarifado.solicitacoes_saida_materiais já chama create_approvals_for_process.
                 // Chamada abaixo é redundante mas segura (a RPC é idempotente: DELETE antes de INSERT).
                 if (created?.id && selectedCompany?.id) {
+                  // Salvar itens vinculados à solicitação criada
+                  if (items && items.length > 0) {
+                    for (const item of items) {
+                      await EntityService.create({
+                        schema: 'almoxarifado',
+                        table: 'solicitacoes_saida_materiais_itens',
+                        companyId: selectedCompany.id,
+                        data: {
+                          solicitacao_id: created.id,
+                          material_id: item.material_id,
+                          quantidade_solicitada: item.quantidade_solicitada,
+                          quantidade_entregue: 0,
+                          valor_unitario: item.valor_unitario,
+                        },
+                      });
+                    }
+                  }
+
                   try {
                     await createApprovalsForProcess.mutateAsync({
                       processo_tipo: 'solicitacao_saida_material',
@@ -877,8 +896,6 @@ const SaidasTransferenciasPage: React.FC = () => {
                     toast.error('Solicitação criada, mas o fluxo de aprovação não foi iniciado. Tente reenviar para aprovação.');
                   }
                 }
-                // TODO: Salvar itens da solicitação (itens da saída)
-                if (items?.length) console.log('Itens selecionados:', items);
               }
               setIsSaidaModalOpen(false);
               setSelectedSaidaMaterial(null);

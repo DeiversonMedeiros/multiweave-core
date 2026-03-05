@@ -141,6 +141,7 @@ export const PermissionManager: React.FC = () => {
     'compras': [
       '/compras*',
       '/compras/requisicoes*',
+      '/compras/kits*',
       '/compras/cotacoes*',
       '/compras/pedidos*',
       '/compras/follow-up*',

@@ -395,20 +395,22 @@ export function MaterialExitRequestForm({ request, onSubmit, onCancel, isLoading
                   </p>
                 </div>
 
-                {/* Data de Solicitação */}
-                <div className="space-y-2">
-                  <Label htmlFor="data_solicitacao">Data de Solicitação</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                    <Input
-                      id="data_solicitacao"
-                      type="datetime-local"
-                      value={formData.data_solicitacao ? new Date(formData.data_solicitacao).toISOString().slice(0, 16) : ''}
-                      onChange={(e) => setFormData(prev => ({ ...prev, data_solicitacao: e.target.value ? new Date(e.target.value).toISOString() : '' }))}
-                      className="pl-10"
-                    />
+                {/* Data de Solicitação (apenas na edição) */}
+                {request && (
+                  <div className="space-y-2">
+                    <Label htmlFor="data_solicitacao">Data de Solicitação</Label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                      <Input
+                        id="data_solicitacao"
+                        type="datetime-local"
+                        value={formData.data_solicitacao ? new Date(formData.data_solicitacao).toISOString().slice(0, 16) : ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, data_solicitacao: e.target.value ? new Date(e.target.value).toISOString() : '' }))}
+                        className="pl-10"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
                 {/* Data prevista de saída (para o almoxarife) */}
                 <div className="space-y-2">
                   <Label htmlFor="data_prevista_saida">Data prevista de saída (opcional)</Label>

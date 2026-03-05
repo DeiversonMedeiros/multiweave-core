@@ -169,6 +169,7 @@ export interface TrainingAssignment {
   employee_id?: string;
   position_id?: string;
   unit_id?: string;
+  cost_center_id?: string;
   tipo_atribuicao: 'obrigatorio' | 'opcional' | 'publica';
   data_limite?: string;
   notificar: boolean;
@@ -666,8 +667,8 @@ export const OnlineTrainingService = {
         }
       });
     } else {
-      // Buscar enrollment
-      const enrollment = await EntityService.list({
+      // Buscar enrollment na empresa informada
+      let enrollment = await EntityService.list({
         schema: 'rh',
         table: 'training_enrollments',
         companyId,
@@ -677,6 +678,93 @@ export const OnlineTrainingService = {
         }
       });
 
+      // Se não encontrou, tentar localizar inscrição em qualquer empresa (cross-company)
+      if (enrollment.data.length === 0) {
+        const crossCompanyEnrollment = await EntityService.list({
+          schema: 'rh',
+          table: 'training_enrollments',
+          companyId,
+          skipCompanyFilter: true,
+          filters: {
+            training_id: trainingId,
+            employee_id: employeeId
+          },
+          pageSize: 1
+        });
+
+        if (crossCompanyEnrollment.data.length > 0) {
+          enrollment = crossCompanyEnrollment;
+        }
+      }
+
+      // Se ainda não encontrou, criar inscrição na empresa do treinamento (best-effort)
+      if (enrollment.data.length === 0) {
+        try {
+          const created = await EntityService.create({
+            schema: 'rh',
+            table: 'training_enrollments',
+            companyId,
+            data: {
+              company_id: companyId,
+              training_id: trainingId,
+              employee_id: employeeId,
+              status: 'inscrito',
+              is_active: true
+            }
+          });
+
+          return await EntityService.create<TrainingProgress>({
+            schema: 'rh',
+            table: 'training_progress',
+            companyId,
+            data: {
+              company_id: companyId,
+              training_id: trainingId,
+              content_id: contentId,
+              employee_id: employeeId,
+              enrollment_id: (created as any).id,
+              status: data.concluido ? 'concluido' : 'em_andamento',
+              percentual_concluido: data.percentual_concluido || 0,
+              tempo_assistido_segundos: data.tempo_assistido_segundos || 0,
+              ultima_posicao_segundos: data.ultima_posicao_segundos || 0,
+              concluido: data.concluido || false,
+              data_inicio: new Date().toISOString(),
+              data_ultima_atualizacao: new Date().toISOString(),
+              data_conclusao: data.concluido ? new Date().toISOString() : undefined
+            }
+          });
+        } catch (err: any) {
+          const message = err?.message || '';
+
+          // Se a inscrição já existir (constraint única), tentar buscar novamente em todas as empresas
+          if (
+            message.includes('duplicate key value') &&
+            message.includes('training_enrollments_training_id_employee_id_key')
+          ) {
+            const crossCompanyEnrollment = await EntityService.list({
+              schema: 'rh',
+              table: 'training_enrollments',
+              companyId,
+              skipCompanyFilter: true,
+              filters: {
+                training_id: trainingId,
+                employee_id: employeeId
+              },
+              pageSize: 1
+            });
+
+            if (crossCompanyEnrollment.data.length > 0) {
+              enrollment = crossCompanyEnrollment;
+            } else {
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // Neste ponto, devemos ter um enrollment válido (seja da empresa atual ou de outra)
       if (enrollment.data.length === 0) {
         throw new Error('Inscrição não encontrada');
       }
@@ -1091,6 +1179,7 @@ export const OnlineTrainingService = {
       schema: 'rh',
       table: 'training_assignments',
       companyId,
+      skipCompanyFilter: true,
       filters: {
         training_id: trainingId
       }
@@ -1099,13 +1188,15 @@ export const OnlineTrainingService = {
   },
 
   async createAssignment(companyId: string, data: Omit<TrainingAssignment, 'id' | 'created_at' | 'updated_at'>): Promise<TrainingAssignment> {
+    const finalCompanyId = data.company_id || companyId;
+
     return await EntityService.create<TrainingAssignment>({
       schema: 'rh',
       table: 'training_assignments',
-      companyId,
+      companyId: finalCompanyId,
       data: {
         ...data,
-        company_id: companyId
+        company_id: finalCompanyId
       }
     });
   },
@@ -1401,8 +1492,10 @@ export const OnlineTrainingService = {
     const trainings = uniqueTrainings;
     const assignments = allAssignments;
 
-    const positionId = employee?.position_id;
-    const unitId = employee?.unit_id;
+    // Importante: na tabela rh.employees as colunas são cargo_id, departamento_id e cost_center_id
+    const positionId = (employee as any)?.cargo_id;
+    const unitId = (employee as any)?.departamento_id;
+    const costCenterId = (employee as any)?.cost_center_id;
 
     const assigned: any[] = [];
     const byPosition: any[] = [];
@@ -1434,6 +1527,11 @@ export const OnlineTrainingService = {
         }
         // Verificar se é atribuição por departamento (apenas da empresa do funcionário)
         else if (assignment.unit_id === unitId && assignment.company_id === employeeCompanyId) {
+          shouldInclude = true;
+          assignmentType = 'byPosition';
+        }
+        // Verificar se é atribuição por centro de custo (apenas da empresa do funcionário)
+        else if (assignment.cost_center_id === costCenterId && assignment.company_id === employeeCompanyId) {
           shouldInclude = true;
           assignmentType = 'byPosition';
         }

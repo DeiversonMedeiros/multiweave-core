@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Download, Award, CheckCircle } from 'lucide-react';
-import { 
-  generateCertificateNumber, 
-  downloadCertificate, 
+import {
+  generateCertificateNumber,
+  downloadCertificate,
   saveCertificate,
-  CertificateData 
+  CertificateData
 } from '@/services/rh/certificateService';
+import { OnlineTrainingService } from '@/services/rh/onlineTrainingService';
 import { useCompany } from '@/lib/company-context';
 import { useToast } from '@/hooks/use-toast';
 import { useTraining } from '@/hooks/rh/useTraining';
@@ -31,10 +32,88 @@ export const CertificateGenerator: React.FC<CertificateGeneratorProps> = ({
   const { trainings, generateCertificate } = useTraining();
   const { data: employeesData } = useEmployees();
   const [generating, setGenerating] = useState(false);
+  const [examStats, setExamStats] = useState<{
+    hasExam: boolean;
+    percentCorrect?: number;
+    correctCount?: number;
+    totalQuestions?: number;
+    notaFinal?: number;
+  } | null>(null);
 
   const employees = employeesData?.data || [];
   const training = trainings.find(t => t.id === trainingId);
   const employee = employees.find((e: any) => e.id === employeeId);
+
+  useEffect(() => {
+    const loadExamStats = async () => {
+      if (!training || !employeeId || !selectedCompany?.id) return;
+
+      try {
+        const companyId = training.company_id || selectedCompany.id;
+
+        const exams = await OnlineTrainingService.listExams(companyId, training.id);
+        const finalExam = exams.find(
+          (e) => e.tipo_avaliacao === 'final' && e.is_active
+        );
+
+        if (!finalExam) {
+          return;
+        }
+
+        const attempts = await OnlineTrainingService.listExamAttempts(
+          companyId,
+          finalExam.id,
+          employeeId
+        );
+
+        if (!attempts || attempts.length === 0) {
+          return;
+        }
+
+        const approvedAttempt =
+          attempts.find(
+            (a) => a.status === 'finalizado' && a.aprovado === true
+          ) || attempts[0];
+
+        const answers = await OnlineTrainingService.getExamAttemptAnswers(
+          companyId,
+          approvedAttempt.id
+        );
+
+        const totalQuestions = answers.length;
+        const correctCount = answers.filter((a) => a.is_correct).length;
+
+        let percentCorrect =
+          approvedAttempt.percentual_acerto !== undefined &&
+          approvedAttempt.percentual_acerto !== null
+            ? approvedAttempt.percentual_acerto
+            : undefined;
+
+        if (percentCorrect === undefined && totalQuestions > 0) {
+          percentCorrect = (correctCount / totalQuestions) * 100;
+        }
+
+        setExamStats({
+          hasExam: true,
+          percentCorrect,
+          correctCount,
+          totalQuestions,
+          notaFinal:
+            approvedAttempt.nota_final !== undefined &&
+            approvedAttempt.nota_final !== null
+              ? approvedAttempt.nota_final
+              : undefined
+        });
+      } catch (err) {
+        console.error(
+          '[CertificateGenerator] Erro ao carregar estatísticas da prova:',
+          err
+        );
+      }
+    };
+
+    loadExamStats();
+  }, [training?.id, training?.company_id, employeeId, selectedCompany?.id]);
 
   if (!training || !employee || !selectedCompany) {
     return (
@@ -47,26 +126,47 @@ export const CertificateGenerator: React.FC<CertificateGeneratorProps> = ({
   }
 
   const handleGenerateCertificate = async () => {
-    if (!selectedCompany?.id) return;
+    if (!selectedCompany?.id || !training) return;
 
     setGenerating(true);
     try {
-      // Gerar número do certificado
-      const certificateNumber = generateCertificateNumber(trainingId, employeeId);
+      const companyId = training.company_id || selectedCompany.id;
 
-      // Buscar nota final e progresso (se disponível)
-      // Por enquanto, vamos usar valores padrão
-      const notaFinal = undefined; // Seria buscado do banco
-      const percentualPresenca = 100; // Seria calculado
-
-      // Salvar certificado no banco
-      await saveCertificate(selectedCompany.id, {
-        training_id: trainingId,
-        employee_id: employeeId,
-        numero_certificado: certificateNumber,
-        nota_final: notaFinal,
-        percentual_presenca_final: percentualPresenca
+      // Verificar se já existe certificado
+      const { EntityService } = await import('@/services/generic/entityService');
+      const existingResult = await EntityService.list({
+        schema: 'rh',
+        table: 'training_certificates',
+        companyId,
+        filters: {
+          training_id: trainingId,
+          employee_id: employeeId
+        }
       });
+
+      let certificateNumber: string;
+
+      if (existingResult.data.length > 0) {
+        // Usar certificado já existente
+        const existing = existingResult.data[0] as any;
+        certificateNumber = existing.numero_certificado;
+      } else {
+        // Gerar número do certificado
+        certificateNumber = generateCertificateNumber(trainingId, employeeId);
+
+        // Buscar nota final da prova (se tivermos nas estatísticas)
+        const notaFinal = examStats?.notaFinal;
+        const percentualPresenca = 100;
+
+        // Salvar certificado no banco
+        await saveCertificate(companyId, {
+          training_id: trainingId,
+          employee_id: employeeId,
+          numero_certificado: certificateNumber,
+          nota_final: notaFinal,
+          percentual_presenca_final: percentualPresenca
+        });
+      }
 
       // Preparar dados para o certificado
       const certificateData: CertificateData = {
@@ -78,7 +178,7 @@ export const CertificateGenerator: React.FC<CertificateGeneratorProps> = ({
         certificateNumber,
         companyName: selectedCompany.razao_social || selectedCompany.nome_fantasia || 'Empresa',
         hours: training.carga_horaria || 0,
-        score: notaFinal
+        score: examStats?.notaFinal
       };
 
       // Gerar e baixar certificado
@@ -145,6 +245,25 @@ export const CertificateGenerator: React.FC<CertificateGeneratorProps> = ({
               <strong>Funcionário:</strong> {employee.nome}
             </div>
           </div>
+
+          {examStats?.hasExam && (
+            <div className="mt-2 text-sm space-y-1">
+              <p className="font-medium">Resultado da prova final:</p>
+              {examStats.correctCount !== undefined &&
+                examStats.totalQuestions !== undefined && (
+                  <p>
+                    {examStats.correctCount} de {examStats.totalQuestions} questões
+                    corretas
+                  </p>
+                )}
+              {examStats.percentCorrect !== undefined && (
+                <p>
+                  Percentual de acerto:{' '}
+                  {examStats.percentCorrect.toFixed(2)}%
+                </p>
+              )}
+            </div>
+          )}
 
           <Button
             onClick={handleGenerateCertificate}

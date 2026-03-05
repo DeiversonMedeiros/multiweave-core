@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,9 +38,20 @@ export default function TrainingCompletionPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [certificateExists, setCertificateExists] = useState(false);
+  const [examStats, setExamStats] = useState<{
+    hasExam: boolean;
+    percentCorrect?: number;
+    correctCount?: number;
+    totalQuestions?: number;
+    notaFinal?: number;
+  } | null>(null);
   const { trainings } = useTraining();
   const currentTraining = trainings.find(t => t.id === trainingId);
   
+  const location = useLocation();
+  const locationState = (location.state || {}) as { trainingCompanyId?: string };
+  const effectiveCompanyId = locationState.trainingCompanyId || selectedCompany?.id || null;
+
   // Buscar employee_id do usuário
   const { data: employeesData, isLoading: isLoadingEmployees } = useEmployees();
   const employees = employeesData?.data || [];
@@ -48,19 +59,25 @@ export default function TrainingCompletionPage() {
   const employeeId = employee?.id;
 
   // Buscar progresso e estatísticas do treinamento
-  const { stats } = useTrainingProgress(trainingId || '', employeeId || '');
+  const { stats } = useTrainingProgress(trainingId || '', employeeId || '', effectiveCompanyId || undefined);
 
   // Verificar se já existe certificado
   useEffect(() => {
     const checkCertificate = async () => {
-      if (!selectedCompany?.id || !trainingId || !employeeId) return;
+      if (!effectiveCompanyId || !trainingId || !employeeId) return;
       
       try {
+        console.log('[TrainingCompletionPage] Verificando certificado existente', {
+          companyId: effectiveCompanyId,
+          trainingId,
+          employeeId
+        });
+
         const { EntityService } = await import('@/services/generic/entityService');
         const result = await EntityService.list({
           schema: 'rh',
           table: 'training_certificates',
-          companyId: selectedCompany.id,
+          companyId: effectiveCompanyId,
           filters: {
             training_id: trainingId,
             employee_id: employeeId
@@ -76,14 +93,81 @@ export default function TrainingCompletionPage() {
     };
 
     checkCertificate();
-  }, [selectedCompany?.id, trainingId, employeeId]);
+  }, [effectiveCompanyId, trainingId, employeeId]);
+
+  // Carregar estatísticas da prova final (quantidade e % de acerto)
+  useEffect(() => {
+    const loadExamStats = async () => {
+      if (!effectiveCompanyId || !trainingId || !employeeId) return;
+
+      try {
+        console.log('[TrainingCompletionPage] Buscando estatísticas da prova final', {
+          companyId: effectiveCompanyId,
+          trainingId,
+          employeeId
+        });
+
+        const exams = await OnlineTrainingService.listExams(effectiveCompanyId, trainingId);
+        const finalExam = exams.find((e) => e.tipo_avaliacao === 'final' && e.is_active);
+        if (!finalExam) {
+          console.log('[TrainingCompletionPage] Nenhuma prova final encontrada para este treinamento');
+          return;
+        }
+
+        const attempts = await OnlineTrainingService.listExamAttempts(
+          effectiveCompanyId,
+          finalExam.id,
+          employeeId
+        );
+
+        if (!attempts || attempts.length === 0) {
+          console.log('[TrainingCompletionPage] Nenhuma tentativa de prova encontrada');
+          return;
+        }
+
+        // Preferir tentativa aprovada e finalizada; se não houver, pegar a última
+        const approvedAttempt =
+          attempts.find((a) => a.status === 'finalizado' && a.aprovado === true) || attempts[0];
+
+        // Buscar respostas dessa tentativa para contar acertos
+        const answers = await OnlineTrainingService.getExamAttemptAnswers(
+          effectiveCompanyId,
+          approvedAttempt.id
+        );
+
+        const totalQuestions = answers.length;
+        const correctCount = answers.filter((a) => a.is_correct).length;
+
+        console.log('[TrainingCompletionPage] Estatísticas da prova calculadas', {
+          examId: finalExam.id,
+          attemptId: approvedAttempt.id,
+          totalQuestions,
+          correctCount,
+          percentCorrect: approvedAttempt.percentual_acerto,
+          notaFinal: approvedAttempt.nota_final
+        });
+
+        setExamStats({
+          hasExam: true,
+          percentCorrect: approvedAttempt.percentual_acerto ?? undefined,
+          correctCount,
+          totalQuestions,
+          notaFinal: approvedAttempt.nota_final ?? undefined
+        });
+      } catch (err) {
+        console.error('[TrainingCompletionPage] Erro ao carregar estatísticas da prova:', err);
+      }
+    };
+
+    loadExamStats();
+  }, [effectiveCompanyId, trainingId, employeeId]);
 
   const handleBackToTrainings = () => {
     navigate('/portal-colaborador/treinamentos');
   };
 
   const handleDownloadCertificate = async () => {
-    if (!selectedCompany?.id || !trainingId || !employeeId || !currentTraining || !employee) return;
+    if (!effectiveCompanyId || !trainingId || !employeeId || !currentTraining || !employee) return;
     
     setGenerating(true);
     try {
@@ -92,7 +176,7 @@ export default function TrainingCompletionPage() {
       const existingResult = await EntityService.list({
         schema: 'rh',
         table: 'training_certificates',
-        companyId: selectedCompany.id,
+        companyId: effectiveCompanyId,
         filters: {
           training_id: trainingId,
           employee_id: employeeId
@@ -115,11 +199,11 @@ export default function TrainingCompletionPage() {
         // Buscar nota final da prova (se houver)
         let notaFinal: number | undefined;
         try {
-          const exams = await OnlineTrainingService.listExams(selectedCompany.id, trainingId);
+          const exams = await OnlineTrainingService.listExams(effectiveCompanyId, trainingId);
           const finalExam = exams.find(e => e.tipo_avaliacao === 'final' && e.is_active);
           if (finalExam) {
             const attempts = await OnlineTrainingService.listExamAttempts(
-              selectedCompany.id,
+              effectiveCompanyId,
               finalExam.id,
               employeeId
             );
@@ -135,7 +219,7 @@ export default function TrainingCompletionPage() {
         }
 
         // Salvar certificado no banco
-        const saved = await saveCertificate(selectedCompany.id, {
+        const saved = await saveCertificate(effectiveCompanyId, {
           training_id: trainingId,
           employee_id: employeeId,
           numero_certificado: certificateNumber,
@@ -156,7 +240,7 @@ export default function TrainingCompletionPage() {
         trainingName: currentTraining.nome,
         completionDate: new Date().toISOString(),
         certificateNumber,
-        companyName: selectedCompany.razao_social || selectedCompany.nome_fantasia || 'Empresa',
+        companyName: selectedCompany?.razao_social || selectedCompany?.nome_fantasia || 'Empresa',
         hours: currentTraining.carga_horaria || 0,
         score: stats?.progress_percent
       };
@@ -257,6 +341,23 @@ export default function TrainingCompletionPage() {
                 <span className="font-medium">Data de Conclusão:</span>
                 <span>{new Date().toLocaleDateString('pt-BR')}</span>
               </div>
+
+              {examStats?.hasExam && (
+                <div className="mt-2 text-sm space-y-1">
+                  <p className="font-medium">Desempenho na prova final:</p>
+                  {examStats.correctCount !== undefined && examStats.totalQuestions !== undefined && (
+                    <p>
+                      {examStats.correctCount} de {examStats.totalQuestions} questões corretas
+                    </p>
+                  )}
+                  {examStats.percentCorrect !== undefined && (
+                    <p>Percentual de acerto: {examStats.percentCorrect.toFixed(2)}%</p>
+                  )}
+                  {examStats.notaFinal !== undefined && (
+                    <p>Nota final: {examStats.notaFinal.toFixed(2)} pontos</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <Alert className="bg-green-100 border-green-200">

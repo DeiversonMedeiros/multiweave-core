@@ -22,6 +22,7 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
+  AlertTriangle,
   Building,
   Boxes,
   MapPin,
@@ -38,6 +39,7 @@ import {
   useUpdatePurchaseRequisition,
 } from '@/hooks/compras/useComprasData';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
+import { useEstoqueAtual } from '@/hooks/almoxarifado/useEstoqueAtualQuery';
 import type { MaterialEquipamento } from '@/services/almoxarifado/almoxarifadoService';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useCompany } from '@/lib/company-context';
@@ -48,6 +50,8 @@ import { useActiveCostCenters } from '@/hooks/useCostCenters';
 import { useActiveProjects } from '@/hooks/useProjects';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useServicesByProject } from '@/hooks/useServices';
+import { useMaterialKits } from '@/hooks/compras/useMaterialKits';
+import { materialKitsService } from '@/services/compras/materialKitsService';
 import { useUsers } from '@/hooks/useUsers';
 import { FluxoAprovacao } from '@/components/Compras/FluxoAprovacao';
 import { formatDateOnly } from '@/lib/utils';
@@ -999,6 +1003,8 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
   const [showMaterialSearch, setShowMaterialSearch] = useState(false);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const { users } = useUsers();
+  const [estoqueModalItem, setEstoqueModalItem] = useState<RequisicaoItem | null>(null);
   
   // Buscar dados para os selects
   const { data: costCentersData } = useActiveCostCenters();
@@ -1007,6 +1013,65 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
   
   const costCenters = costCentersData?.data || [];
   const allProjects = projectsData?.data || [];
+
+  const usersMap = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach((user) => {
+      map.set(user.id, user.nome);
+    });
+    return map;
+  }, [users]);
+
+  const almoxMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (almoxarifados as any[]).forEach((almox: any) => {
+      if (almox?.id) {
+        map.set(almox.id, almox);
+      }
+    });
+    return map;
+  }, [almoxarifados]);
+
+  const {
+    data: estoqueGeral = [],
+    isLoading: loadingEstoqueGeral,
+  } = useEstoqueAtual();
+
+  const getTotalEstoqueForMaterial = React.useCallback(
+    (materialId?: string) => {
+      if (!materialId) return 0;
+      const itensMaterial = (estoqueGeral as any[]).filter(
+        (item: any) => item.material_equipamento_id === materialId,
+      );
+      return itensMaterial.reduce(
+        (total, item) =>
+          total + (item.quantidade_disponivel ?? item.quantidade_atual ?? 0),
+        0,
+      );
+    },
+    [estoqueGeral],
+  );
+
+  const estoqueDoMaterialEnriquecido = useMemo(() => {
+    if (!estoqueModalItem) return [];
+    const itensMaterial = (estoqueGeral as any[]).filter(
+      (item: any) => item.material_equipamento_id === estoqueModalItem.material_id,
+    );
+
+    return itensMaterial.map((item: any) => {
+      const almox = item.almoxarifado || almoxMap.get(item.almoxarifado_id);
+      const responsavelNome =
+        almox?.responsavel_id && usersMap.get(almox.responsavel_id)
+          ? usersMap.get(almox.responsavel_id)
+          : undefined;
+
+      return {
+        ...item,
+        almoxarifado: almox,
+        responsavelNome,
+      };
+    });
+  }, [estoqueModalItem, estoqueGeral, almoxMap, usersMap]);
   
   const [formData, setFormData] = useState({
     data_necessidade: '',
@@ -1764,22 +1829,40 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                                 <div className="space-y-3">
                                   <div>
                                     <Label className="text-xs text-muted-foreground mb-1 block">Material</Label>
-                                    <p className="font-semibold text-base">{item.material_nome || 'Material não selecionado'}</p>
+                                    <p className="font-semibold text-base">
+                                      {item.material_nome || 'Material não selecionado'}
+                                    </p>
                                     {item.material_codigo && (
-                                      <p className="text-xs text-muted-foreground mt-1">Código: {item.material_codigo}</p>
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Código: {item.material_codigo}
+                                      </p>
                                     )}
-                                    <Button
-                                      type="button"
-                                      variant="link"
-                                      size="sm"
-                                      className="h-auto p-0 text-xs mt-1"
-                                      onClick={() => {
-                                        setSelectedItemIndex(index);
-                                        setShowMaterialSearch(true);
-                                      }}
-                                    >
-                                      {item.material_id ? '✏️ Alterar material' : '🔍 Buscar material'}
-                                    </Button>
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                      <Button
+                                        type="button"
+                                        variant="link"
+                                        size="sm"
+                                        className="h-auto p-0 text-xs"
+                                        onClick={() => {
+                                          setSelectedItemIndex(index);
+                                          setShowMaterialSearch(true);
+                                        }}
+                                      >
+                                        {item.material_id ? '✏️ Alterar material' : '🔍 Buscar material'}
+                                      </Button>
+                                      {item.material_id && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 text-xs"
+                                          onClick={() => setEstoqueModalItem(item)}
+                                        >
+                                          <Eye className="h-3 w-3 mr-1" />
+                                          Ver estoques
+                                        </Button>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
 
@@ -1797,6 +1880,28 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
                                       required
                                       className="h-10"
                                     />
+                                    {item.material_id && (
+                                      <p className="text-xs">
+                                        <span className="text-muted-foreground">
+                                          Em estoque (todos almoxarifados):{' '}
+                                        </span>
+                                        <span
+                                          className={`inline-flex items-center gap-1 font-semibold ${
+                                            getTotalEstoqueForMaterial(item.material_id) > 0
+                                              ? 'text-emerald-600'
+                                              : 'text-red-600'
+                                          }`}
+                                        >
+                                          {getTotalEstoqueForMaterial(item.material_id) === 0 && (
+                                            <AlertTriangle className="h-3 w-3" />
+                                          )}
+                                          {getTotalEstoqueForMaterial(item.material_id).toLocaleString(
+                                            'pt-BR',
+                                            { minimumFractionDigits: 1, maximumFractionDigits: 1 },
+                                          )}
+                                        </span>
+                                      </p>
+                                    )}
                                   </div>
                                   <div className="space-y-1">
                                     <Label className="text-xs text-muted-foreground">Unidade</Label>
@@ -1886,6 +1991,84 @@ function EditarSolicitacaoForm({ requisicao, onClose }: { requisicao: any; onClo
         </Button>
       </div>
 
+      {/* Modal de estoques do material */}
+      <Dialog
+        open={!!estoqueModalItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEstoqueModalItem(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Estoques do material</DialogTitle>
+            <DialogDescription>
+              Visualize as quantidades deste material em todos os estoques.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {estoqueModalItem && (
+              <div className="border rounded-md p-3 bg-muted/40">
+                <p className="font-medium">
+                  {estoqueModalItem.material_nome}{' '}
+                  {estoqueModalItem.material_codigo && (
+                    <span className="text-sm text-muted-foreground">
+                      ({estoqueModalItem.material_codigo})
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+
+            {loadingEstoqueMaterial ? (
+              <p className="text-sm text-muted-foreground">Carregando estoques...</p>
+            ) : estoqueDoMaterialEnriquecido.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhum estoque encontrado para este material.
+              </p>
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Estoque</TableHead>
+                      <TableHead>Quantidade</TableHead>
+                      <TableHead>Responsável</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {estoqueDoMaterialEnriquecido.map((item: any) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {item.almoxarifado?.nome || 'Almoxarifado não informado'}
+                            </span>
+                            {item.almoxarifado?.codigo && (
+                              <span className="text-xs text-muted-foreground">
+                                Código: {item.almoxarifado.codigo}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {(item.quantidade_disponivel ?? item.quantidade_atual ?? 0).toLocaleString(
+                            'pt-BR',
+                            { minimumFractionDigits: 3 },
+                          )}
+                        </TableCell>
+                        <TableCell>{item.responsavelNome || 'Não definido'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal de busca de material */}
       <MaterialSearchModal
         isOpen={showMaterialSearch}
@@ -1905,6 +2088,15 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
   const { selectedCompany } = useCompany();
   const [showMaterialSearch, setShowMaterialSearch] = useState(false);
   const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
+  const { users } = useUsers();
+  const [estoqueModalItem, setEstoqueModalItem] = useState<RequisicaoItem | null>(null);
+  
+  // Kits de materiais
+  const [selectedKitId, setSelectedKitId] = useState<string>('');
+  const [quantidadeKits, setQuantidadeKits] = useState<number>(1);
+  const [addingKitItems, setAddingKitItems] = useState(false);
+  const { data: kitsAtivos = [] } = useMaterialKits(true);
+  const { data: materiaisList = [] } = useMateriaisEquipamentos({ status: 'ativo' });
   
   // Buscar dados para os selects
   const { data: costCentersData } = useActiveCostCenters();
@@ -1913,6 +2105,65 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
   
   const costCenters = costCentersData?.data || [];
   const allProjects = projectsData?.data || [];
+
+  const usersMap = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach((user) => {
+      map.set(user.id, user.nome);
+    });
+    return map;
+  }, [users]);
+
+  const almoxMap = useMemo(() => {
+    const map = new Map<string, any>();
+    (almoxarifados as any[]).forEach((almox: any) => {
+      if (almox?.id) {
+        map.set(almox.id, almox);
+      }
+    });
+    return map;
+  }, [almoxarifados]);
+
+  const {
+    data: estoqueGeral = [],
+    isLoading: loadingEstoqueGeral,
+  } = useEstoqueAtual();
+
+  const getTotalEstoqueForMaterial = React.useCallback(
+    (materialId?: string) => {
+      if (!materialId) return 0;
+      const itensMaterial = (estoqueGeral as any[]).filter(
+        (item: any) => item.material_equipamento_id === materialId,
+      );
+      return itensMaterial.reduce(
+        (total, item) =>
+          total + (item.quantidade_disponivel ?? item.quantidade_atual ?? 0),
+        0,
+      );
+    },
+    [estoqueGeral],
+  );
+
+  const estoqueDoMaterialEnriquecido = useMemo(() => {
+    if (!estoqueModalItem) return [];
+    const itensMaterial = (estoqueGeral as any[]).filter(
+      (item: any) => item.material_equipamento_id === estoqueModalItem.material_id,
+    );
+
+    return itensMaterial.map((item: any) => {
+      const almox = item.almoxarifado || almoxMap.get(item.almoxarifado_id);
+      const responsavelNome =
+        almox?.responsavel_id && usersMap.get(almox.responsavel_id)
+          ? usersMap.get(almox.responsavel_id)
+          : undefined;
+
+      return {
+        ...item,
+        almoxarifado: almox,
+        responsavelNome,
+      };
+    });
+  }, [estoqueModalItem, estoqueGeral, almoxMap, usersMap]);
   
   const [formData, setFormData] = useState({
     data_necessidade: '',
@@ -1925,6 +2176,7 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
     local_entrega: '',
     observacoes: '',
     itens: [] as RequisicaoItem[],
+    is_emergencial: false,
   });
   
   // Estados para busca nos selects
@@ -2178,6 +2430,51 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
       ...prev,
       itens: prev.itens.filter((_, i) => i !== index)
     }));
+  };
+
+  const handleAddKitItems = async () => {
+    if (!selectedCompany?.id || !selectedKitId || quantidadeKits < 1) {
+      toast.error('Selecione um kit e informe a quantidade (mín. 1).');
+      return;
+    }
+    setAddingKitItems(true);
+    try {
+      const kitItens = await materialKitsService.getKitItemsForRequisition(
+        selectedCompany.id,
+        selectedKitId,
+        quantidadeKits
+      );
+      const materiaisMap = new Map((materiaisList as MaterialEquipamento[]).map((m) => [m.id, m]));
+      const newRequisicaoItens: RequisicaoItem[] = [];
+      for (const row of kitItens) {
+        const material = materiaisMap.get(row.material_id);
+        const valorMedio = await getMaterialAveragePrice(row.material_id);
+        newRequisicaoItens.push({
+          id: `kit-${row.material_id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          material_id: row.material_id,
+          material_nome: material?.nome || material?.descricao || '',
+          material_codigo: material?.codigo_interno || '',
+          material_imagem_url: material?.imagem_url,
+          quantidade: row.quantidade,
+          unidade: material?.unidade_medida || 'UN',
+          valor_unitario: valorMedio || material?.valor_unitario || 0,
+          valor_total: (valorMedio || material?.valor_unitario || 0) * row.quantidade,
+          valor_medio: valorMedio,
+          observacoes: '',
+        });
+      }
+      setFormData(prev => ({
+        ...prev,
+        itens: [...prev.itens, ...newRequisicaoItens],
+      }));
+      toast.success(`${newRequisicaoItens.length} item(ns) do kit adicionado(s). Ajuste quantidades se necessário.`);
+      setSelectedKitId('');
+      setQuantidadeKits(1);
+    } catch (err) {
+      toast.error('Erro ao carregar itens do kit. Tente novamente.');
+    } finally {
+      setAddingKitItems(false);
+    }
   };
 
   const updateItem = (index: number, field: keyof RequisicaoItem, value: any) => {
@@ -2507,17 +2804,60 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
 
           {/* Seção de Itens - Visualização melhorada */}
           <div className="space-y-4 border-2 border-primary/20 rounded-lg p-6 bg-primary/5">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center flex-wrap gap-4">
               <div>
                 <Label className="text-lg font-semibold">Itens da Solicitação</Label>
                 <p className="text-sm text-muted-foreground mt-1">
                   {formData.itens.length} {formData.itens.length === 1 ? 'item adicionado' : 'itens adicionados'}
                 </p>
               </div>
-              <Button type="button" onClick={addItem} size="sm" variant="default">
-                <Plus className="h-4 w-4 mr-2" />
-                Adicionar Item
-              </Button>
+              <div className="flex flex-wrap items-end gap-2">
+                {kitsAtivos.length > 0 && (
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Ou adicione por kit</Label>
+                      <Select value={selectedKitId} onValueChange={setSelectedKitId}>
+                        <SelectTrigger className="w-[200px]">
+                          <SelectValue placeholder="Selecione um kit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(kitsAtivos as { id: string; nome: string }[]).map((k) => (
+                            <SelectItem key={k.id} value={k.id}>{k.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Qtd. kits</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={quantidadeKits}
+                        onChange={(e) => setQuantidadeKits(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-20"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleAddKitItems}
+                      disabled={!selectedKitId || addingKitItems}
+                    >
+                      {addingKitItems ? 'Carregando...' : (
+                        <>
+                          <Package className="h-4 w-4 mr-1" />
+                          Adicionar itens do kit
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
+                <Button type="button" onClick={addItem} size="sm" variant="default">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar Item
+                </Button>
+              </div>
             </div>
 
             {formData.itens.length === 0 ? (
@@ -2567,30 +2907,48 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                             <div className="space-y-3">
                               <div>
                                 <Label className="text-xs text-muted-foreground mb-1 block">Material</Label>
-                                <p className="font-semibold text-base">{item.material_nome || 'Material não selecionado'}</p>
+                                <p className="font-semibold text-base">
+                                  {item.material_nome || 'Material não selecionado'}
+                                </p>
                                 {item.material_codigo && (
-                                  <p className="text-xs text-muted-foreground mt-1">Código: {item.material_codigo}</p>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    Código: {item.material_codigo}
+                                  </p>
                                 )}
-                                <Button
-                                  type="button"
-                                  variant="link"
-                                  size="sm"
-                                  className="h-auto p-0 text-xs mt-1"
-                                  onClick={() => {
-                                    setSelectedItemIndex(index);
-                                    setShowMaterialSearch(true);
-                                  }}
-                                >
-                                  {item.material_id ? '✏️ Alterar material' : '🔍 Buscar material'}
-                                </Button>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  <Button
+                                    type="button"
+                                    variant="link"
+                                    size="sm"
+                                    className="h-auto p-0 text-xs"
+                                    onClick={() => {
+                                      setSelectedItemIndex(index);
+                                      setShowMaterialSearch(true);
+                                    }}
+                                  >
+                                    {item.material_id ? '✏️ Alterar material' : '🔍 Buscar material'}
+                                  </Button>
+                                  {item.material_id && (
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 text-xs"
+                                      onClick={() => setEstoqueModalItem(item)}
+                                    >
+                                      <Eye className="h-3 w-3 mr-1" />
+                                      Ver estoques
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
                               <div className="space-y-1">
                                 <Label className="text-xs text-muted-foreground">Quantidade</Label>
-                <Input
-                  type="number"
+                                <Input
+                                  type="number"
                                   value={item.quantidade}
                                   onChange={(e) => {
                                     const qty = Number(e.target.value);
@@ -2600,6 +2958,28 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
                                   required
                                   className="h-10"
                                 />
+                                {item.material_id && (
+                                  <p className="text-xs">
+                                    <span className="text-muted-foreground">
+                                      Em estoque (todos almoxarifados):{' '}
+                                    </span>
+                                    <span
+                                      className={`inline-flex items-center gap-1 font-semibold ${
+                                        getTotalEstoqueForMaterial(item.material_id) > 0
+                                          ? 'text-emerald-600'
+                                          : 'text-red-600'
+                                      }`}
+                                    >
+                                      {getTotalEstoqueForMaterial(item.material_id) === 0 && (
+                                        <AlertTriangle className="h-3 w-3" />
+                                      )}
+                                      {getTotalEstoqueForMaterial(item.material_id).toLocaleString(
+                                        'pt-BR',
+                                        { minimumFractionDigits: 1, maximumFractionDigits: 1 },
+                                      )}
+                                    </span>
+                                  </p>
+                                )}
                               </div>
                               <div className="space-y-1">
                                 <Label className="text-xs text-muted-foreground">Unidade</Label>
@@ -2695,6 +3075,84 @@ function NovaSolicitacaoForm({ onClose }: { onClose: () => void }) {
           {createMutation.isPending ? 'Processando...' : 'Criar Solicitação'}
         </Button>
       </div>
+
+      {/* Modal de estoques do material */}
+      <Dialog
+        open={!!estoqueModalItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEstoqueModalItem(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Estoques do material</DialogTitle>
+            <DialogDescription>
+              Visualize as quantidades deste material em todos os estoques.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {estoqueModalItem && (
+              <div className="border rounded-md p-3 bg-muted/40">
+                <p className="font-medium">
+                  {estoqueModalItem.material_nome}{' '}
+                  {estoqueModalItem.material_codigo && (
+                    <span className="text-sm text-muted-foreground">
+                      ({estoqueModalItem.material_codigo})
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+
+            {loadingEstoqueGeral ? (
+              <p className="text-sm text-muted-foreground">Carregando estoques...</p>
+            ) : estoqueDoMaterialEnriquecido.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhum estoque encontrado para este material.
+              </p>
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Estoque</TableHead>
+                      <TableHead>Quantidade</TableHead>
+                      <TableHead>Responsável</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {estoqueDoMaterialEnriquecido.map((item: any) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium">
+                              {item.almoxarifado?.nome || 'Almoxarifado não informado'}
+                            </span>
+                            {item.almoxarifado?.codigo && (
+                              <span className="text-xs text-muted-foreground">
+                                Código: {item.almoxarifado.codigo}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {(item.quantidade_disponivel ?? item.quantidade_atual ?? 0).toLocaleString(
+                            'pt-BR',
+                            { minimumFractionDigits: 3 },
+                          )}
+                        </TableCell>
+                        <TableCell>{item.responsavelNome || 'Não definido'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de busca de material */}
       <MaterialSearchModal

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -28,6 +28,10 @@ export default function TrainingExamPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   
+  const location = useLocation();
+  const locationState = (location.state || {}) as { trainingCompanyId?: string };
+  const effectiveCompanyId = locationState.trainingCompanyId || selectedCompany?.id || null;
+
   const [exam, setExam] = useState<TrainingExam | null>(null);
   const [questions, setQuestions] = useState<Array<{ question: TrainingExamQuestion; alternatives: TrainingExamAlternative[] }>>([]);
   const [attempt, setAttempt] = useState<TrainingExamAttempt | null>(null);
@@ -62,9 +66,9 @@ export default function TrainingExamPage() {
     }
 
     const loadExam = async () => {
-      if (!selectedCompany?.id || !examId || !employeeId) {
+      if (!effectiveCompanyId || !examId || !employeeId) {
         console.log('[TrainingExamPage] Condições não atendidas', {
-          hasCompany: !!selectedCompany?.id,
+          hasCompany: !!effectiveCompanyId,
           hasExamId: !!examId,
           hasEmployeeId: !!employeeId
         });
@@ -77,7 +81,7 @@ export default function TrainingExamPage() {
       
       try {
         // Carregar prova
-        const examData = await OnlineTrainingService.getExam(selectedCompany.id, examId);
+        const examData = await OnlineTrainingService.getExam(effectiveCompanyId, examId);
         if (!examData) {
           console.error('[TrainingExamPage] Prova não encontrada');
           toast({
@@ -92,13 +96,13 @@ export default function TrainingExamPage() {
         console.log('[TrainingExamPage] Prova carregada:', examData.titulo);
 
         // Carregar questões
-        const questionsData = await OnlineTrainingService.listQuestions(selectedCompany.id, examId);
+        const questionsData = await OnlineTrainingService.listQuestions(effectiveCompanyId, examId);
         console.log('[TrainingExamPage] Questões carregadas:', questionsData.length);
         
         const questionsWithAlternatives = await Promise.all(
           questionsData.map(async (question) => {
             const questionData = await OnlineTrainingService.getQuestionWithAlternatives(
-              selectedCompany.id,
+              effectiveCompanyId,
               question.id
             );
             return questionData || { question, alternatives: [] };
@@ -113,7 +117,7 @@ export default function TrainingExamPage() {
         const existingAttemptsResult = await EntityService.list<TrainingExamAttempt>({
           schema: 'rh',
           table: 'training_exam_attempts',
-          companyId: selectedCompany.id,
+          companyId: effectiveCompanyId,
           filters: {
             exam_id: examId,
             employee_id: employeeId
@@ -128,7 +132,7 @@ export default function TrainingExamPage() {
         if (activeAttempt) {
           setAttempt(activeAttempt);
           // Carregar respostas existentes
-          const existingAnswers = await OnlineTrainingService.getExamAttemptAnswers(selectedCompany.id, activeAttempt.id);
+          const existingAnswers = await OnlineTrainingService.getExamAttemptAnswers(effectiveCompanyId, activeAttempt.id);
           const answersMap: Record<string, any> = {};
           existingAnswers.forEach(answer => {
             answersMap[answer.question_id] = {
@@ -143,7 +147,7 @@ export default function TrainingExamPage() {
           // Iniciar nova tentativa
           console.log('[TrainingExamPage] Criando nova tentativa');
           const newAttempt = await OnlineTrainingService.startExamAttempt(
-            selectedCompany.id,
+            effectiveCompanyId,
             examId,
             employeeId,
             trainingId || ''
@@ -169,7 +173,7 @@ export default function TrainingExamPage() {
 
     loadExam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCompany?.id, examId, employeeId, trainingId]); // Removido navigate e toast das dependências
+  }, [effectiveCompanyId, examId, employeeId, trainingId]); // Removido navigate e toast das dependências
 
   const handleAnswerChange = (questionId: string, value: { alternative_id?: string; resposta_texto?: string; resposta_numerica?: number }) => {
     setAnswers(prev => ({
@@ -179,14 +183,14 @@ export default function TrainingExamPage() {
   };
 
   const handleSaveAnswer = async (questionId: string) => {
-    if (!selectedCompany?.id || !attempt) return;
+    if (!effectiveCompanyId || !attempt) return;
 
     const answer = answers[questionId];
     if (!answer) return;
 
     try {
       await OnlineTrainingService.saveExamAnswer(
-        selectedCompany.id,
+        effectiveCompanyId,
         attempt.id,
         questionId,
         answer
@@ -213,7 +217,7 @@ export default function TrainingExamPage() {
   };
 
   const handleSubmit = async () => {
-    if (!selectedCompany?.id || !attempt) return;
+    if (!effectiveCompanyId || !attempt) return;
 
     setSubmitting(true);
     try {
@@ -224,12 +228,16 @@ export default function TrainingExamPage() {
       }
 
       // Finalizar tentativa
-      const result = await OnlineTrainingService.finishExamAttempt(selectedCompany.id, attempt.id);
+      const result = await OnlineTrainingService.finishExamAttempt(effectiveCompanyId, attempt.id);
       
       console.log('[TrainingExamPage] Resultado da prova:', result);
 
-      // Navegar para a página de resultados
-      navigate(`/portal-colaborador/treinamentos/${trainingId}/prova/${examId}/resultado/${attempt.id}`);
+      // Navegar para a página de resultados, garantindo o company_id correto do treinamento
+      navigate(`/portal-colaborador/treinamentos/${trainingId}/prova/${examId}/resultado/${attempt.id}`, {
+        state: {
+          trainingCompanyId: effectiveCompanyId
+        }
+      });
     } catch (err) {
       console.error('Erro ao finalizar prova:', err);
       toast({

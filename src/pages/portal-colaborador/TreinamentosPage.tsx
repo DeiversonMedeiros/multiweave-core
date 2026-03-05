@@ -220,7 +220,9 @@ export default function TreinamentosPage() {
     return uniqueTrainings;
   };
 
-  const handleStartTraining = async (trainingId: string) => {
+  const handleStartTraining = async (training: any) => {
+    const trainingId = training.id;
+    const trainingCompanyId = training.company_id;
     if (!selectedCompany?.id || !employeeId) {
       toast({
         title: 'Erro',
@@ -230,34 +232,65 @@ export default function TreinamentosPage() {
       return;
     }
 
-    // Verificar se já existe inscrição
+    // Verificar/criar inscrição
     try {
-      const enrollments = await OnlineTrainingService.getProgress(
-        selectedCompany.id,
-        trainingId,
-        employeeId
-      );
+      // Conferir se já existe inscrição (independente de haver progresso)
+      const enrollmentCompanyId = trainingCompanyId || selectedCompany.id;
 
-      // Se não tem progresso, criar inscrição
-      if (enrollments.length === 0) {
-        // Criar enrollment através do EntityService
-        const { EntityService } = await import('@/services/generic/entityService');
-        await EntityService.create({
-          schema: 'rh',
-          table: 'training_enrollments',
-          companyId: selectedCompany.id,
-          data: {
-            company_id: selectedCompany.id,
-            training_id: trainingId,
-            employee_id: employeeId,
-            status: 'inscrito',
-            is_active: true
+      const existingEnrollment = await EntityService.list({
+        schema: 'rh',
+        table: 'training_enrollments',
+        companyId: enrollmentCompanyId,
+        filters: {
+          training_id: trainingId,
+          employee_id: employeeId
+        },
+        pageSize: 1
+      });
+
+      if (existingEnrollment.data.length === 0) {
+        // Não existe inscrição ainda: criar com segurança
+        try {
+          await EntityService.create({
+            schema: 'rh',
+            table: 'training_enrollments',
+            companyId: enrollmentCompanyId,
+            data: {
+              company_id: enrollmentCompanyId,
+              training_id: trainingId,
+              employee_id: employeeId,
+              status: 'inscrito',
+              is_active: true
+            }
+          });
+        } catch (createErr: any) {
+          const message = createErr?.message || '';
+
+          // Se, por algum race condition, a inscrição já tiver sido criada, apenas seguir em frente
+          if (
+            message.includes('duplicate key value') &&
+            message.includes('training_enrollments_training_id_employee_id_key')
+          ) {
+            console.warn(
+              '[TreinamentosPage] Inscrição já existente para este treinamento/funcionário, seguindo para o treinamento.',
+              {
+                trainingId,
+                employeeId,
+                error: createErr
+              }
+            );
+          } else {
+            throw createErr;
           }
-        });
+        }
       }
 
       // Navegar para a página do treinamento
-      navigate(`/portal-colaborador/treinamentos/${trainingId}`);
+      navigate(`/portal-colaborador/treinamentos/${trainingId}`, {
+        state: {
+          trainingCompanyId: trainingCompanyId || selectedCompany.id
+        }
+      });
     } catch (err: any) {
       console.error('Erro ao iniciar treinamento:', err);
       toast({
@@ -645,7 +678,7 @@ export default function TreinamentosPage() {
                         <Button
                           className="w-full"
                           variant={status.status === 'completed' ? 'outline' : 'default'}
-                          onClick={() => handleStartTraining(training.id)}
+                          onClick={() => handleStartTraining(training)}
                         >
                           {status.status === 'completed' ? (
                             <>

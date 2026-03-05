@@ -2674,7 +2674,7 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {availableUsers.length > 0 && (
+                {users.length > 0 && (
                   <div className="relative mb-4">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -2691,17 +2691,17 @@ export const EmployeeForm = forwardRef<EmployeeFormRef, EmployeeFormProps>(({
                   render={({ field }) => {
                     const term = (gestoresSearchTerm || '').trim().toLowerCase();
                     const filteredUsers = term
-                      ? availableUsers.filter(
+                      ? users.filter(
                           (u) =>
                             (u.nome || '').toLowerCase().includes(term) ||
                             (u.email || '').toLowerCase().includes(term)
                         )
-                      : availableUsers;
+                      : users;
                     return (
                       <FormItem>
                         <FormControl>
                           <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2">
-                            {availableUsers.length === 0 ? (
+                            {users.length === 0 ? (
                               <p className="text-sm text-muted-foreground">
                                 Nenhum usuário vinculado à empresa. Vincule usuários na empresa para poder atribuí-los como gestores de ponto.
                               </p>

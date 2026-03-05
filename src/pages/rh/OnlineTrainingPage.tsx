@@ -47,14 +47,14 @@ export default function OnlineTrainingPage() {
   const employee = employees.find((e: any) => e?.user_id === user?.id);
   const employeeId = employee?.id;
 
-  const { content, progress, progressStats, loading, error, loadContent } = useOnlineTraining(trainingId);
+  const { content, progress, progressStats, loading, error, loadContent } = useOnlineTraining(trainingId, selectedCompany?.id);
   const { 
     progress: userProgress, 
     stats, 
     updateProgress, 
     markAsCompleted,
     refresh: refreshProgress 
-  } = useTrainingProgress(trainingId || '', employeeId || '');
+  } = useTrainingProgress(trainingId || '', employeeId || '', selectedCompany?.id);
   
   const { trainings, enrollments } = useTraining();
   const currentTraining = trainings.find(t => t.id === trainingId);

@@ -12,13 +12,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { 
+import {
   Upload,
   FileText,
   Calendar,
   DollarSign,
-  Download
+  Download,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 type IncomeStatement = {
   id: string;
@@ -64,6 +74,12 @@ export default function IncomeStatementsPage() {
   const [totalRendimentos, setTotalRendimentos] = useState<string>('');
   const [observacoes, setObservacoes] = useState<string>('');
   const [file, setFile] = useState<File | null>(null);
+
+  const [editingStatement, setEditingStatement] = useState<IncomeStatement | null>(null);
+  const [editYear, setEditYear] = useState<string>('');
+  const [editMonth, setEditMonth] = useState<string>('');
+  const [editTotalRendimentos, setEditTotalRendimentos] = useState<string>('');
+  const [editObservacoes, setEditObservacoes] = useState<string>('');
 
   // Carregar funcionários ativos para seleção
   const { data: activeEmployeesResult } = useActiveEmployees();
@@ -227,6 +243,118 @@ export default function IncomeStatementsPage() {
       });
     },
   });
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedCompany?.id || !editingStatement) {
+        throw new Error('Dados insuficientes para edição.');
+      }
+
+      const newYear = Number(editYear);
+      const newMonth = Number(editMonth);
+
+      if (!editYear || isNaN(newYear)) {
+        throw new Error('Informe um ano de referência válido para edição.');
+      }
+
+      if (!editMonth || isNaN(newMonth) || newMonth < 1 || newMonth > 12) {
+        throw new Error('Informe um mês de referência válido (1-12) para edição.');
+      }
+
+      const totalRend = Number(editTotalRendimentos || 0);
+
+      await EntityService.update<IncomeStatement>({
+        schema: 'rh',
+        table: 'income_statements',
+        companyId: selectedCompany.id,
+        id: editingStatement.id,
+        data: {
+          ano_referencia: newYear,
+          mes_referencia: newMonth,
+          total_rendimentos: isNaN(totalRend) ? 0 : totalRend,
+          observacoes: editObservacoes || null,
+        },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['rh', 'income-statements', selectedCompany?.id, selectedEmployeeId, year],
+      });
+
+      setEditingStatement(null);
+      setEditYear('');
+      setEditMonth('');
+      setEditTotalRendimentos('');
+      setEditObservacoes('');
+
+      toast({
+        title: 'Informe atualizado',
+        description: 'O informe de rendimentos foi atualizado com sucesso.',
+      });
+    },
+    onError: (error: any) => {
+      console.error('Erro ao atualizar informe de rendimentos:', error);
+      toast({
+        title: 'Erro ao atualizar informe',
+        description:
+          error?.message || 'Não foi possível atualizar o informe de rendimentos. Tente novamente.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (statement: IncomeStatement) => {
+      if (!selectedCompany?.id) {
+        throw new Error('Empresa não selecionada');
+      }
+
+      await EntityService.delete({
+        schema: 'rh',
+        table: 'income_statements',
+        companyId: selectedCompany.id,
+        id: statement.id,
+      });
+
+      if (statement.arquivo_pdf) {
+        const { error: storageError } = await supabase.storage
+          .from(BUCKET_NAME)
+          .remove([statement.arquivo_pdf]);
+
+        if (storageError) {
+          console.error('Erro ao remover arquivo do bucket income-statements:', storageError);
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['rh', 'income-statements', selectedCompany?.id, selectedEmployeeId, year],
+      });
+
+      toast({
+        title: 'Informe removido',
+        description: 'O informe de rendimentos foi excluído com sucesso.',
+      });
+    },
+    onError: (error: any) => {
+      console.error('Erro ao excluir informe de rendimentos:', error);
+      toast({
+        title: 'Erro ao excluir informe',
+        description:
+          error?.message || 'Não foi possível excluir o informe de rendimentos. Tente novamente.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleDelete = (statement: IncomeStatement) => {
+    const confirmed = window.confirm(
+      'Tem certeza que deseja deletar este informe de rendimentos? Esta ação não poderá ser desfeita.'
+    );
+    if (!confirmed) return;
+
+    deleteMutation.mutate(statement);
+  };
 
   const handleDownload = async (statement: IncomeStatement) => {
     if (!statement.arquivo_pdf) return;
@@ -449,6 +577,33 @@ export default function IncomeStatementsPage() {
                           Baixar PDF
                         </Button>
                       )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingStatement(statement);
+                          setEditYear(statement.ano_referencia.toString());
+                          setEditMonth(statement.mes_referencia.toString());
+                          setEditTotalRendimentos(
+                            statement.total_rendimentos
+                              ? Number(statement.total_rendimentos).toString()
+                              : ''
+                          );
+                          setEditObservacoes(statement.observacoes || '');
+                        }}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Editar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDelete(statement)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Deletar
+                      </Button>
                     </div>
                   </div>
                 );
@@ -464,6 +619,97 @@ export default function IncomeStatementsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={!!editingStatement}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingStatement(null);
+            setEditYear('');
+            setEditMonth('');
+            setEditTotalRendimentos('');
+            setEditObservacoes('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Informe de Rendimentos</DialogTitle>
+            <DialogDescription>
+              Ajuste os dados do informe selecionado. O arquivo PDF atual será mantido.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Ano de referência</Label>
+                <Input
+                  type="number"
+                  min={2000}
+                  max={2100}
+                  value={editYear}
+                  onChange={(e) => setEditYear(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Mês de referência</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={12}
+                  value={editMonth}
+                  onChange={(e) => setEditMonth(e.target.value)}
+                  placeholder="1 a 12"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Total de rendimentos (opcional)</Label>
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-gray-400" />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editTotalRendimentos}
+                  onChange={(e) => setEditTotalRendimentos(e.target.value)}
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Observações (opcional)</Label>
+              <Textarea
+                value={editObservacoes}
+                onChange={(e) => setEditObservacoes(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEditingStatement(null);
+                setEditYear('');
+                setEditMonth('');
+                setEditTotalRendimentos('');
+                setEditObservacoes('');
+              }}
+              disabled={editMutation.isPending}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={() => editMutation.mutate()} disabled={editMutation.isPending}>
+              {editMutation.isPending ? 'Salvando...' : 'Salvar alterações'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
