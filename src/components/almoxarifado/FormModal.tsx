@@ -38,13 +38,20 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { compressImage, shouldCompressImage } from '@/lib/imageOptimization';
 
+export type GrupoMaterialComClasses = {
+  id: string;
+  nome: string;
+  classe_financeira_ids: string[];
+};
+
 interface FormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: any) => void;
   title: string;
   initialData?: any;
-  classesOptions?: string[];
+  /** Grupos de materiais com classes financeiras vinculadas (para pré-definir ao selecionar grupo) */
+  gruposComClasses?: GrupoMaterialComClasses[];
 }
 
 const FormModal: React.FC<FormModalProps> = ({
@@ -53,7 +60,7 @@ const FormModal: React.FC<FormModalProps> = ({
   onSubmit,
   title,
   initialData,
-  classesOptions
+  gruposComClasses = []
 }) => {
   const { data: almoxarifados = [] } = useAlmoxarifados();
   const [selectedAlmoxarifado, setSelectedAlmoxarifado] = useState<string>('');
@@ -63,6 +70,7 @@ const FormModal: React.FC<FormModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [classeFinanceiraOpen, setClasseFinanceiraOpen] = useState(false);
+  const [fieldErrorUnidadeMedida, setFieldErrorUnidadeMedida] = useState<string | null>(null);
   
   // Função para obter o próximo código interno do backend
   const getNextCodigoInterno = async () => {
@@ -179,6 +187,7 @@ const FormModal: React.FC<FormModalProps> = ({
     descricao: initialData?.descricao || '',
     tipo: initialData?.tipo || 'produto',
     classe: initialData?.classe || '',
+    grupo_material_id: initialData?.grupo_material_id || '',
     unidade_medida: initialData?.unidade_medida || '',
     status: initialData?.status || 'ativo',
     equipamento_proprio: initialData?.equipamento_proprio ?? true,
@@ -208,6 +217,7 @@ const FormModal: React.FC<FormModalProps> = ({
   // Resetar formulário e gerar código interno quando abrir para novo material
   useEffect(() => {
     if (isOpen) {
+      setFieldErrorUnidadeMedida(null);
       if (!initialData) {
         // Novo material - resetar formulário e gerar código interno
         getNextCodigoInterno().then(nextCode => {
@@ -217,6 +227,7 @@ const FormModal: React.FC<FormModalProps> = ({
             descricao: '',
             tipo: 'produto',
             classe: '',
+            grupo_material_id: '',
             unidade_medida: '',
             status: 'ativo',
             equipamento_proprio: true,
@@ -245,6 +256,7 @@ const FormModal: React.FC<FormModalProps> = ({
           descricao: initialData.descricao || '',
           tipo: initialData.tipo || 'produto',
           classe: initialData.classe || '',
+          grupo_material_id: initialData.grupo_material_id || '',
           unidade_medida: initialData.unidade_medida || '',
           status: initialData.status || 'ativo',
           equipamento_proprio: initialData.equipamento_proprio ?? true,
@@ -307,28 +319,49 @@ const FormModal: React.FC<FormModalProps> = ({
       toast.error('O código interno é obrigatório');
       return;
     }
+
+    if (!formData.unidade_medida || formData.unidade_medida.trim() === '') {
+      setFieldErrorUnidadeMedida('Selecione a unidade de medida.');
+      toast.error('A unidade de medida é obrigatória');
+      return;
+    }
+    setFieldErrorUnidadeMedida(null);
+
+    // Se o grupo tiver classes financeiras configuradas, obrigar escolher uma
+    if (grupoSelecionado?.classe_financeira_ids?.length && !formData.classe_financeira_id) {
+      toast.error('Selecione a classe financeira para o grupo escolhido');
+      return;
+    }
     
     // Converter strings vazias para null/undefined para campos opcionais
     const cleanedData = Object.entries(formData).reduce((acc, [key, value]) => {
-      if (value === '' && (key === 'localizacao_id' || key === 'imagem_url' || key === 'ncm' || key === 'cfop' || key === 'cst' || key === 'classe' || key === 'nome' || key === 'observacoes' || key === 'classe_financeira_id')) {
+      if (value === '' && (key === 'localizacao_id' || key === 'imagem_url' || key === 'ncm' || key === 'cfop' || key === 'cst' || key === 'classe' || key === 'nome' || key === 'observacoes' || key === 'classe_financeira_id' || key === 'grupo_material_id')) {
         acc[key] = null;
       } else {
         acc[key] = value;
       }
       return acc;
     }, {} as any);
+    // Manter classe como nome do grupo quando grupo_material_id está definido (compatibilidade)
+    if (cleanedData.grupo_material_id && grupoSelecionado) {
+      cleanedData.classe = grupoSelecionado.nome;
+    }
     onSubmit(cleanedData);
     onClose();
   };
 
+  const grupoSelecionado = gruposComClasses.find((g) => g.id === formData.grupo_material_id);
+  const classesFinanceirasFiltradas = useMemo(() => {
+    const list = (classesFinanceirasData?.data ?? []) as { id: string; codigo?: string; nome?: string; descricao?: string }[];
+    if (grupoSelecionado?.classe_financeira_ids?.length) {
+      const ids = new Set(grupoSelecionado.classe_financeira_ids);
+      return list.filter((c) => ids.has(c.id));
+    }
+    return list;
+  }, [classesFinanceirasData?.data, grupoSelecionado?.classe_financeira_ids]);
+
   const unidadesMedida = [
     'UN', 'KG', 'G', 'L', 'ML', 'M', 'CM', 'MM', 'M²', 'M³', 'CX', 'PC', 'DZ', 'PAR'
-  ];
-
-  const classes = (classesOptions && classesOptions.length > 0) ? classesOptions : [
-    'Parafusos', 'Porcas', 'Arruelas', 'Ferramentas', 'Equipamentos Elétricos',
-    'Equipamentos Hidráulicos', 'Equipamentos Pneumáticos', 'Materiais de Construção',
-    'Produtos Químicos', 'Equipamentos de Segurança', 'Outros'
   ];
 
   return (
@@ -420,30 +453,60 @@ const FormModal: React.FC<FormModalProps> = ({
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="classe">Grupo de Materiais</Label>
+                      <Label htmlFor="grupo_material_id">Grupo de Materiais</Label>
                       <Select
-                        value={formData.classe}
-                        onValueChange={(value) => handleInputChange('classe', value)}
+                        value={formData.grupo_material_id || 'none'}
+                        onValueChange={(value) => {
+                          const id = value === 'none' ? '' : value;
+                          const grupo = gruposComClasses.find((g) => g.id === id);
+
+                          // Atualizar grupo e "classe" (nome do grupo para compatibilidade)
+                          handleInputChange('grupo_material_id', id);
+                          handleInputChange('classe', grupo?.nome ?? '');
+
+                          // Limpar classe financeira se não houver grupo
+                          if (!grupo) {
+                            handleInputChange('classe_financeira_id', '');
+                            return;
+                          }
+
+                          const qtdClasses = grupo.classe_financeira_ids?.length ?? 0;
+
+                          // Se houver exatamente 1 classe vinculada ao grupo, já pré-seleciona
+                          if (qtdClasses === 1) {
+                            handleInputChange('classe_financeira_id', grupo.classe_financeira_ids[0]);
+                          } else {
+                            // Se houver 0 ou mais de 1, deixa o usuário escolher manualmente
+                            handleInputChange('classe_financeira_id', '');
+                          }
+                        }}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione o grupo" />
                         </SelectTrigger>
                         <SelectContent>
-                          {classes.map(classe => (
-                            <SelectItem key={classe} value={classe}>
-                              {classe}
+                          <SelectItem value="none">Nenhum grupo</SelectItem>
+                          {gruposComClasses.map((g) => (
+                            <SelectItem key={g.id} value={g.id}>
+                              {g.nome}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Ao selecionar um grupo, as classes financeiras vinculadas podem ser pré-definidas abaixo.
+                      </p>
                     </div>
                     <div>
                       <Label htmlFor="unidade_medida">Unidade de Medida *</Label>
                       <Select
                         value={formData.unidade_medida}
-                        onValueChange={(value) => handleInputChange('unidade_medida', value)}
+                        onValueChange={(value) => {
+                          handleInputChange('unidade_medida', value);
+                          setFieldErrorUnidadeMedida(null);
+                        }}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className={fieldErrorUnidadeMedida ? 'border-destructive' : ''}>
                           <SelectValue placeholder="Selecione a unidade" />
                         </SelectTrigger>
                         <SelectContent>
@@ -454,6 +517,9 @@ const FormModal: React.FC<FormModalProps> = ({
                           ))}
                         </SelectContent>
                       </Select>
+                      {fieldErrorUnidadeMedida && (
+                        <p className="text-xs text-destructive mt-1">{fieldErrorUnidadeMedida}</p>
+                      )}
                     </div>
                   </div>
 
@@ -479,13 +545,12 @@ const FormModal: React.FC<FormModalProps> = ({
                           <CommandList className="max-h-[300px] overflow-y-auto">
                             <CommandEmpty>Nenhuma classe financeira encontrada.</CommandEmpty>
                             <CommandGroup>
-                              {classesFinanceirasData?.data
-                                ?.sort((a, b) => {
-                                  // Ordenar por código primeiro, depois por nome
-                                  if (a.codigo !== b.codigo) {
-                                    return a.codigo.localeCompare(b.codigo);
+                              {classesFinanceirasFiltradas
+                                .sort((a, b) => {
+                                  if ((a.codigo || '') !== (b.codigo || '')) {
+                                    return (a.codigo || '').localeCompare(b.codigo || '');
                                   }
-                                  return a.nome.localeCompare(b.nome);
+                                  return (a.nome || '').localeCompare(b.nome || '');
                                 })
                                 .map((classe) => (
                                   <CommandItem

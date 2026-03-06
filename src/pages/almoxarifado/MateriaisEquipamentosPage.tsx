@@ -24,10 +24,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useActiveClassesFinanceiras } from '@/hooks/financial/useClassesFinanceiras';
+import { useGrupoClassesFinanceiras } from '@/hooks/almoxarifado/useGruposMateriaisQuery';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useMateriaisEquipamentos, useCreateMaterialEquipamento, useUpdateMaterialEquipamento, useDeleteMaterialEquipamento } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
 import { useAlmoxarifados } from '@/hooks/almoxarifado/useAlmoxarifadosQuery';
 import { useLocalizacoesFisicas } from '@/hooks/almoxarifado/useLocalizacoesFisicas';
+import { useGruposMateriais, useGruposMateriaisComClasses, useCreateGrupoMaterial, useUpdateGrupoMaterial, useDeleteGrupoMaterial, useSetClassesFinanceirasGrupo } from '@/hooks/almoxarifado/useGruposMateriaisQuery';
 import FormModal from '@/components/almoxarifado/FormModal';
 import { ImportacaoMateriaisModal } from '@/components/almoxarifado/ImportacaoMateriaisModal';
 import { generateMateriaisExcelTemplate } from '@/services/almoxarifado/materiaisImportService';
@@ -36,6 +48,7 @@ import { RequirePage } from '@/components/RequireAuth';
 import { PermissionGuard, PermissionButton } from '@/components/PermissionGuard';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCompany } from '@/lib/company-context';
+import type { MaterialEquipamento } from '@/services/almoxarifado/almoxarifadoService';
 
 const MateriaisEquipamentosPage: React.FC = () => {
   const { canCreatePage, canEditPage, canDeletePage } = usePermissions();
@@ -43,16 +56,28 @@ const MateriaisEquipamentosPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState<string>('todos');
   const [filterStatus, setFilterStatus] = useState<string>('todos');
-  const [filterClasse, setFilterClasse] = useState<string>('todos');
-  const [materialGroups, setMaterialGroups] = useState<string[]>([]);
+  const [filterGrupoId, setFilterGrupoId] = useState<string>('todos');
   const [activeTab, setActiveTab] = useState<'materiais' | 'grupos'>('materiais');
   const [newGroupName, setNewGroupName] = useState('');
-  const [editingGroup, setEditingGroup] = useState<string | null>(null);
+  const [editingGroup, setEditingGroup] = useState<{ id: string; nome: string } | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
+  const [grupoClassesModal, setGrupoClassesModal] = useState<{ id: string; nome: string } | null>(null);
+  const [grupoClassesSelectedIds, setGrupoClassesSelectedIds] = useState<string[]>([]);
+  const [grupoClassesSearch, setGrupoClassesSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialEquipamento | null>(null);
   const [viewingMaterial, setViewingMaterial] = useState<MaterialEquipamento | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  const { data: grupos = [] } = useGruposMateriais();
+  const { data: gruposComClasses = [] } = useGruposMateriaisComClasses();
+  const createGrupo = useCreateGrupoMaterial();
+  const { data: grupoClassesLinked = [] } = useGrupoClassesFinanceiras(grupoClassesModal?.id ?? null);
+  const { data: classesFinanceirasData } = useActiveClassesFinanceiras();
+  const classesFinanceiras = (classesFinanceirasData?.data ?? []) as { id: string; codigo?: string; nome?: string }[];
+  const updateGrupo = useUpdateGrupoMaterial();
+  const deleteGrupo = useDeleteGrupoMaterial();
+  const setClassesGrupo = useSetClassesFinanceirasGrupo();
 
   // Hooks para dados reais
   const {
@@ -63,7 +88,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
   } = useMateriaisEquipamentos({
     tipo: filterTipo !== 'todos' ? filterTipo : undefined,
     status: filterStatus !== 'todos' ? filterStatus : undefined,
-    classe: filterClasse !== 'todos' ? filterClasse : undefined,
+    grupo_material_id: filterGrupoId !== 'todos' ? filterGrupoId : undefined,
     search: searchTerm || undefined
   });
 
@@ -97,9 +122,10 @@ const MateriaisEquipamentosPage: React.FC = () => {
       toast.success('Material atualizado com sucesso!');
       setEditingMaterial(null);
       setIsModalOpen(false);
-    } catch (error) {
-      toast.error('Erro ao atualizar material');
-      console.error(error);
+    } catch (error: any) {
+      const msg = error?.message || error?.error_description || 'Erro ao atualizar material';
+      toast.error(msg);
+      console.error('Update material error:', error);
     }
   };
 
@@ -146,73 +172,83 @@ const MateriaisEquipamentosPage: React.FC = () => {
     return { status: 'ok', color: 'text-green-600', icon: Package };
   };
 
-  const storageKey = useMemo(
-    () => `material-groups-${selectedCompany?.id || 'global'}`,
-    [selectedCompany?.id]
-  );
-
-  // Assinatura estável das classes vindas dos materiais (evita loop: useEffect não depende do array materiais)
-  const classesFromMateriaisSignature = useMemo(
-    () =>
-      Array.from(
-        new Set(materiais.map((mat) => mat.classe).filter((c): c is string => Boolean(c)))
-      )
-        .sort()
-        .join(','),
-    [materiais]
-  );
-
-  useEffect(() => {
-    const stored = localStorage.getItem(storageKey);
-    const storedGroups: string[] = stored ? JSON.parse(stored) : [];
-    const fromMateriais = classesFromMateriaisSignature ? classesFromMateriaisSignature.split(',') : [];
-    const unique = Array.from(new Set([...storedGroups, ...fromMateriais])).sort();
-    setMaterialGroups(unique);
-  }, [storageKey, classesFromMateriaisSignature]);
-
-  const handleAddGroup = () => {
+  const handleAddGroup = async () => {
     const name = newGroupName.trim();
-    if (!name) {
+    if (!name || !selectedCompany?.id) {
       toast.error('Informe um nome para o grupo de materiais');
       return;
     }
-    if (materialGroups.includes(name)) {
+    if (grupos.some((g) => g.nome === name)) {
       toast.info('Este grupo já existe');
       return;
     }
-    const updated = [...materialGroups, name].sort();
-    setMaterialGroups(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    setNewGroupName('');
-    toast.success('Grupo de materiais adicionado');
+    try {
+      await createGrupo.mutateAsync({ nome: name, company_id: selectedCompany.id, ativo: true });
+      setNewGroupName('');
+      toast.success('Grupo de materiais adicionado');
+    } catch {
+      toast.error('Erro ao adicionar grupo');
+    }
   };
 
-  const handleStartEditGroup = (group: string) => {
-    setEditingGroup(group);
-    setEditingGroupName(group);
+  const handleStartEditGroup = (grupo: { id: string; nome: string }) => {
+    setEditingGroup(grupo);
+    setEditingGroupName(grupo.nome);
   };
 
-  const handleSaveEditGroup = () => {
+  const handleSaveEditGroup = async () => {
     const name = editingGroupName.trim();
     if (!editingGroup || !name) {
       toast.error('Informe um nome válido para o grupo');
       return;
     }
-    if (materialGroups.some((g) => g === name && g !== editingGroup)) {
+    if (grupos.some((g) => g.nome === name && g.id !== editingGroup.id)) {
       toast.info('Já existe um grupo com esse nome');
       return;
     }
-    const updated = materialGroups.map((g) => (g === editingGroup ? name : g)).sort();
-    setMaterialGroups(updated);
-    localStorage.setItem(storageKey, JSON.stringify(updated));
-    setEditingGroup(null);
-    setEditingGroupName('');
-    toast.success('Grupo de materiais atualizado');
+    try {
+      await updateGrupo.mutateAsync({ id: editingGroup.id, data: { nome: name } });
+      setEditingGroup(null);
+      setEditingGroupName('');
+      toast.success('Grupo de materiais atualizado');
+    } catch {
+      toast.error('Erro ao atualizar grupo');
+    }
   };
 
   const handleCancelEditGroup = () => {
     setEditingGroup(null);
     setEditingGroupName('');
+  };
+
+  const handleDeleteGroup = async (grupo: { id: string; nome: string }) => {
+    if (!confirm(`Excluir o grupo "${grupo.nome}"? Os materiais vinculados ficarão sem grupo.`)) return;
+    try {
+      await deleteGrupo.mutateAsync(grupo.id);
+      toast.success('Grupo excluído');
+    } catch {
+      toast.error('Erro ao excluir grupo');
+    }
+  };
+
+  useEffect(() => {
+    if (grupoClassesModal && grupoClassesLinked) {
+      setGrupoClassesSelectedIds([...grupoClassesLinked]);
+    }
+  }, [grupoClassesModal?.id, grupoClassesLinked]);
+
+  const handleSaveGrupoClasses = async () => {
+    if (!grupoClassesModal) return;
+    try {
+      await setClassesGrupo.mutateAsync({
+        grupoMaterialId: grupoClassesModal.id,
+        classeFinanceiraIds: grupoClassesSelectedIds
+      });
+      toast.success('Classes financeiras atualizadas');
+      setGrupoClassesModal(null);
+    } catch {
+      toast.error('Erro ao salvar classes');
+    }
   };
 
   return (
@@ -310,15 +346,15 @@ const MateriaisEquipamentosPage: React.FC = () => {
                     </SelectContent>
                   </Select>
 
-                  <Select value={filterClasse} onValueChange={setFilterClasse}>
+                  <Select value={filterGrupoId} onValueChange={setFilterGrupoId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Grupo de Materiais" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="todos">Todos os Grupos</SelectItem>
-                      {materialGroups.map((grupo) => (
-                        <SelectItem key={grupo} value={grupo}>
-                          {grupo}
+                      {grupos.filter((g) => g.ativo).map((grupo) => (
+                        <SelectItem key={grupo.id} value={grupo.id}>
+                          {grupo.nome}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -361,7 +397,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
                         Nenhum material encontrado
                       </h3>
                       <p className="text-gray-600 mb-4">
-                        {searchTerm || filterTipo !== 'todos' || filterStatus !== 'todos' || filterClasse !== 'todos'
+                        {searchTerm || filterTipo !== 'todos' || filterStatus !== 'todos' || filterGrupoId !== 'todos'
                           ? 'Tente ajustar os filtros de busca'
                           : 'Comece adicionando seu primeiro material'
                         }
@@ -408,7 +444,10 @@ const MateriaisEquipamentosPage: React.FC = () => {
                               <span className="font-medium">Código:</span> {material.codigo_interno}
                             </div>
                             <div>
-                              <span className="font-medium">Grupo:</span> {material.classe || '—'}
+                              <span className="font-medium">Grupo:</span>{' '}
+                              {material.grupo_material_id
+                                ? grupos.find((g) => g.id === material.grupo_material_id)?.nome ?? material.classe ?? '—'
+                                : material.classe ?? '—'}
                             </div>
                             <div>
                               <span className="font-medium">Unidade:</span> {material.unidade_medida}
@@ -496,7 +535,9 @@ const MateriaisEquipamentosPage: React.FC = () => {
             <Card>
               <CardHeader>
                 <CardTitle>Grupos de Materiais</CardTitle>
-                <CardDescription>Cadastre e gerencie os grupos usados na aba de materiais.</CardDescription>
+                <CardDescription>
+                  Cadastre e gerencie os grupos. Vincule classes financeiras ao grupo para que, ao cadastrar um material nesse grupo, as classes já venham pré-definidas.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
@@ -511,26 +552,27 @@ const MateriaisEquipamentosPage: React.FC = () => {
                       }
                     }}
                   />
-                  <Button onClick={handleAddGroup} className="whitespace-nowrap">
-                    Adicionar
+                  <Button onClick={handleAddGroup} className="whitespace-nowrap" disabled={createGrupo.isPending}>
+                    {createGrupo.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Adicionar'}
                   </Button>
                 </div>
 
-                {materialGroups.length === 0 ? (
+                {grupos.length === 0 ? (
                   <p className="text-sm text-gray-600">Nenhum grupo cadastrado ainda.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {materialGroups.map((grupo) => (
-                      <Card key={grupo}>
-                        <CardContent className="py-3 px-4 flex items-center justify-between gap-3">
-                          {editingGroup === grupo ? (
-                            <div className="flex-1 flex items-center gap-2">
+                    {grupos.map((grupo) => (
+                      <Card key={grupo.id}>
+                        <CardContent className="py-3 px-4 flex items-center justify-between gap-3 flex-wrap">
+                          {editingGroup?.id === grupo.id ? (
+                            <div className="flex-1 flex items-center gap-2 flex-wrap">
                               <Input
                                 value={editingGroupName}
                                 onChange={(e) => setEditingGroupName(e.target.value)}
                                 placeholder="Nome do grupo"
+                                className="min-w-[140px]"
                               />
-                              <Button variant="outline" size="sm" onClick={handleSaveEditGroup}>
+                              <Button variant="outline" size="sm" onClick={handleSaveEditGroup} disabled={updateGrupo.isPending}>
                                 Salvar
                               </Button>
                               <Button variant="ghost" size="sm" onClick={handleCancelEditGroup}>
@@ -539,12 +581,28 @@ const MateriaisEquipamentosPage: React.FC = () => {
                             </div>
                           ) : (
                             <>
-                              <span className="font-medium text-gray-800">{grupo}</span>
+                              <span className="font-medium text-gray-800">{grupo.nome}</span>
                               <div className="flex items-center gap-2">
-                                <Badge variant="outline">Disponível</Badge>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setGrupoClassesModal({ id: grupo.id, nome: grupo.nome })}
+                                >
+                                  Classes financeiras
+                                </Button>
                                 <Button variant="ghost" size="sm" onClick={() => handleStartEditGroup(grupo)}>
                                   Editar
                                 </Button>
+                                <PermissionButton
+                                  action="delete"
+                                  page="/almoxarifado/materiais*"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteGroup(grupo)}
+                                  disabled={deleteGrupo.isPending}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </PermissionButton>
                               </div>
                             </>
                           )}
@@ -583,6 +641,67 @@ const MateriaisEquipamentosPage: React.FC = () => {
         onSuccess={() => refetch()}
       />
 
+      {/* Modal Classes Financeiras do Grupo */}
+      <Dialog open={!!grupoClassesModal} onOpenChange={(open) => !open && setGrupoClassesModal(null)}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Classes financeiras — {grupoClassesModal?.nome}</DialogTitle>
+            <DialogDescription>
+              Selecione as classes financeiras vinculadas a este grupo. Ao cadastrar um material neste grupo, essas classes poderão ser pré-definidas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Input
+              placeholder="Buscar por código ou nome..."
+              value={grupoClassesSearch}
+              onChange={(e) => setGrupoClassesSearch(e.target.value)}
+              className="mb-2"
+            />
+          </div>
+          <div className="grid gap-2 py-2">
+            {classesFinanceiras
+              .filter((cf) => {
+                if (!grupoClassesSearch.trim()) return true;
+                const term = grupoClassesSearch.toLowerCase();
+                return (
+                  (cf.codigo || '').toLowerCase().includes(term) ||
+                  (cf.nome || '').toLowerCase().includes(term)
+                );
+              })
+              .sort((a, b) => (a.codigo || '').localeCompare(b.codigo || ''))
+              .map((cf) => (
+                <label
+                  key={cf.id}
+                  className="flex items-center gap-2 rounded border p-2 cursor-pointer hover:bg-muted/50"
+                >
+                  <Checkbox
+                    checked={grupoClassesSelectedIds.includes(cf.id)}
+                    onCheckedChange={(checked) => {
+                      setGrupoClassesSelectedIds((prev) =>
+                        checked ? [...prev, cf.id] : prev.filter((id) => id !== cf.id)
+                      );
+                    }}
+                  />
+                  <span className="text-sm">
+                    {cf.codigo} — {cf.nome}
+                  </span>
+                </label>
+              ))}
+            {classesFinanceiras.length === 0 && (
+              <p className="text-sm text-muted-foreground">Nenhuma classe financeira cadastrada.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGrupoClassesModal(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveGrupoClasses} disabled={setClassesGrupo.isPending}>
+              {setClassesGrupo.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Modal de Formulário */}
       <FormModal
         isOpen={isModalOpen}
@@ -593,7 +712,7 @@ const MateriaisEquipamentosPage: React.FC = () => {
         onSubmit={editingMaterial ? handleUpdateMaterial : handleCreateMaterial}
         title={editingMaterial ? 'Editar Material' : 'Novo Material'}
         initialData={editingMaterial}
-        classesOptions={materialGroups}
+        gruposComClasses={gruposComClasses}
       />
 
       {/* Modal de Visualização de Detalhes */}
@@ -646,7 +765,11 @@ const MateriaisEquipamentosPage: React.FC = () => {
                   </div>
                   <div>
                     <span className="font-medium text-gray-600">Grupo de Materiais:</span>
-                    <p className="text-gray-900">{viewingMaterial.classe || 'Não informado'}</p>
+                    <p className="text-gray-900">
+                      {viewingMaterial.grupo_material_id
+                        ? grupos.find((g) => g.id === viewingMaterial.grupo_material_id)?.nome ?? viewingMaterial.classe ?? 'Não informado'
+                        : viewingMaterial.classe || 'Não informado'}
+                    </p>
                   </div>
                   <div>
                     <span className="font-medium text-gray-600">Unidade de Medida:</span>

@@ -27,6 +27,7 @@ export interface MaterialEquipamento {
   descricao: string;
   tipo: 'produto' | 'servico' | 'equipamento';
   classe?: string;
+  grupo_material_id?: string;
   unidade_medida: string;
   imagem_url?: string;
   status: 'ativo' | 'inativo';
@@ -40,6 +41,16 @@ export interface MaterialEquipamento {
   cfop?: string;
   cst?: string;
   observacoes?: string;
+  classe_financeira_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GrupoMaterial {
+  id: string;
+  company_id: string;
+  nome: string;
+  ativo: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -131,15 +142,40 @@ export const AlmoxarifadoService = {
   },
 
   /**
-   * Atualiza um material/equipamento
+   * Colunas permitidas para update em materiais_equipamentos (evita 400 por campo inexistente)
    */
-  updateMaterialEquipamento: async (id: string, data: Partial<MaterialEquipamento>) => {
+  MATERIAIS_EQUIPAMENTOS_UPDATE_KEYS: [
+    'codigo_interno', 'nome', 'descricao', 'tipo', 'classe', 'grupo_material_id', 'unidade_medida',
+    'imagem_url', 'status', 'equipamento_proprio', 'localizacao_id', 'estoque_minimo', 'estoque_maximo',
+    'valor_unitario', 'validade_dias', 'ncm', 'cfop', 'cst', 'observacoes', 'classe_financeira_id'
+  ] as const,
+
+  /**
+   * Atualiza um material/equipamento (payload sanitizado para colunas válidas)
+   */
+  updateMaterialEquipamento: async (id: string, data: Partial<MaterialEquipamento>, companyId: string) => {
+    const allowed = new Set(AlmoxarifadoService.MATERIAIS_EQUIPAMENTOS_UPDATE_KEYS);
+    const sanitized: Record<string, unknown> = {};
+    for (const key of Object.keys(data)) {
+      if (!allowed.has(key as any)) continue;
+      const v = (data as any)[key];
+      if (v === undefined) continue;
+      // Garantir que UUIDs vazios sejam null
+      if ((key === 'grupo_material_id' || key === 'classe_financeira_id' || key === 'localizacao_id') && (v === '' || (typeof v === 'string' && v.trim() === ''))) {
+        sanitized[key] = null;
+      } else if (key === 'unidade_medida' && (v === null || v === '' || (typeof v === 'string' && v.trim() === ''))) {
+        // unidade_medida é NOT NULL no banco; evitar enviar null
+        sanitized[key] = 'UN';
+      } else {
+        sanitized[key] = v;
+      }
+    }
     return await EntityService.update<MaterialEquipamento>({
       schema: 'almoxarifado',
       table: 'materiais_equipamentos',
-      companyId: data.company_id || '',
-      id: id,
-      data: data
+      companyId,
+      id,
+      data: sanitized as Partial<MaterialEquipamento>
     });
   },
 
@@ -153,5 +189,91 @@ export const AlmoxarifadoService = {
       companyId: companyId,
       id: id
     });
+  },
+
+  // ========== Grupos de Materiais ==========
+  listGruposMateriais: async (companyId: string) => {
+    const result = await EntityService.list<GrupoMaterial>({
+      schema: 'almoxarifado',
+      table: 'grupos_materiais',
+      companyId,
+      orderBy: 'nome',
+      orderDirection: 'ASC'
+    });
+    return result.data;
+  },
+
+  /** Lista grupos com IDs das classes financeiras vinculadas (para pré-definir no formulário de material) */
+  listGruposWithClasses: async (
+    companyId: string
+  ): Promise<Array<GrupoMaterial & { classe_financeira_ids: string[] }>> => {
+    const grupos = await AlmoxarifadoService.listGruposMateriais(companyId);
+    if (grupos.length === 0) return [];
+    const ids = grupos.map((g) => g.id);
+    const { data: links, error } = await supabase
+      .from('grupo_material_classe_financeira')
+      .select('grupo_material_id, classe_financeira_id')
+      .in('grupo_material_id', ids);
+    if (error) throw error;
+    const map = new Map<string, string[]>();
+    for (const g of grupos) map.set(g.id, []);
+    for (const row of links || []) {
+      const arr = map.get(row.grupo_material_id) || [];
+      arr.push(row.classe_financeira_id);
+      map.set(row.grupo_material_id, arr);
+    }
+    return grupos.map((g) => ({
+      ...g,
+      classe_financeira_ids: map.get(g.id) || []
+    }));
+  },
+
+  createGrupoMaterial: async (data: Omit<GrupoMaterial, 'id' | 'created_at' | 'updated_at'>) => {
+    return await EntityService.create<GrupoMaterial>({
+      schema: 'almoxarifado',
+      table: 'grupos_materiais',
+      companyId: data.company_id,
+      data
+    });
+  },
+
+  updateGrupoMaterial: async (id: string, data: Partial<GrupoMaterial>, companyId: string) => {
+    return await EntityService.update<GrupoMaterial>({
+      schema: 'almoxarifado',
+      table: 'grupos_materiais',
+      companyId,
+      id,
+      data
+    });
+  },
+
+  deleteGrupoMaterial: async (id: string, companyId: string) => {
+    return await EntityService.delete({
+      schema: 'almoxarifado',
+      table: 'grupos_materiais',
+      companyId,
+      id
+    });
+  },
+
+  listClassesFinanceirasByGrupo: async (grupoMaterialId: string) => {
+    const { data, error } = await supabase
+      .from('grupo_material_classe_financeira')
+      .select('classe_financeira_id')
+      .eq('grupo_material_id', grupoMaterialId);
+    if (error) throw error;
+    return (data || []).map((r: { classe_financeira_id: string }) => r.classe_financeira_id);
+  },
+
+  setClassesFinanceirasForGrupo: async (grupoMaterialId: string, classeFinanceiraIds: string[]) => {
+    await supabase
+      .from('grupo_material_classe_financeira')
+      .delete()
+      .eq('grupo_material_id', grupoMaterialId);
+    if (classeFinanceiraIds.length === 0) return;
+    const { error } = await supabase
+      .from('grupo_material_classe_financeira')
+      .insert(classeFinanceiraIds.map((classe_financeira_id) => ({ grupo_material_id: grupoMaterialId, classe_financeira_id })));
+    if (error) throw error;
   }
 };

@@ -49,10 +49,12 @@ export function useCreateMaterialEquipamento() {
  */
 export function useUpdateMaterialEquipamento() {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
 
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<MaterialEquipamento> }) => {
-      return await AlmoxarifadoService.updateMaterialEquipamento(id, data);
+      if (!selectedCompany?.id) throw new Error('Empresa não selecionada');
+      return await AlmoxarifadoService.updateMaterialEquipamento(id, data, selectedCompany.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['almoxarifado', 'materiais_equipamentos'] });

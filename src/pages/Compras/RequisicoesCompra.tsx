@@ -39,6 +39,7 @@ import {
   useUpdatePurchaseRequisition,
 } from '@/hooks/compras/useComprasData';
 import { useMateriaisEquipamentos } from '@/hooks/almoxarifado/useMateriaisEquipamentosQuery';
+import { useGruposMateriais } from '@/hooks/almoxarifado/useGruposMateriaisQuery';
 import { useEstoqueAtual } from '@/hooks/almoxarifado/useEstoqueAtualQuery';
 import type { MaterialEquipamento } from '@/services/almoxarifado/almoxarifadoService';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -899,34 +900,41 @@ function MaterialSearchModal({
   onSelect: (material: MaterialEquipamento) => void;
 }) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [grupoMaterialId, setGrupoMaterialId] = useState<string>('');
   
   // Usar o hook correto que usa EntityService (RPC)
   const { data: materiais = [], isLoading: loading } = useMateriaisEquipamentos({
     status: 'ativo'
   });
+  const { data: grupos = [] } = useGruposMateriais();
 
-  // Limpar busca ao fechar o modal
+  // Limpar busca e filtro ao fechar o modal
   useEffect(() => {
     if (!isOpen) {
       setSearchTerm('');
+      setGrupoMaterialId('');
     }
   }, [isOpen]);
 
-  // Filtrar localmente em vez de fazer nova busca a cada digitação
+  // Filtrar localmente: por grupo e por texto (descrição ou código)
   const filteredMateriais = useMemo(() => {
+    let result = materiais;
+    if (grupoMaterialId) {
+      result = result.filter(m => m.grupo_material_id === grupoMaterialId);
+    }
     if (!searchTerm.trim()) {
-      return materiais;
+      return result;
     }
     const searchLower = searchTerm.toLowerCase();
-    return materiais.filter(m => 
+    return result.filter(m => 
       m.descricao?.toLowerCase().includes(searchLower) ||
       m.codigo_interno?.toLowerCase().includes(searchLower)
     );
-  }, [materiais, searchTerm]);
+  }, [materiais, searchTerm, grupoMaterialId]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="max-w-4xl h-[540px] flex flex-col p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <DialogTitle>Buscar Material</DialogTitle>
           <DialogDescription>
@@ -934,26 +942,47 @@ function MaterialSearchModal({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col flex-1 min-h-0 px-6 pb-6 overflow-hidden">
-          <div className="relative mb-4 flex-shrink-0">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por descrição ou código..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex flex-wrap items-center gap-3 mb-4 flex-shrink-0">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por descrição ou código..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <div className="w-full sm:w-[220px]">
+              <Select
+                value={grupoMaterialId || 'all'}
+                onValueChange={(v) => setGrupoMaterialId(v === 'all' ? '' : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Grupo de materiais" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os grupos</SelectItem>
+                  {grupos.map((g) => (
+                    <SelectItem key={g.id} value={g.id}>
+                      {g.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto min-h-0">
+          {/* Área da lista com altura fixa (~6 itens): mantém tamanho igual com 0 ou muitos itens; rolagem interna se passar de ~6 */}
+          <div className="h-[360px] min-h-[360px] overflow-y-auto pr-2">
             {loading ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex items-center justify-center h-full">
                 <p className="text-muted-foreground">Carregando materiais...</p>
               </div>
             ) : filteredMateriais.length === 0 ? (
-              <div className="flex items-center justify-center py-8">
+              <div className="flex items-center justify-center h-full">
                 <p className="text-muted-foreground">Nenhum material encontrado</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2 pr-2">
+              <div className="grid grid-cols-1 gap-2">
                 {filteredMateriais.map((material) => (
                   <div
                     key={material.id}

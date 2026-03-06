@@ -767,12 +767,13 @@ export const EntityService = {
       });
 
       if (error) {
-        console.error(`❌ Erro ao atualizar item em ${schema}.${table}:`, {
+        const serverMsg = (error as any).message || (error as any).error_description || (error as any).details;
+        console.error(`❌ Erro ao atualizar item em ${schema}.${table}:`, serverMsg || error.message, {
           error,
           error_message: error.message,
-          error_details: error.details,
-          error_hint: error.hint,
-          error_code: error.code,
+          error_details: (error as any).details,
+          error_hint: (error as any).hint,
+          error_code: (error as any).code,
           data_sent: dataClean,
           schema,
           table,
